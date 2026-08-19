@@ -29,6 +29,45 @@ describe('AgentWorkspace', () => {
     window.sessionStorage.clear()
   })
 
+  it('refreshes the local snapshot after the agent imports a resume, so it appears in the candidate list', async () => {
+    const executeAgentTurn = vi.fn().mockResolvedValue({
+      status: 'completed', toolName: 'resume.analyze.local', actionRunId: null, assistantMessage: null,
+      conversation: snapshot([
+        { id: 'user-1', role: 'user', content: '导入这份简历', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+      ])
+    })
+    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
+    const onLocalDataChanged = vi.fn()
+    render(<AgentWorkspace onOpenMatching={vi.fn()} onLocalDataChanged={onLocalDataChanged} />)
+
+    const input = await screen.findByRole('textbox', { name: '案件 Agent への質問' })
+    fireEvent.change(input, { target: { value: '导入这份简历' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => expect(onLocalDataChanged).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not refresh the local snapshot for a read-only turn', async () => {
+    const executeAgentTurn = vi.fn().mockResolvedValue({
+      status: 'completed', toolName: 'match-run.read.local', actionRunId: null, assistantMessage: null,
+      conversation: snapshot([
+        { id: 'user-1', role: 'user', content: '为什么第一名排第一？', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+      ])
+    })
+    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
+    const onLocalDataChanged = vi.fn()
+    render(<AgentWorkspace onOpenMatching={vi.fn()} onLocalDataChanged={onLocalDataChanged} />)
+
+    const input = await screen.findByRole('textbox', { name: '案件 Agent への質問' })
+    fireEvent.change(input, { target: { value: '为什么第一名排第一？' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+
+    await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
+    expect(onLocalDataChanged).not.toHaveBeenCalled()
+  })
+
   it('sends a turn through the Main-owned API and renders typed case cards', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({ status: 'completed', toolName: 'job-case.search.local', actionRunId: null, assistantMessage: null, conversation: snapshot([
       { id: 'user-1', role: 'user', content: '最近有什么案件？', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' },

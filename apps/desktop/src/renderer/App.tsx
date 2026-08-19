@@ -1289,6 +1289,10 @@ export function App() {
           models={bootstrap.agentChatModels}
           onConnectCloud={() => setAiCommerceOpen(true)}
           onOpenMatching={openMatchingForCase}
+          onLocalDataChanged={async () => {
+            const refreshed = await window.sesAgent.getBootstrap()
+            setBootstrap(refreshed)
+          }}
           onOpenReviews={() => setActiveView('reviews')}
           reloadToken={agentHistoryReloadToken}
           status={{

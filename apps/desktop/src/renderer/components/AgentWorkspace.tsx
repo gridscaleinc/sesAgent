@@ -30,6 +30,12 @@ interface AgentWorkspaceProps {
    */
   status?: AgentWorkspaceStatus
   onOpenReviews?(): void
+  /**
+   * Called after a tool writes to the local database, so the app can refresh its
+   * bootstrap snapshot. Without it the import lands in SQLCipher but the
+   * candidate list keeps rendering the stale snapshot and looks like it vanished.
+   */
+  onLocalDataChanged?(): void | Promise<void>
 }
 
 export interface AgentWorkspaceStatus {
@@ -160,7 +166,8 @@ export function AgentWorkspace({
   cloudConnected = true,
   onConnectCloud,
   status,
-  onOpenReviews
+  onOpenReviews,
+  onLocalDataChanged
 }: AgentWorkspaceProps) {
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
@@ -301,6 +308,7 @@ export function AgentWorkspace({
       }
     }
     setAttachments([])
+    if (imported > 0) await onLocalDataChanged?.()
     setImportSummary({ imported, failed })
     setImporting(false)
   }
@@ -337,6 +345,7 @@ export function AgentWorkspace({
         attachmentFileTokens: attachments.map((file) => file.token)
       })
       setAttachments([])
+      if (result.toolName === 'resume.analyze.local') await onLocalDataChanged?.()
       history.acceptConversation(result.conversation)
       const nextSelected = typedReference(result.conversation.salesAgentState?.selectedJobCaseRef)
       if (nextSelected) setSelectedCase(nextSelected)
