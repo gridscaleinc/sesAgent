@@ -2242,6 +2242,7 @@ export interface DesktopApi {
   onAiCommerceStateChanged(listener: (update: AiCommerceStateUpdate) => void): () => void
   beginResumeImport(): Promise<BeginResumeImportResult>
   stageDroppedResumeFiles(input: { files: Array<{ name: string; bytes: Uint8Array }> }): Promise<BeginResumeImportResult>
+  previewStagedResumeFile(input: { fileToken: string }): Promise<AgentCandidateDraftFacts>
   analyzeResumeFile(input: { fileToken: string; taskId: string }): Promise<ResumeAnalysisTaskExecutionResult>
   getCandidateReview(documentId: string): Promise<CandidateReviewSnapshot | null>
   submitCandidateReview(input: SubmitCandidateReviewInput): Promise<SubmitCandidateReviewResult>
@@ -2326,6 +2327,7 @@ export const ipcChannels = {
   aiCommerceStateChanged: 'aicommerce:state-changed',
   beginResumeImport: 'resume-import:begin',
   stageDroppedResumeFiles: 'resume-import:stage-dropped',
+  previewStagedResumeFile: 'resume-import:preview',
   analyzeResumeFile: 'resume-files:analyze',
   getCandidateReview: 'candidate-review:get',
   submitCandidateReview: 'candidate-review:submit',

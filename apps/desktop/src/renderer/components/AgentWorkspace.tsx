@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import type {
+  AgentCandidateDraftFacts,
   StagedLocalFile,
   AgentChatModelOption,
   AgentCandidateMatchCard,
@@ -274,7 +275,7 @@ export function AgentWorkspace({
     if (reference.kind === 'job-case') setSelectedCase(reference)
   }
 
-  const [attachments, setAttachments] = useState<Array<StagedLocalFile & { taskId: string }>>([])
+  const [attachments, setAttachments] = useState<Array<StagedLocalFile & { taskId: string; preview?: AgentCandidateDraftFacts; previewError?: string }>>([])
   const [importing, setImporting] = useState(false)
   const [importSummary, setImportSummary] = useState<{ imported: number; failed: number } | null>(null)
   const [attaching, setAttaching] = useState(false)
@@ -300,6 +301,16 @@ export function AgentWorkspace({
         const taskId = staged.task.id
         setAttachments((current) => [...current, ...staged.files.map((file) => ({ ...file, taskId }))].slice(0, 10))
         setImportSummary(null)
+        // Parse immediately so the operator can read what is in the file before
+        // deciding to import it. Nothing is written until they choose.
+        for (const file of staged.files) {
+          void window.sesAgent.previewStagedResumeFile({ fileToken: file.token })
+            .then((preview) => setAttachments((current) =>
+              current.map((item) => item.token === file.token ? { ...item, preview } : item)))
+            .catch((cause: unknown) => setAttachments((current) => current.map((item) => item.token === file.token
+              ? { ...item, previewError: cause instanceof Error ? cause.message : 'parse failed' }
+              : item)))
+        }
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : (zh ? '附件暂存失败。' : '添付ファイルを保存できませんでした。'))
@@ -467,7 +478,11 @@ export function AgentWorkspace({
         {onOpenReviews ? <button onClick={() => onOpenReviews()} type="button">{zh ? '打开审核中心' : 'レビューセンターを開く'}</button> : null}
       </p> : null}
       {attaching ? <p className="agent-attachment-progress">{zh ? '正在安全暂存附件…' : '添付ファイルを安全に保存しています…'}</p> : null}
-      {cloudConnected ? <form aria-label={zh ? '案件 Agent 输入区' : '案件 Agent 入力欄'} className="agent-composer" onSubmit={send}>{attachments.length > 0 ? <div className="agent-attachment-tray">{attachments.map((file) => <span key={file.token}><span className="agent-attachment-glyph"><Icon name="file" size={16} /></span><span className="agent-attachment-label"><strong>{file.name}</strong><small>{file.format.toLocaleUpperCase('en-US')}</small></span><button aria-label={zh ? `移除 ${file.name}` : `${file.name} を外す`} onClick={() => setAttachments((current) => current.filter((item) => item.token !== file.token))} type="button">×</button></span>)}</div> : null}<textarea aria-label={zh ? '输入案件问题' : '案件 Agent への質問'} disabled={pendingMessage !== null} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={zh ? '询问案件、候选人或当前匹配结果…' : '案件、候補者、現在のマッチ結果について質問…'} rows={2} value={draft} /><footer><div className="agent-composer-tools">{attachments.length > 0 ? <button className="agent-attachment-import" disabled={importing} onClick={() => void importAttachmentsDirectly()} type="button">{importing ? (zh ? '导入中…' : '取込中…') : (zh ? '直接导入' : 'そのまま取込')}</button> : null}<div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={pendingMessage !== null} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div><small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small></div>{pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim()} type="submit"><Icon name="arrow-up" size={16} /></button>}</footer></form> : <div className="agent-connect-bar">
+      {cloudConnected ? <form aria-label={zh ? '案件 Agent 输入区' : '案件 Agent 入力欄'} className="agent-composer" onSubmit={send}>{attachments.length > 0 ? <div className="agent-attachment-tray">{attachments.map((file) => <span key={file.token}><span className="agent-attachment-glyph"><Icon name="file" size={16} /></span><span className="agent-attachment-label"><strong>{file.name}</strong><small>{
+    file.previewError ? (zh ? '解析失败' : '解析に失敗')
+    : file.preview ? `${file.format.toLocaleUpperCase('en-US')} · ${zh ? '已解析' : '解析済み'} ${file.preview.fields.filter((field) => field.status !== 'missing').length}${zh ? ' 项' : '項目'}`
+    : `${file.format.toLocaleUpperCase('en-US')} · ${zh ? '解析中…' : '解析中…'}`
+  }</small></span><button aria-label={zh ? `移除 ${file.name}` : `${file.name} を外す`} onClick={() => setAttachments((current) => current.filter((item) => item.token !== file.token))} type="button">×</button></span>)}</div> : null}<textarea aria-label={zh ? '输入案件问题' : '案件 Agent への質問'} disabled={pendingMessage !== null} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={zh ? '询问案件、候选人或当前匹配结果…' : '案件、候補者、現在のマッチ結果について質問…'} rows={2} value={draft} /><footer><div className="agent-composer-tools">{attachments.length > 0 ? <button className="agent-attachment-import" disabled={importing} onClick={() => void importAttachmentsDirectly()} type="button">{importing ? (zh ? '导入中…' : '取込中…') : (zh ? '直接导入' : 'そのまま取込')}</button> : null}<div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={pendingMessage !== null} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div><small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small></div>{pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim()} type="submit"><Icon name="arrow-up" size={16} /></button>}</footer></form> : <div className="agent-connect-bar">
         <Icon name="lock" size={14} />
         <span>{zh ? '连接受管账号后即可开始对话。' : '受管アカウントに接続すると会話を開始できます。'}</span>
         <button onClick={() => onConnectCloud?.()} type="button">{zh ? '连接受管账号' : '受管アカウントに接続'}</button>

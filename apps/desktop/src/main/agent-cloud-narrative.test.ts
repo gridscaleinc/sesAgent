@@ -84,7 +84,7 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '总结一下这个人的整体情况',
       selectedJobCaseRef: null,
-      attachmentCount: 0,
+      attachmentCount: 0, attachmentDrafts: [],
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
@@ -122,12 +122,42 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).not.toContain('.xlsx')
   })
 
+  it('gives the planner the parsed attachment so a summary needs no tool, still without the file name', () => {
+    const projection = buildAgentPlanningProjection({
+      locale: 'zh-CN',
+      userMessage: '总结一下这个人的整体情况',
+      selectedJobCaseRef: null,
+      attachmentCount: 1,
+      attachmentDrafts: [{
+        documentId: '66666666-6666-4666-8666-666666666666',
+        label: '技術者履歴書_楊凱',
+        confirmed: false,
+        reviewStatus: 'awaiting-review',
+        fields: [
+          { label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: ['技術者履歴書_楊凱.xlsx!B4'] },
+          { label: '単価', value: null, confidence: 0, status: 'missing', sources: [] }
+        ],
+        projects: [{ title: '決済基盤', period: null, role: 'SE', technologies: ['Java'], summary: '設計', confidence: 0.8, sources: ['Sheet1!A12'] }]
+      }],
+      conversation: null
+    })
+    const parsed = JSON.parse(projection)
+    expect(parsed.attachmentDrafts).toEqual([{
+      resume: 'RESUME_1',
+      confirmed: false,
+      fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
+      projects: [{ title: '決済基盤', period: null, role: 'SE', technologies: ['Java'], summary: '設計' }]
+    }])
+    expect(projection).not.toContain('楊凱')
+    expect(projection).not.toContain('66666666-6666-4666-8666-666666666666')
+  })
+
   it('tells the planner how many files are attached without sending their names', () => {
     const projection = buildAgentPlanningProjection({
       locale: 'zh-CN',
       userMessage: '导入这份简历',
       selectedJobCaseRef: null,
-      attachmentCount: 2,
+      attachmentCount: 2, attachmentDrafts: [],
       conversation: null
     })
     expect(JSON.parse(projection).state.attachmentCount).toBe(2)
@@ -141,7 +171,7 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '总结一下候选人的整体情况',
       selectedJobCaseRef: null,
-      attachmentCount: 0,
+      attachmentCount: 0, attachmentDrafts: [],
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
@@ -202,7 +232,7 @@ describe('Agent Cloud narrative boundary', () => {
     const onRemoteSettled = vi.fn()
     await expect(service.plan({
       conversationId, requestId, locale: 'zh-CN', userMessage: '总结一下候选人的整体情况',
-      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, model,
+      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], model,
       signal: new AbortController().signal,
       onClientRequestId: vi.fn(), onRemoteSettled
     })).resolves.toEqual({ kind: 'answer' })
@@ -256,7 +286,7 @@ describe('Agent Cloud narrative boundary', () => {
 
     await expect(service.plan({
       conversationId, requestId, locale: 'zh-CN', userMessage: '工作经历列出来参考一下',
-      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, model,
+      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], model,
       signal: new AbortController().signal,
       onClientRequestId: vi.fn(), onRemoteSettled
     })).rejects.toThrow(/同时返回 ANSWER 和 TOOL/)

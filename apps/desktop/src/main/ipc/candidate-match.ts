@@ -27,7 +27,7 @@ export function registerCandidateMatchHandlers(
   context: MainIpcContext,
   runResumeAnalysisTask: (input: { fileToken: string; taskId: string }) => Promise<unknown>
 ) {
-  const { repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates } = context
+  const { previewedDrafts, repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates } = context
   const runCandidateMatchTask = async (
     taskId: string,
     existingJobId: string | null = null,
@@ -266,6 +266,7 @@ export function registerCandidateMatchHandlers(
       if (!['completed', 'cancelled', 'failed'].includes(task.status)) repository.saveWorkTask(cancelWorkTask(task))
     },
     modelCatalog: agentChatModelCatalog,
+    previewedDrafts,
     narrativeStreamer: agentNarrativeStreamer
   })
 

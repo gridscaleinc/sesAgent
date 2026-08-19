@@ -17,11 +17,13 @@ import { EncryptedApplicationRepository } from '@persistence'
 import { redactTextForCloud } from '@privacy'
 import { extractCandidateDraft } from '@resume'
 import {
+  type AgentCandidateDraftFacts,
   type BeginResumeImportResult,
   type ProcessingJobSummary,
   type ResumeAnalysisTaskExecutionResult,
   type StagedLocalFile,
   analyzeResumeFileInputSchema,
+  previewStagedResumeFileInputSchema,
   stageDroppedResumeFilesInputSchema,
   candidateProfileSourceInputSchema,
   ipcChannels
@@ -51,7 +53,7 @@ function documentTextForLocalPrivacy(document: Awaited<ReturnType<ParserWorkerCl
 
 /** Resume file staging, local analysis and candidate field review. */
 export function registerResumeImportHandlers(context: MainIpcContext) {
-  const { repository, fileVault, parserWorker, localOcr, localNer, processingResources, currentOperator, preflightAction, withTaskOperation, failPendingProcessingJob } = context
+  const { repository, fileVault, parserWorker, localOcr, localNer, processingResources, currentOperator, preflightAction, withTaskOperation, failPendingProcessingJob, previewedDrafts } = context
   ipcMain.handle(ipcChannels.beginResumeImport, async (event): Promise<BeginResumeImportResult> => {
     assertTrustedSender(event)
     const owner = BrowserWindow.fromWebContents(event.sender)
@@ -123,6 +125,105 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
       const reason = error instanceof Error ? error.message : 'Unknown validation error.'
       throw new Error(`${rejectedName} を取り込めませんでした: ${reason}`)
     }
+  })
+
+  /**
+   * Parse, locally redact and extract one staged file. Persists nothing.
+   *
+   * Both paths run this: the preview the operator reads before deciding, and the
+   * import that commits the draft. Keeping it in one place is the point - a
+   * second copy would let the redaction policy drift between what gets shown and
+   * what gets stored.
+   */
+  const analyzeStagedFileLocally = async (
+    record: ReturnType<EncryptedApplicationRepository['getStagedFileRecords']>[number],
+    onParsed: () => void = () => undefined
+  ) => {
+    const bytes = await fileVault.decryptForLocalProcessing(record)
+    let document
+    try {
+      document = await parserWorker.parse(rendererSafeFile(record), bytes)
+      if (document.requiresLocalOcr && record.format === 'pdf' && localOcr) {
+        try {
+          document = mergeLocalOcr(document, await localOcr.ocrPdf(bytes))
+        } catch {
+          document = documentIrSchema.parse({
+            ...document,
+            warnings: [
+              ...document.warnings,
+              {
+                code: 'LOCAL_OCR_FAILED',
+                message: 'Apple Vision OCR was unavailable or could not reliably process the scanned page.'
+              }
+            ]
+          })
+        }
+      }
+    } finally {
+      bytes.fill(0)
+    }
+    onParsed()
+    const localText = documentTextForLocalPrivacy(document)
+    let localNameDetection
+    try {
+      localNameDetection = await localNer?.detectNames(localText)
+    } catch {
+      localNameDetection = undefined
+    }
+    const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
+    const mediaRisks: Array<'face_or_photo' | 'signature' | 'identifying_qr_code'> = []
+    if (document.requiresLocalOcr || (document.ocr?.faceRegions ?? 0) > 0) mediaRisks.push('face_or_photo')
+    if (document.requiresLocalOcr || document.ocr?.signatureReviewRequired) mediaRisks.push('signature')
+    if (document.requiresLocalOcr || (document.ocr?.barcodeRegions ?? 0) > 0) mediaRisks.push('identifying_qr_code')
+    const redaction = redactTextForCloud(localText, {
+      sourceVersion: record.sha256,
+      policyVersion: 'cloud-redaction-v2',
+      knownPersonNames,
+      mediaRisks
+    })
+    const identifierCounts = new Map<string, number>()
+    for (const mapping of redaction.mappings) {
+      identifierCounts.set(mapping.identifierType, (identifierCounts.get(mapping.identifierType) ?? 0) + 1)
+    }
+    const analyzedAt = new Date().toISOString()
+    const extraction = extractCandidateDraft(document, new Date(analyzedAt))
+    return { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt }
+  }
+
+  ipcMain.handle(ipcChannels.previewStagedResumeFile, async (event, rawInput): Promise<AgentCandidateDraftFacts> => {
+    assertTrustedSender(event)
+    const input = previewStagedResumeFileInputSchema.parse(rawInput)
+    const record = repository.getStagedFileRecords([input.fileToken])[0]
+    if (!record) throw new Error('添付ファイルが見つかりません。')
+
+    // Preview only: the same local pipeline runs, but nothing is written. No
+    // candidate review, no work task, no redaction session - the operator has
+    // not decided to import yet, so the app must not act as if they had.
+    const analysis = await processingResources.run('local-ai', () => analyzeStagedFileLocally(record))
+    const facts: AgentCandidateDraftFacts = {
+      documentId: input.fileToken,
+      label: record.name.replace(/\.[^.]+$/u, '').slice(0, 60) || 'RESUME',
+      confirmed: false,
+      reviewStatus: 'awaiting-review',
+      fields: analysis.extraction.fields.map((field) => ({
+        label: field.label,
+        value: field.value,
+        confidence: field.confidence,
+        status: field.value === null ? 'missing' as const : 'needs_review' as const,
+        sources: [...new Set(field.sources.map((source) => source.sourceLabel))]
+      })),
+      projects: analysis.extraction.projectExperiences.map((project) => ({
+        title: project.title,
+        period: project.period,
+        role: project.role,
+        technologies: project.technologies,
+        summary: project.summary,
+        confidence: project.confidence,
+        sources: [...new Set(project.sources.map((source) => source.sourceLabel))]
+      }))
+    }
+    previewedDrafts.set(input.fileToken, facts)
+    return facts
   })
 
   const runResumeAnalysisTask = async (
@@ -241,59 +342,14 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
             }
             let summary = repository.getResumeAnalysis(input.fileToken)
             if (!summary || summary.analysisVersion !== 'resume-analysis-v6') {
-              const bytes = await fileVault.decryptForLocalProcessing(record)
-              let document
-              try {
-                document = await parserWorker.parse(rendererSafeFile(record), bytes)
-                if (document.requiresLocalOcr && record.format === 'pdf' && localOcr) {
-                  try {
-                    document = mergeLocalOcr(document, await localOcr.ocrPdf(bytes))
-                  } catch {
-                    document = documentIrSchema.parse({
-                      ...document,
-                      warnings: [
-                        ...document.warnings,
-                        {
-                          code: 'LOCAL_OCR_FAILED',
-                          message: 'Apple Vision OCR was unavailable or could not reliably process the scanned page.'
-                        }
-                      ]
-                    })
-                  }
+              const analysis = await analyzeStagedFileLocally(record, () => {
+                processingJob = repository.updateProcessingJobProgress(processingJob.id, lease.leaseToken, 50)
+                if (repository.isProcessingJobCancellationRequested(processingJob.id, lease.leaseToken)) {
+                  repository.completeProcessingJob(processingJob.id, lease.leaseToken, { cancelled: true })
+                  throw new Error('スキルシート解析ジョブをキャンセルしました。')
                 }
-              } finally {
-                bytes.fill(0)
-              }
-              processingJob = repository.updateProcessingJobProgress(processingJob.id, lease.leaseToken, 50)
-              if (repository.isProcessingJobCancellationRequested(processingJob.id, lease.leaseToken)) {
-                repository.completeProcessingJob(processingJob.id, lease.leaseToken, { cancelled: true })
-                throw new Error('スキルシート解析ジョブをキャンセルしました。')
-              }
-
-              const localText = documentTextForLocalPrivacy(document)
-              let localNameDetection
-              try {
-                localNameDetection = await localNer?.detectNames(localText)
-              } catch {
-                localNameDetection = undefined
-              }
-              const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
-              const mediaRisks: Array<'face_or_photo' | 'signature' | 'identifying_qr_code'> = []
-              if (document.requiresLocalOcr || (document.ocr?.faceRegions ?? 0) > 0) mediaRisks.push('face_or_photo')
-              if (document.requiresLocalOcr || document.ocr?.signatureReviewRequired) mediaRisks.push('signature')
-              if (document.requiresLocalOcr || (document.ocr?.barcodeRegions ?? 0) > 0) mediaRisks.push('identifying_qr_code')
-              const redaction = redactTextForCloud(localText, {
-                sourceVersion: record.sha256,
-                policyVersion: 'cloud-redaction-v2',
-                knownPersonNames,
-                mediaRisks
               })
-              const identifierCounts = new Map<string, number>()
-              for (const mapping of redaction.mappings) {
-                identifierCounts.set(mapping.identifierType, (identifierCounts.get(mapping.identifierType) ?? 0) + 1)
-              }
-              const analyzedAt = new Date().toISOString()
-              const extraction = extractCandidateDraft(document, new Date(analyzedAt))
+              const { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt } = analysis
               const preview = redaction.redactedContent.length > 4000
                 ? `${redaction.redactedContent.slice(0, 3999)}…`
                 : redaction.redactedContent

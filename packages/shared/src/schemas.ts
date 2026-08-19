@@ -181,6 +181,10 @@ export const stageDroppedResumeFilesInputSchema = z.object({
   })).min(1).max(10)
 }).strict()
 
+export const previewStagedResumeFileInputSchema = z.object({
+  fileToken: z.string().uuid()
+}).strict()
+
 export const analyzeResumeFileInputSchema = z.object({
   fileToken: z.string().uuid(),
   taskId: z.string().min(1).max(128)

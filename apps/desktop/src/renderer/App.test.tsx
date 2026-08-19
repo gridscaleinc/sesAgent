@@ -163,6 +163,7 @@ describe('App workbench', () => {
       onAiCommerceStateChanged: vi.fn().mockReturnValue(() => undefined),
       beginResumeImport: vi.fn().mockResolvedValue({ cancelled: true, task: null, files: [] }),
       stageDroppedResumeFiles: vi.fn().mockResolvedValue({ cancelled: false, task: null, files: [] }),
+      previewStagedResumeFile: vi.fn(),
       analyzeResumeFile: vi.fn(),
       getCandidateReview: vi.fn().mockResolvedValue(null),
       submitCandidateReview: vi.fn(),

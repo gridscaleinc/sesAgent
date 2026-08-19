@@ -18,7 +18,7 @@ import { GoogleWorkspaceOAuthClient, type GmailSyncConfiguration } from '@mail'
 import { SafeStorageMasterKeyProvider } from '@platform'
 import { CloudRedactionGateway } from '@privacy'
 import { LocalHybridCandidateRetrieval, searchConfirmedCandidateProfiles } from '@resume'
-import type { DomainToolName, GoogleWorkspaceAdminConfiguration, ProcessingJobSummary } from '@shared'
+import type { AgentCandidateDraftFacts, DomainToolName, GoogleWorkspaceAdminConfiguration, ProcessingJobSummary } from '@shared'
 
 import { cloudPrivacyGateLoadOptions, effectiveOperatorProfile } from '../app-defaults'
 import { AgentCloudNarrativeService } from '../agent-cloud-narrative'
@@ -191,6 +191,13 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
       : repository.getProcessingJob(jobId)
   }
 
+  /**
+   * Preview facts per staged file, kept in memory for this session only.
+   * The renderer never supplies these back - it could fabricate them - so the
+   * turn reads what this process actually derived.
+   */
+  const previewedDrafts = new Map<string, AgentCandidateDraftFacts>()
+
   const searchCandidates = async (query: string, maxResults: number) => {
     const profiles = repository.listEligibleTalentProfiles()
     const identities = new Map(profiles.map((profile) => [
@@ -258,6 +265,7 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
     hasActiveTaskOperation: (taskId: string) => activeTaskOperations.has(taskId),
     failPendingProcessingJob,
     searchCandidates,
+    previewedDrafts,
     attachDispatcher: (dispatcher: SafeLocalProcessingDispatcher<ProcessingJobSummary>) => {
       safeLocalDispatcher = dispatcher
     },

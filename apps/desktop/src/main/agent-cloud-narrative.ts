@@ -22,6 +22,7 @@ import {
 import type {
   AiConversationMessage,
   AiConversationSnapshot,
+  AgentCandidateDraftFacts,
   ApplicationLocale,
   DomainToolName,
   TypedAiConversationReference
@@ -61,6 +62,11 @@ export interface AgentPlanningStreamInput {
    * the boundary - file names routinely carry candidate names.
    */
   attachmentCount: number
+  /**
+   * Locally parsed, unconfirmed facts for this turn's attachments. Derived by
+   * the main process, never accepted from the renderer.
+   */
+  attachmentDrafts: AgentCandidateDraftFacts[]
   model: AgentChatModelDefinition
   signal: AbortSignal
   onClientRequestId(clientRequestId: string): void
@@ -238,7 +244,7 @@ export function buildAgentCloudProjection(
 
 export function buildAgentPlanningProjection(input: Pick<
   AgentPlanningStreamInput,
-  'locale' | 'userMessage' | 'conversation' | 'selectedJobCaseRef' | 'attachmentCount'
+  'locale' | 'userMessage' | 'conversation' | 'selectedJobCaseRef' | 'attachmentCount' | 'attachmentDrafts'
 >): string {
   const recentMessages = input.conversation?.messages.slice(-12) ?? []
   const serialized = JSON.stringify({
@@ -250,6 +256,20 @@ export function buildAgentPlanningProjection(input: Pick<
       hasSavedMatchRun: Boolean(input.conversation?.salesAgentState?.lastMatchRunId),
       attachmentCount: input.attachmentCount
     },
+    // Unconfirmed extraction for the attachments, so the operator can be told
+    // what is in the file before deciding to import it. Same allowlist as the
+    // stored draft block: business fields only, no id, no file name, no sources.
+    attachmentDrafts: input.attachmentDrafts.map((draft, index) => ({
+      resume: `RESUME_${index + 1}`,
+      confirmed: false,
+      fields: draft.fields
+        .filter((field) => field.status !== 'missing')
+        .map((field) => ({ label: field.label, value: field.value, confidence: field.confidence })),
+      projects: draft.projects.slice(0, 8).map((project) => ({
+        title: project.title, period: project.period, role: project.role,
+        technologies: project.technologies, summary: project.summary
+      }))
+    })),
     recentConversation: recentMessages.map((message) => ({
       role: message.role,
       content: message.content.slice(0, 2_000)
@@ -350,7 +370,9 @@ const planningInstructions = [
   'A request to summarize, compare, explain generally, or continue discussing existing candidate results must use the answer decision when the supplied evidence is sufficient; it must not rerun matching.',
   'For a candidate field not present in the supplied matching evidence, including Japanese level, availability, role, work style, rate, location, work authorization, or resume/project details, use read_candidate_profile instead of guessing.',
   'For interview status, schedules, interview notes, unresolved items, or decisions, use read_candidate_interviews instead of guessing.',
-  'state.attachmentCount is the number of files attached to this turn. Use import_resume only when it is greater than zero and the operator asked to import them; never claim an import happened.',
+  'state.attachmentCount is the number of files attached to this turn, and attachmentDrafts holds their locally parsed unconfirmed extraction.',
+  'When the operator asks about an attached file - summarise it, describe the person, list the experience - answer from attachmentDrafts. Do not call a tool, and say plainly that the values are machine-extracted and not yet confirmed.',
+  'Use import_resume only when the operator asked to import; never claim an import happened.',
   'Never include prose, markdown, an answer, an unknown tool, more than one tool, an external write, or an internal id.',
   `Available Tool Catalog:\n${describeAgentPlanningTools()}`
 ].join(' ')

@@ -28,6 +28,7 @@ import {
   type CandidateMatchTaskExecutionResult,
   type ExecuteAgentTurnResult
 } from '@shared'
+import type { AgentCandidateDraftFacts } from '@shared'
 import type { AgentNarrativeStreamer } from './agent-cloud-narrative'
 
 interface AgentMatchTaskResult extends CandidateMatchTaskExecutionResult {
@@ -49,6 +50,8 @@ export interface AgentIpcDependencies {
   runResumeAnalysisTask(fileToken: string, metadata: AgentToolExecutionMetadata): Promise<{ name: string; format: string }>
   modelCatalog?: readonly AgentChatModelDefinition[]
   narrativeStreamer?: AgentNarrativeStreamer | null
+  /** Locally derived preview facts, keyed by staged file token. */
+  previewedDrafts?: ReadonlyMap<string, AgentCandidateDraftFacts>
 }
 
 interface ActiveAgentTurn {
@@ -539,6 +542,9 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           conversation: planningConversation,
           selectedJobCaseRef: input.selectedJobCaseRef ?? null,
             attachmentCount: state.attachmentFileTokens.length,
+            attachmentDrafts: state.attachmentFileTokens
+              .map((token) => deps.previewedDrafts?.get(token))
+              .filter((draft): draft is AgentCandidateDraftFacts => Boolean(draft)),
           model,
           signal: state.abortController.signal,
           onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
