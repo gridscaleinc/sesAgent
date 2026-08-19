@@ -431,25 +431,6 @@ export function AgentWorkspace({
         {pendingMessage ? <div className="agent-running-state" data-phase={streamState?.phase ?? 'planning'}><span className="agent-running-dot" />{streamState?.phase === 'planning' ? (zh ? '正在理解问题并选择 Tool…' : '質問を理解して Tool を選択中…') : streamState?.phase === 'connecting-model' ? (zh ? '正在整理 Tool 结果…' : 'Tool の結果を整理中…') : streamState?.phase === 'streaming' ? (zh ? '正在生成回答…' : '回答を生成中…') : streamState?.phase === 'stopping' ? (zh ? '正在停止本地读取并请求远端取消…' : 'ローカル読取を停止し、リモート取消を要求中…') : (zh ? '正在执行 AI 选择的受控本地 Tool…' : 'AI が選択した制御済みローカル Tool を実行中…')}</div> : null}
       </div>
       {error ? <p className="agent-workspace-error" role="alert"><Icon name="alert" size={14} />{error}</p> : null}
-      {attachments.length > 0 ? <div className="agent-attachment-tray">
-        {attachments.map((file) => <span key={file.token}>
-          <Icon name="file" size={12} />
-          <strong>{file.name}</strong>
-          <small>{file.format.toLocaleUpperCase('en-US')}</small>
-          <button
-            aria-label={zh ? `移除 ${file.name}` : `${file.name} を外す`}
-            onClick={() => setAttachments((current) => current.filter((item) => item.token !== file.token))}
-            type="button"
-          >×</button>
-        </span>)}
-        <button
-          className="agent-attachment-import"
-          disabled={importing}
-          onClick={() => void importAttachmentsDirectly()}
-          type="button"
-        >{importing ? (zh ? '导入中…' : '取込中…') : (zh ? '导入这些简历' : 'この履歴書を取り込む')}</button>
-        <small>{zh ? '也可以直接说“导入这份简历”。导入结果是草稿，仍需你逐项确认。' : '「この履歴書を取り込んで」と伝えることもできます。取込結果は下書きで、項目確認が必要です。'}</small>
-      </div> : null}
       {importSummary ? <p className="agent-attachment-progress">
         {zh
           ? `已导入 ${importSummary.imported} 份${importSummary.failed > 0 ? `，${importSummary.failed} 份失败` : ''}。请到审核中心逐项确认。`
@@ -457,7 +438,7 @@ export function AgentWorkspace({
         {onOpenReviews ? <button onClick={() => onOpenReviews()} type="button">{zh ? '打开审核中心' : 'レビューセンターを開く'}</button> : null}
       </p> : null}
       {attaching ? <p className="agent-attachment-progress">{zh ? '正在安全暂存附件…' : '添付ファイルを安全に保存しています…'}</p> : null}
-      {cloudConnected ? <form aria-label={zh ? '案件 Agent 输入区' : '案件 Agent 入力欄'} className="agent-composer" onSubmit={send}><textarea aria-label={zh ? '输入案件问题' : '案件 Agent への質問'} disabled={pendingMessage !== null} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={zh ? '询问案件、候选人或当前匹配结果…' : '案件、候補者、現在のマッチ結果について質問…'} rows={2} value={draft} /><footer><div className="agent-composer-tools"><div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={pendingMessage !== null} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div><small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small></div>{pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim()} type="submit"><Icon name="arrow-up" size={16} /></button>}</footer></form> : <div className="agent-connect-bar">
+      {cloudConnected ? <form aria-label={zh ? '案件 Agent 输入区' : '案件 Agent 入力欄'} className="agent-composer" onSubmit={send}>{attachments.length > 0 ? <div className="agent-attachment-tray">{attachments.map((file) => <span key={file.token}><span className="agent-attachment-glyph"><Icon name="file" size={16} /></span><span className="agent-attachment-label"><strong>{file.name}</strong><small>{file.format.toLocaleUpperCase('en-US')}</small></span><button aria-label={zh ? `移除 ${file.name}` : `${file.name} を外す`} onClick={() => setAttachments((current) => current.filter((item) => item.token !== file.token))} type="button">×</button></span>)}</div> : null}<textarea aria-label={zh ? '输入案件问题' : '案件 Agent への質問'} disabled={pendingMessage !== null} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={zh ? '询问案件、候选人或当前匹配结果…' : '案件、候補者、現在のマッチ結果について質問…'} rows={2} value={draft} /><footer><div className="agent-composer-tools">{attachments.length > 0 ? <button className="agent-attachment-import" disabled={importing} onClick={() => void importAttachmentsDirectly()} type="button">{importing ? (zh ? '导入中…' : '取込中…') : (zh ? '直接导入' : 'そのまま取込')}</button> : null}<div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={pendingMessage !== null} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div><small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small></div>{pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim()} type="submit"><Icon name="arrow-up" size={16} /></button>}</footer></form> : <div className="agent-connect-bar">
         <Icon name="lock" size={14} />
         <span>{zh ? '连接受管账号后即可开始对话。' : '受管アカウントに接続すると会話を開始できます。'}</span>
         <button onClick={() => onConnectCloud?.()} type="button">{zh ? '连接受管账号' : '受管アカウントに接続'}</button>

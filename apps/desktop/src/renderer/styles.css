@@ -15967,8 +15967,8 @@ body,
 .agent-composer textarea::placeholder { color: #9ba3ae; }
 .agent-composer > footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
 .agent-composer > footer small { overflow: hidden; color: #9aa2ad; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.agent-composer > footer button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 34px; min-height: 34px; padding: 6px; color: #fff; font-size: 10px; font-weight: 760; background: #242b35; border: 0; border-radius: 50%; cursor: pointer; }
-.agent-composer > footer button:disabled { cursor: not-allowed; opacity: .45; }
+.agent-composer > footer > button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 34px; min-height: 34px; padding: 6px; color: #fff; font-size: 10px; font-weight: 760; background: #242b35; border: 0; border-radius: 50%; cursor: pointer; }
+.agent-composer > footer > button:disabled { cursor: not-allowed; opacity: .45; }
 .agent-composer > footer .agent-stop { width: auto; padding: 6px 10px; color: #a7573b; background: #fff4ef; border: 1px solid #f0d6cd; border-radius: 9px; }
 @keyframes agent-running-pulse { 50% { opacity: .42; transform: scale(.75); } }
 
@@ -16102,46 +16102,74 @@ body,
 .agent-attachment-tray {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  width: min(760px, calc(100% - 40px));
-  margin: 0 auto 8px;
+  gap: 8px;
+  margin: 2px 0 10px;
 }
 .agent-attachment-tray > span {
-  display: inline-flex;
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   max-width: 100%;
-  padding: 5px 6px 5px 10px;
-  color: #3c4654;
-  font-size: 10.5px;
-  background: #eef2f7;
-  border: 1px solid #dde4ec;
-  border-radius: 999px;
+  padding: 9px 14px 9px 9px;
+  background: #fff;
+  border: 1px solid #e2e6ec;
+  border-radius: 11px;
 }
-.agent-attachment-tray strong { overflow: hidden; font-weight: 640; text-overflow: ellipsis; white-space: nowrap; }
-.agent-attachment-tray span > small { color: #7c8797; font-size: 9px; }
+.agent-attachment-glyph {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: #6f7987;
+  background: #f2f4f7;
+  border-radius: 8px;
+}
+.agent-attachment-label { display: grid; gap: 1px; min-width: 0; }
+.agent-attachment-label strong {
+  overflow: hidden;
+  color: #202733;
+  font-size: 12px;
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-attachment-label small { color: #8a929e; font-size: 10px; }
 .agent-attachment-tray > span button {
-  width: 17px; height: 17px; padding: 0;
-  color: #6d7887; font-size: 13px; line-height: 1;
-  background: transparent; border: 0; border-radius: 50%; cursor: pointer;
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  background: #2b3240;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: pointer;
 }
-.agent-attachment-tray > small { flex: 1 1 100%; color: #8a929e; font-size: 9.5px; }
+.agent-attachment-tray > span button:hover { background: #1a202c; }
+
 .agent-attachment-progress { width: min(760px, calc(100% - 40px)); margin: 0 auto 8px; color: #7b8491; font-size: 10px; }
 
 .agent-attachment-import {
   flex: 0 0 auto;
   min-height: 27px;
-  padding: 5px 12px;
-  color: #fff;
-  font-size: 10.5px;
+  padding: 4px 11px;
+  color: #235fa8;
+  font-size: 10px;
   font-weight: 680;
-  background: #1f4fd8;
-  border: 0;
-  border-radius: 999px;
+  background: #eef4fd;
+  border: 1px solid #d3e0f4;
+  border-radius: 8px;
   cursor: pointer;
 }
-.agent-attachment-import:hover { background: #1a45bd; }
+.agent-attachment-import:hover { background: #e3edfb; }
 .agent-attachment-import:disabled { cursor: wait; opacity: .6; }
 .agent-attachment-progress button {
   margin-left: 8px;
