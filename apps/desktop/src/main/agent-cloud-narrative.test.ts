@@ -129,8 +129,8 @@ describe('Agent Cloud narrative boundary', () => {
     // supplied" instead of calling the tool that would have asked for the
     // missing details.
     expect(planningInstructions).toContain('must use schedule_interview')
-    expect(planningInstructions).toContain('never answer that you cannot schedule')
-    expect(planningInstructions).toContain('never ask for the details yourself')
+    expect(planningInstructions).toMatch(/never answer that you cannot schedule/iu)
+    expect(planningInstructions).toMatch(/never ask for the details yourself/iu)
     expect(planningInstructions).toContain('schedulableCandidateCount')
 
     const projection = JSON.parse(buildAgentPlanningProjection({
@@ -300,8 +300,10 @@ describe('Agent Cloud narrative boundary', () => {
       onClientRequestId: vi.fn(), onRemoteSettled
     })).resolves.toEqual({ kind: 'answer' })
     expect(onRemoteSettled).toHaveBeenCalledTimes(1)
+    // Planning gets a floor, not the model's answer-sized cap: this model allows
+    // 1200, which is less than a reasoning plan needs, and 768 truncated it.
     expect(streamResponses).toHaveBeenCalledWith(expect.objectContaining({
-      operationId: `${requestId}-plan`, maxOutputTokens: 768
+      operationId: `${requestId}-plan`, maxOutputTokens: 2_048
     }))
     const planningInput = streamResponses.mock.calls[0]![0]
     expect(planningInput.instructions).toContain('machine-only planning step')
