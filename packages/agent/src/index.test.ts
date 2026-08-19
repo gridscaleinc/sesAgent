@@ -36,7 +36,7 @@ const cases = [
   { id: caseTwo, version: 1, title: 'AWS 数据平台', updatedAt: '2026-08-16T02:00:00.000Z', requiredSkills: 'AWS', rate: '¥75万', workStyle: 'hybrid', startDate: '2026-09-15', status: 'current' as const }
 ]
 
-function createHarness() {
+function createHarness(attachmentTokens: string[] = []) {
   const conversations = new Map<string, AiConversationSnapshot>()
   const calls: Array<{ toolName: string; input: unknown }> = []
   const port = {
@@ -59,8 +59,20 @@ function createHarness() {
     },
     now: () => new Date('2026-08-18T03:00:00.000Z'),
     locale: () => 'zh-CN' as const,
-    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local', input: unknown): Promise<AgentToolResult> => {
+    listAttachmentFileTokens: () => attachmentTokens,
+    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local', input: unknown): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
+      if (toolName === 'resume.analyze.local') {
+        const value = input as { fileTokens: string[] }
+        return {
+          toolName,
+          actionRunId: '88888888-8888-4888-8888-888888888888',
+          output: {
+            imported: value.fileTokens.map((token) => ({ name: `${token.slice(0, 4)}.pdf`, format: 'pdf', reviewRequired: true as const })),
+            failed: []
+          }
+        }
+      }
       if (toolName === 'job-case.search.local') {
         const value = input as { mode: 'recent' | 'by-id'; caseId?: string | null }
         return {
@@ -146,6 +158,49 @@ function createHarness() {
 }
 
 describe('local conversational matching agent', () => {
+  it('imports only the files attached to the turn and says the drafts still need field confirmation', async () => {
+    const tokens = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222']
+    const harness = createHarness(tokens)
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const requestId = '44444444-4444-4444-8444-444444444444'
+    const result = await harness.useCase.execute(
+      { conversationId, message: '导入这两份简历', expectedConversationRevision: null, requestId, selectedJobCaseRef: null },
+      { toolName: 'resume.analyze.local', arguments: { attachmentOrdinal: null } }
+    )
+    expect(harness.calls).toEqual([{ toolName: 'resume.analyze.local', input: { fileTokens: tokens } }])
+    expect(result.status).toBe('completed')
+    expect(result.assistantMessage.content).toContain('逐项确认')
+  })
+
+  it('selects a single attachment by ordinal rather than importing everything', async () => {
+    const tokens = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222']
+    const harness = createHarness(tokens)
+    await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '只导入第二份', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      { toolName: 'resume.analyze.local', arguments: { attachmentOrdinal: 2 } }
+    )
+    expect(harness.calls).toEqual([{ toolName: 'resume.analyze.local', input: { fileTokens: [tokens[1]] } }])
+  })
+
+  it('refuses to fabricate an import when the turn carries no attachment', async () => {
+    const harness = createHarness([])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '导入简历', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      { toolName: 'resume.analyze.local', arguments: { attachmentOrdinal: null } }
+    )
+    expect(harness.calls).toEqual([])
+    expect(result.assistantMessage.content).toContain('没有可导入的附件')
+  })
+
+
   it('exposes controlled Responses and DeepSeek chat models and rejects model or endpoint injection', () => {
     const catalog = loadAgentChatModelCatalog(undefined)
     expect(catalog.map((model) => model.key)).toEqual([

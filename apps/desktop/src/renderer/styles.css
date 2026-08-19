@@ -16097,3 +16097,34 @@ body,
 .agent-status-strip > button.is-actionable strong { color: #8a5a1d; }
 .agent-status-strip > button.is-actionable:hover { background: #fbedd6; }
 .agent-status-strip > .is-warning { color: #8a5a1d; background: #fdf5e7; border-color: #f0dcbd; }
+
+.agent-workspace-main.is-drag-active { outline: 2px dashed #7ea2e8; outline-offset: -8px; background: #fafcff; }
+.agent-attachment-tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  width: min(760px, calc(100% - 40px));
+  margin: 0 auto 8px;
+}
+.agent-attachment-tray > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 6px 5px 10px;
+  color: #3c4654;
+  font-size: 10.5px;
+  background: #eef2f7;
+  border: 1px solid #dde4ec;
+  border-radius: 999px;
+}
+.agent-attachment-tray strong { overflow: hidden; font-weight: 640; text-overflow: ellipsis; white-space: nowrap; }
+.agent-attachment-tray span > small { color: #7c8797; font-size: 9px; }
+.agent-attachment-tray button {
+  width: 17px; height: 17px; padding: 0;
+  color: #6d7887; font-size: 13px; line-height: 1;
+  background: transparent; border: 0; border-radius: 50%; cursor: pointer;
+}
+.agent-attachment-tray > small { flex: 1 1 100%; color: #8a929e; font-size: 9.5px; }
+.agent-attachment-progress { width: min(760px, calc(100% - 40px)); margin: 0 auto 8px; color: #7b8491; font-size: 10px; }

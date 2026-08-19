@@ -1875,6 +1875,8 @@ export interface ExecuteAgentTurnInput {
   requestId: string
   modelKey?: string
   selectedJobCaseRef?: TypedAiConversationReference | null
+  /** Vault tokens for files attached to this turn, in the order they were added. */
+  attachmentFileTokens?: string[]
 }
 
 export interface AgentChatModelOption {
@@ -2193,6 +2195,7 @@ export interface DesktopApi {
   onAgentTurnEvent(listener: (event: AgentTurnEvent) => void): () => void
   onAiCommerceStateChanged(listener: (update: AiCommerceStateUpdate) => void): () => void
   beginResumeImport(): Promise<BeginResumeImportResult>
+  stageDroppedResumeFiles(input: { files: Array<{ name: string; bytes: Uint8Array }> }): Promise<BeginResumeImportResult>
   analyzeResumeFile(input: { fileToken: string; taskId: string }): Promise<ResumeAnalysisTaskExecutionResult>
   getCandidateReview(documentId: string): Promise<CandidateReviewSnapshot | null>
   submitCandidateReview(input: SubmitCandidateReviewInput): Promise<SubmitCandidateReviewResult>
@@ -2276,6 +2279,7 @@ export const ipcChannels = {
   agentTurnEvent: 'agent:turn-event',
   aiCommerceStateChanged: 'aicommerce:state-changed',
   beginResumeImport: 'resume-import:begin',
+  stageDroppedResumeFiles: 'resume-import:stage-dropped',
   analyzeResumeFile: 'resume-files:analyze',
   getCandidateReview: 'candidate-review:get',
   submitCandidateReview: 'candidate-review:submit',

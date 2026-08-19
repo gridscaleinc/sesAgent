@@ -69,13 +69,26 @@ export class EncryptedFileVault {
     if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) throw new Error('Only regular files can be imported.')
     if (sourceStat.size <= 0) throw new Error('Empty files cannot be imported.')
     if (sourceStat.size > this.maxFileBytes) throw new Error('The selected file exceeds the 25 MB import limit.')
+    return this.stageBytes(sourcePath, await readFile(sourcePath), now)
+  }
 
-    const name = safeDisplayName(sourcePath)
+  /**
+   * Stages content the main process already holds - a file dropped into the
+   * conversation - instead of reading it from a path. The renderer never learns
+   * a path, so every check stageFile performs has to happen here too: extension
+   * allowlist, magic bytes matching that extension, size, then AES-256-GCM.
+   *
+   * The declared name is untrusted; only its basename is kept, and the format is
+   * decided by the file's own bytes rather than by anything the caller claims.
+   */
+  async stageBytes(declaredName: string, raw: Buffer, now = new Date()): Promise<StagedFileRecord> {
+    if (raw.length <= 0) throw new Error('Empty files cannot be imported.')
+    if (raw.length > this.maxFileBytes) throw new Error('The selected file exceeds the 25 MB import limit.')
+
+    const name = safeDisplayName(declaredName)
     const extension = extname(name).slice(1).toLocaleLowerCase('en-US') as SupportedResumeFormat
     if (!supportedFormats.has(extension)) throw new Error(`Unsupported resume extension: .${extension || 'unknown'}`)
 
-    const raw = await readFile(sourcePath)
-    if (raw.length > this.maxFileBytes) throw new Error('The selected file exceeds the 25 MB import limit.')
     const detected = await fileTypeFromBuffer(raw)
     if (!detected || !detectedFormats[extension].has(detected.ext)) {
       throw new Error(`File content does not match the .${extension} extension.`)

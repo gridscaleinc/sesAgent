@@ -23,7 +23,10 @@ import { assertWorkTaskAllowsExecution, createVerifiedPreview } from '../work-ta
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 /** Candidate matching execution and the conversational matching agent IPC surface. */
-export function registerCandidateMatchHandlers(context: MainIpcContext) {
+export function registerCandidateMatchHandlers(
+  context: MainIpcContext,
+  runResumeAnalysisTask: (input: { fileToken: string; taskId: string }) => Promise<unknown>
+) {
   const { repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates } = context
   const runCandidateMatchTask = async (
     taskId: string,
@@ -243,6 +246,19 @@ export function registerCandidateMatchHandlers(context: MainIpcContext) {
       taskId,
       () => runCandidateMatchTask(taskId, null, metadata)
     ),
+    runResumeAnalysisTask: async (fileToken) => {
+      // The renderer never names a task; the import task is derived from the
+      // staged file it is bound to.
+      const record = repository.getStagedFileRecords([fileToken])[0]
+      if (!record) throw new Error('添付ファイルが見つかりません。')
+      const task = repository.listWorkTasks().find((candidate) =>
+        candidate.type === 'IMPORT_RESUME' &&
+        candidate.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === fileToken)
+      )
+      if (!task) throw new Error('スキルシート取込タスクが見つかりません。')
+      await runResumeAnalysisTask({ fileToken, taskId: task.id })
+      return { name: record.name, format: record.format }
+    },
     cancelMatchTask: (taskId) => {
       const task = repository.getWorkTask(taskId)
       if (!task) return

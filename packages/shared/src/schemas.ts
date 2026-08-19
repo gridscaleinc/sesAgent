@@ -169,6 +169,18 @@ export const stagedLocalFileSchema = z.object({
   privacyStatus: z.literal('awaiting-local-scan')
 })
 
+/**
+ * Files dropped into the conversation. The renderer supplies bytes and a
+ * declared name; the main process decides the real format from the bytes and
+ * keeps the name only as a display label.
+ */
+export const stageDroppedResumeFilesInputSchema = z.object({
+  files: z.array(z.object({
+    name: z.string().min(1).max(180),
+    bytes: z.instanceof(Uint8Array)
+  })).min(1).max(10)
+}).strict()
+
 export const analyzeResumeFileInputSchema = z.object({
   fileToken: z.string().uuid(),
   taskId: z.string().min(1).max(128)
@@ -1105,7 +1117,13 @@ export const executeAgentTurnInputSchema = z.object({
   expectedConversationRevision: z.number().int().positive().nullable(),
   requestId: z.string().uuid(),
   modelKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u).default('gpt-5.6-luna'),
-  selectedJobCaseRef: typedAiConversationReferenceSchema.nullable().optional()
+  selectedJobCaseRef: typedAiConversationReferenceSchema.nullable().optional(),
+  /**
+   * Vault tokens for files the operator attached to this turn. Only tokens
+   * cross the boundary; the main process resolves them against staged records
+   * and refuses anything it did not stage itself.
+   */
+  attachmentFileTokens: z.array(z.string().uuid()).max(10).optional()
 }).strict()
 
 export const agentChatModelOptionSchema = z.object({

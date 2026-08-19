@@ -22,6 +22,7 @@ import {
   type ResumeAnalysisTaskExecutionResult,
   type StagedLocalFile,
   analyzeResumeFileInputSchema,
+  stageDroppedResumeFilesInputSchema,
   candidateProfileSourceInputSchema,
   ipcChannels
 } from '@shared'
@@ -88,6 +89,39 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
       const selectedName = basename(selection.filePaths[stagedFiles.length] ?? 'selected file')
       const reason = error instanceof Error ? error.message : 'Unknown validation error.'
       throw new Error(`${selectedName} を取り込めませんでした: ${reason}`)
+    }
+  })
+
+  ipcMain.handle(ipcChannels.stageDroppedResumeFiles, async (event, rawInput): Promise<BeginResumeImportResult> => {
+    assertTrustedSender(event)
+    const input = stageDroppedResumeFilesInputSchema.parse(rawInput)
+
+    // Same staging path as the native dialog import: the renderer supplied the
+    // bytes instead of a path, so the vault still decides the format from magic
+    // bytes and the renderer only ever receives tokens back.
+    const stagedFiles = []
+    try {
+      for (const file of input.files) stagedFiles.push(await fileVault.stageBytes(file.name, Buffer.from(file.bytes)))
+      const contextBindings = stagedFiles.map((file) => ({
+        objectType: 'staged-file' as const,
+        objectId: file.token,
+        version: file.sha256
+      }))
+      const preview = createWorkTaskPreview(
+        '会話に添付された履歴書を候補者ライブラリへ安全に取り込みます',
+        getDataScope('selected-files'),
+        contextBindings
+      )
+      if (preview.type !== 'IMPORT_RESUME') throw new Error('履歴書取込タスクを作成できませんでした。')
+      const task = materializeWorkTask(preview, randomUUID(), new Date().toISOString())
+      repository.saveResumeImportTask(task, stagedFiles)
+      return { cancelled: false, task, files: stagedFiles.map(rendererSafeFile) }
+    } catch (error) {
+      repository.removeStagedFiles(stagedFiles.map((file) => file.token))
+      await Promise.allSettled(stagedFiles.map((file) => fileVault.discardStagedFile(file)))
+      const rejectedName = input.files[stagedFiles.length]?.name ?? 'dropped file'
+      const reason = error instanceof Error ? error.message : 'Unknown validation error.'
+      throw new Error(`${rejectedName} を取り込めませんでした: ${reason}`)
     }
   })
 

@@ -144,12 +144,18 @@ export interface AgentCandidateInterviewReadOutput {
   facts: AgentCandidateInterviewFacts
 }
 
+export interface AgentResumeImportOutput {
+  imported: Array<{ name: string; format: string; reviewRequired: true }>
+  failed: Array<{ name: string; code: string }>
+}
+
 export type AgentToolResult =
   | { toolName: 'job-case.search.local'; output: AgentJobCaseSearchOutput; actionRunId?: string | null }
   | { toolName: 'candidate.match.local'; output: AgentCandidateMatchOutput; actionRunId?: string | null }
   | { toolName: 'candidate.profile.read.local'; output: AgentCandidateProfileReadOutput; actionRunId?: string | null }
   | { toolName: 'candidate.interview.read.local'; output: AgentCandidateInterviewReadOutput; actionRunId?: string | null }
   | { toolName: 'match-run.read.local'; output: AgentMatchRunReadOutput; actionRunId?: string | null }
+  | { toolName: 'resume.analyze.local'; output: AgentResumeImportOutput; actionRunId?: string | null }
 
 export interface AgentToolExecutionMetadata {
   conversationId: string
@@ -159,11 +165,13 @@ export interface AgentToolExecutionMetadata {
 
 export interface LocalAgentPort {
   listActiveJobCases?(): AgentJobCaseRecord[]
+  /** Vault tokens attached to the turn being executed, in the order the operator added them. */
+  listAttachmentFileTokens?(conversationId: string, requestId: string): string[]
   isCancelled?(conversationId: string, requestId: string): boolean
   loadConversation(conversationId: string): AiConversationSnapshot | null
   saveConversation(input: SaveAiConversationInput): AiConversationSnapshot
   executeTool(
-    toolName: Extract<DomainToolName, 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local'>,
+    toolName: Extract<DomainToolName, 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local'>,
     input: unknown,
     metadata: AgentToolExecutionMetadata
   ): Promise<AgentToolResult>
@@ -182,6 +190,7 @@ export type AgentPlannedToolAction =
   | { toolName: 'candidate.profile.read.local'; arguments: { rank: number | null } }
   | { toolName: 'candidate.interview.read.local'; arguments: { rank: number | null } }
   | { toolName: 'match-run.read.local'; arguments: { rank: number } }
+  | { toolName: 'resume.analyze.local'; arguments: { attachmentOrdinal: number | null } }
 
 const nullableOrdinalSchema = z.number().int().min(1).max(20).nullable()
 const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
@@ -211,6 +220,10 @@ const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
   z.object({
     toolName: z.literal('match-run.read.local'),
     arguments: z.object({ rank: z.number().int().min(1).max(20) }).strict()
+  }).strict(),
+  z.object({
+    toolName: z.literal('resume.analyze.local'),
+    arguments: z.object({ attachmentOrdinal: nullableOrdinalSchema }).strict()
   }).strict()
 ])
 
@@ -230,6 +243,10 @@ interface AgentPlanningToolCatalogEntry {
   approval: 'none' | 'required'
   parse(argumentsValue: unknown): AgentPlannedToolAction
 }
+
+const planningAttachmentArgumentsSchema = z.object({
+  attachmentOrdinal: z.number().int().min(1).max(10).nullable()
+}).strict()
 
 const planningSearchArgumentsSchema = z.object({
   query: z.string().trim().min(1).max(200).nullable(),
@@ -274,6 +291,13 @@ export const agentPlanningToolCatalog: readonly AgentPlanningToolCatalogEntry[] 
     argumentsShape: '{"rank":number|null}',
     effect: 'read', approval: 'none',
     parse: (value) => ({ toolName: 'candidate.interview.read.local', arguments: planningNullableRankArgumentsSchema.parse(value) })
+  },
+  {
+    name: 'import_resume',
+    description: 'Import resume or skill-sheet files the operator attached to this turn. Only usable when the turn carries attachments. attachmentOrdinal may be null to import every attachment. The import produces drafts that still require the operator to confirm each field.',
+    argumentsShape: '{"attachmentOrdinal":number|null}',
+    effect: 'write', approval: 'none',
+    parse: (value) => ({ toolName: 'resume.analyze.local', arguments: planningAttachmentArgumentsSchema.parse(value) })
   },
   {
     name: 'read_match_result',
@@ -675,6 +699,34 @@ export class LocalAgentUseCase {
           : textFor(locale, '候補者を特定できないため、面談情報を読み取れませんでした。', '无法确定候选人，未能读取面试信息。')
         const assistant = assistantMessage(content, [block], turnId)
         return save(assistant, { ...previousState, lastMatchRunId: tool.output.facts.runId }, 'completed', 'candidate.interview.read.local', tool.actionRunId ?? null)
+      }
+
+      if (plannedAction.toolName === 'resume.analyze.local') {
+        const attachments = this.port.listAttachmentFileTokens?.(input.conversationId, input.requestId) ?? []
+        const ordinal = plannedAction.arguments.attachmentOrdinal
+        const selected = ordinal === null ? attachments : attachments.slice(ordinal - 1, ordinal)
+        if (selected.length === 0) {
+          const prompt = textFor(
+            locale,
+            'このターンには取り込めるファイルが添付されていません。履歴書・スキルシートを会話に添付してください。',
+            '这一轮没有可导入的附件。请把简历或技能表拖入对话。'
+          )
+          return save(assistantMessage(prompt, [], turnId), previousState, 'completed', null, null)
+        }
+        const tool = await this.port.executeTool('resume.analyze.local', { fileTokens: selected }, {
+          conversationId: input.conversationId, turnId, requestId: input.requestId
+        })
+        if (tool.toolName !== 'resume.analyze.local') throw new AgentExecutionError('TOOL_RESULT_INVALID', '履歴書取込结果无效。')
+        const { imported, failed } = tool.output
+        const content = imported.length > 0
+          ? textFor(
+              locale,
+              `${imported.length}件の履歴書を端末内に取り込みました（${imported.map((file) => file.name).join('、')}）。抽出した項目は下書きです。候補者ライブラリに載せる前に、担当者が各項目を確認してください。${failed.length > 0 ? `${failed.length}件は取り込めませんでした。` : ''}`,
+              `已在本机导入 ${imported.length} 份简历（${imported.map((file) => file.name).join('、')}）。抽取结果是草稿，进入候选人库前需要由你逐项确认。${failed.length > 0 ? `另有 ${failed.length} 份未能导入。` : ''}`
+            )
+          : textFor(locale, '添付された履歴書を取り込めませんでした。', '附件中的简历未能导入。')
+        const assistant = assistantMessage(content, [], turnId)
+        return save(assistant, previousState, imported.length > 0 ? 'completed' : 'failed', 'resume.analyze.local', tool.actionRunId ?? null)
       }
 
       if (plannedAction.toolName !== 'match-run.read.local') {

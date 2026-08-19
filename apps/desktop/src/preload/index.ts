@@ -78,6 +78,7 @@ const api: DesktopApi = {
     return () => ipcRenderer.removeListener(ipcChannels.aiCommerceStateChanged, handler)
   },
   beginResumeImport: () => ipcRenderer.invoke(ipcChannels.beginResumeImport),
+  stageDroppedResumeFiles: (input) => ipcRenderer.invoke(ipcChannels.stageDroppedResumeFiles, input),
   analyzeResumeFile: (input) => ipcRenderer.invoke(ipcChannels.analyzeResumeFile, input),
   getCandidateReview: (documentId) => ipcRenderer.invoke(ipcChannels.getCandidateReview, documentId),
   submitCandidateReview: (input) => ipcRenderer.invoke(ipcChannels.submitCandidateReview, input),

@@ -77,6 +77,38 @@ describe('EncryptedFileVault', () => {
     expect(preview.sheets[0]?.cells).toHaveLength(3)
   })
 
+  it('stages bytes dropped into the conversation with the same checks as a path import', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ses-agent-vault-'))
+    try {
+      const raw = Buffer.from('%PDF-1.4\n1 0 obj\n<</Type/Catalog>>\nendobj\n%%EOF\nDROPPED_FILE_SENTINEL')
+      const vault = new EncryptedFileVault({ directory: join(directory, 'vault'), key: Buffer.alloc(32, 9) })
+      const staged = await vault.stageBytes('candidate.pdf', raw, new Date('2026-07-17T00:00:00.000Z'))
+
+      expect(staged).toMatchObject({ name: 'candidate.pdf', format: 'pdf', privacyStatus: 'awaiting-local-scan' })
+      expect(staged).not.toHaveProperty('sourcePath')
+      expect((await readFile(staged.encryptedPath)).includes(Buffer.from('DROPPED_FILE_SENTINEL'))).toBe(false)
+      expect(await vault.decryptForLocalProcessing(staged)).toEqual(raw)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('decides the dropped format from the bytes, not from the name the renderer supplied', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ses-agent-vault-'))
+    try {
+      const vault = new EncryptedFileVault({ directory: join(directory, 'vault'), key: Buffer.alloc(32, 10) })
+      await expect(vault.stageBytes('spoofed.pdf', Buffer.from('not a pdf at all'))).rejects.toThrow('does not match')
+      await expect(vault.stageBytes('payload.exe', Buffer.from('%PDF-1.4\n%%EOF'))).rejects.toThrow('Unsupported resume extension')
+      await expect(vault.stageBytes('empty.pdf', Buffer.alloc(0))).rejects.toThrow('Empty files')
+      // A traversal attempt is neutralised to its basename rather than rejected.
+      const traversal = await vault.stageBytes('../../escape.pdf', Buffer.from('%PDF-1.4\n%%EOF'))
+      expect(traversal.name).toBe('escape.pdf')
+      expect(traversal.encryptedPath.endsWith(`${traversal.token}.sesv`)).toBe(true)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('rejects an extension whose bytes do not match', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'ses-agent-vault-'))
     try {

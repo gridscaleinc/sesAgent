@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import type {
+  StagedLocalFile,
   AgentChatModelOption,
   AgentCandidateMatchCard,
   AgentJobCaseCard,
@@ -246,6 +247,34 @@ export function AgentWorkspace({
     if (reference.kind === 'job-case') setSelectedCase(reference)
   }
 
+  const [attachments, setAttachments] = useState<StagedLocalFile[]>([])
+  const [attaching, setAttaching] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+
+  /**
+   * Hands dropped bytes to the main process, which decides the real format from
+   * magic bytes and returns vault tokens. The renderer never sees a path and
+   * never decides what a file is.
+   */
+  const attachFiles = async (files: File[]) => {
+    const accepted = files.slice(0, 10)
+    if (accepted.length === 0 || attaching) return
+    setAttaching(true)
+    setError(null)
+    try {
+      const payload = await Promise.all(accepted.map(async (file) => ({
+        name: file.name,
+        bytes: new Uint8Array(await file.arrayBuffer())
+      })))
+      const staged = await window.sesAgent.stageDroppedResumeFiles({ files: payload })
+      if (!staged.cancelled) setAttachments((current) => [...current, ...staged.files].slice(0, 10))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : (zh ? '附件暂存失败。' : '添付ファイルを保存できませんでした。'))
+    } finally {
+      setAttaching(false)
+    }
+  }
+
   const send = async (event?: FormEvent) => {
     event?.preventDefault()
     const message = draft.trim()
@@ -274,8 +303,10 @@ export function AgentWorkspace({
         expectedConversationRevision: activeConversation?.revision ?? null,
         requestId: currentRequestId,
         modelKey: lockedModelKey,
-        selectedJobCaseRef: selectedCase
+        selectedJobCaseRef: selectedCase,
+        attachmentFileTokens: attachments.map((file) => file.token)
       })
+      setAttachments([])
       history.acceptConversation(result.conversation)
       const nextSelected = typedReference(result.conversation.salesAgentState?.selectedJobCaseRef)
       if (nextSelected) setSelectedCase(nextSelected)
@@ -335,7 +366,17 @@ export function AgentWorkspace({
 
   return <main className="agent-workspace" aria-labelledby="agent-workspace-title">
     <aside className="agent-workspace-history"><AiConversationHistoryPanel activeConversationId={history.activeConversationId} busy={history.loading || history.saving || pendingMessage !== null} conversations={history.conversations} error={history.error} loading={history.loading} onDelete={history.deleteConversations} onNew={history.newConversation} onSelect={(id) => { history.selectConversation(id); setSelectedCase(null) }} /></aside>
-    <section className="agent-workspace-main">
+    <section
+      className={dragActive ? 'agent-workspace-main is-drag-active' : 'agent-workspace-main'}
+      onDragOver={(event) => { if (!cloudConnected) return; event.preventDefault(); setDragActive(true) }}
+      onDragLeave={(event) => { if (event.currentTarget === event.target) setDragActive(false) }}
+      onDrop={(event) => {
+        event.preventDefault()
+        setDragActive(false)
+        if (!cloudConnected) return
+        void attachFiles([...event.dataTransfer.files])
+      }}
+    >
       <header className="agent-workspace-header"><div><span className="eyebrow">CONTROLLED MATCHING AGENT</span><h1 id="agent-workspace-title">{zh ? '案件匹配 Agent' : '案件マッチング Agent'}</h1></div><span className="agent-privacy-badge" title={zh ? 'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态' : 'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'}><Icon name="shield" size={13} />{zh ? '仅发送脱敏内容' : '脱敏済みのみ送信'}</span></header>
       {status ? <div className="agent-status-strip">
         <span><strong>{status.eligibleCandidateCount}</strong>{zh ? '可匹配人才' : 'マッチ可能人材'}</span>
@@ -360,6 +401,20 @@ export function AgentWorkspace({
         {pendingMessage ? <div className="agent-running-state" data-phase={streamState?.phase ?? 'planning'}><span className="agent-running-dot" />{streamState?.phase === 'planning' ? (zh ? '正在理解问题并选择 Tool…' : '質問を理解して Tool を選択中…') : streamState?.phase === 'connecting-model' ? (zh ? '正在整理 Tool 结果…' : 'Tool の結果を整理中…') : streamState?.phase === 'streaming' ? (zh ? '正在生成回答…' : '回答を生成中…') : streamState?.phase === 'stopping' ? (zh ? '正在停止本地读取并请求远端取消…' : 'ローカル読取を停止し、リモート取消を要求中…') : (zh ? '正在执行 AI 选择的受控本地 Tool…' : 'AI が選択した制御済みローカル Tool を実行中…')}</div> : null}
       </div>
       {error ? <p className="agent-workspace-error" role="alert"><Icon name="alert" size={14} />{error}</p> : null}
+      {attachments.length > 0 ? <div className="agent-attachment-tray">
+        {attachments.map((file) => <span key={file.token}>
+          <Icon name="file" size={12} />
+          <strong>{file.name}</strong>
+          <small>{file.format.toLocaleUpperCase('en-US')}</small>
+          <button
+            aria-label={zh ? `移除 ${file.name}` : `${file.name} を外す`}
+            onClick={() => setAttachments((current) => current.filter((item) => item.token !== file.token))}
+            type="button"
+          >×</button>
+        </span>)}
+        <small>{zh ? '说“导入这些简历”即可取込；导入结果仍需你逐项确认。' : '「この履歴書を取り込んで」と伝えると取込します。項目確認は必要です。'}</small>
+      </div> : null}
+      {attaching ? <p className="agent-attachment-progress">{zh ? '正在安全暂存附件…' : '添付ファイルを安全に保存しています…'}</p> : null}
       {cloudConnected ? <form aria-label={zh ? '案件 Agent 输入区' : '案件 Agent 入力欄'} className="agent-composer" onSubmit={send}><textarea aria-label={zh ? '输入案件问题' : '案件 Agent への質問'} disabled={pendingMessage !== null} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={zh ? '询问案件、候选人或当前匹配结果…' : '案件、候補者、現在のマッチ結果について質問…'} rows={2} value={draft} /><footer><div className="agent-composer-tools"><div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={pendingMessage !== null} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div><small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small></div>{pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim()} type="submit"><Icon name="arrow-up" size={16} /></button>}</footer></form> : <div className="agent-connect-bar">
         <Icon name="lock" size={14} />
         <span>{zh ? '连接受管账号后即可开始对话。' : '受管アカウントに接続すると会話を開始できます。'}</span>

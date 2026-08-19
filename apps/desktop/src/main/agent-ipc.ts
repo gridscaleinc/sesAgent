@@ -8,6 +8,7 @@ import {
   type AgentChatModelDefinition,
   type AgentCandidateMatchRecord,
   type AgentJobCaseRecord,
+  type AgentResumeImportOutput,
   type AgentToolExecutionMetadata,
   type LocalAgentPort
 } from '@agent'
@@ -44,6 +45,8 @@ export interface AgentIpcDependencies {
   createMatchTask(jobCaseId: string, jobCaseVersion: number): { taskId: string }
   runCandidateMatchTask(taskId: string, metadata: AgentToolExecutionMetadata): Promise<AgentMatchTaskResult>
   cancelMatchTask(taskId: string): void
+  /** Runs the existing local resume analysis for one staged file. */
+  runResumeAnalysisTask(fileToken: string, metadata: AgentToolExecutionMetadata): Promise<{ name: string; format: string }>
   modelCatalog?: readonly AgentChatModelDefinition[]
   narrativeStreamer?: AgentNarrativeStreamer | null
 }
@@ -66,6 +69,7 @@ interface ActiveAgentTurn {
   sender: IpcMainInvokeEvent['sender']
   conversationId: string
   eventDeliveryStopped: boolean
+  attachmentFileTokens: string[]
 }
 
 type AgentTurnEventPayload = AgentTurnEvent extends infer Event
@@ -249,6 +253,10 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     loadConversation: (conversationId) => deps.repository.getAiConversation(conversationId),
     saveConversation: (input) => deps.repository.saveAiConversation(input),
     locale: () => deps.locale(),
+    listAttachmentFileTokens: (conversationId, requestId) => {
+      const turn = activeTurns.get(conversationId)
+      return turn?.requestId === requestId ? turn.attachmentFileTokens : []
+    },
     isCancelled: (conversationId, requestId) => activeTurns.get(conversationId)?.requestId === requestId && activeTurns.get(conversationId)?.cancelled === true,
     executeTool: async (toolName, rawInput, metadata) => {
       if (activeTurns.get(metadata.conversationId)?.requestId === metadata.requestId && activeTurns.get(metadata.conversationId)?.cancelled) {
@@ -258,6 +266,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         : toolName === 'candidate.profile.read.local' ? 'selected-candidate-profile'
         : toolName === 'candidate.interview.read.local' ? 'selected-candidate-interviews'
         : toolName === 'match-run.read.local' ? 'selected-match-run'
+        : toolName === 'resume.analyze.local' ? 'selected-files'
           : 'confirmed-candidate-pool'
       const scopeFingerprint = hashActionInput(rawInput)
       const actorId = deps.currentOperator().operatorId
@@ -308,6 +317,43 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           actionRunId: execution.actionRunId ?? null
         }
       }
+      if (toolName === 'resume.analyze.local') {
+        const input = rawInput as { fileTokens: string[] }
+        if (input.fileTokens.length === 0) {
+          throw new AgentExecutionError('AGENT_NO_ATTACHMENT', 'このターンには取り込めるファイルが添付されていません。')
+        }
+        const preflight = deps.actionOrchestrator.preflight(
+          toolName, context, input,
+          '会話に添付された履歴書を端末内で解析します。',
+          actionIdempotencyKey(toolName, metadata.conversationId, metadata.requestId)
+        )
+        if (preflight.decision.outcome === 'deny') throw new Error(preflight.decision.reason)
+        if (preflight.decision.outcome === 'require-approval') {
+          throw new Error('この操作はレビューセンターでの承認待ちです。')
+        }
+        deps.repository.updateActionRun(preflight.actionRunId, 'running')
+        const imported: AgentResumeImportOutput['imported'] = []
+        const failed: AgentResumeImportOutput['failed'] = []
+        for (const fileToken of input.fileTokens) {
+          try {
+            const analysed = await deps.runResumeAnalysisTask(fileToken, metadata)
+            imported.push({ name: analysed.name, format: analysed.format, reviewRequired: true })
+          } catch (error) {
+            failed.push({
+              name: deps.repository.getStagedFileRecords([fileToken])[0]?.name ?? 'unknown',
+              code: error instanceof AgentExecutionError ? error.code : 'AGENT_TOOL_FAILED'
+            })
+          }
+        }
+        const output: AgentResumeImportOutput = { imported, failed }
+        deps.repository.updateActionRun(
+          preflight.actionRunId,
+          imported.length > 0 ? 'succeeded' : 'failed',
+          imported.length > 0 ? { resultHash: hashActionInput(output) } : { errorCode: 'RESUME_IMPORT_FAILED' }
+        )
+        return { toolName, output, actionRunId: preflight.actionRunId }
+      }
+
       const action = deps.actionOrchestrator.preflight(
         toolName,
         context,
@@ -426,7 +472,12 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
       model,
       sender: event.sender,
       conversationId: input.conversationId,
-      eventDeliveryStopped: false
+      eventDeliveryStopped: false,
+      // Only tokens this process staged itself are accepted; a renderer cannot
+      // name a file the vault never validated.
+      attachmentFileTokens: (input.attachmentFileTokens ?? []).length === 0
+        ? []
+        : deps.repository.getStagedFileRecords(input.attachmentFileTokens ?? []).map((record) => record.token)
     }
     activeTurns.set(input.conversationId, state)
     const promise = (async () => {

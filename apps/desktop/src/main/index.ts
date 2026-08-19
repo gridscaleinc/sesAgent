@@ -468,8 +468,9 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   registerProposalHandlers(context)
   registerInterviewHandlers(context)
   registerWorkTaskHandlers(context)
-  const { runCandidateMatchTask, stop: stopAgentIpc } = registerCandidateMatchHandlers(context)
+  // resume-import first: the agent's import tool runs through its analysis runner.
   const { runResumeAnalysisTask } = registerResumeImportHandlers(context)
+  const { runCandidateMatchTask, stop: stopAgentIpc } = registerCandidateMatchHandlers(context, runResumeAnalysisTask)
 
   // Background retry/resume of safe-local jobs. It is started after every
   // handler is registered so a woken job never races handler construction.

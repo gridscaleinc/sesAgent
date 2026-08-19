@@ -180,6 +180,7 @@ function createDependencies(options: {
     currentMatchRuntimeIdentity,
     createMatchTask: vi.fn(() => ({ taskId: 'task-1' })),
     runCandidateMatchTask: options.runCandidateMatchTask ?? vi.fn(),
+    runResumeAnalysisTask: vi.fn().mockResolvedValue({ name: 'candidate.pdf', format: 'pdf' }),
     cancelMatchTask: options.cancelMatchTask ?? vi.fn(),
     narrativeStreamer: options.narrativeStreamer === undefined ? defaultNarrativeStreamer : options.narrativeStreamer
   }
