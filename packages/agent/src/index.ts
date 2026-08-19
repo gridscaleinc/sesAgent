@@ -643,6 +643,29 @@ function errorBlock(error: unknown, locale: ApplicationLocale): AgentErrorBlock 
   return { type: 'error', code: 'AGENT_TURN_FAILED', message: textFor(locale, 'ローカル案件 Agent の実行に失敗しました。再試行するか、詳細マッチングを開いてください。', '本地案件 Agent 执行失败，请重试或打开经典匹配页。') }
 }
 
+/**
+ * Booking intent, detected deterministically rather than trusted to the planner.
+ *
+ * read_candidate_interviews and schedule_interview kept being confused, and two
+ * rounds of prompt wording did not settle it. The plan is a request, not a
+ * command, so main redirects one that cannot serve what was asked.
+ *
+ * The verb has to precede the noun, which is what separates "安排面试" (book one)
+ * from "面试安排" (the existing schedule) - the read tool keeps the latter.
+ */
+export function looksLikeInterviewBookingRequest(message: string): boolean {
+  const text = message.normalize('NFKC').toLocaleLowerCase('en-US')
+  const noun = '(?:面试|面談|面接|interview)'
+  const verb = '(?:安排|预约|約|约|予約|設定|设定|定)'
+  return (
+    // Verb before noun: 安排面试 books one, 面试安排 is the existing schedule.
+    new RegExp(`${verb}[^。.!?]{0,12}${noun}`, 'u').test(text) ||
+    // Japanese puts the verb last: 面談を設定する.
+    new RegExp(`${noun}\\s*[をのは]?\\s*(?:を)?[^。.!?]{0,6}(?:設定|予約|セット|組ん?で|入れて)`, 'u').test(text) ||
+    /(?:schedule|book|arrange|set\s*up|rebook|reschedule)[^.!?]{0,20}interview/u.test(text)
+  )
+}
+
 export class LocalAgentUseCase {
   constructor(private readonly port: LocalAgentPort) {}
 
@@ -659,7 +682,16 @@ export class LocalAgentUseCase {
     actionRunId: string | null
   }> {
     const current = this.loadCurrentConversation(input)
-    const plannedAction = parseAgentPlannedToolAction(rawPlannedAction)
+    const requestedAction = parseAgentPlannedToolAction(rawPlannedAction)
+    // The planner keeps choosing the read tool for a booking, and two rounds of
+    // prompt wording did not settle it. A plan is a request; main redirects one
+    // that cannot serve what was asked.
+    const plannedAction: AgentPlannedToolAction =
+      requestedAction.toolName === 'candidate.interview.read.local' && looksLikeInterviewBookingRequest(input.message)
+        ? { toolName: 'candidate.interview.schedule.local', arguments: {
+            rank: null, date: null, time: null, method: null, durationMinutes: null, kind: null, note: null
+          } }
+        : requestedAction
     const turnId = randomUUID()
     const previousMessages = current?.messages ?? []
     const previousState = current?.salesAgentState ?? defaultState()

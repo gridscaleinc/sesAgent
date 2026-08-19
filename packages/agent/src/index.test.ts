@@ -6,6 +6,7 @@ import type {
 } from '@shared'
 import {
   agentPlanningToolCatalog,
+  looksLikeInterviewBookingRequest,
   loadAgentChatModelCatalog,
   LocalAgentUseCase,
   parseAgentPlannedToolAction,
@@ -268,6 +269,39 @@ describe('local conversational matching agent', () => {
     expect(result.status).toBe('clarifying')
     expect(result.assistantMessage.content).toContain('日期')
     expect(result.assistantMessage.content).toContain('开始时间')
+  })
+
+  it('tells a booking request apart from a request to read the existing schedule', () => {
+    // The verb must precede the noun: 安排面试 books one, 面试安排 is the
+    // existing schedule and must stay with the read tool.
+    for (const booking of [
+      '安排一个20号的面试', '帮我约一下面试', '预约面试', '给他定个面接',
+      '面談を設定してください', '面接を予約したい',
+      'schedule an interview for the 20th', 'book an interview', 'set up an interview'
+    ]) expect(looksLikeInterviewBookingRequest(booking)).toBe(true)
+
+    for (const reading of [
+      '看一下面试安排', '面试状态怎么样', '他的面接はどうなっている', 'what is the interview status',
+      '面談の予定を教えて', '总结一下这个人', '最近有什么案件？'
+    ]) expect(looksLikeInterviewBookingRequest(reading)).toBe(false)
+  })
+
+  it('redirects a read plan to the scheduler when the operator asked to book', async () => {
+    const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    const harness = createHarness([], [only], null)
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '安排一个20号的面试', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      // What the planner actually returned in the field.
+      { toolName: 'candidate.interview.read.local', arguments: { rank: null } }
+    )
+    // Asks for the booking details, rather than a ranking that was never mentioned.
+    expect(result.status).toBe('clarifying')
+    expect(result.assistantMessage.content).toContain('登记面试还需要')
+    expect(harness.calls).toEqual([])
   })
 
   it('resolves the interview candidate the same way from every entry point', async () => {
