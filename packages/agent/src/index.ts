@@ -860,14 +860,29 @@ export class LocalAgentUseCase {
         }
         if (!candidate) {
           const schedulable = this.port.listSchedulableCandidates?.() ?? []
-          if (schedulable.length === 1) candidate = schedulable[0]!
+          if (schedulable.length === 1) {
+            candidate = schedulable[0]!
+          } else if (!previousState.lastMatchRunId && args.rank !== null && schedulable[args.rank - 1]) {
+            // With no match run, a number can only mean the list this turn just
+            // offered, so an ordinal picks from it instead of meaning nothing.
+            candidate = schedulable[args.rank - 1]!
+          }
         }
         if (!candidate) {
-          const prompt = textFor(
-            locale,
-            '対象の候補者を特定できませんでした。どの候補者の面談かお知らせください。',
-            '无法确定要给谁安排面试，请告诉我是哪一位候选人。'
-          )
+          // Say what is actually on the device. "I could not determine who" with
+          // no list leaves the operator with nothing to answer.
+          const schedulable = this.port.listSchedulableCandidates?.() ?? []
+          const prompt = schedulable.length === 0
+            ? textFor(
+                locale,
+                'この端末には面談を設定できる候補者がまだありません。先に履歴書を取り込んでください。',
+                '本机还没有可安排面试的候选人，请先导入简历。'
+              )
+            : textFor(
+                locale,
+                `どの候補者の面談か番号でお知らせください：${schedulable.map((item, index) => `${index + 1}. ${item.anonymousLabel}`).join('、')}`,
+                `请用序号告诉我是哪一位候选人：${schedulable.map((item, index) => `${index + 1}. ${item.anonymousLabel}`).join('、')}`
+              )
           return save(assistantMessage(prompt, [], turnId), previousState, 'clarifying', null, null)
         }
         // Anything the operator did not actually say is asked for, never chosen

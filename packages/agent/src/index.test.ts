@@ -328,8 +328,39 @@ describe('local conversational matching agent', () => {
     )
     expect(result.status).toBe('clarifying')
     expect(result.assistantMessage.content).not.toContain('查询')
-    expect(result.assistantMessage.content).toContain('哪一位候选人')
+    expect(result.assistantMessage.content).toContain('请先导入简历')
     expect(harness.calls).toEqual([])
+  })
+
+  it('lists the candidates it can book and accepts the number back', async () => {
+    // "I could not determine who" with no list left the operator with nothing to
+    // answer, which is where this got stuck once several resumes had been imported.
+    const many = [
+      { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+      { anonymousLabel: 'RESUME_2', sourceDocumentId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }
+    ]
+    const asked = await createHarness([], many, null).useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '安排一个20号的面试', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: null, date: '2026-08-20' })
+    )
+    expect(asked.status).toBe('clarifying')
+    expect(asked.assistantMessage.content).toContain('1. RESUME_1')
+    expect(asked.assistantMessage.content).toContain('2. RESUME_2')
+
+    const picked = await createHarness([], many, null).useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '第2位', expectedConversationRevision: null,
+        requestId: '55555555-5555-4555-8555-555555555555', selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: 2, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+    )
+    expect(picked.status).toBe('completed')
+    expect((picked as { toolName: string | null }).toolName).toBe('candidate.interview.schedule.local')
   })
 
   it('leaves a genuine read plan alone', async () => {
