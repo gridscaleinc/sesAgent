@@ -209,6 +209,24 @@ describe('local conversational matching agent', () => {
     }
   })
 
+  it('survives the shapes a model actually emits for an interview request', () => {
+    // Each of these failed the plan outright before, so the operator saw
+    // AGENT_PLAN_INVALID instead of being asked for the missing details.
+    const parse = (args: unknown) => {
+      const action = parseAgentRequestedTool({ name: 'schedule_interview', arguments: args })
+      if (action.toolName !== 'candidate.interview.schedule.local') throw new Error('unexpected tool')
+      return action.arguments
+    }
+    expect(parse({ date: '2026-08-20' }).date).toBe('2026-08-20')
+    expect(parse({}).date).toBeNull()
+    // Unknown keys are dropped, not fatal - zod strips them, so nothing is smuggled through.
+    expect(parse({ date: '2026-08-20', candidate: 'CANDIDATE_1' })).not.toHaveProperty('candidate')
+    expect(parse({ datetime: '2026-08-20 14:00' }).date).toBeNull()
+    // A numeric string is understood; an unsupported duration becomes "not stated".
+    expect(parse({ durationMinutes: '60' }).durationMinutes).toBe(60)
+    expect(parse({ durationMinutes: 120 }).durationMinutes).toBeNull()
+  })
+
   it('accepts a plan that only states the date, which is what the model actually emits', () => {
     // The model writes {"date":"2026-08-20"} and omits the rest rather than
     // spelling out six nulls. Requiring every key turned that into

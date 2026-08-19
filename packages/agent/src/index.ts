@@ -232,16 +232,21 @@ const nullableOrdinalSchema = z.number().int().min(1).max(20).nullable()
  * for shape only; anything unusable is treated as missing and asked for rather
  * than failing the whole plan.
  */
+const interviewDurationValues = [30, 45, 60, 90] as const
+
 const planningInterviewArgumentsSchema = z.object({
-  rank: nullableOrdinalSchema.optional().default(null),
-  date: z.string().trim().max(40).nullable().optional().default(null),
-  time: z.string().trim().max(40).nullable().optional().default(null),
-  method: z.enum(['zoom', 'google-meet', 'phone', 'onsite']).nullable().optional().default(null),
-  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90)])
-    .nullable().optional().default(null),
-  kind: z.enum(['recruiting', 'client']).nullable().optional().default(null),
-  note: z.string().trim().max(1_500).nullable().optional().default(null)
-}).strict()
+  rank: z.coerce.number().int().min(1).max(20).nullable().catch(null).optional().default(null),
+  date: z.string().trim().max(40).nullable().catch(null).optional().default(null),
+  time: z.string().trim().max(40).nullable().catch(null).optional().default(null),
+  method: z.enum(['zoom', 'google-meet', 'phone', 'onsite']).nullable().catch(null).optional().default(null),
+  // Anything outside the supported set becomes "not stated" and is asked for,
+  // rather than invalidating the whole plan.
+  durationMinutes: z.coerce.number().int()
+    .refine((value): value is 30 | 45 | 60 | 90 => (interviewDurationValues as readonly number[]).includes(value))
+    .nullable().catch(null).optional().default(null),
+  kind: z.enum(['recruiting', 'client']).nullable().catch(null).optional().default(null),
+  note: z.string().trim().max(1_500).nullable().catch(null).optional().default(null)
+})
 
 const interviewDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 const interviewTimePattern = /^\d{2}:\d{2}$/u
