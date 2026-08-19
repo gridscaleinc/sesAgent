@@ -252,6 +252,22 @@ import {
   WechatVisibleScopeTokenStore,
   resolveWechatAccessibilityHelperPath
 } from './wechat-visible-reader'
+import {
+  cloudPrivacyGateLoadOptions,
+  effectiveApplicationPreferences,
+  effectiveOperatorProfile,
+  gmailSyncConfigurationFromAdmin,
+  gmailSyncState,
+  loadManagedGoogleWorkspaceConfiguration,
+  unconfiguredAiCommerceState,
+  unconfiguredGoogleWorkspaceState
+} from './app-defaults'
+import {
+  assertWorkTaskAllowsExecution,
+  createVerifiedPreview,
+  previewHash,
+  synchronizeImportTask
+} from './work-task-helpers'
 
 const releaseSmokeMode = process.env.SES_RELEASE_SMOKE === '1'
 const windowsPackageWorkerSmokeMode = process.env.SES_WINDOWS_PACKAGE_WORKER_SMOKE === '1'
@@ -264,17 +280,6 @@ function hasVerifiedWindowsOcrNetworkEvidence(path: string): boolean {
       evidence.kind === 'ocr-worker-kernel-network-deny' && evidence.verified === true
   } catch {
     return false
-  }
-}
-
-function cloudPrivacyGateLoadOptions() {
-  return {
-    packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath(),
-    sourceRoot: app.getAppPath(),
-    platform: process.platform,
-    arch: process.arch
   }
 }
 
@@ -436,20 +441,6 @@ function emlImportErrorCode(error: unknown): EmlImportErrorCode {
   return 'PARSE_FAILED'
 }
 
-function previewHash(preview: WorkTaskPreview): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        instruction: preview.instruction,
-        scopeId: preview.scope.id,
-        type: preview.type,
-        policyVersion: preview.privacy.policyVersion,
-        contextBindings: preview.contextBindings
-      })
-    )
-    .digest('hex')
-}
-
 async function renderProposalAttachmentPdf(draft: ProposalDraftSnapshot): Promise<Buffer> {
   const window = new BrowserWindow({
     show: false,
@@ -539,163 +530,6 @@ async function registerOriginalDocumentProtocol(
     plaintext.fill(0)
     return new Response(body, { status: range ? 206 : 200, headers })
   })
-}
-
-function assertWorkTaskAllowsExecution(task: WorkTask): void {
-  if (task.status === 'cancelled' || task.status === 'failed') {
-    throw new Error('この作業は停止しています。再実行してから操作してください。')
-  }
-}
-
-function synchronizeImportTask(
-  repository: EncryptedApplicationRepository,
-  task: WorkTask,
-  now = new Date(),
-  approvedBy = '本機ユーザー'
-): WorkTask {
-  if (task.type !== 'IMPORT_RESUME' || task.status === 'cancelled' || task.status === 'failed') return task
-  const fileBindings = task.contextBindings.filter((binding) => binding.objectType === 'staged-file')
-  if (fileBindings.length === 0 || fileBindings.some((binding) => !repository.getResumeAnalysis(binding.objectId))) return task
-  const reviews = fileBindings.map((binding) => repository.getCandidateReview(binding.objectId))
-  const completed = reviews.every((review) => review?.status === 'completed')
-  const evidenceCount = completed ? fileBindings.length * 11 : Math.max(1, fileBindings.length * 3)
-  const unchanged =
-    task.status === (completed ? 'completed' : 'awaiting_review') &&
-    task.progress === (completed ? 100 : 75) &&
-    task.evidenceCount === evidenceCount &&
-    task.steps.every((step, index) => step.status === (completed ? 'completed' : index < 3 ? 'completed' : 'blocked'))
-  return unchanged ? task : recordResumeImportReviewState(
-    task,
-    completed,
-    evidenceCount,
-    completed ? reviews.flatMap((review) => review?.profile?.id ? [review.profile.id] : []) : [],
-    now,
-    approvedBy
-  )
-}
-
-const unconfiguredOperatorProfile = localOperatorProfileSchema.parse({
-  version: 'local-operator-profile-v1',
-  operatorId: '00000000-0000-4000-8000-000000000001',
-  displayName: '本機ユーザー',
-  roleLabel: 'プロフィール未設定',
-  configured: false,
-  revision: null,
-  updatedAt: null,
-  cloudEligible: false
-})
-
-function effectiveOperatorProfile(repository: EncryptedApplicationRepository): LocalOperatorProfile {
-  return repository.getLocalOperatorProfile() ?? unconfiguredOperatorProfile
-}
-
-const unconfiguredApplicationPreferences = localApplicationPreferencesSchema.parse({
-  version: 'local-application-preferences-v1',
-  locale: 'ja-JP',
-  configured: false,
-  revision: null,
-  updatedAt: null,
-  cloudEligible: false
-})
-
-function effectiveApplicationPreferences(repository: EncryptedApplicationRepository): LocalApplicationPreferences {
-  return repository.getLocalApplicationPreferences() ?? unconfiguredApplicationPreferences
-}
-
-function unconfiguredAiCommerceState(): AiCommerceMembershipState {
-  return {
-    configuration: 'required',
-    connection: 'not-connected',
-    productCode: null,
-    billingMode: null,
-    memberDisplayName: null,
-    accountId: null,
-    accountAiTokenExpiresAt: null,
-    wallet: null,
-    capabilities: [],
-    refreshedAt: null
-  }
-}
-
-function unconfiguredGoogleWorkspaceState(workspaceDomain: string | null): GoogleWorkspaceState {
-  return {
-    provider: 'google-workspace',
-    status: 'not-connected',
-    configuration: 'required',
-    workspaceDomain,
-    accountEmail: null,
-    grantedScopes: [],
-    readAccess: false,
-    draftAccess: 'not-requested',
-    sendMethod: 'not-implemented'
-  }
-}
-
-function loadManagedGoogleWorkspaceConfiguration(now = new Date()): GoogleWorkspaceAdminConfiguration | null {
-  const clientId = process.env.SES_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? ''
-  const workspaceDomain = process.env.SES_GOOGLE_WORKSPACE_DOMAIN?.trim() ?? ''
-  const rawLabels = process.env.SES_GMAIL_LABEL_IDS?.trim() ?? ''
-  const rawQuery = process.env.SES_GMAIL_QUERY?.trim() ?? ''
-  if (![clientId, workspaceDomain, rawLabels, rawQuery].some(Boolean)) return null
-  if (![clientId, workspaceDomain, rawLabels, rawQuery].every(Boolean)) {
-    throw new Error('Managed Google Workspace configuration requires OAuth Client ID, company domain, Gmail labels, and query together.')
-  }
-  const sync = gmailSyncConfigurationSchema.parse({
-    version: 'gmail-sync-config-v1' as const,
-    labelIds: rawLabels.split(',').map((label) => label.trim()).filter(Boolean),
-    query: rawQuery,
-    lookbackDays: Number(process.env.SES_GMAIL_LOOKBACK_DAYS ?? 30),
-    maxMessagesPerRun: Number(process.env.SES_GMAIL_MAX_MESSAGES_PER_RUN ?? 200)
-  })
-  return googleWorkspaceAdminConfigurationSchema.parse({
-    version: 'google-workspace-admin-config-v1',
-    source: 'managed-environment',
-    editable: false,
-    clientId,
-    workspaceDomain,
-    labelIds: sync.labelIds,
-    query: sync.query,
-    lookbackDays: sync.lookbackDays,
-    maxMessagesPerRun: sync.maxMessagesPerRun,
-    revision: null,
-    configuredBy: '受管環境設定',
-    updatedAt: now.toISOString()
-  })
-}
-
-function gmailSyncConfigurationFromAdmin(
-  configuration: GoogleWorkspaceAdminConfiguration | null
-): GmailSyncConfiguration | null {
-  if (!configuration) return null
-  return gmailSyncConfigurationSchema.parse({
-    version: 'gmail-sync-config-v1',
-    labelIds: configuration.labelIds,
-    query: configuration.query,
-    lookbackDays: configuration.lookbackDays,
-    maxMessagesPerRun: configuration.maxMessagesPerRun
-  })
-}
-
-function gmailSyncState(
-  repository: EncryptedApplicationRepository,
-  googleState: GoogleWorkspaceState,
-  config: GmailSyncConfiguration | null
-): GmailSyncState {
-  const checkpoint = googleState.accountEmail
-    ? repository.getGmailSyncCheckpoint(googleState.accountEmail)
-    : null
-  return {
-    configuration: config ? 'ready' : 'required',
-    status: checkpoint?.status ?? 'never',
-    labelIds: config?.labelIds ?? [],
-    query: config?.query ?? null,
-    lookbackDays: config?.lookbackDays ?? 30,
-    checkpointHistoryId: checkpoint?.historyId ?? null,
-    storedMessages: googleState.accountEmail ? repository.countGmailMessages(googleState.accountEmail) : 0,
-    lastSyncedAt: checkpoint?.lastSyncedAt ?? null,
-    lastRun: checkpoint?.lastRun ?? null,
-    lastError: checkpoint?.lastError ?? null
-  }
 }
 
 async function initializeServices(options: { restoring?: boolean } = {}): Promise<{
@@ -896,43 +730,6 @@ async function initializeServices(options: { restoring?: boolean } = {}): Promis
     keys.fileVaultKey.fill(0)
     throw error
   }
-}
-
-function createVerifiedPreview(
-  repository: EncryptedApplicationRepository,
-  input: ReturnType<typeof workTaskInputSchema.parse>
-): WorkTaskPreview {
-  const files = repository.getStagedFiles(input.fileTokens)
-  if (files.length !== input.fileTokens.length) throw new Error('選択したファイルが見つからないか、期限切れです。')
-  if (input.scopeId === 'selected-files' && files.length === 0) {
-    throw new Error('ローカルファイルを1件以上選択してください。')
-  }
-  if (input.scopeId !== 'selected-files' && files.length > 0) {
-    throw new Error('ファイルトークンとデータ範囲が一致しません。')
-  }
-  if ((input.scopeId === 'selected-case') !== Boolean(input.jobCaseId)) {
-    throw new Error('選択案件の範囲と案件IDが一致しません。')
-  }
-  const fileBindings = files.map((file) => ({
-    objectType: 'staged-file' as const,
-    objectId: file.token,
-    version: file.sha256
-  }))
-  const selectedJobCase = input.jobCaseId
-    ? repository.listActiveJobCases().find((jobCase) => jobCase.id === input.jobCaseId) ?? null
-    : null
-  if (input.jobCaseId && !selectedJobCase) throw new Error('選択した確認済み案件は利用できません。')
-  const contextBindings = selectedJobCase
-    ? [{ objectType: 'job-case' as const, objectId: selectedJobCase.id, version: String(selectedJobCase.version) }]
-    : fileBindings
-  const preview = createWorkTaskPreview(input.instruction, getDataScope(input.scopeId), contextBindings)
-  if (files.length > 0 && preview.type !== 'IMPORT_RESUME') {
-    throw new Error('添付ファイルは現在スキルシート取込タスクだけで使用できます。作業内容を確認してください。')
-  }
-  if (selectedJobCase && preview.type !== 'MATCH_CANDIDATES') {
-    throw new Error('選択案件は候補者マッチング作業だけに使用できます。')
-  }
-  return preview
 }
 
 function rendererSafeFile(record: ReturnType<EncryptedApplicationRepository['getStagedFileRecords']>[number]): StagedLocalFile {
