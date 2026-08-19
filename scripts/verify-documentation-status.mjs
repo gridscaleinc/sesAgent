@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const packageManifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))
-const persistenceSource = await readFile(resolve(root, 'packages/persistence/src/index.ts'), 'utf8')
+const persistenceSource = await readFile(resolve(root, 'packages/persistence/src/schema/migrations.ts'), 'utf8')
 const schemaVersion = Number(persistenceSource.match(/export const currentSchemaVersion = (\d+)/u)?.[1])
 if (!Number.isInteger(schemaVersion) || schemaVersion <= 0) {
   throw new Error('Unable to read currentSchemaVersion from the persistence source.')

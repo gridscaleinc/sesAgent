@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -32,6 +33,24 @@ export const cloudEnforcementPaths = Object.freeze([
   'apps/desktop/src/main/cloud-ai-review.ts',
   'apps/desktop/src/main/privacy-gates.ts',
   'apps/desktop/src/main/index.ts',
+  'apps/desktop/src/main/app-defaults.ts',
+  'apps/desktop/src/main/original-open-root.ts',
+  'apps/desktop/src/main/recovery-verification.ts',
+  'apps/desktop/src/main/work-task-helpers.ts',
+  'apps/desktop/src/main/ipc/aicommerce.ts',
+  'apps/desktop/src/main/ipc/bootstrap.ts',
+  'apps/desktop/src/main/ipc/candidate-evaluation.ts',
+  'apps/desktop/src/main/ipc/candidate-match.ts',
+  'apps/desktop/src/main/ipc/candidates.ts',
+  'apps/desktop/src/main/ipc/context.ts',
+  'apps/desktop/src/main/ipc/google-workspace.ts',
+  'apps/desktop/src/main/ipc/interviews.ts',
+  'apps/desktop/src/main/ipc/job-cases.ts',
+  'apps/desktop/src/main/ipc/proposals.ts',
+  'apps/desktop/src/main/ipc/recovery.ts',
+  'apps/desktop/src/main/ipc/resume-import.ts',
+  'apps/desktop/src/main/ipc/settings.ts',
+  'apps/desktop/src/main/ipc/work-tasks.ts',
   'apps/desktop/src/preload/index.ts',
   'packages/shared/src/contracts.ts',
   'packages/shared/src/schemas.ts',
@@ -57,6 +76,35 @@ async function computeSourceSetSha256(paths, root) {
     hash.update('\0')
   }
   return hash.digest('hex')
+}
+
+/**
+ * Main-process sources deliberately left outside the cloud enforcement source
+ * binding. Listing them keeps the gap explicit and auditable instead of it
+ * being an accident of which files happen to appear in the list above.
+ */
+export const unboundMainProcessSources = Object.freeze([
+  'apps/desktop/src/main/agent-cloud-narrative.ts',
+  'apps/desktop/src/main/agent-ipc.ts',
+  'apps/desktop/src/main/startup-smoke.ts',
+  'apps/desktop/src/main/wechat-visible-reader.ts'
+])
+
+/**
+ * Fails when a main-process source is neither bound nor explicitly unbound, so
+ * moving code out of a bound file cannot silently shrink what the Cloud
+ * Enforcement Source SHA covers.
+ */
+export function mainProcessCoverageFailures(root = process.cwd()) {
+  const directory = 'apps/desktop/src/main'
+  const walk = (relativeDirectory) => readdirSync(resolve(root, relativeDirectory), { withFileTypes: true })
+    .flatMap((entry) => {
+      const path = `${relativeDirectory}/${entry.name}`
+      if (entry.isDirectory()) return walk(path)
+      return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [path] : []
+    })
+  const known = new Set([...cloudEnforcementPaths, ...unboundMainProcessSources])
+  return walk(directory).filter((path) => !known.has(path)).sort()
 }
 
 export function computePrivacyImplementationSha256(root = process.cwd()) {

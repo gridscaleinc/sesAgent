@@ -4,10 +4,19 @@ import { relative, resolve } from 'node:path'
 import {
   computeCloudEnforcementSha256,
   computePrivacyImplementationSha256,
+  mainProcessCoverageFailures,
   privacyExpertReportFailures
 } from './privacy-expert-evidence.mjs'
 
 const root = resolve(import.meta.dirname, '..')
+
+const uncoveredMainProcessSources = mainProcessCoverageFailures(root)
+if (uncoveredMainProcessSources.length > 0) {
+  throw new Error(
+    'Main-process sources are neither bound to the cloud enforcement SHA nor listed as unbound: ' +
+    uncoveredMainProcessSources.join(', ')
+  )
+}
 const verificationDirectory = resolve(root, 'build/privacy-verification')
 const outDirectory = resolve(root, 'out')
 const qualityReportPath = resolve(verificationDirectory, 'privacy-quality-report.json')
