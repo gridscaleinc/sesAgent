@@ -145,6 +145,17 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection.state.schedulableCandidateCount).toBe(1)
   })
 
+  it('does not let the interview read rule claim scheduling as well', () => {
+    // read_candidate_interviews used to be introduced with "status, schedules,
+    // notes", so a booking request matched it and the turn ended in "specify the
+    // candidate rank to query" - a read tool's clarification, not the scheduler's.
+    const readRule = planningInstructions.slice(planningInstructions.indexOf('read_candidate_interviews') - 200)
+      .split('.')[0]!
+    expect(readRule).not.toMatch(/\bschedules\b/u)
+    expect(planningInstructions).toContain('It only reads and can never create or change a booking')
+    expect(planningInstructions).toContain('you must use schedule_interview, never read_candidate_interviews')
+  })
+
   it('permits answering from an attachment draft while keeping the unconfirmed caveat', () => {
     // Putting the drafts in the context is not enough: the answer step used to be
     // told to treat only the evidence array as fact and to use "verified" data,

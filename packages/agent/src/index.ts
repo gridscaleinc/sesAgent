@@ -841,8 +841,8 @@ export class LocalAgentUseCase {
         if (missing.length > 0) {
           const prompt = textFor(
             locale,
-            `面談を登録する前に次を教えてください：${missing.join('、')}。備考があれば併せてお知らせください。`,
-            `登记面试前还需要你确认：${missing.join('、')}。如果有备注也请一并说明。`
+            `面談の登録に次が必要です：${missing.join('、')}。備考があれば併せてお知らせください。`,
+            `登记面试还需要：${missing.join('、')}。如果有备注也请一并说明。`
           )
           const clarification: AiConversationBlock = {
             type: 'clarification', code: 'INTERVIEW_DETAILS_REQUIRED', prompt, options: []
