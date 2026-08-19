@@ -378,7 +378,7 @@ export const agentPlanningToolCatalog: readonly AgentPlanningToolCatalogEntry[] 
   },
   {
     name: 'schedule_interview',
-    description: 'Schedule an interview for a candidate already in this conversation. Fill only what the operator actually stated and leave everything else null - the app asks them for the missing details rather than choosing on their behalf. date is YYYY-MM-DD and time is HH:mm in JST.',
+    description: 'Schedule an interview for a candidate. Fill only what the operator actually stated and leave everything else null - the app asks them for the missing details rather than choosing on their behalf. Set rank only when they named a position in a match result; for "this person" or a single imported resume leave it null, because the app resolves who is meant. date is YYYY-MM-DD and time is HH:mm in JST.',
     argumentsShape: '{"rank":number|null,"date":string|null,"time":string|null,"method":"zoom"|"google-meet"|"phone"|"onsite"|null,"durationMinutes":30|45|60|90|null,"kind":"recruiting"|"client"|null,"note":string|null}',
     effect: 'write', approval: 'none',
     parse: (value) => ({ toolName: 'candidate.interview.schedule.local', arguments: planningInterviewArgumentsSchema.parse(value) })
@@ -801,11 +801,22 @@ export class LocalAgentUseCase {
           .filter((block): block is Extract<AiConversationBlock, { type: 'resume-import' }> => block.type === 'resume-import')
           .flatMap((block) => block.imported)
         let candidate: { anonymousLabel: string; sourceDocumentId: string } | null = null
-        if (args.rank === null && importedInConversation.length === 1) {
+        // A rank only means something when a match run exists. The model tends to
+        // send rank 1 for "this person", which must not shadow the candidate the
+        // operator actually imported.
+        if (previousState.lastMatchRunId) {
+          const resolved = resolveMatchRunReference(previousState, previousMessages, args.rank, locale)
+          if ('clarification' in resolved) {
+            const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
+            return save(assistant, previousState, 'clarifying', null, null)
+          }
+          candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
+        }
+        if (!candidate && importedInConversation.length === 1) {
           const only = importedInConversation[0]!
           candidate = { anonymousLabel: only.label, sourceDocumentId: only.documentId }
         }
-        if (!candidate && args.rank === null) {
+        if (!candidate) {
           const schedulable = this.port.listSchedulableCandidates?.() ?? []
           if (schedulable.length === 1) candidate = schedulable[0]!
         }
@@ -838,7 +849,11 @@ export class LocalAgentUseCase {
           return save(assistantMessage(prompt, [clarification], turnId), previousState, 'clarifying', null, null)
         }
         if (!candidate) {
-          const prompt = textFor(locale, '対象の候補者を特定できませんでした。', '无法确定要安排面试的候选人。')
+          const prompt = textFor(
+            locale,
+            '対象の候補者を特定できませんでした。どの候補者の面談かお知らせください。',
+            '无法确定要给谁安排面试，请告诉我是哪一位候选人。'
+          )
           return save(assistantMessage(prompt, [], turnId), previousState, 'clarifying', null, null)
         }
         const tool = await this.port.executeTool('candidate.interview.schedule.local', {

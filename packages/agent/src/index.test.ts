@@ -265,6 +265,27 @@ describe('local conversational matching agent', () => {
     expect(result.assistantMessage.content).toContain('开始时间')
   })
 
+  it('ignores a rank the model invented when no match run exists', async () => {
+    // The model sends rank 1 for "this person". With no match run that rank
+    // means nothing, and letting it win produced "specify the candidate rank"
+    // for an operator who had imported exactly one resume.
+    const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    const harness = createHarness([], [only])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '安排这个人20号14点的Zoom面试', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+    )
+    expect(result.status).toBe('completed')
+    expect(harness.calls[0]).toMatchObject({
+      toolName: 'candidate.interview.schedule.local',
+      input: { sourceDocumentId: only.sourceDocumentId }
+    })
+  })
+
   it('schedules for the one imported candidate without asking for a match rank', async () => {
     // The operator imported a resume and said "book an interview". Requiring a
     // match-run rank here made the obvious case impossible.
