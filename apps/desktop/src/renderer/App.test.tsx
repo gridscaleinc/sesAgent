@@ -537,7 +537,60 @@ describe('App workbench', () => {
     expect(screen.getByRole('button', { name: '確認して開始' })).toBeInTheDocument()
   })
 
-  it('routes the enabled bootstrap to AgentWorkspace and keeps an explicit classic fallback', async () => {
+  it('enters AgentWorkspace on cold start, with no navigation, when conversational matching is enabled', async () => {
+    cleanup()
+    const connected = {
+      ...bootstrap,
+      featureFlags: { conversationalMatchingEnabled: true },
+      aiCommerce: { ...bootstrap.aiCommerce, configuration: 'ready' as const, connection: 'connected' as const }
+    }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '案件マッチング Agent' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '案件 Agent への質問' })).toBeEnabled()
+  })
+
+  it('carries the dashboard counts into the Agent shell and routes the review badge to the review center', async () => {
+    cleanup()
+    const connected = {
+      ...bootstrap,
+      featureFlags: { conversationalMatchingEnabled: true },
+      aiCommerce: { ...bootstrap.aiCommerce, configuration: 'ready' as const, connection: 'connected' as const }
+    }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
+    render(<App />)
+    await screen.findByRole('heading', { name: '案件マッチング Agent' })
+    // Same source as the sidebar badge, so the two can never disagree.
+    const pendingReviews = screen.getByRole('button', { name: /1\s*未レビュー/u })
+    fireEvent.click(pendingReviews)
+    expect(await screen.findByRole('heading', { name: 'レビューセンター' })).toBeInTheDocument()
+  })
+
+  it('keeps the classic dashboard on cold start when conversational matching is disabled', async () => {
+    cleanup()
+    const disabled = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: false } }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(disabled)
+    render(<App />)
+    await screen.findByRole('button', { name: 'AI マッチング' })
+    expect(screen.queryByRole('heading', { name: '案件マッチング Agent' })).not.toBeInTheDocument()
+  })
+
+  it('lands an unconnected operator in AgentWorkspace but withholds the composer until the managed account is connected', async () => {
+    cleanup()
+    const unconnected = {
+      ...bootstrap,
+      featureFlags: { conversationalMatchingEnabled: true },
+      aiCommerce: { ...bootstrap.aiCommerce, connection: 'not-connected' as const }
+    }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(unconnected)
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '案件マッチング Agent' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '受管アカウントに接続' })).toBeInTheDocument()
+    // A composer that always fails is worse than no composer.
+    expect(screen.queryByRole('textbox', { name: '案件 Agent への質問' })).not.toBeInTheDocument()
+  })
+
+  it('opens AgentWorkspace from the matching nav item and keeps an explicit classic fallback', async () => {
     cleanup()
     const enabledBootstrap = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: true } }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(enabledBootstrap)

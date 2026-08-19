@@ -19,6 +19,23 @@ interface AgentWorkspaceProps {
   reloadToken?: number
   models?: AgentChatModelOption[]
   defaultModelKey?: string
+  /** Every turn needs the managed cloud connection; without it the composer is withheld. */
+  cloudConnected?: boolean
+  onConnectCloud?(): void
+  /**
+   * Counts the operator would otherwise have lost by not passing through the
+   * dashboard. Sourced from the same bootstrap fields the sidebar badges use,
+   * so the two can never disagree.
+   */
+  status?: AgentWorkspaceStatus
+  onOpenReviews?(): void
+}
+
+export interface AgentWorkspaceStatus {
+  eligibleCandidateCount: number
+  pendingReviewCount: number
+  runningJobCount: number
+  backupReminder: 'not-needed' | 'due' | 'snoozed'
 }
 
 const fallbackModels: AgentChatModelOption[] = [
@@ -138,7 +155,11 @@ export function AgentWorkspace({
   onOpenMatching,
   reloadToken = 0,
   models = fallbackModels,
-  defaultModelKey = 'gpt-5.6-luna'
+  defaultModelKey = 'gpt-5.6-luna',
+  cloudConnected = true,
+  onConnectCloud,
+  status,
+  onOpenReviews
 }: AgentWorkspaceProps) {
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
@@ -316,9 +337,20 @@ export function AgentWorkspace({
     <aside className="agent-workspace-history"><AiConversationHistoryPanel activeConversationId={history.activeConversationId} busy={history.loading || history.saving || pendingMessage !== null} conversations={history.conversations} error={history.error} loading={history.loading} onDelete={history.deleteConversations} onNew={history.newConversation} onSelect={(id) => { history.selectConversation(id); setSelectedCase(null) }} /></aside>
     <section className="agent-workspace-main">
       <header className="agent-workspace-header"><div><span className="eyebrow">CONTROLLED MATCHING AGENT</span><h1 id="agent-workspace-title">{zh ? '案件匹配 Agent' : '案件マッチング Agent'}</h1></div><span className="agent-privacy-badge" title={zh ? 'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态' : 'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'}><Icon name="shield" size={13} />{zh ? '仅发送脱敏内容' : '脱敏済みのみ送信'}</span></header>
+      {status ? <div className="agent-status-strip">
+        <span><strong>{status.eligibleCandidateCount}</strong>{zh ? '可匹配人才' : 'マッチ可能人材'}</span>
+        <button
+          className={status.pendingReviewCount > 0 ? 'is-actionable' : undefined}
+          disabled={status.pendingReviewCount === 0}
+          onClick={() => onOpenReviews?.()}
+          type="button"
+        ><strong>{status.pendingReviewCount}</strong>{zh ? '待审核' : '未レビュー'}</button>
+        {status.runningJobCount > 0 ? <span><strong>{status.runningJobCount}</strong>{zh ? '运行中' : '実行中'}</span> : null}
+        {status.backupReminder === 'due' ? <span className="is-warning">{zh ? '需要确认备份' : 'バックアップの確認が必要'}</span> : null}
+      </div> : null}
       {selectedCase ? <div className="agent-current-case-chip"><Icon name="briefcase" size={14} /><span>{zh ? '当前案件' : 'Current case'} · {selectedCase.label} v{selectedCase.objectVersion ?? '—'}</span><button onClick={() => setSelectedCase(null)} type="button" aria-label={zh ? '清除当前案件' : 'Clear current case'}>×</button></div> : null}
       <div className="agent-message-scroll" aria-live="polite" ref={messageScrollRef}>
-        {messages.length === 0 ? <div className="agent-empty-state"><Icon name="sparkles" size={28} /><h2>{selectedCase ? (zh ? '开始匹配' : 'マッチングを開始') : (zh ? '从案件开始' : '案件から始める')}</h2><p>{selectedCase ? (zh ? '已选择案件，可以让 AI 匹配候选人，或继续追问案件条件。' : '案件を選択済みです。候補者のマッチングや条件の確認を依頼できます。') : (zh ? '问“最近有什么案件？”，然后选择案件继续匹配。' : '「最近の案件は？」と尋ね、案件を選んでマッチングを続けます。')}</p><div>{emptyStateSuggestions.map((suggestion) => <button key={suggestion} onClick={() => setDraft(suggestion)} type="button">{suggestion}</button>)}</div></div> : messages.map((message) => (
+        {messages.length === 0 ? (cloudConnected ? <div className="agent-empty-state"><Icon name="sparkles" size={28} /><h2>{selectedCase ? (zh ? '开始匹配' : 'マッチングを開始') : (zh ? '从案件开始' : '案件から始める')}</h2><p>{selectedCase ? (zh ? '已选择案件，可以让 AI 匹配候选人，或继续追问案件条件。' : '案件を選択済みです。候補者のマッチングや条件の確認を依頼できます。') : (zh ? '问“最近有什么案件？”，然后选择案件继续匹配。' : '「最近の案件は？」と尋ね、案件を選んでマッチングを続けます。')}</p><div>{emptyStateSuggestions.map((suggestion) => <button key={suggestion} onClick={() => setDraft(suggestion)} type="button">{suggestion}</button>)}</div></div> : <div className="agent-empty-state"><Icon name="shield" size={28} /><h2>{zh ? '先连接受管账号' : '受管アカウントに接続してください'}</h2><p>{zh ? 'SES Agent 通过公司受管的 AICommerce 接入理解自然语言。连接后即可查询案件、匹配候选人并查看匹配依据。' : 'SES Agent は会社の受管 AICommerce 接続を通じて自然言語を理解します。接続すると案件検索・候補者マッチング・根拠の確認を利用できます。'}</p></div>) : messages.map((message) => (
           <article className={`agent-message is-${message.role}`} key={message.id}>
             {message.role === 'assistant' ? <div className="agent-message-role"><span className="agent-message-avatar"><Icon name="sparkles" size={14} /></span><strong>SES Agent</strong></div> : null}
             <div className="agent-message-body"><MessageText message={message} />{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} onOpenMatching={onOpenMatching} onSelectCase={selectCase} zh={zh} />)}</div>
@@ -328,7 +360,11 @@ export function AgentWorkspace({
         {pendingMessage ? <div className="agent-running-state" data-phase={streamState?.phase ?? 'planning'}><span className="agent-running-dot" />{streamState?.phase === 'planning' ? (zh ? '正在理解问题并选择 Tool…' : '質問を理解して Tool を選択中…') : streamState?.phase === 'connecting-model' ? (zh ? '正在整理 Tool 结果…' : 'Tool の結果を整理中…') : streamState?.phase === 'streaming' ? (zh ? '正在生成回答…' : '回答を生成中…') : streamState?.phase === 'stopping' ? (zh ? '正在停止本地读取并请求远端取消…' : 'ローカル読取を停止し、リモート取消を要求中…') : (zh ? '正在执行 AI 选择的受控本地 Tool…' : 'AI が選択した制御済みローカル Tool を実行中…')}</div> : null}
       </div>
       {error ? <p className="agent-workspace-error" role="alert"><Icon name="alert" size={14} />{error}</p> : null}
-      <form aria-label={zh ? '案件 Agent 输入区' : '案件 Agent 入力欄'} className="agent-composer" onSubmit={send}><textarea aria-label={zh ? '输入案件问题' : '案件 Agent への質問'} disabled={pendingMessage !== null} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={zh ? '询问案件、候选人或当前匹配结果…' : '案件、候補者、現在のマッチ結果について質問…'} rows={2} value={draft} /><footer><div className="agent-composer-tools"><div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={pendingMessage !== null} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div><small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small></div>{pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim()} type="submit"><Icon name="arrow-up" size={16} /></button>}</footer></form>
+      {cloudConnected ? <form aria-label={zh ? '案件 Agent 输入区' : '案件 Agent 入力欄'} className="agent-composer" onSubmit={send}><textarea aria-label={zh ? '输入案件问题' : '案件 Agent への質問'} disabled={pendingMessage !== null} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} placeholder={zh ? '询问案件、候选人或当前匹配结果…' : '案件、候補者、現在のマッチ結果について質問…'} rows={2} value={draft} /><footer><div className="agent-composer-tools"><div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={pendingMessage !== null} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div><small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small></div>{pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim()} type="submit"><Icon name="arrow-up" size={16} /></button>}</footer></form> : <div className="agent-connect-bar">
+        <Icon name="lock" size={14} />
+        <span>{zh ? '连接受管账号后即可开始对话。' : '受管アカウントに接続すると会話を開始できます。'}</span>
+        <button onClick={() => onConnectCloud?.()} type="button">{zh ? '连接受管账号' : '受管アカウントに接続'}</button>
+      </div>}
     </section>
   </main>
 }

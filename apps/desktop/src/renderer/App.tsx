@@ -132,6 +132,16 @@ export function App() {
     }
   }, [startupRecovery])
 
+  // Agent-first cold start. Applied once, on the first bootstrap: setBootstrap also
+  // runs for AICommerce/recovery/task updates, and those must not yank the user
+  // back out of whatever page they navigated to.
+  const initialRouteApplied = useRef(false)
+  useEffect(() => {
+    if (!bootstrap || initialRouteApplied.current) return
+    initialRouteApplied.current = true
+    if (bootstrap.featureFlags?.conversationalMatchingEnabled === true) setActiveView('agent')
+  }, [bootstrap])
+
   useEffect(() => {
     if (!commandPaletteAvailable) return undefined
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
@@ -1274,10 +1284,19 @@ export function App() {
         />
       ) : activeView === 'agent' && bootstrap.featureFlags?.conversationalMatchingEnabled === true ? (
         <AgentWorkspace
+          cloudConnected={bootstrap.aiCommerce.connection === 'connected'}
           defaultModelKey={bootstrap.defaultAgentChatModelKey}
           models={bootstrap.agentChatModels}
+          onConnectCloud={() => setAiCommerceOpen(true)}
           onOpenMatching={openMatchingForCase}
+          onOpenReviews={() => setActiveView('reviews')}
           reloadToken={agentHistoryReloadToken}
+          status={{
+            eligibleCandidateCount: bootstrap.matchingHome.eligibleCandidateCount,
+            pendingReviewCount: reviewQueue.length,
+            runningJobCount: bootstrap.processingJobs.filter((job) => job.status === 'running').length,
+            backupReminder: bootstrap.recovery.reminder.status
+          }}
         />
       ) : activeView === 'matching' || activeView === 'agent' ? (
         <main className="core-workflow-page matching-page">
