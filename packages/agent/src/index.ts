@@ -863,12 +863,12 @@ export class LocalAgentUseCase {
           if (schedulable.length === 1) candidate = schedulable[0]!
         }
         if (!candidate) {
-          const resolved = resolveMatchRunReference(previousState, previousMessages, args.rank, locale)
-          if ('clarification' in resolved) {
-            const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
-            return save(assistant, previousState, 'clarifying', null, null)
-          }
-          candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
+          const prompt = textFor(
+            locale,
+            '対象の候補者を特定できませんでした。どの候補者の面談かお知らせください。',
+            '无法确定要给谁安排面试，请告诉我是哪一位候选人。'
+          )
+          return save(assistantMessage(prompt, [], turnId), previousState, 'clarifying', null, null)
         }
         // Anything the operator did not actually say is asked for, never chosen
         // for them. A vague "book an interview" can therefore not create one.
@@ -889,14 +889,6 @@ export class LocalAgentUseCase {
             type: 'clarification', code: 'INTERVIEW_DETAILS_REQUIRED', prompt, options: []
           }
           return save(assistantMessage(prompt, [clarification], turnId), previousState, 'clarifying', null, null)
-        }
-        if (!candidate) {
-          const prompt = textFor(
-            locale,
-            '対象の候補者を特定できませんでした。どの候補者の面談かお知らせください。',
-            '无法确定要给谁安排面试，请告诉我是哪一位候选人。'
-          )
-          return save(assistantMessage(prompt, [], turnId), previousState, 'clarifying', null, null)
         }
         const tool = await this.port.executeTool('candidate.interview.schedule.local', {
           sourceDocumentId: candidate.sourceDocumentId,

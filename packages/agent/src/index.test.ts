@@ -312,6 +312,26 @@ describe('local conversational matching agent', () => {
     }
   })
 
+  it('asks which candidate, never for a query rank, when nothing resolves', async () => {
+    // The scheduling branch kept a leftover call that answered with the read
+    // tool's "specify the candidate rank to query" once every fallback missed.
+    // Every test so far had at least one candidate, so none of them reached it.
+    const harness = createHarness([], [], null)
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
+    const result = await harness.useCase.execute(
+      {
+        conversationId, message: '安排一个20号的面试', expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: 1, date: '2026-08-20' })
+    )
+    expect(result.status).toBe('clarifying')
+    expect(result.assistantMessage.content).not.toContain('查询')
+    expect(result.assistantMessage.content).toContain('哪一位候选人')
+    expect(harness.calls).toEqual([])
+  })
+
   it('leaves a genuine read plan alone', async () => {
     const harness = createHarness()
     const conversationId = '33333333-3333-4333-8333-333333333333'
