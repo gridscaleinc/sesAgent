@@ -78,6 +78,50 @@ describe('Agent Cloud narrative boundary', () => {
     expect(() => parseAgentPlanningResponse('ANSWER\n先回答\nTOOL\n{"name":"match_candidates","arguments":{"ordinal":1}}')).toThrow(/同时返回/)
   })
 
+  it('projects an unconfirmed draft as business fields only, without its document id or file name', () => {
+    const documentId = '66666666-6666-4666-8666-666666666666'
+    const projection = buildAgentPlanningProjection({
+      locale: 'zh-CN',
+      userMessage: '总结一下这个人的整体情况',
+      selectedJobCaseRef: null,
+      attachmentCount: 0,
+      conversation: {
+        id: conversationId,
+        context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+        title: '匹配会话',
+        messages: [{
+          id: 'assistant-draft', role: 'assistant', content: '已读取未确认草稿。', mode: 'cloud',
+          turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:01.000Z',
+          blocks: [{
+            type: 'candidate-draft-facts',
+            facts: {
+              documentId,
+              label: 'RESUME_1',
+              confirmed: false,
+              reviewStatus: 'awaiting-review',
+              fields: [
+                { label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: ['技術者履歴書_楊凱.xlsx!B4'] },
+                { label: '単価', value: null, confidence: 0, status: 'missing', sources: [] }
+              ],
+              projects: []
+            }
+          }]
+        }],
+        salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
+        revision: 1,
+        createdAt: '2026-08-18T00:00:00.000Z',
+        updatedAt: '2026-08-18T00:00:00.000Z'
+      }
+    })
+    const evidence = JSON.parse(projection).evidence.find((item: { type: string }) => item.type === 'candidate-draft-facts')
+    expect(evidence).toMatchObject({ resume: 'RESUME_1', confirmed: false })
+    expect(evidence.fields).toEqual([{ label: 'スキル', value: 'Java', confidence: 0.9 }])
+    // Internal id, source cell labels and the file name they embed stay local.
+    expect(projection).not.toContain(documentId)
+    expect(projection).not.toContain('楊凱')
+    expect(projection).not.toContain('.xlsx')
+  })
+
   it('tells the planner how many files are attached without sending their names', () => {
     const projection = buildAgentPlanningProjection({
       locale: 'zh-CN',

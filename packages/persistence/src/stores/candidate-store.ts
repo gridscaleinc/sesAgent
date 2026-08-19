@@ -4,6 +4,7 @@ import { type WorkTask } from '@domain'
 import { type StagedFileRecord } from '@files'
 import { type DocumentIR, documentIrSchema } from '@parsers'
 import { type LocalPiiMapping, detectDirectIdentifiers } from '@privacy'
+import type { AgentCandidateDraftFacts } from '@shared'
 import {
   type CandidateExtractionDraft,
   type CandidateProfile,
@@ -312,6 +313,39 @@ export class CandidateStore extends DomainStore {
       degree: resolved('degree'),
       storage: 'encrypted-local-only',
       cloudEligible: false
+    }
+  }
+
+  /**
+   * Projects one extraction draft for the agent. Deliberately narrow: the file
+   * name and the local identity block (name, phone, address, birth date) never
+   * leave this method, because the draft has not been through the operator's
+   * field review yet and the file name usually carries the candidate's name.
+   */
+  getAgentCandidateDraftFacts(sourceDocumentId: string, label: string): AgentCandidateDraftFacts | null {
+    const review = this.getCandidateReview(sourceDocumentId)
+    if (!review) return null
+    return {
+      documentId: sourceDocumentId,
+      label,
+      confirmed: false,
+      reviewStatus: review.status,
+      fields: review.fields.map((field) => ({
+        label: field.label,
+        value: field.value,
+        confidence: field.confidence,
+        status: field.status,
+        sources: field.sourceLabels
+      })),
+      projects: review.projectExperiences.map((project) => ({
+        title: project.title,
+        period: project.period,
+        role: project.role,
+        technologies: project.technologies,
+        summary: project.summary,
+        confidence: project.confidence,
+        sources: project.sourceLabels
+      }))
     }
   }
 

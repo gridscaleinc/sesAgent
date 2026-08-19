@@ -266,7 +266,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         : toolName === 'candidate.profile.read.local' ? 'selected-candidate-profile'
         : toolName === 'candidate.interview.read.local' ? 'selected-candidate-interviews'
         : toolName === 'match-run.read.local' ? 'selected-match-run'
-        : toolName === 'resume.analyze.local' ? 'selected-files'
+        : toolName === 'resume.analyze.local' || toolName === 'candidate.draft.read.local' ? 'selected-files'
           : 'confirmed-candidate-pool'
       const scopeFingerprint = hashActionInput(rawInput)
       const actorId = deps.currentOperator().operatorId
@@ -317,6 +317,28 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           actionRunId: execution.actionRunId ?? null
         }
       }
+      if (toolName === 'candidate.draft.read.local') {
+        const input = rawInput as { sourceDocumentId: string; label: string }
+        const preflight = deps.actionOrchestrator.preflight(
+          toolName, context, { sourceDocumentId: input.sourceDocumentId },
+          '取込済み履歴書の未確認下書きを端末内で読み取ります。',
+          actionIdempotencyKey(toolName, metadata.conversationId, metadata.requestId)
+        )
+        if (preflight.decision.outcome === 'deny') throw new Error(preflight.decision.reason)
+        if (preflight.decision.outcome === 'require-approval') {
+          throw new Error('この操作はレビューセンターでの承認待ちです。')
+        }
+        deps.repository.updateActionRun(preflight.actionRunId, 'running')
+        const facts = deps.repository.getAgentCandidateDraftFacts(input.sourceDocumentId, input.label)
+        if (!facts) {
+          deps.repository.updateActionRun(preflight.actionRunId, 'failed', { errorCode: 'DRAFT_NOT_FOUND' })
+          throw new AgentExecutionError('AGENT_DRAFT_NOT_FOUND', '取込済みの下書きが見つかりません。')
+        }
+        const output = { facts }
+        deps.repository.updateActionRun(preflight.actionRunId, 'succeeded', { resultHash: hashActionInput(output) })
+        return { toolName, output, actionRunId: preflight.actionRunId }
+      }
+
       if (toolName === 'resume.analyze.local') {
         const input = rawInput as { fileTokens: string[] }
         if (input.fileTokens.length === 0) {
@@ -337,7 +359,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         for (const fileToken of input.fileTokens) {
           try {
             const analysed = await deps.runResumeAnalysisTask(fileToken, metadata)
-            imported.push({ name: analysed.name, format: analysed.format, reviewRequired: true })
+            imported.push({ documentId: fileToken, name: analysed.name, format: analysed.format, reviewRequired: true })
           } catch (error) {
             failed.push({
               name: deps.repository.getStagedFileRecords([fileToken])[0]?.name ?? 'unknown',

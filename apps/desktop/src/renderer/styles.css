@@ -16182,3 +16182,29 @@ body,
   border-radius: 7px;
   cursor: pointer;
 }
+
+.agent-draft-facts { width: min(760px, 100%); margin: 0 auto; }
+.agent-draft-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 0 12px;
+  padding: 8px 11px;
+  color: #8a5a1d;
+  font-size: 10.5px;
+  line-height: 1.5;
+  background: #fdf5e7;
+  border: 1px solid #f0dcbd;
+  border-radius: 9px;
+}
+.agent-draft-warning svg { flex: 0 0 auto; margin-top: 1px; }
+.agent-draft-facts dl { display: grid; gap: 8px; margin: 0 0 14px; }
+.agent-draft-facts dl > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.agent-draft-facts dt { color: #7b8491; font-size: 10.5px; }
+.agent-draft-facts dd { display: grid; gap: 2px; margin: 0; color: #253142; font-size: 12px; }
+.agent-draft-facts dd small { color: #9aa2ad; font-size: 9px; }
+.agent-draft-projects { display: grid; gap: 10px; margin: 0; padding-left: 18px; }
+.agent-draft-projects li { color: #3c4654; font-size: 11.5px; }
+.agent-draft-projects strong { display: block; color: #202733; font-size: 12px; font-weight: 660; }
+.agent-draft-projects span { display: block; color: #7b8491; font-size: 10.5px; }
+.agent-draft-projects small { display: block; margin-top: 2px; color: #9aa2ad; font-size: 9px; }

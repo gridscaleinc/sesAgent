@@ -124,6 +124,35 @@ function projectAgentEvidence(messages: readonly AiConversationMessage[]): unkno
       })
       continue
     }
+    if (block.type === 'resume-import') {
+      evidence.push({
+        type: block.type,
+        imported: block.imported.map((file) => ({ resume: file.label, ordinal: file.ordinal })),
+        failedCount: block.failedCount
+      })
+      continue
+    }
+    if (block.type === 'candidate-draft-facts') {
+      // Unconfirmed extraction. Field values are business attributes only; the
+      // document id, the file name and the local identity never reach the model.
+      evidence.push({
+        type: block.type,
+        resume: block.facts.label,
+        confirmed: false,
+        reviewStatus: block.facts.reviewStatus,
+        fields: block.facts.fields
+          .filter((field) => field.status !== 'missing')
+          .map((field) => ({ label: field.label, value: field.value, confidence: field.confidence })),
+        projects: block.facts.projects.slice(0, 8).map((project) => ({
+          title: project.title,
+          period: project.period,
+          role: project.role,
+          technologies: project.technologies,
+          summary: project.summary
+        }))
+      })
+      continue
+    }
     if (block.type === 'candidate-match-cards') {
       evidence.push({
         type: block.type,

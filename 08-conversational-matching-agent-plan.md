@@ -55,7 +55,7 @@ v0.3 明确 supersede v0.2 中以下规范性结论：
 | Stop 只取消本地匹配 | Stop 先中止本地读取/展示，再独立请求 AICommerce client-request cancel；不保证零成本或退款 |
 | Cloud 失败不影响本地 MVP | Cloud 失败时明确显示失败，保留已持久化 typed blocks 和本地确定性 narrative，不伪造流式 |
 
-v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留的收缩边界是：一轮最多一个本地 Tool、固定白名单 Tool（当前 7 个：6 个只读/计算 + 1 个本地摄取写）、严格 ANSWER/TOOL 协议、Main 白名单与参数校验、不做任意 Tool、多 Tool 循环或外部写操作、不新增 Agent 专用表、不改变本地 Rank。
+v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留的收缩边界是：一轮最多一个本地 Tool、固定白名单 Tool（当前 8 个：7 个只读/计算 + 1 个本地摄取写）、严格 ANSWER/TOOL 协议、Main 白名单与参数校验、不做任意 Tool、多 Tool 循环或外部写操作、不新增 Agent 专用表、不改变本地 Rank。
 
 最小实现验证三个业务闭环：
 
@@ -81,7 +81,7 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 | Cloud 出网硬门与专家证据 | 合成质量门、CloudRedactionGateway、本地 NER/脱敏/DLP、匿名安全投影和 Endpoint Allowlist 是失败关闭硬门；Expert Attestation 只提供质量/审计/发布证据 | Agent egress 必须复用硬门，不得放宽或绕过；专家证据可选但不得伪造 |
 | 本地 ONNX | Embedding/Reranker，不是生成式聊天模型 | 只做现有匹配 |
 
-当前已存在：全局 Sales Agent 会话、job-case.search.local、candidate.match.local、match-run.read.local、resume.analyze.local（会话附件取込）、AgentWorkspace、typed blocks、AI 规划协议、Main 受控执行器和 Schema v38。
+当前已存在：全局 Sales Agent 会话、job-case.search.local、candidate.match.local、match-run.read.local、resume.analyze.local（会话附件取込）、candidate.draft.read.local（未确认草稿读取）、AgentWorkspace、typed blocks、AI 规划协议、Main 受控执行器和 Schema v38。
 
 本轮 v0.3 已实现：Responses SSE 客户端、模型 allowlist、AgentTurnEvent、流式 UI、Cloud 两阶段持久化与远端 cancel；正式 Cloud 可用仍受本地硬性出网门、账号凭证和真实受控网络验收约束。Expert Attestation 缺失或过期只降低质量/审计/发布准备度，不阻断满足硬门的 Cloud narrative。
 

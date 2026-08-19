@@ -220,6 +220,14 @@ export function createDefaultDomainToolRegistry(): DomainToolRegistry {
       idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
     })
     .register({
+      name: 'candidate.draft.read.local', version: 1,
+      inputSchema: z.object({ sourceDocumentId: z.string().uuid() }).strict(),
+      allowedOrigins: ['user-command'],
+      allowedScopeIds: ['selected-files'],
+      effects: { localRead: true, localWrite: false, externalRead: false, externalWrite: false, fileWrite: false, cloudInvocation: false, cloudPayload: 'none' },
+      idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
+    })
+    .register({
       name: 'candidate.profile.read.local', version: 1,
       inputSchema: agentCandidateProfileReadSchema,
       allowedOrigins: ['user-command'],

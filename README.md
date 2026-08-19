@@ -207,6 +207,8 @@ Windows AppContainer 补充：OCR、Parser、Embedding 与 Reranker 现在共用
 91. Agent 的 Tool 权限已按可逆性分层，注册表全覆盖与对模型开放是两个独立决定。只读/计算层（案件检索、案件详情、候选人档案、面试、匹配依据、执行匹配）保持 `approval:'none'`；本地摄取层允许模型请求，但其产物只能是必须经人工逐项确认的草稿；内部状态变更层须落到审核中心的 `approval:'inbox'` 审批；永久删除、提案导出与恢复包激活固定不对模型开放，即使带审批也不开放 —— 这三类的安全价值来自“影响预览 → 哈希绑定 → 手动输入确认”的人工仪式，该仪式不能由一句自然语言代替。
 92. 第一个本地摄取写 Tool `resume.analyze.local` 已接入对话。拖入会话的 PDF/Excel/Word 由 Renderer 交出字节而非路径，Electron Main 复用与原生对话框完全相同的暂存校验：扩展名白名单、Magic Bytes 必须与扩展名一致、25 MB 上限、AES-256-GCM 入库；声明文件名只取 basename（`../../` 被中和而非拒绝），格式由字节决定而不是由 Renderer 或模型声明。模型通过 `import_resume` 按**附件序号**请求取込，不能提交令牌或内部 ID；Main 只接受本进程暂存过的令牌，导入任务由暂存文件反查而不采信 Renderer 传来的 Task ID。本轮没有附件时固定回答“没有可导入的附件”，不会伪造导入结果。取込产物仍是 `awaiting-review` 草稿，未经字段人工确认不会成为候选人档案，`cloudEligible=false`。
 
+93. 对话可以总结刚导入但**尚未确认**的简历草稿。新增只读 Tool `candidate.draft.read.local`：导入轮次留下 `RESUME_1` 形式的匿名引用，后续轮次按序号解析，模型不接触 Document ID；读取结果包含 9 类业务字段与项目经历，每项带置信度和页码/Sheet/Cell 来源，`confirmed` 固定为 `false`。原文件名、`localIdentity`（姓名/电话/住址/生日）和来源单元格标签都不进入云端投影 —— 文件名常含候选人姓名，来源标签内嵌文件名，两者均已由测试断言排除。回答固定标注“机器抽取、未确认”，界面同时以警示条重申任何字段经人工确认后才会成为候选人档案；会话尚未导入过简历时返回澄清追问，不猜测对象。
+
 文本型 PDF/Office、扫描 PDF、字段/项目经历人工审核、匿名 Profile、候选人库搜索/版本/归档/删除、Google Workspace 应用内管理配置、Gmail 只读同步、EML/手动案件输入、案件草稿审核/版本/归档/删除、七类三态硬条件 + 本地 BM25/Profile Vector/Project Vector/RRF/日文 Cross-Encoder 精排、项目证据、营业员匹配反馈、应用内专家标注、本地 Benchmark 质量门、提案审批/导出/提案后人工跟进、加密备份恢复和本地变更提醒已进入本地主链路。真实 ONNX 的 1,000 Profile 合成回归中，相关 Rank 为 1/1/1，30-case 质量门 Recall@20/NDCG@20/Project Evidence 均为 1.0；`hardFilterPolicyVersion=tri-state-v3`、`humanLabeledDataset=false`，不能据此宣布达到真实试点门槛。普通 Cloud AI 的本地硬性出网门、两阶段 Review Ticket 和实现绑定已经进入源码并通过本机自动测试；真实日文隐私专家报告尚未生成，只表示质量/审计/发布准备度证据缺失，不再单独阻断满足硬门的 Cloud 请求。真实 30–50 件 SES 检索专家标注集、Developer ID、公证和 Gmail 真实 Workspace 在线验收也仍未完成。
 
 ### 本地运行

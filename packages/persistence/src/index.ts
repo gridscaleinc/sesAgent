@@ -15,6 +15,7 @@ import {
 import { type DocumentIR } from '@parsers'
 import { type CandidateExtractionDraft, type CandidateProfile } from '@resume'
 import type {
+  AgentCandidateDraftFacts,
   CandidateEvaluationReport,
   CandidateEvaluationState,
   CandidateEvaluationDraft,
@@ -444,6 +445,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   getCandidateLocalIdentity(documentId: string): LocalCandidateIdentitySummary {
     return this.stores.candidates.getCandidateLocalIdentity(documentId)
+  }
+
+  getAgentCandidateDraftFacts(sourceDocumentId: string, label: string): AgentCandidateDraftFacts | null {
+    return this.stores.candidates.getAgentCandidateDraftFacts(sourceDocumentId, label)
   }
 
   getCandidateReview(documentId: string): CandidateReviewSnapshot | null {

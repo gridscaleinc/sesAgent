@@ -155,6 +155,26 @@ function BlockView({ block, zh, onSelectCase, onOpenMatching, currentCaseId }: {
     const facts = block.facts
     return <div className="agent-explanation"><div className="agent-explanation-grid"><span><strong>Match Run</strong>{facts.runId.slice(0, 12)}</span><span><strong>Result Hash</strong>{facts.resultHash.slice(0, 12)}</span><span><strong>{zh ? '状态' : '状態'}</strong>{statusLabel(facts.validity, zh)}</span><span><strong>{zh ? '算法' : 'アルゴリズム'}</strong>{facts.algorithmVersion}</span></div><p>{zh ? '以上解释来自已保存的 Result Snapshot，没有重新运行本地匹配。' : '保存済みの Result Snapshot を読み取りました。マッチングは再実行していません。'}</p></div>
   }
+  if (block.type === 'resume-import') return null
+  if (block.type === 'candidate-draft-facts') {
+    const facts = block.facts
+    return <div className="agent-draft-facts">
+      <p className="agent-draft-warning">
+        <Icon name="alert" size={13} />
+        <span>{zh ? '以下为机器抽取的未确认草稿，任何字段经人工确认后才会成为候选人档案。' : '以下は機械抽出の未確認下書きです。担当者が確認するまで候補者プロフィールにはなりません。'}</span>
+      </p>
+      <dl>{facts.fields.filter((field) => field.status !== 'missing').map((field) => <div key={field.label}>
+        <dt>{field.label}</dt>
+        <dd>{field.value ?? '—'}<small>{field.sources.join(' · ')}</small></dd>
+      </div>)}</dl>
+      {facts.projects.length > 0 ? <ol className="agent-draft-projects">{facts.projects.slice(0, 5).map((project, index) => <li key={index}>
+        <strong>{project.title}</strong>
+        <span>{[project.period, project.role].filter(Boolean).join(' · ')}</span>
+        {project.technologies.length > 0 ? <span>{project.technologies.join('、')}</span> : null}
+        <small>{project.sources.join(' · ')}</small>
+      </li>)}</ol> : null}
+    </div>
+  }
   return <div className="agent-error-block" role="alert"><Icon name="alert" size={15} /><span>{block.message}</span></div>
 }
 

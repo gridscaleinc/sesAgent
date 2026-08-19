@@ -27,6 +27,7 @@ export type ProcessingJobStatus = 'queued' | 'running' | 'succeeded' | 'retry_wa
 
 export type DomainToolName =
   | 'resume.analyze.local'
+  | 'candidate.draft.read.local'
   | 'job-case.search.local'
   | 'candidate.match.local'
   | 'candidate.profile.read.local'
@@ -1823,6 +1824,49 @@ export interface AgentErrorBlock {
   entityKind?: AiConversationReferenceKind
 }
 
+/**
+ * A resume extraction draft, as the agent is allowed to see it. Everything here
+ * is machine-extracted and unconfirmed: no value becomes a candidate profile
+ * until the operator confirms each field, so `confirmed` is always false and
+ * every field keeps the page/sheet/cell it came from.
+ *
+ * Direct identifiers and the original file name are deliberately absent - the
+ * file name routinely contains the candidate's own name.
+ */
+export interface AgentCandidateDraftFacts {
+  documentId: string
+  label: string
+  confirmed: false
+  reviewStatus: 'awaiting-review' | 'completed'
+  fields: Array<{
+    label: string
+    value: string | null
+    confidence: number
+    status: 'needs_review' | 'missing' | 'confirmed'
+    sources: string[]
+  }>
+  projects: Array<{
+    title: string
+    period: string | null
+    role: string | null
+    technologies: string[]
+    summary: string
+    confidence: number
+    sources: string[]
+  }>
+}
+
+export interface AgentCandidateDraftBlock {
+  type: 'candidate-draft-facts'
+  facts: AgentCandidateDraftFacts
+}
+
+export interface AgentResumeImportBlock {
+  type: 'resume-import'
+  imported: Array<{ documentId: string; label: string; ordinal: number }>
+  failedCount: number
+}
+
 export type AiConversationBlock =
   | AgentTextBlock
   | AgentJobCaseCardsBlock
@@ -1831,6 +1875,8 @@ export type AiConversationBlock =
   | AgentCandidateInterviewEvidenceBlock
   | AgentClarificationBlock
   | AgentMatchRunExplanationBlock
+  | AgentCandidateDraftBlock
+  | AgentResumeImportBlock
   | AgentErrorBlock
 
 export interface AiConversationSalesAgentState {

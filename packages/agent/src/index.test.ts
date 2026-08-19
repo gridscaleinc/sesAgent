@@ -60,15 +60,38 @@ function createHarness(attachmentTokens: string[] = []) {
     now: () => new Date('2026-08-18T03:00:00.000Z'),
     locale: () => 'zh-CN' as const,
     listAttachmentFileTokens: () => attachmentTokens,
-    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local', input: unknown): Promise<AgentToolResult> => {
+    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local', input: unknown): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
+      if (toolName === 'candidate.draft.read.local') {
+        const value = input as { sourceDocumentId: string; label: string }
+        return {
+          toolName,
+          actionRunId: '99999999-9999-4999-8999-999999999999',
+          output: {
+            facts: {
+              documentId: value.sourceDocumentId,
+              label: value.label,
+              confirmed: false as const,
+              reviewStatus: 'awaiting-review' as const,
+              fields: [
+                { label: 'スキル', value: 'Java, Spring Boot', confidence: 0.92, status: 'needs_review' as const, sources: ['Sheet1!B4'] },
+                { label: '日本語', value: 'N1', confidence: 0.88, status: 'needs_review' as const, sources: ['Sheet1!B7'] },
+                { label: '単価', value: null, confidence: 0, status: 'missing' as const, sources: [] }
+              ],
+              projects: [
+                { title: '決済基盤刷新', period: '2024/01〜2025/03', role: 'SE', technologies: ['Java'], summary: '設計と実装', confidence: 0.8, sources: ['Sheet1!A12'] }
+              ]
+            }
+          }
+        }
+      }
       if (toolName === 'resume.analyze.local') {
         const value = input as { fileTokens: string[] }
         return {
           toolName,
           actionRunId: '88888888-8888-4888-8888-888888888888',
           output: {
-            imported: value.fileTokens.map((token) => ({ name: `${token.slice(0, 4)}.pdf`, format: 'pdf', reviewRequired: true as const })),
+            imported: value.fileTokens.map((token) => ({ documentId: token, name: `${token.slice(0, 4)}.pdf`, format: 'pdf', reviewRequired: true as const })),
             failed: []
           }
         }
@@ -158,6 +181,45 @@ function createHarness(attachmentTokens: string[] = []) {
 }
 
 describe('local conversational matching agent', () => {
+  it('summarises an imported resume from its draft and marks it unconfirmed', async () => {
+    const token = '11111111-1111-4111-8111-111111111111'
+    const harness = createHarness([token])
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const imported = await harness.useCase.execute(
+      { conversationId, message: '导入这份简历', expectedConversationRevision: null, requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null },
+      { toolName: 'resume.analyze.local', arguments: { attachmentOrdinal: null } }
+    )
+    const summary = await harness.useCase.execute(
+      { conversationId, message: '总结一下这个人的整体情况', expectedConversationRevision: imported.conversation.revision, requestId: '55555555-5555-4555-8555-555555555555', selectedJobCaseRef: null },
+      { toolName: 'candidate.draft.read.local', arguments: { draftOrdinal: null } }
+    )
+    // The ordinal resolved to the document the import turn actually produced.
+    expect(harness.calls.at(-1)).toEqual({
+      toolName: 'candidate.draft.read.local',
+      input: { sourceDocumentId: token, label: 'RESUME_1' }
+    })
+    expect(summary.status).toBe('completed')
+    expect(summary.assistantMessage.content).toContain('逐项确认')
+    const block = summary.assistantMessage.blocks?.[0]
+    expect(block).toMatchObject({ type: 'candidate-draft-facts', facts: { confirmed: false, reviewStatus: 'awaiting-review' } })
+  })
+
+  it('asks which resume instead of guessing when nothing has been imported', async () => {
+    const harness = createHarness([])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '总结一下这个人', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      { toolName: 'candidate.draft.read.local', arguments: { draftOrdinal: null } }
+    )
+    expect(harness.calls).toEqual([])
+    expect(result.status).toBe('clarifying')
+    expect(result.assistantMessage.content).toContain('还没有导入过简历')
+  })
+
+
   it('imports only the files attached to the turn and says the drafts still need field confirmation', async () => {
     const tokens = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222']
     const harness = createHarness(tokens)

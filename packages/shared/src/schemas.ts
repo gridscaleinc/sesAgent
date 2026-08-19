@@ -1036,6 +1036,40 @@ const agentBlocksSchema = z.union([
     options: z.array(typedAiConversationReferenceSchema).max(20)
   }),
   z.object({
+    type: z.literal('resume-import'),
+    imported: z.array(z.object({
+      documentId: z.string().uuid(),
+      label: z.string().min(1).max(60),
+      ordinal: z.number().int().min(1).max(10)
+    })).max(10),
+    failedCount: z.number().int().min(0).max(10)
+  }),
+  z.object({
+    type: z.literal('candidate-draft-facts'),
+    facts: z.object({
+      documentId: z.string().uuid(),
+      label: z.string().min(1).max(60),
+      confirmed: z.literal(false),
+      reviewStatus: z.enum(['awaiting-review', 'completed']),
+      fields: z.array(z.object({
+        label: z.string().min(1).max(80),
+        value: z.string().max(600).nullable(),
+        confidence: z.number().min(0).max(1),
+        status: z.enum(['needs_review', 'missing', 'confirmed']),
+        sources: z.array(z.string().min(1).max(180)).max(12)
+      })).max(20),
+      projects: z.array(z.object({
+        title: z.string().min(1).max(300),
+        period: z.string().max(120).nullable(),
+        role: z.string().max(180).nullable(),
+        technologies: z.array(z.string().min(1).max(120)).max(40),
+        summary: z.string().max(2_000),
+        confidence: z.number().min(0).max(1),
+        sources: z.array(z.string().min(1).max(180)).max(12)
+      })).max(30)
+    })
+  }),
+  z.object({
     type: z.literal('match-run-explanation'),
     facts: z.object({
       runId: z.string().uuid(),
