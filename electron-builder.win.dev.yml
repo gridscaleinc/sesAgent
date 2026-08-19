@@ -1,0 +1,9 @@
+extends: ./electron-builder.win.yml
+
+directories:
+  output: release/windows-dev
+
+forceCodeSigning: false
+
+win:
+  signExecutable: false

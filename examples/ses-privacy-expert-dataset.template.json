@@ -1,0 +1,32 @@
+{
+  "version": "ses-privacy-expert-dataset-v1",
+  "templateOnly": true,
+  "humanLabeledDataset": true,
+  "syntheticOnly": false,
+  "locale": "ja-JP",
+  "review": {
+    "protocolVersion": "ses-privacy-human-review-v1",
+    "sourceDocumentCount": 0,
+    "independentReviewerCount": 0,
+    "disagreementsResolved": false,
+    "approvedForLocalEvaluation": false,
+    "personalDataHandling": "pseudonymized-local-only",
+    "reviewedAt": "YYYY-MM-DDTHH:mm:ss.sssZ"
+  },
+  "cases": [
+    {
+      "id": "replace-with-non-identifying-case-id",
+      "text": "氏名：架空 太郎\n電話：090-0000-0000",
+      "expected": [
+        { "type": "person_name", "value": "架空 太郎" },
+        { "type": "phone", "value": "090-0000-0000" }
+      ]
+    }
+  ],
+  "safeCases": [
+    {
+      "id": "replace-with-safe-case-id",
+      "text": "Java / AWS / Terraform、基本設計から運用まで"
+    }
+  ]
+}

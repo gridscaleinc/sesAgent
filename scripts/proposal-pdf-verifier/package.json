@@ -1,0 +1,6 @@
+{
+  "name": "ses-proposal-pdf-verifier",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs"
+}

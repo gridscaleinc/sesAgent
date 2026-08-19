@@ -1,0 +1,171 @@
+{
+  "version": "ses-privacy-regression-v1",
+  "syntheticOnly": true,
+  "description": "Fictional Japanese SES privacy fixtures. No record represents a real person.",
+  "thresholds": {
+    "identifierRecall": 1,
+    "redactionPrecision": 1,
+    "residualLeakCount": 0,
+    "safeCaseFalsePositiveCount": 0
+  },
+  "cases": [
+    {
+      "id": "labeled-japanese-name",
+      "text": "氏名：山田 太郎\nスキル：Java / AWS",
+      "expected": [{ "type": "person_name", "value": "山田 太郎" }]
+    },
+    {
+      "id": "compact-japanese-name",
+      "text": "候補者名：佐藤花子\n経験：8年",
+      "expected": [{ "type": "person_name", "value": "佐藤花子" }]
+    },
+    {
+      "id": "honorific-japanese-name",
+      "text": "鈴木様より案件情報を受領しました",
+      "expected": [{ "type": "person_name", "value": "鈴木" }]
+    },
+    {
+      "id": "labeled-contact-name",
+      "text": "担当：高橋美咲\n案件：クラウド移行",
+      "expected": [{ "type": "person_name", "value": "高橋美咲" }]
+    },
+    {
+      "id": "labeled-english-name",
+      "text": "Candidate: Alex Smith\nRole: SRE",
+      "expected": [{ "type": "person_name", "value": "Alex Smith" }]
+    },
+    {
+      "id": "private-email",
+      "text": "連絡先 taro.fixture@example.com",
+      "expected": [{ "type": "private_email", "value": "taro.fixture@example.com" }]
+    },
+    {
+      "id": "full-width-email",
+      "text": "メール：hanako＠example．jp",
+      "expected": [{ "type": "private_email", "value": "hanako＠example．jp" }]
+    },
+    {
+      "id": "mobile-phone",
+      "text": "電話：090-1234-5678",
+      "expected": [{ "type": "phone", "value": "090-1234-5678" }]
+    },
+    {
+      "id": "international-phone",
+      "text": "Mobile +81 90-2345-6789",
+      "expected": [{ "type": "phone", "value": "+81 90-2345-6789" }]
+    },
+    {
+      "id": "full-width-phone",
+      "text": "携帯：０８０－３４５６－７８９０",
+      "expected": [{ "type": "phone", "value": "０８０－３４５６－７８９０" }]
+    },
+    {
+      "id": "postal-address",
+      "text": "〒150-0001 東京都渋谷区神宮前1-2-3",
+      "expected": [{ "type": "postal_address", "value": "〒150-0001 東京都渋谷区神宮前1-2-3" }]
+    },
+    {
+      "id": "full-width-postal-address",
+      "text": "〒１５０－０００１ 東京都渋谷区",
+      "expected": [{ "type": "postal_address", "value": "〒１５０－０００１ 東京都渋谷区" }]
+    },
+    {
+      "id": "labeled-address",
+      "text": "住所：大阪府大阪市北区梅田1-1-1",
+      "expected": [{ "type": "postal_address", "value": "大阪府大阪市北区梅田1-1-1" }]
+    },
+    {
+      "id": "birth-date",
+      "text": "生年月日：1990年1月2日",
+      "expected": [{ "type": "birth_date", "value": "1990年1月2日" }]
+    },
+    {
+      "id": "full-width-birth-date",
+      "text": "誕生日：１９８８年１２月３１日",
+      "expected": [{ "type": "birth_date", "value": "１９８８年１２月３１日" }]
+    },
+    {
+      "id": "my-number",
+      "text": "マイナンバー：1234-5678-9012",
+      "expected": [{ "type": "government_id", "value": "マイナンバー：1234-5678-9012" }]
+    },
+    {
+      "id": "passport-number",
+      "text": "パスポート番号：TR1234567",
+      "expected": [{ "type": "government_id", "value": "パスポート番号：TR1234567" }]
+    },
+    {
+      "id": "residence-card-number",
+      "text": "在留カード番号：AB12345678CD",
+      "expected": [{ "type": "government_id", "value": "在留カード番号：AB12345678CD" }]
+    },
+    {
+      "id": "nationality-label",
+      "text": "国籍：日本\nスキル：TypeScript",
+      "expected": [{ "type": "nationality", "value": "日本" }]
+    },
+    {
+      "id": "nationality-restriction",
+      "text": "日本国籍限定",
+      "expected": [{ "type": "nationality", "value": "日本国籍限定" }]
+    },
+    {
+      "id": "residence-status-label",
+      "text": "在留資格：技術・人文知識・国際業務",
+      "expected": [{ "type": "residence_status", "value": "技術・人文知識・国際業務" }]
+    },
+    {
+      "id": "residence-status-token",
+      "text": "在留区分 永住者 詳細確認済み",
+      "expected": [{ "type": "residence_status", "value": "永住者" }]
+    },
+    {
+      "id": "work-authorization-label",
+      "text": "就労資格：就労制限なし",
+      "expected": [{ "type": "work_authorization", "value": "就労制限なし" }]
+    },
+    {
+      "id": "work-authorization-token",
+      "text": "確認結果 資格外活動のみ（制限あり） 次回更新予定",
+      "expected": [{ "type": "work_authorization", "value": "資格外活動のみ（制限あり）" }]
+    },
+    {
+      "id": "personal-url",
+      "text": "Portfolio https://personal.example.test/taro",
+      "expected": [{ "type": "personal_account_or_url", "value": "https://personal.example.test/taro" }]
+    },
+    {
+      "id": "personal-account",
+      "text": "LINE ID：@taro_fixture",
+      "expected": [{ "type": "personal_account_or_url", "value": "LINE ID：@taro_fixture" }]
+    },
+    {
+      "id": "combined-signature",
+      "text": "営業担当：中村健太\n電話 03-1234-5678\nメール kenta@example.jp",
+      "expected": [
+        { "type": "person_name", "value": "中村健太" },
+        { "type": "phone", "value": "03-1234-5678" },
+        { "type": "private_email", "value": "kenta@example.jp" }
+      ]
+    },
+    {
+      "id": "stable-repeated-name",
+      "text": "氏名：小林大輔\n小林大輔様の経歴を確認",
+      "expected": [{ "type": "person_name", "value": "小林大輔" }]
+    }
+  ],
+  "safeCases": [
+    { "id": "ses-headings", "text": "案件 概要\n必須 スキル\n担当：バックエンド開発" },
+    { "id": "technology-stack", "text": "Java / Spring Boot / AWS / Terraform" },
+    { "id": "commercial-terms", "text": "単価：80万円\n精算：140-180h\n開始：8月" },
+    { "id": "coarse-location", "text": "勤務地：東京都内\n週3日リモート" },
+    { "id": "project-summary", "text": "クラウド基盤の設計・構築と運用改善を担当" },
+    { "id": "tool-name", "text": "GitHub Actions と LinkedIn Learning の利用経験" }
+  ],
+  "blockedCases": [
+    { "id": "name-coverage-review", "text": "候補者はクラウド設計を担当", "reason": "coverage:person_name_review_required" },
+    { "id": "face-review", "text": "スキル：AWS", "reason": "unredacted-media:face_or_photo", "mediaRisk": "face_or_photo" },
+    { "id": "signature-review", "text": "スキル：Java", "reason": "unredacted-media:signature", "mediaRisk": "signature" },
+    { "id": "qr-review", "text": "スキル：Go", "reason": "unredacted-media:identifying_qr_code", "mediaRisk": "identifying_qr_code" }
+  ]
+}

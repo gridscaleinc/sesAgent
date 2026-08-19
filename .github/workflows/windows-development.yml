@@ -1,0 +1,45 @@
+name: Windows development contract
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/windows-development.yml"
+      - "apps/**"
+      - "packages/**"
+      - "scripts/**"
+      - "electron-builder.win*.yml"
+      - "package-lock.json"
+      - "package.json"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run fetch:embedding-model
+      - run: npm run verify:embedding-model
+      - run: npm run fetch:reranker-model
+      - run: npm run verify:reranker-model
+      - run: npm run test:privacy-quality-gate
+      - run: npm run test:google-workspace-contract
+      - run: npm run test:platform:win
+      - run: npm run test:windows-ocr
+      - run: npm run test:windows-local-workers
+      - run: npm test
+      - run: npm run pack:win:dir
+      - run: npm run test:package:win
+      - run: npm run pack:win:unsigned
+      - run: npm run test:installer:win -- --development

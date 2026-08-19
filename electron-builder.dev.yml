@@ -1,0 +1,11 @@
+extends: ./electron-builder.yml
+
+directories:
+  output: release/dev
+
+forceCodeSigning: false
+
+mac:
+  identity: null
+  hardenedRuntime: false
+  notarize: false

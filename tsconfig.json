@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "useDefineForClassFields": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "paths": {
+      "@application": ["./packages/application/src/index.ts"],
+      "@aicommerce": ["./packages/aicommerce/src/index.ts"],
+      "@agent": ["./packages/agent/src/index.ts"],
+      "@action-runtime": ["./packages/action-runtime/src/index.ts"],
+      "@domain": ["./packages/domain/src/index.ts"],
+      "@files": ["./packages/files/src/index.ts"],
+      "@mail": ["./packages/mail/src/index.ts"],
+      "@matching": ["./packages/matching/src/index.ts"],
+      "@job-cases": ["./packages/job-cases/src/index.ts"],
+      "@local-ai": ["./packages/local-ai/src/index.ts"],
+      "@persistence": ["./packages/persistence/src/index.ts"],
+      "@parsers": ["./packages/parsers/src/index.ts"],
+      "@parsers/worker-client": ["./packages/parsers/src/worker-client.ts"],
+      "@platform": ["./packages/platform/src/index.ts"],
+      "@platform/keys": ["./packages/platform/src/keys.ts"],
+      "@privacy": ["./packages/privacy/src/index.ts"],
+      "@proposals": ["./packages/proposals/src/index.ts"],
+      "@recovery": ["./packages/recovery/src/index.ts"],
+      "@resume": ["./packages/resume/src/index.ts"],
+      "@shared": ["./packages/shared/src/index.ts"],
+      "@shared/contracts": ["./packages/shared/src/contracts.ts"],
+      "@renderer/*": ["./apps/desktop/src/renderer/*"]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "electron.vite.config.ts",
+    "vitest.config.ts"
+  ]
+}

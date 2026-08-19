@@ -1,0 +1,102 @@
+appId: jp.sesai.agentdesktop
+productName: SES Agent Desktop
+artifactName: SES-Agent-Desktop-${version}-${arch}.${ext}
+
+protocols:
+  - name: SES Agent Member Center Callback
+    schemes:
+      - com.gridscale.native.ses-agent
+    role: Viewer
+
+directories:
+  output: release
+
+files:
+  - out/**/*
+  - "!out/main/windows-ocr-worker.js"
+  - "!out/main/tesseract-worker.js"
+  - "!out/main/windows-network-probe.js"
+  - package.json
+  - "!**/*.map"
+  - "!node_modules/**/{test,tests,__tests__,example,examples,docs}/**/*"
+  - "!node_modules/better-sqlite3-multiple-ciphers/build/Release/test_extension.node"
+  - "!node_modules/tesseract.js/**/*"
+  - "!node_modules/tesseract.js-core/**/*"
+  - "!node_modules/@tesseract.js-data/**/*"
+  - "!node_modules/@napi-rs/canvas/**/*"
+  - "!node_modules/@napi-rs/canvas-*/**/*"
+  - "!node_modules/onnxruntime-node/bin/napi-v3/linux/**/*"
+  - "!node_modules/onnxruntime-node/bin/napi-v3/win32/**/*"
+  - "!node_modules/onnxruntime-node/bin/napi-v3/darwin/x64/**/*"
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+
+extraResources:
+  - from: build/native/macos/ses-vision-ocr
+    to: native/macos/ses-vision-ocr
+  - from: build/native/macos/ses-wechat-accessibility
+    to: native/macos/ses-wechat-accessibility
+  - from: models/Xenova/multilingual-e5-small
+    to: models/Xenova/multilingual-e5-small
+    filter:
+      - model-manifest.json
+      - config.json
+      - quant_config.json
+      - special_tokens_map.json
+      - tokenizer_config.json
+      - sentencepiece.bpe.model
+      - tokenizer.json
+      - onnx/model_quantized.onnx
+  - from: models/hotchpotch/japanese-reranker-tiny-v2
+    to: models/hotchpotch/japanese-reranker-tiny-v2
+    filter:
+      - model-manifest.json
+      - config.json
+      - special_tokens_map.json
+      - tokenizer_config.json
+      - tokenizer.model
+      - tokenizer.json
+      - onnx/model_qint8_arm64.onnx
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: build/privacy-verification
+    to: verification
+    filter:
+      - privacy-quality-report.json
+      - privacy-expert-report.json
+      - cloud-enforcement-manifest.json
+
+npmRebuild: true
+compression: maximum
+forceCodeSigning: true
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.business
+  icon: build/release/icon.icns
+  minimumSystemVersion: 13.0.0
+  hardenedRuntime: true
+  entitlements: packaging/entitlements.mac.plist
+  entitlementsInherit: packaging/entitlements.mac.inherit.plist
+  notarize: true
+  darkModeSupport: true
+  binaries:
+    - Contents/Resources/native/macos/ses-vision-ocr
+    - Contents/Resources/native/macos/ses-wechat-accessibility
+
+dmg:
+  sign: false
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 150
+      y: 185
+    - x: 390
+      y: 185
+      type: link
+      path: /Applications

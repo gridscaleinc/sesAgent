@@ -1,0 +1,91 @@
+appId: jp.sesai.agentdesktop
+productName: SES Agent Desktop
+artifactName: SES-Agent-Desktop-${version}-${arch}.${ext}
+
+protocols:
+  - name: SES Agent Member Center Callback
+    schemes:
+      - com.gridscale.native.ses-agent
+
+directories:
+  output: release/windows
+
+files:
+  - out/**/*
+  - "!out/main/windows-network-probe.js"
+  - package.json
+  - "!**/*.map"
+  - "!node_modules/**/{test,tests,__tests__,example,examples,docs}/**/*"
+  - "!node_modules/better-sqlite3-multiple-ciphers/build/Release/test_extension.node"
+  - "!node_modules/@tesseract.js-data/**/*"
+  - "!node_modules/onnxruntime-node/bin/napi-v3/linux/**/*"
+  - "!node_modules/onnxruntime-node/bin/napi-v3/darwin/**/*"
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+
+extraResources:
+  - from: build/native/windows/ocr
+    to: native/windows/ocr
+    filter:
+      - resource-manifest.json
+      - network-isolation-evidence.json
+      - local-worker-network-evidence.json
+      - ses-ocr-sandbox.exe
+      - tessdata/jpn.traineddata.gz
+      - tessdata/eng.traineddata.gz
+  - from: models/Xenova/multilingual-e5-small
+    to: models/Xenova/multilingual-e5-small
+    filter:
+      - model-manifest.json
+      - config.json
+      - quant_config.json
+      - special_tokens_map.json
+      - tokenizer_config.json
+      - sentencepiece.bpe.model
+      - tokenizer.json
+      - onnx/model_quantized.onnx
+  - from: models/hotchpotch/japanese-reranker-tiny-v2
+    to: models/hotchpotch/japanese-reranker-tiny-v2
+    filter:
+      - model-manifest.json
+      - config.json
+      - special_tokens_map.json
+      - tokenizer_config.json
+      - tokenizer.model
+      - tokenizer.json
+      - onnx/model_qint8_avx2.onnx
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+  - from: build/privacy-verification
+    to: verification
+    filter:
+      - privacy-quality-report.json
+      - privacy-expert-report.json
+      - cloud-enforcement-manifest.json
+
+npmRebuild: true
+compression: maximum
+forceCodeSigning: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/sesai-app-icon.png
+  signExecutable: true
+  verifyUpdateCodeSignature: true
+
+nsis:
+  include: packaging/installer.nsh
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+  shortcutName: SES Agent Desktop
+  uninstallDisplayName: SES Agent Desktop

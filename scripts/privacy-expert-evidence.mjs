@@ -1,0 +1,143 @@
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+export const privacyExpertReportVersion = 'ses-privacy-expert-quality-report-v2'
+export const privacyExpertMinimums = Object.freeze({
+  sourceDocumentCount: 50,
+  caseCount: 50,
+  safeCaseCount: 20,
+  expectedPersonNames: 20,
+  postReviewIdentifierRecall: 1,
+  automaticNonNameIdentifierRecall: 1,
+  redactionPrecision: 0.95,
+  automaticPersonNameRecall: 0.9,
+  residualLeakCount: 0,
+  safeCaseFalsePositiveRate: 0.05,
+  independentReviewerCount: 2,
+  maximumReportAgeDays: 30,
+  maximumReviewAgeDays: 365
+})
+
+export const privacyImplementationPaths = Object.freeze([
+  'packages/privacy/src/index.ts',
+  'packages/local-ai/src/vision-ocr.ts',
+  'apps/desktop/src/workers/network-deny.ts',
+  'scripts/verify-privacy-expert-dataset.ts',
+  'scripts/privacy-expert-evidence.mjs'
+])
+
+export const cloudEnforcementPaths = Object.freeze([
+  'apps/desktop/src/main/cloud-ai-privacy.ts',
+  'apps/desktop/src/main/cloud-ai-review.ts',
+  'apps/desktop/src/main/privacy-gates.ts',
+  'apps/desktop/src/main/index.ts',
+  'apps/desktop/src/preload/index.ts',
+  'packages/shared/src/contracts.ts',
+  'packages/shared/src/schemas.ts',
+  'packages/privacy/src/index.ts',
+  'packages/aicommerce/src/index.ts',
+  'scripts/generate-cloud-enforcement-manifest.mjs',
+  'scripts/privacy-expert-evidence.mjs',
+  'scripts/check-macos-release.mjs',
+  'scripts/check-windows-release.mjs',
+  'scripts/verify-macos-package.mjs',
+  'scripts/verify-windows-package.mjs',
+  'electron-builder.yml',
+  'electron-builder.win.yml',
+  'package.json'
+])
+
+async function computeSourceSetSha256(paths, root) {
+  const hash = createHash('sha256')
+  for (const relativePath of paths) {
+    hash.update(relativePath)
+    hash.update('\0')
+    hash.update(await readFile(resolve(root, relativePath)))
+    hash.update('\0')
+  }
+  return hash.digest('hex')
+}
+
+export function computePrivacyImplementationSha256(root = process.cwd()) {
+  return computeSourceSetSha256(privacyImplementationPaths, root)
+}
+
+export function computeCloudEnforcementSha256(root = process.cwd()) {
+  return computeSourceSetSha256(cloudEnforcementPaths, root)
+}
+
+export function privacyExpertReportFailures(report, options = {}) {
+  const expectedPlatform = options.platform ?? process.platform
+  const expectedArch = options.arch ?? process.arch
+  const expectedPrivacyImplementationSha256 = options.privacyImplementationSha256
+  const expectedCloudEnforcementSha256 = options.cloudEnforcementSha256
+  const now = options.now ?? new Date()
+  const failures = []
+  const finiteNumber = (value) => typeof value === 'number' && Number.isFinite(value)
+  if (!report || typeof report !== 'object') return ['report:not-an-object']
+  if (report.version !== privacyExpertReportVersion) failures.push('report:version')
+  if (report.datasetVersion !== 'ses-privacy-expert-dataset-v1') failures.push('report:dataset-version')
+  if (report.humanLabeledDataset !== true || report.syntheticOnly !== false) failures.push('report:not-human-labeled')
+  if (report.locale !== 'ja-JP') failures.push('report:locale')
+  if (report.platform !== expectedPlatform || report.arch !== expectedArch) failures.push('report:platform-arch')
+  if (!/^[a-f0-9]{64}$/u.test(report.datasetSha256 ?? '')) failures.push('report:dataset-hash')
+  if (!/^[a-f0-9]{64}$/u.test(report.privacyImplementationSha256 ?? '')) {
+    failures.push('report:privacy-implementation-hash-format')
+  }
+  if (!/^[a-f0-9]{64}$/u.test(report.cloudEnforcementSha256 ?? '')) {
+    failures.push('report:cloud-enforcement-hash-format')
+  }
+  if (
+    expectedPrivacyImplementationSha256 &&
+    report.privacyImplementationSha256 !== expectedPrivacyImplementationSha256
+  ) {
+    failures.push('report:privacy-implementation-hash-stale')
+  }
+  if (expectedCloudEnforcementSha256 && report.cloudEnforcementSha256 !== expectedCloudEnforcementSha256) {
+    failures.push('report:cloud-enforcement-hash-stale')
+  }
+  if (!finiteNumber(report.sourceDocumentCount) || report.sourceDocumentCount < privacyExpertMinimums.sourceDocumentCount) failures.push('report:source-documents')
+  if (!finiteNumber(report.caseCount) || report.caseCount < privacyExpertMinimums.caseCount) failures.push('report:cases')
+  if (!finiteNumber(report.safeCaseCount) || report.safeCaseCount < privacyExpertMinimums.safeCaseCount) failures.push('report:safe-cases')
+  if (!finiteNumber(report.expectedPersonNames) || report.expectedPersonNames < privacyExpertMinimums.expectedPersonNames) failures.push('report:person-name-coverage')
+  if (!finiteNumber(report.independentReviewerCount) || report.independentReviewerCount < privacyExpertMinimums.independentReviewerCount) failures.push('report:reviewers')
+  if (report.disagreementsResolved !== true || report.approvedForLocalEvaluation !== true) failures.push('report:review-protocol')
+  if (!['pseudonymized-local-only', 'consented-local-only'].includes(report.personalDataHandling)) {
+    failures.push('report:personal-data-handling')
+  }
+  if (!finiteNumber(report.postReviewIdentifierRecall) || report.postReviewIdentifierRecall !== privacyExpertMinimums.postReviewIdentifierRecall) failures.push('report:identifier-recall')
+  if (!finiteNumber(report.automaticNonNameIdentifierRecall) || report.automaticNonNameIdentifierRecall !== privacyExpertMinimums.automaticNonNameIdentifierRecall) {
+    failures.push('report:non-name-recall')
+  }
+  if (!finiteNumber(report.redactionPrecision) || report.redactionPrecision < privacyExpertMinimums.redactionPrecision) failures.push('report:redaction-precision')
+  if (!finiteNumber(report.automaticPersonNameRecall) || report.automaticPersonNameRecall < privacyExpertMinimums.automaticPersonNameRecall) failures.push('report:name-recall')
+  if (!finiteNumber(report.residualLeakCount) || report.residualLeakCount !== privacyExpertMinimums.residualLeakCount) failures.push('report:residual-leaks')
+  if (!finiteNumber(report.safeCaseFalsePositiveRate) || report.safeCaseFalsePositiveRate > privacyExpertMinimums.safeCaseFalsePositiveRate) failures.push('report:false-positive-rate')
+  if (report.manualPersonNameReviewRequired !== true) failures.push('report:manual-name-review')
+  if (report.containsCaseContent !== false || report.cloudDirectIdentifiers !== 0 || report.networkAccess !== false) {
+    failures.push('report:data-boundary')
+  }
+  if (report.nodeNetworkDenyGuard !== true) failures.push('report:network-guard')
+  const nameDetectionEngines = Array.isArray(report.nameDetectionEngines) ? report.nameDetectionEngines : []
+  if (!nameDetectionEngines.includes('label-and-form-rules')) {
+    failures.push('report:name-engine')
+  }
+  if (expectedPlatform === 'darwin' && !nameDetectionEngines.includes('apple-natural-language')) {
+    failures.push('report:apple-name-engine')
+  }
+  if (report.releaseEligible !== true || !Array.isArray(report.failures) || report.failures.length > 0) {
+    failures.push('report:not-release-eligible')
+  }
+  const evaluatedAt = typeof report.evaluatedAt === 'string' ? new Date(report.evaluatedAt) : new Date(Number.NaN)
+  const maximumAgeMs = privacyExpertMinimums.maximumReportAgeDays * 24 * 60 * 60 * 1000
+  if (!Number.isFinite(evaluatedAt.getTime()) || evaluatedAt > now || now.getTime() - evaluatedAt.getTime() > maximumAgeMs) {
+    failures.push('report:stale')
+  }
+  const reviewedAt = typeof report.reviewedAt === 'string' ? new Date(report.reviewedAt) : new Date(Number.NaN)
+  const maximumReviewAgeMs = privacyExpertMinimums.maximumReviewAgeDays * 24 * 60 * 60 * 1000
+  if (!Number.isFinite(reviewedAt.getTime()) || reviewedAt > now || now.getTime() - reviewedAt.getTime() > maximumReviewAgeMs) {
+    failures.push('report:review-stale')
+  }
+  return [...new Set(failures)]
+}

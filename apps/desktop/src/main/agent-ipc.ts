@@ -1,0 +1,675 @@
+import { createHash } from 'node:crypto'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import {
+  AgentExecutionError,
+  loadAgentChatModelCatalog,
+  LocalAgentUseCase,
+  resolveAgentChatModel,
+  type AgentChatModelDefinition,
+  type AgentCandidateMatchRecord,
+  type AgentJobCaseRecord,
+  type AgentToolExecutionMetadata,
+  type LocalAgentPort
+} from '@agent'
+import { hashActionInput, type ActionContext, type ActionOrchestrator } from '@action-runtime'
+import type { MatchRuntimeIdentity } from '@matching'
+import type { EncryptedApplicationRepository } from '@persistence'
+import {
+  agentTurnEventSchema,
+  cancelAgentTurnInputSchema,
+  executeAgentTurnInputSchema,
+  ipcChannels,
+  type ApplicationLocale,
+  type AgentTurnEvent,
+  type AiConversationMessage,
+  type AiConversationSnapshot,
+  type CancelAgentTurnResult,
+  type CandidateMatchTaskExecutionResult,
+  type ExecuteAgentTurnResult
+} from '@shared'
+import type { AgentNarrativeStreamer } from './agent-cloud-narrative'
+
+interface AgentMatchTaskResult extends CandidateMatchTaskExecutionResult {
+  actionRunId?: string | null
+}
+
+export interface AgentIpcDependencies {
+  repository: EncryptedApplicationRepository
+  actionOrchestrator: ActionOrchestrator
+  assertTrustedSender(event: IpcMainInvokeEvent): void
+  conversationalMatchingEnabled(): boolean
+  locale(): ApplicationLocale
+  currentOperator(): { operatorId: string; displayName: string }
+  currentMatchRuntimeIdentity: MatchRuntimeIdentity
+  createMatchTask(jobCaseId: string, jobCaseVersion: number): { taskId: string }
+  runCandidateMatchTask(taskId: string, metadata: AgentToolExecutionMetadata): Promise<AgentMatchTaskResult>
+  cancelMatchTask(taskId: string): void
+  modelCatalog?: readonly AgentChatModelDefinition[]
+  narrativeStreamer?: AgentNarrativeStreamer | null
+}
+
+interface ActiveAgentTurn {
+  requestId: string
+  taskId: string | null
+  cancelled: boolean
+  abortController: AbortController
+  clientRequestId: string | null
+  remoteRequestInFlight: boolean
+  remoteCancelStatus: 'cancel_requested' | 'canceled' | 'too_late' | null
+  remoteCancelAttempted: boolean
+  remoteCancelFailed: boolean
+  cancelPromise: Promise<'cancel_requested' | 'canceled' | 'too_late' | null> | null
+  sequence: number
+  totalDeltaCharacters: number
+  streamingStarted: boolean
+  model: AgentChatModelDefinition
+  sender: IpcMainInvokeEvent['sender']
+  conversationId: string
+  eventDeliveryStopped: boolean
+}
+
+type AgentTurnEventPayload = AgentTurnEvent extends infer Event
+  ? Event extends AgentTurnEvent
+    ? Omit<Event, 'conversationId' | 'requestId' | 'sequence' | 'modelKey' | 'modelDisplayName'>
+    : never
+  : never
+
+function safeJobCaseRecord(jobCase: ReturnType<EncryptedApplicationRepository['listActiveJobCases']>[number]): AgentJobCaseRecord {
+  const field = (key: string): string | null => jobCase.fields.find((item) => item.key === key)?.value ?? null
+  return {
+    id: jobCase.id,
+    version: jobCase.version,
+    title: field('title') ?? `案件 ${jobCase.id.slice(0, 8)}`,
+    updatedAt: jobCase.confirmedAt,
+    requiredSkills: field('required_skills'),
+    rate: field('rate'),
+    workStyle: field('remote') ?? field('location'),
+    startDate: field('start_date'),
+    status: 'current'
+  }
+}
+
+function actionIdempotencyKey(toolName: string, conversationId: string, requestId: string): string {
+  return createHash('sha256').update(`${toolName}:${conversationId}:${requestId}`).digest('hex')
+}
+
+function actionContext(
+  metadata: AgentToolExecutionMetadata,
+  scopeId: string,
+  scopeFingerprint: string,
+  actorId: string,
+  persistedConversationId: string | null
+): ActionContext {
+  return {
+    origin: 'user-command',
+    workTaskId: null,
+    scopeId,
+    scopeFingerprint,
+    actorId,
+    conversationId: persistedConversationId,
+    turnId: persistedConversationId ? metadata.turnId : null
+  }
+}
+
+const agentSearchEarliestDate = '1970-01-01T00:00:00.000Z'
+const agentSearchLatestDate = '9999-12-31T23:59:59.999Z'
+
+function caseMatchesQuery(record: AgentJobCaseRecord, query: string | null): boolean {
+  if (!query) return true
+  const haystack = [record.title, record.requiredSkills, record.rate, record.workStyle, record.startDate]
+    .filter(Boolean).join('\n').normalize('NFKC').toLocaleLowerCase('ja-JP')
+  return haystack.includes(query.normalize('NFKC').toLocaleLowerCase('ja-JP'))
+}
+
+export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void {
+  const modelCatalog = deps.modelCatalog ?? loadAgentChatModelCatalog()
+  const activeTurns = new Map<string, ActiveAgentTurn>()
+  const inFlightRequests = new Map<string, { conversationId: string; promise: Promise<ExecuteAgentTurnResult> }>()
+  const requestResults = new Map<string, { conversationId: string; promise: Promise<ExecuteAgentTurnResult> }>()
+  const maximumCompletedRequestResults = 100
+  let disposed = false
+
+  const emit = (
+    state: ActiveAgentTurn,
+    event: AgentTurnEventPayload
+  ): void => {
+    if (disposed || state.eventDeliveryStopped) return
+    try {
+      if (state.sender.isDestroyed()) {
+        state.eventDeliveryStopped = true
+        return
+      }
+      const sequence = state.sequence + 1
+      const parsed = agentTurnEventSchema.parse({
+        ...event,
+        conversationId: state.conversationId,
+        requestId: state.requestId,
+        sequence,
+        modelKey: state.model.key,
+        modelDisplayName: state.model.displayName
+      })
+      state.sender.send(ipcChannels.agentTurnEvent, parsed)
+      state.sequence = sequence
+    } catch {
+      state.eventDeliveryStopped = true
+    }
+  }
+
+  const remoteCancelMessage = (state: ActiveAgentTurn, status: ActiveAgentTurn['remoteCancelStatus']): string => {
+    if (status === 'canceled') return 'AICommerce 返回 canceled，已确认取消；但不代表自动退款，费用仍以 AICommerce 最终结算为准。'
+    if (status === 'too_late') return 'AICommerce 返回 too_late；本地已停止显示，但远端请求可能已经完成并产生费用，最终费用仍以 AICommerce 结算为准。'
+    if (status === 'cancel_requested') return 'AICommerce 已受理取消请求，但不代表 Provider 已停止，也不保证免费或退款。'
+    if (!state.clientRequestId) return '已停止本地读取和显示；本次尚未取得可独立取消的远端请求标识。'
+    if (!state.remoteRequestInFlight) return '远端 AI 请求已经结束；已停止本地后续处理，最终费用仍以 AICommerce 结算为准。'
+    if (state.remoteCancelFailed) return '已取得远端请求标识，但独立取消请求失败；本地已停止，最终费用仍由 AICommerce 结算。'
+    if (!state.remoteCancelAttempted) return '已取得远端请求标识，但未能发起独立取消请求；本地已停止，最终费用仍由 AICommerce 结算。'
+    return '已停止本地读取和显示；远端取消请求未返回可确认状态，最终费用仍由 AICommerce 结算。'
+  }
+
+  const requestRemoteCancel = (state: ActiveAgentTurn): Promise<ActiveAgentTurn['remoteCancelStatus']> => {
+    if (state.cancelPromise) return state.cancelPromise
+    if (!state.remoteRequestInFlight || !state.clientRequestId || !deps.narrativeStreamer) return Promise.resolve(null)
+    state.remoteCancelAttempted = true
+    state.cancelPromise = deps.narrativeStreamer.cancel(state.clientRequestId).then((result) => {
+      state.remoteCancelStatus = result.status
+      state.remoteCancelFailed = false
+      return result.status
+    }, () => {
+      state.remoteCancelFailed = true
+      return null
+    })
+    return state.cancelPromise
+  }
+
+  const markRemoteRequestStarted = (state: ActiveAgentTurn, clientRequestId: string): void => {
+    state.clientRequestId = clientRequestId
+    state.remoteRequestInFlight = true
+    state.remoteCancelStatus = null
+    state.remoteCancelAttempted = false
+    state.remoteCancelFailed = false
+    state.cancelPromise = null
+    if (state.cancelled) void requestRemoteCancel(state)
+  }
+
+  const markRemoteRequestSettled = (state: ActiveAgentTurn): void => {
+    state.remoteRequestInFlight = false
+  }
+
+  const saveNarrativeState = (
+    result: ExecuteAgentTurnResult,
+    patch: Pick<AiConversationMessage, 'content' | 'mode' | 'modelKey' | 'modelDisplayName' | 'narrativeStatus'>
+  ): { conversation: AiConversationSnapshot; assistantMessage: AiConversationMessage } => {
+    const messages = result.conversation.messages.map((message) => message.id === result.assistantMessage.id
+      ? { ...message, ...patch }
+      : message)
+    const conversation = deps.repository.saveAiConversation({
+      conversationId: result.conversation.id,
+      context: result.conversation.context,
+      messages,
+      salesAgentState: result.conversation.salesAgentState,
+      expectedRevision: result.conversation.revision
+    })
+    const assistantMessage = conversation.messages.find((message) => message.id === result.assistantMessage.id)
+    if (!assistantMessage) throw new Error('Agent assistant message was not preserved.')
+    return { conversation, assistantMessage }
+  }
+
+  const localFallbackResult = (
+    result: ExecuteAgentTurnResult,
+    model: AgentChatModelDefinition,
+    narrativeStatus: 'failed-local-fallback' | 'cancelled',
+    status: 'failed' | 'cancelled'
+  ): ExecuteAgentTurnResult => {
+    try {
+      const saved = saveNarrativeState(result, {
+        content: result.assistantMessage.content,
+        mode: 'local-fallback',
+        modelKey: model.key,
+        modelDisplayName: model.displayName,
+        narrativeStatus
+      })
+      return { ...result, status, ...saved }
+    } catch {
+      return { ...result, status }
+    }
+  }
+
+  const rememberCompletedRequest = (requestId: string, record: { conversationId: string; promise: Promise<ExecuteAgentTurnResult> }) => {
+    inFlightRequests.delete(requestId)
+    requestResults.set(requestId, record)
+    while (requestResults.size > maximumCompletedRequestResults) {
+      const oldest = requestResults.keys().next().value as string | undefined
+      if (!oldest) break
+      requestResults.delete(oldest)
+    }
+  }
+
+  const port: LocalAgentPort = {
+    listActiveJobCases: () => deps.repository.listActiveJobCases().map(safeJobCaseRecord),
+    loadConversation: (conversationId) => deps.repository.getAiConversation(conversationId),
+    saveConversation: (input) => deps.repository.saveAiConversation(input),
+    locale: () => deps.locale(),
+    isCancelled: (conversationId, requestId) => activeTurns.get(conversationId)?.requestId === requestId && activeTurns.get(conversationId)?.cancelled === true,
+    executeTool: async (toolName, rawInput, metadata) => {
+      if (activeTurns.get(metadata.conversationId)?.requestId === metadata.requestId && activeTurns.get(metadata.conversationId)?.cancelled) {
+        throw new AgentExecutionError('TURN_CANCELLED', '当前案件匹配操作已取消。')
+      }
+      const scopeId = toolName === 'job-case.search.local' ? 'active-job-cases'
+        : toolName === 'candidate.profile.read.local' ? 'selected-candidate-profile'
+        : toolName === 'candidate.interview.read.local' ? 'selected-candidate-interviews'
+        : toolName === 'match-run.read.local' ? 'selected-match-run'
+          : 'confirmed-candidate-pool'
+      const scopeFingerprint = hashActionInput(rawInput)
+      const actorId = deps.currentOperator().operatorId
+      const existingConversation = deps.repository.getAiConversation(metadata.conversationId)
+      const persistedConversationId = existingConversation?.context.assistant === 'sales-agent'
+        ? metadata.conversationId
+        : null
+      const context = actionContext(metadata, scopeId, scopeFingerprint, actorId, persistedConversationId)
+      if (toolName === 'candidate.match.local') {
+        const input = rawInput as { jobCaseId: string; jobCaseVersion: number }
+        const task = deps.createMatchTask(input.jobCaseId, input.jobCaseVersion)
+        const active = activeTurns.get(metadata.conversationId)
+        if (active?.requestId === metadata.requestId) active.taskId = task.taskId
+        let execution: AgentMatchTaskResult
+        try {
+          execution = await deps.runCandidateMatchTask(task.taskId, metadata)
+        } catch (error) {
+          if (active?.cancelled) {
+            throw new AgentExecutionError(
+              'TURN_CANCELLED',
+              '当前案件匹配操作已取消。',
+              error instanceof AgentExecutionError ? error.actionRunId : null
+            )
+          }
+          if (error instanceof AgentExecutionError) throw error
+          throw new AgentExecutionError('AGENT_TOOL_FAILED', '候选人匹配工具执行失败。', null)
+        }
+        if (active?.cancelled) throw new AgentExecutionError('TURN_CANCELLED', '当前案件匹配操作已取消。')
+        const cards: AgentCandidateMatchRecord[] = execution.matches.map((match, index) => ({
+          candidateProfileId: match.id,
+          runId: execution.run.id,
+          resultId: match.matchResultId,
+          resultHash: match.matchResultHash,
+          rank: match.retrieval.rank ?? index + 1,
+          anonymousLabel: match.anonymousLabel,
+          fitScore: match.matchScore,
+          matched: match.matchedTerms,
+          missing: match.retrieval.hardFilters.filter((filter) => filter.outcome !== 'passed').map((filter) => filter.requested),
+          hardFilterStatus: match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
+            ? 'failed'
+            : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown') ? 'unknown' : 'passed',
+          projectEvidence: match.projectEvidence?.summary ?? null,
+          status: 'current'
+        }))
+        return {
+          toolName,
+          output: { runId: execution.run.id, resultHash: execution.run.resultSetHash, cards },
+          actionRunId: execution.actionRunId ?? null
+        }
+      }
+      const action = deps.actionOrchestrator.preflight(
+        toolName,
+        context,
+        rawInput,
+        '案件匹配事实を端末内で读取します。',
+        actionIdempotencyKey(toolName, metadata.conversationId, metadata.requestId)
+      )
+      if (action.decision.outcome === 'deny') throw new Error(action.decision.reason)
+      if (action.decision.outcome === 'require-approval') throw new Error('この操作はレビューセンターでの承認待ちです。')
+      const actionRunId = action.actionRunId
+      deps.repository.updateActionRun(actionRunId, 'running')
+      try {
+        if (toolName === 'job-case.search.local') {
+          const input = action.input as {
+            mode: 'recent' | 'by-id'
+            caseId?: string | null
+            query?: string | null
+            updatedAfter?: string | null
+            updatedBefore?: string | null
+            limit: number
+          }
+          const source = deps.repository.listActiveJobCases().map(safeJobCaseRecord)
+          const filtered = source.filter((record) => {
+            if (input.mode === 'by-id') return record.id === input.caseId
+            const after = input.updatedAfter ? new Date(input.updatedAfter).getTime() : Number.NEGATIVE_INFINITY
+            const before = input.updatedBefore ? new Date(input.updatedBefore).getTime() : Number.POSITIVE_INFINITY
+            return new Date(record.updatedAt).getTime() >= after && new Date(record.updatedAt).getTime() < before && caseMatchesQuery(record, input.query ?? null)
+          })
+          const cases = filtered.slice(0, Math.min(20, input.limit))
+          const output = {
+            query: input.query ?? '',
+            dataAsOf: new Date().toISOString(),
+            updatedAfter: input.updatedAfter ?? agentSearchEarliestDate,
+            updatedBefore: input.updatedBefore ?? agentSearchLatestDate,
+            totalMatched: filtered.length,
+            cases
+          }
+          const resultHash = hashActionInput(output)
+          deps.repository.updateActionRun(actionRunId, 'succeeded', { resultHash })
+          return { toolName, output, actionRunId }
+        }
+
+        if (toolName === 'candidate.profile.read.local') {
+          const input = action.input as { runId: string; resultId?: string | null; rank?: number | null }
+          const facts = deps.repository.getAgentCandidateProfileFacts(
+            input.runId,
+            deps.currentMatchRuntimeIdentity,
+            input.resultId ?? null,
+            input.rank ?? null
+          )
+          const output = { facts }
+          deps.repository.updateActionRun(actionRunId, 'succeeded', { resultHash: hashActionInput(output) })
+          return { toolName, output, actionRunId }
+        }
+
+        if (toolName === 'candidate.interview.read.local') {
+          const input = action.input as { runId: string; resultId?: string | null; rank?: number | null }
+          const facts = deps.repository.getAgentCandidateInterviewFacts(
+            input.runId,
+            deps.currentMatchRuntimeIdentity,
+            input.resultId ?? null,
+            input.rank ?? null
+          )
+          const output = { facts }
+          deps.repository.updateActionRun(actionRunId, 'succeeded', { resultHash: hashActionInput(output) })
+          return { toolName, output, actionRunId }
+        }
+
+        const input = action.input as { runId: string; resultId?: string | null; rank?: number | null }
+        const facts = deps.repository.getAgentMatchRunFacts(input.runId, deps.currentMatchRuntimeIdentity, input.resultId ?? null, input.rank ?? null)
+        const output = { facts }
+        deps.repository.updateActionRun(actionRunId, 'succeeded', { resultHash: facts.resultHash })
+        return { toolName, output, actionRunId }
+      } catch (error) {
+        deps.repository.updateActionRun(actionRunId, 'failed', { errorCode: 'AGENT_TOOL_FAILED' })
+        if (error instanceof AgentExecutionError) {
+          throw new AgentExecutionError(error.code, error.message, actionRunId)
+        }
+        throw new AgentExecutionError('AGENT_TOOL_FAILED', '案件匹配工具执行失败。', actionRunId)
+      }
+    }
+  }
+  const useCase = new LocalAgentUseCase(port)
+
+  const handleExecute = async (event: IpcMainInvokeEvent, rawInput: unknown): Promise<ExecuteAgentTurnResult> => {
+    deps.assertTrustedSender(event)
+    if (!deps.conversationalMatchingEnabled()) throw new Error('FEATURE_DISABLED')
+    const input = executeAgentTurnInputSchema.parse(rawInput)
+    const model = resolveAgentChatModel(modelCatalog, input.modelKey)
+    const previous = requestResults.get(input.requestId)
+    if (previous) {
+      if (previous.conversationId !== input.conversationId) throw new Error('REQUEST_ID_CONVERSATION_MISMATCH')
+      return previous.promise
+    }
+    const inFlight = inFlightRequests.get(input.requestId)
+    if (inFlight) {
+      if (inFlight.conversationId !== input.conversationId) throw new Error('REQUEST_ID_CONVERSATION_MISMATCH')
+      return inFlight.promise
+    }
+    const active = activeTurns.get(input.conversationId)
+    if (active && active.requestId !== input.requestId) throw new Error('TURN_ALREADY_RUNNING')
+    const state: ActiveAgentTurn = active ?? {
+      requestId: input.requestId,
+      taskId: null,
+      cancelled: false,
+      abortController: new AbortController(),
+      clientRequestId: null,
+      remoteRequestInFlight: false,
+      remoteCancelStatus: null,
+      remoteCancelAttempted: false,
+      remoteCancelFailed: false,
+      cancelPromise: null,
+      sequence: 0,
+      totalDeltaCharacters: 0,
+      streamingStarted: false,
+      model,
+      sender: event.sender,
+      conversationId: input.conversationId,
+      eventDeliveryStopped: false
+    }
+    activeTurns.set(input.conversationId, state)
+    const promise = (async () => {
+      if (!deps.narrativeStreamer) {
+        const message = 'Cloud AI 当前不可用，无法理解自然语言或选择 Tool。'
+        emit(state, {
+          type: 'failed', code: 'AGENT_CLOUD_UNAVAILABLE',
+          message, localFallbackPreserved: true
+        })
+        return useCase.saveDirectAnswer(input, message, undefined, 'failed')
+      }
+      const planningConversation = useCase.loadPlanningConversation(input)
+      const emitDelta = (delta: string) => {
+        if (state.cancelled) return
+        if (!state.streamingStarted) {
+          state.streamingStarted = true
+          emit(state, { type: 'started', phase: 'streaming' })
+        }
+        for (let offset = 0; offset < delta.length; offset += 2_000) {
+          const text = delta.slice(offset, offset + 2_000)
+          if (state.totalDeltaCharacters + text.length > 20_000) {
+            throw new AgentExecutionError('AGENT_STREAM_LIMIT_EXCEEDED', '流式回答超过本地显示上限。')
+          }
+          state.totalDeltaCharacters += text.length
+          emit(state, { type: 'delta', text })
+        }
+      }
+
+      emit(state, { type: 'started', phase: 'planning' })
+      let plan: Awaited<ReturnType<AgentNarrativeStreamer['plan']>>
+      try {
+        plan = await deps.narrativeStreamer.plan({
+          conversationId: input.conversationId,
+          requestId: input.requestId,
+          locale: deps.locale(),
+          userMessage: input.message,
+          conversation: planningConversation,
+          selectedJobCaseRef: input.selectedJobCaseRef ?? null,
+          model,
+          signal: state.abortController.signal,
+          onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
+          onRemoteSettled: () => markRemoteRequestSettled(state)
+        })
+      } catch (error) {
+        if (state.cancelled || (error instanceof AgentExecutionError && error.code === 'TURN_CANCELLED')) {
+          const cancelStatus = await requestRemoteCancel(state)
+          const message = remoteCancelMessage(state, cancelStatus)
+          emit(state, { type: 'cancelled', cancelStatus, message })
+          return useCase.saveDirectAnswer(input, '当前案件 Agent 操作已取消。', undefined, 'cancelled')
+        }
+        state.abortController.abort()
+        const cleanupCancelStatus = state.remoteRequestInFlight ? await requestRemoteCancel(state) : null
+        const failureLifecycleMessage = state.clientRequestId && !state.remoteRequestInFlight
+          ? '远端规划响应已经结束，但最终内容不符合受控规划协议；未发送多余取消请求。'
+          : state.clientRequestId
+            ? remoteCancelMessage(state, cleanupCancelStatus)
+            : '失败发生在取得远端请求标识之前。'
+        emit(state, {
+          type: 'failed', code: 'AGENT_PLANNING_FAILED',
+          message: `AI 无法形成有效的受控 Tool 计划。${failureLifecycleMessage}`,
+          localFallbackPreserved: true
+        })
+        return useCase.saveDirectAnswer(input, 'AI 无法形成有效的受控 Tool 计划，请重试。', undefined, 'failed')
+      }
+
+      if (state.cancelled) {
+        const cancelStatus = await requestRemoteCancel(state)
+        const message = remoteCancelMessage(state, cancelStatus)
+        emit(state, { type: 'cancelled', cancelStatus, message })
+        return useCase.saveDirectAnswer(input, '当前案件 Agent 操作已取消。', undefined, 'cancelled')
+      }
+      if (plan.kind === 'answer') {
+        state.streamingStarted = false
+        state.totalDeltaCharacters = 0
+        emit(state, { type: 'started', phase: 'connecting-model' })
+        try {
+          const streamed = await deps.narrativeStreamer.streamAnswer({
+            conversationId: input.conversationId,
+            requestId: input.requestId,
+            locale: deps.locale(),
+            userMessage: input.message,
+            conversation: planningConversation,
+            selectedJobCaseRef: input.selectedJobCaseRef ?? null,
+            model,
+            signal: state.abortController.signal,
+            onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
+            onRemoteSettled: () => markRemoteRequestSettled(state),
+            onDelta: emitDelta
+          })
+          if (state.cancelled) {
+            const cancelStatus = await requestRemoteCancel(state)
+            emit(state, { type: 'cancelled', cancelStatus, message: remoteCancelMessage(state, cancelStatus) })
+            return useCase.saveDirectAnswer(input, '当前案件 Agent 操作已取消。', undefined, 'cancelled')
+          }
+          const direct = useCase.saveDirectAnswer(
+            input,
+            streamed.content,
+            { key: model.key, displayName: model.displayName }
+          )
+          emit(state, { type: 'completed' })
+          return direct
+        } catch (error) {
+          if (state.cancelled || (error instanceof AgentExecutionError && error.code === 'TURN_CANCELLED')) {
+            const cancelStatus = await requestRemoteCancel(state)
+            emit(state, { type: 'cancelled', cancelStatus, message: remoteCancelMessage(state, cancelStatus) })
+            return useCase.saveDirectAnswer(input, '当前案件 Agent 操作已取消。', undefined, 'cancelled')
+          }
+          state.abortController.abort()
+          const cleanupCancelStatus = state.remoteRequestInFlight ? await requestRemoteCancel(state) : null
+          emit(state, {
+            type: 'failed', code: 'AGENT_CLOUD_NARRATIVE_FAILED',
+            message: `AI 流式回答失败。${state.clientRequestId
+              ? remoteCancelMessage(state, cleanupCancelStatus)
+              : '失败发生在取得远端请求标识之前。'}`,
+            localFallbackPreserved: true
+          })
+          return useCase.saveDirectAnswer(input, 'AI 回答生成失败，请重试。', undefined, 'failed')
+        }
+      }
+
+      state.streamingStarted = false
+      state.totalDeltaCharacters = 0
+      emit(state, { type: 'started', phase: 'local-tool' })
+      const result = await useCase.execute(input, plan.action)
+      if (result.actionRunId) {
+        const turnId = result.assistantMessage.turnId
+        if (!turnId) throw new Error('Agent ActionRun の turn_id を会話履歴から確認できません。')
+        deps.repository.linkActionRunToConversation(result.actionRunId, input.conversationId, turnId)
+      }
+      if (result.status !== 'completed' || result.toolName === null) {
+        if (result.status === 'cancelled') {
+          emit(state, { type: 'cancelled', cancelStatus: state.remoteCancelStatus, message: remoteCancelMessage(state, state.remoteCancelStatus) })
+        } else if (result.status === 'failed') {
+          emit(state, { type: 'failed', code: 'AGENT_LOCAL_TOOL_FAILED', message: '本地 Tool 执行失败。', localFallbackPreserved: true })
+        } else {
+          emit(state, { type: 'completed' })
+        }
+        return result
+      }
+
+      emit(state, { type: 'started', phase: 'connecting-model' })
+      try {
+        const streamed = await deps.narrativeStreamer.stream({
+          conversationId: input.conversationId,
+          requestId: input.requestId,
+          locale: deps.locale(),
+          toolName: result.toolName,
+          userMessage: input.message,
+          assistantMessage: result.assistantMessage,
+          model,
+          signal: state.abortController.signal,
+          onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
+          onRemoteSettled: () => markRemoteRequestSettled(state),
+          onDelta: emitDelta
+        })
+        if (state.cancelled) {
+          const cancelStatus = await requestRemoteCancel(state)
+          const cancelled = localFallbackResult(result, model, 'cancelled', 'cancelled')
+          emit(state, { type: 'cancelled', cancelStatus, message: remoteCancelMessage(state, cancelStatus) })
+          return cancelled
+        }
+        const saved = saveNarrativeState(result, {
+          content: streamed.content,
+          mode: 'cloud',
+          modelKey: model.key,
+          modelDisplayName: model.displayName,
+          narrativeStatus: 'completed'
+        })
+        emit(state, { type: 'completed' })
+        return { ...result, status: 'completed' as const, ...saved }
+      } catch (error) {
+        if (state.cancelled || (error instanceof AgentExecutionError && error.code === 'TURN_CANCELLED')) {
+          const cancelStatus = await requestRemoteCancel(state)
+          const cancelled = localFallbackResult(result, model, 'cancelled', 'cancelled')
+          emit(state, { type: 'cancelled', cancelStatus, message: remoteCancelMessage(state, cancelStatus) })
+          return cancelled
+        }
+        const privacyBlocked = error instanceof Error && /privacy|プライバシー|DLP|脱敏/u.test(error.message)
+        state.abortController.abort()
+        const cleanupCancelStatus = state.remoteRequestInFlight ? await requestRemoteCancel(state) : null
+        const fallback = localFallbackResult(result, model, 'failed-local-fallback', 'failed')
+        emit(state, {
+          type: 'failed',
+          code: privacyBlocked ? 'AGENT_CLOUD_PRIVACY_BLOCKED' : 'AGENT_CLOUD_NARRATIVE_FAILED',
+          message: `${privacyBlocked
+            ? 'Cloud 隐私门未通过；已阻止发送并保留本地 Tool 的权威结果。'
+            : 'AI 流式整理失败；已保留本地 Tool 的权威结果。'}${state.clientRequestId
+            ? remoteCancelMessage(state, cleanupCancelStatus)
+            : privacyBlocked ? '' : '失败发生在取得远端请求标识之前。'}`,
+          localFallbackPreserved: true
+        })
+        return fallback
+      }
+    })()
+    const record = { conversationId: input.conversationId, promise }
+    inFlightRequests.set(input.requestId, record)
+    void promise.then(() => {
+      if (activeTurns.get(input.conversationId) === state) activeTurns.delete(input.conversationId)
+      rememberCompletedRequest(input.requestId, record)
+    }, () => {
+      if (activeTurns.get(input.conversationId) === state) activeTurns.delete(input.conversationId)
+      rememberCompletedRequest(input.requestId, record)
+    })
+    return promise
+  }
+
+  const handleCancel = async (event: IpcMainInvokeEvent, rawInput: unknown): Promise<CancelAgentTurnResult> => {
+    deps.assertTrustedSender(event)
+    const input = cancelAgentTurnInputSchema.parse(rawInput)
+    const active = activeTurns.get(input.conversationId)
+    if (!active || active.requestId !== input.requestId) {
+      const completed = requestResults.get(input.requestId)
+      return {
+        status: completed?.conversationId === input.conversationId ? 'already-completed' : 'not-running',
+        conversationId: input.conversationId,
+        requestId: input.requestId
+      }
+    }
+    active.cancelled = true
+    active.abortController.abort()
+    if (active.taskId) deps.cancelMatchTask(active.taskId)
+    emit(active, { type: 'started', phase: 'stopping' })
+    const remoteCancelStatus = await requestRemoteCancel(active)
+    return {
+      status: 'cancelled', conversationId: input.conversationId, requestId: input.requestId,
+      remoteCancelStatus,
+      message: remoteCancelMessage(active, remoteCancelStatus)
+    }
+  }
+
+  ipcMain.handle(ipcChannels.executeAgentTurn, handleExecute)
+  ipcMain.handle(ipcChannels.cancelAgentTurn, handleCancel)
+  return () => {
+    if (disposed) return
+    disposed = true
+    for (const active of activeTurns.values()) {
+      active.abortController.abort()
+      if (active.remoteRequestInFlight) void requestRemoteCancel(active)
+    }
+    ipcMain.removeHandler(ipcChannels.executeAgentTurn)
+    ipcMain.removeHandler(ipcChannels.cancelAgentTurn)
+    activeTurns.clear()
+    inFlightRequests.clear()
+    requestResults.clear()
+  }
+}

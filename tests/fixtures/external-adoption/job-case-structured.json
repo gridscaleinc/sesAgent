@@ -1,0 +1,12 @@
+{
+  "synthetic": true,
+  "id": "SYNTHETIC-JOB-001",
+  "title": "合成決済基盤更新",
+  "requiredSkills": [
+    "Java",
+    "AWS",
+    "PostgreSQL"
+  ],
+  "startDate": "即日",
+  "containsRealPersonalData": false
+}

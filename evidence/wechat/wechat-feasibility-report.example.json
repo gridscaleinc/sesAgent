@@ -1,0 +1,48 @@
+{
+  "version": "wechat-macos-visible-read-acceptance-v2",
+  "platform": "darwin",
+  "macosVersion": "REPLACE_ON_TARGET_MACHINE",
+  "wechatVersion": "REPLACE_ON_TARGET_MACHINE",
+  "wechatBundleIdentifier": "com.tencent.xinWeChat",
+  "wechatTeamIdentifier": "5A4RE8SF68",
+  "helper": {
+    "signed": false,
+    "hardenedRuntime": false,
+    "separateProcess": true,
+    "noSecretsInherited": true
+  },
+  "scope": {
+    "oneTimeTokenSeconds": 30,
+    "tokenReplayRejected": true,
+    "frontmostBundlePidStartTimeBound": true,
+    "focusedWindowAndFrameBound": true,
+    "syntheticInputOrHistoryExpansionUsed": false
+  },
+  "capture": {
+    "axProbePerformed": true,
+    "axReadableTextNodeCount": 0,
+    "windowOnlyScreenCapture": true,
+    "conversationRegionCrop": true,
+    "cursorCaptured": false,
+    "audioCaptured": false,
+    "appleVisionOcrLocalOnly": true,
+    "rawImagePersisted": false
+  },
+  "networkIsolation": {
+    "sandboxDenyNetwork": true,
+    "loopbackProbeDenied": false,
+    "externalProbeDenied": false
+  },
+  "dataBoundary": {
+    "rawTextNeverRenderer": true,
+    "rawTextNeverPersisted": true,
+    "redactedSourceOnly": true,
+    "aggregateOnlyEvidence": true
+  },
+  "approvals": {
+    "security": "no-go",
+    "product": "no-go",
+    "companyIt": "no-go",
+    "legal": "no-go"
+  }
+}

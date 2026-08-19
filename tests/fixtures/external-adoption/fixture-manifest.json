@@ -1,0 +1,52 @@
+{
+  "version": "external-adoption-fixtures-v1",
+  "generatedAt": "2026-08-18T00:00:00.000Z",
+  "source": "internally-generated-from-scratch",
+  "externalReference": "Secure Talent Match AI test-data format inventory",
+  "externalBytesCopied": false,
+  "externalLicenseStatus": "not-imported-license-absent",
+  "synthetic": true,
+  "containsRealPersonalData": false,
+  "allowedUse": [
+    "parser-compatibility",
+    "security-regression"
+  ],
+  "prohibitedUse": [
+    "privacy-expert-evidence",
+    "recall-at-20-evidence",
+    "customer-pilot-evidence"
+  ],
+  "networkRequired": false,
+  "files": [
+    {
+      "name": "job-case-untrusted.txt",
+      "bytes": 269,
+      "sha256": "f948fa19eb1c2cf540317bd5d48149e265673d9b50fbb190e9a7b99e57456504",
+      "synthetic": true
+    },
+    {
+      "name": "job-case-structured.json",
+      "bytes": 220,
+      "sha256": "ef023f88cfab1b911ec7852ae0a50d6681f7ea36496b719cd10e749873bb2a5f",
+      "synthetic": true
+    },
+    {
+      "name": "ats-multi-candidate.csv",
+      "bytes": 166,
+      "sha256": "4b9389ad1049b40c30694a19419fd7d5a1570f540ca89661003b699c400d0003",
+      "synthetic": true
+    },
+    {
+      "name": "resume-paragraph-table.docx",
+      "bytes": 1565,
+      "sha256": "8dcb3d9baa6198a2ec34fa2a8485c56197933129e6b10dd0e745c8dc041649ed",
+      "synthetic": true
+    },
+    {
+      "name": "resume-multi-sheet.xlsx",
+      "bytes": 18014,
+      "sha256": "220d6b21710774c2f02973198a1bc19fb482cb17a406cfe2f228b56a55b30fc7",
+      "synthetic": true
+    }
+  ]
+}

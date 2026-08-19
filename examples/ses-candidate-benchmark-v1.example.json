@@ -1,0 +1,41 @@
+{
+  "version": "ses-candidate-benchmark-v1",
+  "id": "d5a8372a-f701-4862-8f5d-4278c116fe3c",
+  "name": "Tokyo SES Pilot Example",
+  "createdAt": "2026-07-20T00:00:00.000Z",
+  "privacy": {
+    "directIdentifiersRemoved": true,
+    "rawResumeIncluded": false,
+    "rawMailIncluded": false
+  },
+  "labeling": {
+    "method": "ses-expert",
+    "reviewerCount": 2
+  },
+  "thresholds": {
+    "minimumCases": 30,
+    "recallAt20": 0.9,
+    "ndcgAt20": 0.75,
+    "projectEvidenceCoverageAt20": 0.8
+  },
+  "cases": [
+    {
+      "id": "java-aws-senior-001",
+      "query": "Java AWS 5年以上 週3日リモート",
+      "relevantCandidateLabels": ["候補者 38DCA6F6"],
+      "expectedProjectEvidenceLabels": ["候補者 38DCA6F6"]
+    },
+    {
+      "id": "payment-cloud-migration-002",
+      "query": "決済基盤 クラウド移行 PL",
+      "relevantCandidateLabels": ["候補者 38DCA6F6"],
+      "expectedProjectEvidenceLabels": ["候補者 38DCA6F6"]
+    },
+    {
+      "id": "kubernetes-operation-003",
+      "query": "Kubernetes 運用改善 AWS",
+      "relevantCandidateLabels": ["候補者 38DCA6F6"],
+      "expectedProjectEvidenceLabels": ["候補者 38DCA6F6"]
+    }
+  ]
+}

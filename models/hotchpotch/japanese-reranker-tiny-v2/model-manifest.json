@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "local-reranker-model-v1",
+  "modelId": "hotchpotch/japanese-reranker-tiny-v2",
+  "revision": "ba95175a4d53058816b971f31929f10c5cad8560",
+  "license": "MIT",
+  "architecture": "ModernBertForSequenceClassification",
+  "maximumSequenceLength": 512,
+  "maximumCandidates": 20,
+  "files": [
+    {
+      "path": "config.json",
+      "platform": "all",
+      "bytes": 1348,
+      "sha256": "56ac1e6180e7ee5b7d0700fe69794bff9eb6228bb5510209296d6c7e3f3c98d1"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "platform": "all",
+      "bytes": 968,
+      "sha256": "30bf8256f9a1eb3287af2a9b7940465e29a38aad4a459a3e773bb3a14bd34c0f"
+    },
+    {
+      "path": "tokenizer.json",
+      "platform": "all",
+      "bytes": 6724873,
+      "sha256": "0a94ac9a0a02c067bdef25b72ae9f4ee33f48f552e55988d444f6d25eeb1d062"
+    },
+    {
+      "path": "tokenizer.model",
+      "platform": "all",
+      "bytes": 1831879,
+      "sha256": "008293028e1a9d9a1038d9b63d989a2319797dfeaa03f171093a57b33a3a8277"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "platform": "all",
+      "bytes": 3779,
+      "sha256": "34004511993472f15c7202074284c57788c161fb6567de164b8e0c0266f155e4"
+    },
+    {
+      "path": "onnx/model_qint8_arm64.onnx",
+      "platform": "darwin-arm64",
+      "bytes": 29634681,
+      "sha256": "7dd460445ddac13fcbbc4f0111a4287e99697fedacd5421d0cc07f08aab881b0"
+    },
+    {
+      "path": "onnx/model_qint8_avx2.onnx",
+      "platform": "win32-x64",
+      "bytes": 29634681,
+      "sha256": "649a18583e21ad532e420a4ded4c9c4ff7ce882aa84af2bf2180ec4d4f679e38"
+    }
+  ]
+}
