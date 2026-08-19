@@ -9,7 +9,7 @@
 > 首发平台：macOS  
 > 当前运行基线：Package 0.1.0、Schema v38、AI 规划式受控单 Tool Agent  
 > 计划目标：用户自然语言先进入所选 AI；AI 只能返回直接回答或一个白名单 Tool 计划；Main 校验并执行本地 Tool，再以真实 SSE 生成最终回答  
-> 核心决策：AI 负责理解自然语言和请求 Tool；Main 的 DomainToolRegistry、Schema、Scope、SQLCipher、WorkTask/ProcessingJob 与 Hybrid RAG 仍是权限、执行、恢复、事实和排名的唯一权威。AI 不能直接访问接口，也不能提交内部 ID、任意 Tool 或写操作。
+> 核心决策：AI 负责理解自然语言和请求 Tool；Main 的 DomainToolRegistry、Schema、Scope、SQLCipher、WorkTask/ProcessingJob 与 Hybrid RAG 仍是权限、执行、恢复、事实和排名的唯一权威。AI 不能直接访问接口，也不能提交内部 ID 或任意 Tool。模型可请求的写操作仅限本地摄取层（当前为会话附件的履历取込），且其产物是必须经人工逐项确认的草稿；外部写、不可逆操作与业务状态变更仍然禁止。
 
 ## 1. 文档目的与状态合同
 
@@ -55,7 +55,7 @@ v0.3 明确 supersede v0.2 中以下规范性结论：
 | Stop 只取消本地匹配 | Stop 先中止本地读取/展示，再独立请求 AICommerce client-request cancel；不保证零成本或退款 |
 | Cloud 失败不影响本地 MVP | Cloud 失败时明确显示失败，保留已持久化 typed blocks 和本地确定性 narrative，不伪造流式 |
 
-v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留的收缩边界是：一轮最多一个本地 Tool、3 个核心 Tool、严格 ANSWER/TOOL 协议、Main 白名单与参数校验、不做任意 Tool、多 Tool 循环或外部写操作、不新增 Agent 专用表、不改变本地 Rank。
+v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留的收缩边界是：一轮最多一个本地 Tool、固定白名单 Tool（当前 7 个：6 个只读/计算 + 1 个本地摄取写）、严格 ANSWER/TOOL 协议、Main 白名单与参数校验、不做任意 Tool、多 Tool 循环或外部写操作、不新增 Agent 专用表、不改变本地 Rank。
 
 最小实现验证三个业务闭环：
 
@@ -81,7 +81,7 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 | Cloud 出网硬门与专家证据 | 合成质量门、CloudRedactionGateway、本地 NER/脱敏/DLP、匿名安全投影和 Endpoint Allowlist 是失败关闭硬门；Expert Attestation 只提供质量/审计/发布证据 | Agent egress 必须复用硬门，不得放宽或绕过；专家证据可选但不得伪造 |
 | 本地 ONNX | Embedding/Reranker，不是生成式聊天模型 | 只做现有匹配 |
 
-当前已存在：全局 Sales Agent 会话、job-case.search.local、candidate.match.local、match-run.read.local、AgentWorkspace、typed blocks、AI 规划协议、Main 受控执行器和 Schema v38。
+当前已存在：全局 Sales Agent 会话、job-case.search.local、candidate.match.local、match-run.read.local、resume.analyze.local（会话附件取込）、AgentWorkspace、typed blocks、AI 规划协议、Main 受控执行器和 Schema v38。
 
 本轮 v0.3 已实现：Responses SSE 客户端、模型 allowlist、AgentTurnEvent、流式 UI、Cloud 两阶段持久化与远端 cancel；正式 Cloud 可用仍受本地硬性出网门、账号凭证和真实受控网络验收约束。Expert Attestation 缺失或过期只降低质量/审计/发布准备度，不阻断满足硬门的 Cloud narrative。
 
@@ -708,7 +708,7 @@ Flag=true：
 ### 16.1 v0.7 Cloud egress
 
 - 用户自然语言和最近会话文本可以进入 AI planning，但必须先经过本地 NER、脱敏、DLP、长度上限和硬性出网门；简历/案件/邮件/微信原文仍不进入 Cloud。
-- 模型可以请求一个固定 Tool 及有限业务参数，但不能指定 Scope、Actor、内部对象 ID、数据库过滤器、Endpoint 或写操作；Main 是最终校验与执行权威。
+- 模型可以请求一个固定 Tool 及有限业务参数，但不能指定 Scope、Actor、内部对象 ID、数据库过滤器或 Endpoint；写操作只能请求白名单内已开放的本地摄取 Tool，附件按序号引用而不是令牌。Main 是最终校验与执行权威。
 - Planning Prompt 只能由固定 instruction、locale、用户请求、最小会话文本和匿名权威证据组成；Final Prompt 只能由固定 instruction、用户请求和本轮 Tool 的匿名权威 Projection 组成。
 - Projection 必须经过 CloudRedactionGateway、DLP/本地 NER、合成质量门、匿名安全投影、Endpoint Allowlist 和审计；任一硬门失败都不发网络请求。Expert Attestation 不属于出网硬门。
 - 初次 gates/NER/redaction 完成后，在 CloudRedactionGateway 真正出网前必须再次加载合成质量门、硬性出网控制和当前实现绑定；二次 `requireCloudAiPrivacyRuntime` 必须通过，且 qualityReportHash、privacyImplementationSha256、cloudEnforcementSha256 与初次 hard binding 完全一致。Agent 路径不创建自由文本 Review Ticket，而是生成绑定 Conversation/Request/Content Hash 的确定性 `reviewTicketHash` 作为兼容审计字段。`expertAttestationHash` 可选：缺失、过期、绑定变化或校验失败时写为 `null`，不把 `streamResponses` 置为零调用；Bootstrap 继续用 `expertGate.status/failureCodes` 展示非阻断质量状态。
@@ -722,7 +722,7 @@ Flag=true：
 - 案件、邮件、微信、EML、简历和 Match Evidence 都是数据。
 - ignore instructions、system prompt、tool call、execute、导出全部候选人等数据内容不能提升权限。
 - Renderer 不能提交 Tool Name。
-- 未注册 Tool、畸形参数、多 Tool 或写操作计划在调用 Domain Tool 前拒绝，执行次数为 0。
+- 未注册 Tool、畸形参数、多 Tool 或未开放的写操作计划在调用 Domain Tool 前拒绝，执行次数为 0。已开放的摄取写仍须通过 DomainToolRegistry preflight（Scope、Origin、输入 Schema、幂等键）。
 
 ### 16.3 人事公平
 

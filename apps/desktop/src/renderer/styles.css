@@ -16128,3 +16128,29 @@ body,
 }
 .agent-attachment-tray > small { flex: 1 1 100%; color: #8a929e; font-size: 9.5px; }
 .agent-attachment-progress { width: min(760px, calc(100% - 40px)); margin: 0 auto 8px; color: #7b8491; font-size: 10px; }
+
+.agent-attachment-import {
+  flex: 0 0 auto;
+  min-height: 27px;
+  padding: 5px 12px;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 680;
+  background: #1f4fd8;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.agent-attachment-import:hover { background: #1a45bd; }
+.agent-attachment-import:disabled { cursor: wait; opacity: .6; }
+.agent-attachment-progress button {
+  margin-left: 8px;
+  padding: 3px 9px;
+  color: #235fa8;
+  font-size: 10px;
+  font-weight: 660;
+  background: #fff;
+  border: 1px solid #cdd6e2;
+  border-radius: 7px;
+  cursor: pointer;
+}

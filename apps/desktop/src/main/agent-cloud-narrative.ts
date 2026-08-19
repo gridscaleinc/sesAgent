@@ -56,6 +56,11 @@ export interface AgentPlanningStreamInput {
   userMessage: string
   conversation: AiConversationSnapshot | null
   selectedJobCaseRef: TypedAiConversationReference | null
+  /**
+   * How many files the operator attached to this turn. Only the count crosses
+   * the boundary - file names routinely carry candidate names.
+   */
+  attachmentCount: number
   model: AgentChatModelDefinition
   signal: AbortSignal
   onClientRequestId(clientRequestId: string): void
@@ -204,7 +209,7 @@ export function buildAgentCloudProjection(
 
 export function buildAgentPlanningProjection(input: Pick<
   AgentPlanningStreamInput,
-  'locale' | 'userMessage' | 'conversation' | 'selectedJobCaseRef'
+  'locale' | 'userMessage' | 'conversation' | 'selectedJobCaseRef' | 'attachmentCount'
 >): string {
   const recentMessages = input.conversation?.messages.slice(-12) ?? []
   const serialized = JSON.stringify({
@@ -213,7 +218,8 @@ export function buildAgentPlanningProjection(input: Pick<
     userRequest: input.userMessage.trim(),
     state: {
       selectedJobCase: Boolean(input.selectedJobCaseRef ?? input.conversation?.salesAgentState?.selectedJobCaseRef),
-      hasSavedMatchRun: Boolean(input.conversation?.salesAgentState?.lastMatchRunId)
+      hasSavedMatchRun: Boolean(input.conversation?.salesAgentState?.lastMatchRunId),
+      attachmentCount: input.attachmentCount
     },
     recentConversation: recentMessages.map((message) => ({
       role: message.role,
@@ -315,6 +321,7 @@ const planningInstructions = [
   'A request to summarize, compare, explain generally, or continue discussing existing candidate results must use the answer decision when the supplied evidence is sufficient; it must not rerun matching.',
   'For a candidate field not present in the supplied matching evidence, including Japanese level, availability, role, work style, rate, location, work authorization, or resume/project details, use read_candidate_profile instead of guessing.',
   'For interview status, schedules, interview notes, unresolved items, or decisions, use read_candidate_interviews instead of guessing.',
+  'state.attachmentCount is the number of files attached to this turn. Use import_resume only when it is greater than zero and the operator asked to import them; never claim an import happened.',
   'Never include prose, markdown, an answer, an unknown tool, more than one tool, an external write, or an internal id.',
   `Available Tool Catalog:\n${describeAgentPlanningTools()}`
 ].join(' ')

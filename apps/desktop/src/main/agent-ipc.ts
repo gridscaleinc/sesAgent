@@ -516,6 +516,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           userMessage: input.message,
           conversation: planningConversation,
           selectedJobCaseRef: input.selectedJobCaseRef ?? null,
+            attachmentCount: state.attachmentFileTokens.length,
           model,
           signal: state.abortController.signal,
           onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
