@@ -637,12 +637,23 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           : state.clientRequestId
             ? remoteCancelMessage(state, cleanupCancelStatus)
             : '失败发生在取得远端请求标识之前。'
+        // Say which part of the protocol the plan broke. "Could not form a plan"
+        // is unactionable for the operator and hid four different causes during
+        // development.
+        const planningReason = error instanceof Error && error.message ? error.message : null
         emit(state, {
           type: 'failed', code: 'AGENT_PLANNING_FAILED',
-          message: `AI 无法形成有效的受控 Tool 计划。${failureLifecycleMessage}`,
+          message: `AI 无法形成有效的受控 Tool 计划。${planningReason ? `${planningReason} ` : ''}${failureLifecycleMessage}`,
           localFallbackPreserved: true
         })
-        return useCase.saveDirectAnswer(input, 'AI 无法形成有效的受控 Tool 计划，请重试。', undefined, 'failed')
+        return useCase.saveDirectAnswer(
+          input,
+          planningReason
+            ? `AI 无法形成有效的受控 Tool 计划：${planningReason}`
+            : 'AI 无法形成有效的受控 Tool 计划，请重试。',
+          undefined,
+          'failed'
+        )
       }
 
       if (state.cancelled) {

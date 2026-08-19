@@ -407,7 +407,13 @@ export function parseAgentRequestedTool(value: unknown): AgentPlannedToolAction 
     return parseAgentPlannedToolAction(tool.parse(envelope.data.arguments))
   } catch (error) {
     if (error instanceof AgentExecutionError) throw error
-    throw new AgentExecutionError('AGENT_PLAN_INVALID', `AI 为 Tool ${envelope.data.name} 返回了无效参数。`)
+    const detail = error instanceof z.ZodError
+      ? error.issues.slice(0, 3).map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
+      : null
+    throw new AgentExecutionError(
+      'AGENT_PLAN_INVALID',
+      `AI 为 Tool ${envelope.data.name} 返回了无效参数${detail ? `（${detail}）` : ''}。`
+    )
   }
 }
 

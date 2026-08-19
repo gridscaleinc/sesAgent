@@ -209,6 +209,15 @@ describe('local conversational matching agent', () => {
     }
   })
 
+  it('names what the plan got wrong instead of only saying it was invalid', () => {
+    // "Could not form a plan" hid an unknown tool name, a strict-schema
+    // rejection and a bad enum behind one string. Each has a different fix.
+    expect(() => parseAgentRequestedTool({ name: 'schedule-interview', arguments: {} }))
+      .toThrow(/未知 Tool：schedule-interview/u)
+    expect(() => parseAgentRequestedTool({ name: 'read_match_result', arguments: { rank: 'first' } }))
+      .toThrow(/rank/u)
+  })
+
   it('survives the shapes a model actually emits for an interview request', () => {
     // Each of these failed the plan outright before, so the operator saw
     // AGENT_PLAN_INVALID instead of being asked for the missing details.

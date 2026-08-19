@@ -367,7 +367,7 @@ describe('agent IPC boundary', () => {
 
     expect(result).toMatchObject({
       status: 'failed',
-      assistantMessage: { content: 'AI 无法形成有效的受控 Tool 计划，请重试。' }
+      assistantMessage: { content: expect.stringContaining('AI 无法形成有效的受控 Tool 计划') }
     })
     expect(cancel).not.toHaveBeenCalled()
     expect(narrativeStreamer.streamAnswer).not.toHaveBeenCalled()
