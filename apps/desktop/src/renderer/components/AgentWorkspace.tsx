@@ -301,13 +301,24 @@ export function AgentWorkspace({
     container.scrollTop = container.scrollHeight
   }, [history.messages.length, pendingMessage, streamState?.content])
 
+  // Every suggestion has to map to a tool that can run right now. Without a
+  // selected case there is no ranking to explain and nothing to match against,
+  // so those prompts only appear once a case is in context.
+  const emptyStateSuggestions = selectedCase
+    ? (zh
+        ? ['给当前案件匹配候选人', '这个案件的条件是什么？', '最近有什么案件？']
+        : ['現在の案件に合う候補者を探して', 'この案件の条件は？', '最近の案件は？'])
+    : (zh
+        ? ['最近有什么案件？', '有哪些进行中的案件？']
+        : ['最近の案件は？', '進行中の案件は？'])
+
   return <main className="agent-workspace" aria-labelledby="agent-workspace-title">
     <aside className="agent-workspace-history"><AiConversationHistoryPanel activeConversationId={history.activeConversationId} busy={history.loading || history.saving || pendingMessage !== null} conversations={history.conversations} error={history.error} loading={history.loading} onDelete={history.deleteConversations} onNew={history.newConversation} onSelect={(id) => { history.selectConversation(id); setSelectedCase(null) }} /></aside>
     <section className="agent-workspace-main">
-      <header className="agent-workspace-header"><div><span className="eyebrow">CONTROLLED MATCHING AGENT</span><h1 id="agent-workspace-title">{zh ? '案件匹配 Agent' : '案件マッチング Agent'}</h1><p>{zh ? 'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态' : 'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'}</p></div><button onClick={() => history.newConversation()} type="button"><Icon name="plus" size={15} />{zh ? '新建会话' : '新しい会話'}</button></header>
+      <header className="agent-workspace-header"><div><span className="eyebrow">CONTROLLED MATCHING AGENT</span><h1 id="agent-workspace-title">{zh ? '案件匹配 Agent' : '案件マッチング Agent'}</h1></div><span className="agent-privacy-badge" title={zh ? 'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态' : 'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'}><Icon name="shield" size={13} />{zh ? '仅发送脱敏内容' : '脱敏済みのみ送信'}</span></header>
       {selectedCase ? <div className="agent-current-case-chip"><Icon name="briefcase" size={14} /><span>{zh ? '当前案件' : 'Current case'} · {selectedCase.label} v{selectedCase.objectVersion ?? '—'}</span><button onClick={() => setSelectedCase(null)} type="button" aria-label={zh ? '清除当前案件' : 'Clear current case'}>×</button></div> : null}
       <div className="agent-message-scroll" aria-live="polite" ref={messageScrollRef}>
-        {messages.length === 0 ? <div className="agent-empty-state"><Icon name="sparkles" size={28} /><h2>{zh ? '从案件开始' : '案件から始める'}</h2><p>{zh ? '问“最近有什么案件？”，然后选择案件继续匹配。' : '「最近の案件は？」と尋ね、案件を選んでマッチングを続けます。'}</p><div><button onClick={() => setDraft('最近有什么案件？')} type="button">最近有什么案件？</button><button onClick={() => setDraft(zh ? '给当前案件匹配候选人' : '現在の案件に合う候補者を探して')} type="button">{zh ? '给当前案件匹配候选人' : '現在の案件に合う候補者を探す'}</button><button onClick={() => setDraft(zh ? '为什么第一名排第一？' : 'なぜ1位になったの？')} type="button">{zh ? '为什么第一名排第一？' : 'なぜ1位になったの？'}</button></div></div> : messages.map((message) => (
+        {messages.length === 0 ? <div className="agent-empty-state"><Icon name="sparkles" size={28} /><h2>{selectedCase ? (zh ? '开始匹配' : 'マッチングを開始') : (zh ? '从案件开始' : '案件から始める')}</h2><p>{selectedCase ? (zh ? '已选择案件，可以让 AI 匹配候选人，或继续追问案件条件。' : '案件を選択済みです。候補者のマッチングや条件の確認を依頼できます。') : (zh ? '问“最近有什么案件？”，然后选择案件继续匹配。' : '「最近の案件は？」と尋ね、案件を選んでマッチングを続けます。')}</p><div>{emptyStateSuggestions.map((suggestion) => <button key={suggestion} onClick={() => setDraft(suggestion)} type="button">{suggestion}</button>)}</div></div> : messages.map((message) => (
           <article className={`agent-message is-${message.role}`} key={message.id}>
             {message.role === 'assistant' ? <div className="agent-message-role"><span className="agent-message-avatar"><Icon name="sparkles" size={14} /></span><span><strong>SES Agent</strong>{message.modelDisplayName ? <small>{message.modelDisplayName}</small> : null}</span></div> : null}
             <div className="agent-message-body"><MessageText message={message} />{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} onOpenMatching={onOpenMatching} onSelectCase={selectCase} zh={zh} />)}</div>

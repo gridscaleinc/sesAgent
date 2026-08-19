@@ -61,7 +61,7 @@ describe('AiConversationHistoryPanel', () => {
     expect(screen.getByText('保存在本机加密数据库中')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^适合什么项目？/u }))
     expect(onSelect).toHaveBeenCalledWith(conversations[1]!.id)
-    fireEvent.click(screen.getByRole('button', { name: '新建对话' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建会话' }))
     expect(onNew).toHaveBeenCalledOnce()
 
     fireEvent.click(screen.getByRole('checkbox', { name: '选择 主要能力是什么？' }))

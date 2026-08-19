@@ -15306,7 +15306,7 @@ body,
 
 .ai-conversation-history-list article:hover { background: #eceef1; }
 .ai-conversation-history-list article.is-active { background: #e7e9ed; border-color: transparent; }
-.ai-conversation-history-list label { display: grid; place-items: center; align-self: stretch; padding-left: 8px; cursor: pointer; opacity: .2; transition: opacity .15s ease; }
+.ai-conversation-history-list label { display: grid; place-items: center; align-self: stretch; padding-left: 8px; cursor: pointer; opacity: 0; transition: opacity .15s ease; }
 .ai-conversation-history-list article:hover label,
 .ai-conversation-history-list article:focus-within label,
 .ai-conversation-history-list label:has(input:checked) { opacity: 1; }
@@ -15828,9 +15828,14 @@ body,
   border-right: 1px solid #e7e9ed;
 }
 .agent-workspace-history .ai-conversation-history-panel { height: 100%; }
+/*
+ * Flex, not positional grid rows: the current-case chip and the error banner are
+ * conditionally rendered, so a row template would hand the free space to
+ * whichever child happened to land in that row. Only the scroll area grows.
+ */
 .agent-workspace-main {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   width: 100%;
@@ -15838,11 +15843,26 @@ body,
   overflow: hidden;
   background: #fff;
 }
+.agent-workspace-main > * { flex: 0 0 auto; }
 .agent-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 66px; padding: 13px 24px; border-bottom: 1px solid #eef0f3; }
 .agent-workspace-header .eyebrow { display: none; }
+.agent-privacy-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  color: #2f6046;
+  font-size: 10px;
+  font-weight: 660;
+  white-space: nowrap;
+  background: #eef7f1;
+  border: 1px solid #cfe6da;
+  border-radius: 999px;
+  cursor: default;
+}
+.agent-privacy-badge > svg { flex: 0 0 auto; }
 .agent-workspace-header h1 { margin: 0 0 3px; color: #202733; font-size: 17px; font-weight: 720; letter-spacing: -.025em; }
-.agent-workspace-header p { margin: 0; overflow: hidden; color: #7b8491; font-size: 10px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
-.agent-workspace-header > button,
 .agent-card-select,
 .agent-case-card footer button,
 .agent-candidate-card footer button,
@@ -15862,7 +15882,6 @@ body,
   border-radius: 9px;
   cursor: pointer;
 }
-.agent-workspace-header > button:hover,
 .agent-case-card footer button:hover,
 .agent-candidate-card footer button:hover,
 .agent-clarification button:hover,
@@ -15871,7 +15890,7 @@ body,
 .agent-current-case-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-current-case-chip > svg { flex: 0 0 auto; }
 .agent-current-case-chip button { width: 18px; height: 18px; margin-left: auto; padding: 0; color: #718093; font-size: 16px; line-height: 1; background: transparent; border: 0; border-radius: 50%; cursor: pointer; }
-.agent-message-scroll { min-height: 0; padding: 28px clamp(20px, 5vw, 64px) 34px; overflow: auto; scrollbar-gutter: stable; }
+.agent-message-scroll { flex: 1 1 auto; min-height: 0; padding: 28px clamp(20px, 5vw, 64px) 34px; overflow: auto; scrollbar-gutter: stable; }
 .agent-message { display: block; width: min(760px, 100%); margin: 0 auto 30px; }
 .agent-message.is-user { display: flex; justify-content: flex-end; margin-bottom: 26px; }
 .agent-message-role { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; color: #202833; font-size: 10px; font-weight: 700; }
@@ -15931,7 +15950,7 @@ body,
 .agent-explanation p { margin: 9px 0 0; color: #778ba3; font-size: 9px; }
 .agent-error-block { display: flex; align-items: flex-start; gap: 7px; color: #a7573b; background: #fff5f1; border-color: #f0d6cd; }
 .agent-error-block svg { flex: 0 0 auto; margin-top: 2px; }
-.agent-empty-state { display: grid; justify-items: center; gap: 9px; max-width: 540px; margin: 16vh auto 0; color: #8291a4; text-align: center; }
+.agent-empty-state { display: grid; align-content: center; justify-items: center; gap: 9px; max-width: 540px; min-height: 100%; margin: 0 auto; color: #8291a4; text-align: center; }
 .agent-empty-state > svg { color: #5c91d4; }
 .agent-empty-state h2 { margin: 0; color: #3d5877; font-size: 18px; }
 .agent-empty-state p { margin: 0; font-size: 11px; line-height: 1.6; }
@@ -16011,7 +16030,6 @@ body,
   .agent-workspace-history { display: none; }
   .agent-workspace-main { padding: 0; }
   .agent-workspace-header { padding-inline: 18px; }
-  .agent-workspace-header p { display: none; }
   .agent-current-case-chip,
   .agent-composer { width: min(760px, calc(100% - 28px)); }
   .agent-message-scroll { padding-inline: 14px; }

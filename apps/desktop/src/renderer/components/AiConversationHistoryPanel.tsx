@@ -78,7 +78,7 @@ export function AiConversationHistoryPanel({
           <small>{zh ? '保存在本机加密数据库中' : '端末内の暗号化データベースに保存'}</small>
         </div>
         <button className="ai-conversation-new" disabled={busy} onClick={onNew} type="button">
-          <Icon name="plus" size={14} />{zh ? '新建对话' : '新しい会話'}
+          <Icon name="plus" size={14} />{zh ? '新建会话' : '新しい会話'}
         </button>
       </div>
 
