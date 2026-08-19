@@ -122,6 +122,34 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).not.toContain('.xlsx')
   })
 
+  it('carries the parsed attachment into the answer context, not only the planning one', () => {
+    // The planner decides answer-vs-tool from one projection and the answer is
+    // written from another. Drafts have to reach both or the model replies that
+    // it has nothing to summarise.
+    const draft = {
+      documentId: '66666666-6666-4666-8666-666666666666',
+      label: '技術者履歴書_楊凱',
+      confirmed: false as const,
+      reviewStatus: 'awaiting-review' as const,
+      fields: [{ label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review' as const, sources: ['技術者履歴書_楊凱.xlsx!B4'] }],
+      projects: []
+    }
+    const answer = JSON.parse(buildAgentDirectAnswerProjection({
+      locale: 'zh-CN',
+      userMessage: '总结一下这个人的整体情况',
+      selectedJobCaseRef: null,
+      attachmentDrafts: [draft],
+      conversation: null
+    }))
+    expect(answer.attachmentDrafts).toEqual([{
+      resume: 'RESUME_1',
+      confirmed: false,
+      fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
+      projects: []
+    }])
+    expect(JSON.stringify(answer)).not.toContain('楊凱')
+  })
+
   it('gives the planner the parsed attachment so a summary needs no tool, still without the file name', () => {
     const projection = buildAgentPlanningProjection({
       locale: 'zh-CN',

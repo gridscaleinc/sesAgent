@@ -514,6 +514,9 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         })
         return useCase.saveDirectAnswer(input, message, undefined, 'failed')
       }
+      const turnAttachmentDrafts = () => state.attachmentFileTokens
+        .map((token) => deps.previewedDrafts?.get(token))
+        .filter((draft): draft is AgentCandidateDraftFacts => Boolean(draft))
       const planningConversation = useCase.loadPlanningConversation(input)
       const emitDelta = (delta: string) => {
         if (state.cancelled) return
@@ -542,9 +545,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           conversation: planningConversation,
           selectedJobCaseRef: input.selectedJobCaseRef ?? null,
             attachmentCount: state.attachmentFileTokens.length,
-            attachmentDrafts: state.attachmentFileTokens
-              .map((token) => deps.previewedDrafts?.get(token))
-              .filter((draft): draft is AgentCandidateDraftFacts => Boolean(draft)),
+            attachmentDrafts: turnAttachmentDrafts(),
           model,
           signal: state.abortController.signal,
           onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
@@ -590,6 +591,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             userMessage: input.message,
             conversation: planningConversation,
             selectedJobCaseRef: input.selectedJobCaseRef ?? null,
+            attachmentDrafts: turnAttachmentDrafts(),
             model,
             signal: state.abortController.signal,
             onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),

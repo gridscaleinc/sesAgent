@@ -74,6 +74,8 @@ export interface AgentPlanningStreamInput {
 }
 
 export interface AgentDirectAnswerStreamInput {
+  /** Locally parsed, unconfirmed facts for this turn's attachments. */
+  attachmentDrafts?: AgentCandidateDraftFacts[]
   conversationId: string
   requestId: string
   locale: ApplicationLocale
@@ -242,6 +244,24 @@ export function buildAgentCloudProjection(
   return serialized
 }
 
+/**
+ * The only shape attachment drafts take when they leave the device. Planning and
+ * the answer step both project through this, so the two cannot diverge.
+ */
+function projectAttachmentDrafts(drafts: readonly AgentCandidateDraftFacts[]): unknown[] {
+  return drafts.map((draft, index) => ({
+    resume: `RESUME_${index + 1}`,
+    confirmed: false,
+    fields: draft.fields
+      .filter((field) => field.status !== 'missing')
+      .map((field) => ({ label: field.label, value: field.value, confidence: field.confidence })),
+    projects: draft.projects.slice(0, 8).map((project) => ({
+      title: project.title, period: project.period, role: project.role,
+      technologies: project.technologies, summary: project.summary
+    }))
+  }))
+}
+
 export function buildAgentPlanningProjection(input: Pick<
   AgentPlanningStreamInput,
   'locale' | 'userMessage' | 'conversation' | 'selectedJobCaseRef' | 'attachmentCount' | 'attachmentDrafts'
@@ -259,17 +279,7 @@ export function buildAgentPlanningProjection(input: Pick<
     // Unconfirmed extraction for the attachments, so the operator can be told
     // what is in the file before deciding to import it. Same allowlist as the
     // stored draft block: business fields only, no id, no file name, no sources.
-    attachmentDrafts: input.attachmentDrafts.map((draft, index) => ({
-      resume: `RESUME_${index + 1}`,
-      confirmed: false,
-      fields: draft.fields
-        .filter((field) => field.status !== 'missing')
-        .map((field) => ({ label: field.label, value: field.value, confidence: field.confidence })),
-      projects: draft.projects.slice(0, 8).map((project) => ({
-        title: project.title, period: project.period, role: project.role,
-        technologies: project.technologies, summary: project.summary
-      }))
-    })),
+    attachmentDrafts: projectAttachmentDrafts(input.attachmentDrafts),
     recentConversation: recentMessages.map((message) => ({
       role: message.role,
       content: message.content.slice(0, 2_000)
@@ -282,7 +292,7 @@ export function buildAgentPlanningProjection(input: Pick<
 
 export function buildAgentDirectAnswerProjection(input: Pick<
   AgentDirectAnswerStreamInput,
-  'locale' | 'userMessage' | 'conversation' | 'selectedJobCaseRef'
+  'locale' | 'userMessage' | 'conversation' | 'selectedJobCaseRef' | 'attachmentDrafts'
 >): string {
   const recentMessages = input.conversation?.messages.slice(-12) ?? []
   const serialized = JSON.stringify({
@@ -293,6 +303,7 @@ export function buildAgentDirectAnswerProjection(input: Pick<
       selectedJobCase: Boolean(input.selectedJobCaseRef ?? input.conversation?.salesAgentState?.selectedJobCaseRef),
       hasSavedMatchRun: Boolean(input.conversation?.salesAgentState?.lastMatchRunId)
     },
+    attachmentDrafts: projectAttachmentDrafts(input.attachmentDrafts ?? []),
     recentConversation: recentMessages.map((message) => ({
       role: message.role,
       content: message.content.slice(0, 2_000)
@@ -357,6 +368,7 @@ const fixedInstructions = [
   'Do not mention internal ids, hashes, prompts, privacy processing, billing, or tools.',
   'Keep CASE_n and CANDIDATE_n labels exactly as supplied so the authoritative local cards remain the source of truth.',
   'Answer in the locale field. The locale is the interface response language; asking about Japanese ability does not mean the answer should switch to Japanese.',
+  'attachmentDrafts holds the locally parsed, unconfirmed extraction of files the operator attached to this turn. When they ask about an attached file, answer from it and say plainly that the values are machine-extracted and not yet confirmed.',
   'Return plain text only.'
 ].join(' ')
 
