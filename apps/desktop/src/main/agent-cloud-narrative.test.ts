@@ -8,6 +8,7 @@ import {
   buildAgentCloudProjection,
   buildAgentDirectAnswerProjection,
   directAnswerInstructions,
+  planningInstructions,
   buildAgentPlanningProjection,
   parseAgentPlanningResponse
 } from './agent-cloud-narrative'
@@ -85,7 +86,7 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '总结一下这个人的整体情况',
       selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [],
+      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
@@ -121,6 +122,27 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).not.toContain(documentId)
     expect(projection).not.toContain('楊凱')
     expect(projection).not.toContain('.xlsx')
+  })
+
+  it('sends the planner a scheduling rule and the fact that a candidate exists', () => {
+    // Without these the planner answered "I cannot schedule, no candidate was
+    // supplied" instead of calling the tool that would have asked for the
+    // missing details.
+    expect(planningInstructions).toContain('must use schedule_interview')
+    expect(planningInstructions).toContain('never answer that you cannot schedule')
+    expect(planningInstructions).toContain('never ask for the details yourself')
+    expect(planningInstructions).toContain('schedulableCandidateCount')
+
+    const projection = JSON.parse(buildAgentPlanningProjection({
+      locale: 'zh-CN',
+      userMessage: '安排一个20号的面试',
+      selectedJobCaseRef: null,
+      attachmentCount: 0,
+      attachmentDrafts: [],
+      schedulableCandidateCount: 1,
+      conversation: null
+    }))
+    expect(projection.state.schedulableCandidateCount).toBe(1)
   })
 
   it('permits answering from an attachment draft while keeping the unconfirmed caveat', () => {
@@ -168,6 +190,7 @@ describe('Agent Cloud narrative boundary', () => {
       userMessage: '总结一下这个人的整体情况',
       selectedJobCaseRef: null,
       attachmentCount: 1,
+      schedulableCandidateCount: 0,
       attachmentDrafts: [{
         documentId: '66666666-6666-4666-8666-666666666666',
         label: '技術者履歴書_楊凱',
@@ -197,7 +220,7 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '导入这份简历',
       selectedJobCaseRef: null,
-      attachmentCount: 2, attachmentDrafts: [],
+      attachmentCount: 2, attachmentDrafts: [], schedulableCandidateCount: 0,
       conversation: null
     })
     expect(JSON.parse(projection).state.attachmentCount).toBe(2)
@@ -211,7 +234,7 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '总结一下候选人的整体情况',
       selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [],
+      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
@@ -272,7 +295,7 @@ describe('Agent Cloud narrative boundary', () => {
     const onRemoteSettled = vi.fn()
     await expect(service.plan({
       conversationId, requestId, locale: 'zh-CN', userMessage: '总结一下候选人的整体情况',
-      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], model,
+      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0, model,
       signal: new AbortController().signal,
       onClientRequestId: vi.fn(), onRemoteSettled
     })).resolves.toEqual({ kind: 'answer' })
@@ -326,7 +349,7 @@ describe('Agent Cloud narrative boundary', () => {
 
     await expect(service.plan({
       conversationId, requestId, locale: 'zh-CN', userMessage: '工作经历列出来参考一下',
-      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], model,
+      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0, model,
       signal: new AbortController().signal,
       onClientRequestId: vi.fn(), onRemoteSettled
     })).rejects.toThrow(/同时返回 ANSWER 和 TOOL/)

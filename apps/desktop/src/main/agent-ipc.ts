@@ -49,6 +49,8 @@ export interface AgentIpcDependencies {
   /** Runs the existing local resume analysis for one staged file. */
   runResumeAnalysisTask(fileToken: string, metadata: AgentToolExecutionMetadata): Promise<{ name: string; format: string }>
   /** Writes one interview through the same repository path the manual form uses. */
+  /** How many candidates can hold an interview, so the planner knows one exists. */
+  listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
   scheduleCandidateInterview(input: {
     sourceDocumentId: string
     scheduledAt: string
@@ -614,6 +616,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           conversation: planningConversation,
           selectedJobCaseRef: input.selectedJobCaseRef ?? null,
             attachmentCount: state.attachmentFileTokens.length,
+            schedulableCandidateCount: (deps.listSchedulableCandidates?.() ?? []).length,
             attachmentDrafts: turnAttachmentDrafts(),
           model,
           signal: state.abortController.signal,

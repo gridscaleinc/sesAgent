@@ -259,6 +259,10 @@ export function registerCandidateMatchHandlers(
       await runResumeAnalysisTask({ fileToken, taskId: task.id })
       return { name: record.name, format: record.format }
     },
+    listSchedulableCandidates: () => repository.listCandidateReviews().map((review, index) => ({
+      anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
+      sourceDocumentId: review.documentId
+    })),
     scheduleCandidateInterview: (input) => {
       repository.saveCandidateInterviewSchedule({
         sourceDocumentId: input.sourceDocumentId,
