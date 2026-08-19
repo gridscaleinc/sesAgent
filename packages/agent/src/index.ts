@@ -686,8 +686,17 @@ export class LocalAgentUseCase {
     // The planner keeps choosing the read tool for a booking, and two rounds of
     // prompt wording did not settle it. A plan is a request; main redirects one
     // that cannot serve what was asked.
+    // Every read tool resolves through the match run and answers a booking with
+    // "specify the candidate rank to query". None of them can create a booking,
+    // so redirecting any of them is safe; only the interview read tool was
+    // covered before and the planner simply picked a different one.
+    const readToolsThatCannotBook: ReadonlySet<AgentPlannedToolAction['toolName']> = new Set([
+      'candidate.interview.read.local',
+      'candidate.profile.read.local',
+      'match-run.read.local'
+    ])
     const plannedAction: AgentPlannedToolAction =
-      requestedAction.toolName === 'candidate.interview.read.local' && looksLikeInterviewBookingRequest(input.message)
+      readToolsThatCannotBook.has(requestedAction.toolName) && looksLikeInterviewBookingRequest(input.message)
         ? { toolName: 'candidate.interview.schedule.local', arguments: {
             rank: null, date: null, time: null, method: null, durationMinutes: null, kind: null, note: null
           } }

@@ -286,22 +286,45 @@ describe('local conversational matching agent', () => {
     ]) expect(looksLikeInterviewBookingRequest(reading)).toBe(false)
   })
 
-  it('redirects a read plan to the scheduler when the operator asked to book', async () => {
-    const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
-    const harness = createHarness([], [only], null)
+  it('redirects every read plan to the scheduler when the operator asked to book', async () => {
+    // All three read tools resolve through the match run and answer a booking
+    // with "specify the candidate rank to query". Covering only one of them just
+    // moved the planner onto another.
+    const plans = [
+      { toolName: 'candidate.interview.read.local' as const, arguments: { rank: null } },
+      { toolName: 'candidate.profile.read.local' as const, arguments: { rank: null } },
+      { toolName: 'match-run.read.local' as const, arguments: { rank: 1 } }
+    ]
+    for (const plan of plans) {
+      const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+      const harness = createHarness([], [only], null)
+      const result = await harness.useCase.execute(
+        {
+          conversationId: '33333333-3333-4333-8333-333333333333',
+          message: '安排一个20号的面试', expectedConversationRevision: null,
+          requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        },
+        plan
+      )
+      expect(result.status, plan.toolName).toBe('clarifying')
+      expect(result.assistantMessage.content, plan.toolName).toContain('登记面试还需要')
+      expect(harness.calls, plan.toolName).toEqual([])
+    }
+  })
+
+  it('leaves a genuine read plan alone', async () => {
+    const harness = createHarness()
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
     const result = await harness.useCase.execute(
       {
-        conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '安排一个20号的面试', expectedConversationRevision: null,
+        conversationId, message: '看一下面试安排', expectedConversationRevision: revision,
         requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
       },
-      // What the planner actually returned in the field.
-      { toolName: 'candidate.interview.read.local', arguments: { rank: null } }
+      { toolName: 'candidate.interview.read.local', arguments: { rank: 1 } }
     )
-    // Asks for the booking details, rather than a ranking that was never mentioned.
-    expect(result.status).toBe('clarifying')
-    expect(result.assistantMessage.content).toContain('登记面试还需要')
-    expect(harness.calls).toEqual([])
+    expect(harness.calls.at(-1)?.toolName).toBe('candidate.interview.read.local')
+    expect(result.assistantMessage.content).not.toContain('登记面试还需要')
   })
 
   it('resolves the interview candidate the same way from every entry point', async () => {
