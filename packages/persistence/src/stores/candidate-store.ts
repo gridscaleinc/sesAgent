@@ -322,6 +322,15 @@ export class CandidateStore extends DomainStore {
    * leave this method, because the draft has not been through the operator's
    * field review yet and the file name usually carries the candidate's name.
    */
+  getCandidateSourceDocumentId(candidateProfileId: string): string | null {
+    const row = this.database
+      .prepare<[string], { source_document_id: string }>(
+        'SELECT source_document_id FROM candidate_profiles WHERE id = ?'
+      )
+      .get(candidateProfileId)
+    return row?.source_document_id ?? null
+  }
+
   getAgentCandidateDraftFacts(sourceDocumentId: string, label: string): AgentCandidateDraftFacts | null {
     const review = this.getCandidateReview(sourceDocumentId)
     if (!review) return null

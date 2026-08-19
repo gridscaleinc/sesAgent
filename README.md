@@ -209,6 +209,8 @@ Windows AppContainer 补充：OCR、Parser、Embedding 与 Reranker 现在共用
 
 93. 拖入对话的简历**先解析、后决定是否导入**。暂存后立即在本机运行同一条解析管线（Parser Worker → 本地 OCR → 姓名候选 → 确定性 PII 脱敏 → 字段/项目抽取），但**不写入任何持久化**：不创建候选人审核、不创建 WorkTask、不保存 Redaction Session。解析结果只存在于本进程内存，随轮次注入模型上下文，因此“总结一下这个人”不需要任何 Tool 调用即可回答。预览与正式导入共用同一个 `analyzeStagedFileLocally`，脱敏策略不可能在“给你看的”和“存下来的”之间漂移。投影仍只放行 9 类业务字段与项目摘要，Document ID、原文件名和来源单元格标签留在本机；确认导入后才落库并进入字段人工审核。另有只读 Tool `candidate.draft.read.local` 用于读取已导入但未确认的草稿，导入轮次留下 `RESUME_1` 形式的匿名引用供后续轮次按序号解析，模型全程不接触 Document ID。所有草稿回答固定标注“机器抽取、未确认”，界面以警示条重申任何字段经人工确认后才会成为候选人档案。
 
+94. 面谈登记已成为可对话调用的写 Tool `candidate.interview.schedule.local`。模型只能填写营业员**实际说出**的参数，其余一律留 `null`；日期、开始时刻、实施方法、所要时间任一缺失即返回 `INTERVIEW_DETAILS_REQUIRED` 澄清追问，**不替用户选择**，因此“帮我安排个面试”这类模糊指令不可能创建记录。候选人由会话中已有的 Match Run 排名解析，模型不提交内部 ID；时间按 JST 组装为 `YYYY-MM-DDTHH:mm:00+09:00`。写入复用手动表单同一条 `saveCandidateInterviewSchedule` 路径，面谈者绑定当前操作员，`replayPolicy` 为 `manual-review`。不发送任何通知邮件，回答固定说明这一点，记录可在面试管理中查看与修改。
+
 文本型 PDF/Office、扫描 PDF、字段/项目经历人工审核、匿名 Profile、候选人库搜索/版本/归档/删除、Google Workspace 应用内管理配置、Gmail 只读同步、EML/手动案件输入、案件草稿审核/版本/归档/删除、七类三态硬条件 + 本地 BM25/Profile Vector/Project Vector/RRF/日文 Cross-Encoder 精排、项目证据、营业员匹配反馈、应用内专家标注、本地 Benchmark 质量门、提案审批/导出/提案后人工跟进、加密备份恢复和本地变更提醒已进入本地主链路。真实 ONNX 的 1,000 Profile 合成回归中，相关 Rank 为 1/1/1，30-case 质量门 Recall@20/NDCG@20/Project Evidence 均为 1.0；`hardFilterPolicyVersion=tri-state-v3`、`humanLabeledDataset=false`，不能据此宣布达到真实试点门槛。普通 Cloud AI 的本地硬性出网门、两阶段 Review Ticket 和实现绑定已经进入源码并通过本机自动测试；真实日文隐私专家报告尚未生成，只表示质量/审计/发布准备度证据缺失，不再单独阻断满足硬门的 Cloud 请求。真实 30–50 件 SES 检索专家标注集、Developer ID、公证和 Gmail 真实 Workspace 在线验收也仍未完成。
 
 ### 本地运行

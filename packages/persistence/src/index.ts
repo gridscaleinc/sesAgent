@@ -447,6 +447,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.candidates.getCandidateLocalIdentity(documentId)
   }
 
+  getCandidateSourceDocumentId(candidateProfileId: string): string | null {
+    return this.stores.candidates.getCandidateSourceDocumentId(candidateProfileId)
+  }
+
   getAgentCandidateDraftFacts(sourceDocumentId: string, label: string): AgentCandidateDraftFacts | null {
     return this.stores.candidates.getAgentCandidateDraftFacts(sourceDocumentId, label)
   }

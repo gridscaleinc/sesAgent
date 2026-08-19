@@ -1035,7 +1035,7 @@ const agentBlocksSchema = z.union([
   }),
   z.object({
     type: z.literal('clarification'),
-    code: z.enum(['SELECT_JOB_CASE', 'SELECT_RESULT', 'STALE_REFERENCE', 'NO_ACTIVE_JOB_CASE']),
+    code: z.enum(['SELECT_JOB_CASE', 'SELECT_RESULT', 'STALE_REFERENCE', 'NO_ACTIVE_JOB_CASE', 'INTERVIEW_DETAILS_REQUIRED']),
     prompt: z.string().min(1).max(2_000),
     options: z.array(typedAiConversationReferenceSchema).max(20)
   }),

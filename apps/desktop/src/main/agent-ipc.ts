@@ -48,6 +48,15 @@ export interface AgentIpcDependencies {
   cancelMatchTask(taskId: string): void
   /** Runs the existing local resume analysis for one staged file. */
   runResumeAnalysisTask(fileToken: string, metadata: AgentToolExecutionMetadata): Promise<{ name: string; format: string }>
+  /** Writes one interview through the same repository path the manual form uses. */
+  scheduleCandidateInterview(input: {
+    sourceDocumentId: string
+    scheduledAt: string
+    durationMinutes: number
+    meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
+    kind: 'recruiting' | 'client'
+    contactNote?: string
+  }): void
   modelCatalog?: readonly AgentChatModelDefinition[]
   narrativeStreamer?: AgentNarrativeStreamer | null
   /** Locally derived preview facts, keyed by staged file token. */
@@ -256,6 +265,12 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     loadConversation: (conversationId) => deps.repository.getAiConversation(conversationId),
     saveConversation: (input) => deps.repository.saveAiConversation(input),
     locale: () => deps.locale(),
+    resolveInterviewCandidate: (runId, resultId, rank) => {
+      const facts = deps.repository.getAgentCandidateProfileFacts(runId, deps.currentMatchRuntimeIdentity, resultId, rank)
+      if (!facts.candidate) return null
+      const sourceDocumentId = deps.repository.getCandidateSourceDocumentId(facts.candidate.candidateProfileId)
+      return sourceDocumentId ? { anonymousLabel: facts.candidate.anonymousLabel, sourceDocumentId } : null
+    },
     listAttachmentFileTokens: (conversationId, requestId) => {
       const turn = activeTurns.get(conversationId)
       return turn?.requestId === requestId ? turn.attachmentFileTokens : []
@@ -269,6 +284,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         : toolName === 'candidate.profile.read.local' ? 'selected-candidate-profile'
         : toolName === 'candidate.interview.read.local' ? 'selected-candidate-interviews'
         : toolName === 'match-run.read.local' ? 'selected-match-run'
+        : toolName === 'candidate.interview.schedule.local' ? 'selected-candidate-profile'
         : toolName === 'resume.analyze.local' || toolName === 'candidate.draft.read.local' ? 'selected-files'
           : 'confirmed-candidate-pool'
       const scopeFingerprint = hashActionInput(rawInput)
@@ -320,6 +336,54 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           actionRunId: execution.actionRunId ?? null
         }
       }
+      if (toolName === 'candidate.interview.schedule.local') {
+        const input = rawInput as {
+          sourceDocumentId: string; candidateLabel: string; scheduledAt: string
+          durationMinutes: number; meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
+          kind: 'recruiting' | 'client'; contactNote?: string
+        }
+        const preflight = deps.actionOrchestrator.preflight(
+          toolName, context,
+          {
+            sourceDocumentId: input.sourceDocumentId, scheduledAt: input.scheduledAt,
+            durationMinutes: input.durationMinutes, meetingMethod: input.meetingMethod,
+            kind: input.kind, ...(input.contactNote ? { contactNote: input.contactNote } : {})
+          },
+          '担当者が指定した日時・方法で面談を端末内に登録します。',
+          actionIdempotencyKey(toolName, metadata.conversationId, metadata.requestId)
+        )
+        if (preflight.decision.outcome === 'deny') throw new Error(preflight.decision.reason)
+        if (preflight.decision.outcome === 'require-approval') {
+          throw new Error('この操作はレビューセンターでの承認待ちです。')
+        }
+        deps.repository.updateActionRun(preflight.actionRunId, 'running')
+        try {
+          deps.scheduleCandidateInterview({
+            sourceDocumentId: input.sourceDocumentId,
+            scheduledAt: input.scheduledAt,
+            durationMinutes: input.durationMinutes,
+            meetingMethod: input.meetingMethod,
+            kind: input.kind,
+            contactNote: input.contactNote
+          })
+        } catch (error) {
+          deps.repository.updateActionRun(preflight.actionRunId, 'failed', { errorCode: 'INTERVIEW_SCHEDULE_FAILED' })
+          throw new AgentExecutionError(
+            'AGENT_INTERVIEW_SCHEDULE_FAILED',
+            error instanceof Error ? error.message : '面談を登録できませんでした。'
+          )
+        }
+        const output = {
+          candidateLabel: input.candidateLabel,
+          scheduledAt: input.scheduledAt,
+          durationMinutes: input.durationMinutes,
+          meetingMethod: input.meetingMethod,
+          kind: input.kind
+        }
+        deps.repository.updateActionRun(preflight.actionRunId, 'succeeded', { resultHash: hashActionInput(output) })
+        return { toolName, output, actionRunId: preflight.actionRunId }
+      }
+
       if (toolName === 'candidate.draft.read.local') {
         const input = rawInput as { sourceDocumentId: string; label: string }
         const preflight = deps.actionOrchestrator.preflight(

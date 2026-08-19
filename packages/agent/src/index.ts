@@ -154,6 +154,14 @@ export interface AgentCandidateDraftReadOutput {
   facts: AgentCandidateDraftFacts
 }
 
+export interface AgentInterviewScheduleOutput {
+  candidateLabel: string
+  scheduledAt: string
+  durationMinutes: number
+  meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
+  kind: 'recruiting' | 'client'
+}
+
 export type AgentToolResult =
   | { toolName: 'job-case.search.local'; output: AgentJobCaseSearchOutput; actionRunId?: string | null }
   | { toolName: 'candidate.match.local'; output: AgentCandidateMatchOutput; actionRunId?: string | null }
@@ -162,6 +170,7 @@ export type AgentToolResult =
   | { toolName: 'match-run.read.local'; output: AgentMatchRunReadOutput; actionRunId?: string | null }
   | { toolName: 'resume.analyze.local'; output: AgentResumeImportOutput; actionRunId?: string | null }
   | { toolName: 'candidate.draft.read.local'; output: AgentCandidateDraftReadOutput; actionRunId?: string | null }
+  | { toolName: 'candidate.interview.schedule.local'; output: AgentInterviewScheduleOutput; actionRunId?: string | null }
 
 export interface AgentToolExecutionMetadata {
   conversationId: string
@@ -173,11 +182,13 @@ export interface LocalAgentPort {
   listActiveJobCases?(): AgentJobCaseRecord[]
   /** Vault tokens attached to the turn being executed, in the order the operator added them. */
   listAttachmentFileTokens?(conversationId: string, requestId: string): string[]
+  /** Local lookup, not a tool call: resolves a ranked candidate to the record an interview attaches to. */
+  resolveInterviewCandidate?(runId: string, resultId: string | null, rank: number | null): { anonymousLabel: string; sourceDocumentId: string } | null
   isCancelled?(conversationId: string, requestId: string): boolean
   loadConversation(conversationId: string): AiConversationSnapshot | null
   saveConversation(input: SaveAiConversationInput): AiConversationSnapshot
   executeTool(
-    toolName: Extract<DomainToolName, 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local'>,
+    toolName: Extract<DomainToolName, 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'candidate.interview.schedule.local'>,
     input: unknown,
     metadata: AgentToolExecutionMetadata
   ): Promise<AgentToolResult>
@@ -198,8 +209,30 @@ export type AgentPlannedToolAction =
   | { toolName: 'match-run.read.local'; arguments: { rank: number } }
   | { toolName: 'resume.analyze.local'; arguments: { attachmentOrdinal: number | null } }
   | { toolName: 'candidate.draft.read.local'; arguments: { draftOrdinal: number | null } }
+  | {
+      toolName: 'candidate.interview.schedule.local'
+      arguments: {
+        rank: number | null
+        date: string | null
+        time: string | null
+        method: 'zoom' | 'google-meet' | 'phone' | 'onsite' | null
+        durationMinutes: number | null
+        kind: 'recruiting' | 'client' | null
+        note: string | null
+      }
+    }
 
 const nullableOrdinalSchema = z.number().int().min(1).max(20).nullable()
+const planningInterviewArgumentsSchema = z.object({
+  rank: nullableOrdinalSchema,
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).nullable(),
+  time: z.string().regex(/^\d{2}:\d{2}$/u).nullable(),
+  method: z.enum(['zoom', 'google-meet', 'phone', 'onsite']).nullable(),
+  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90)]).nullable(),
+  kind: z.enum(['recruiting', 'client']).nullable(),
+  note: z.string().trim().max(1_500).nullable()
+}).strict()
+
 const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
   z.object({
     toolName: z.literal('job-case.search.local'),
@@ -235,6 +268,10 @@ const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
   z.object({
     toolName: z.literal('candidate.draft.read.local'),
     arguments: z.object({ draftOrdinal: nullableOrdinalSchema }).strict()
+  }).strict(),
+  z.object({
+    toolName: z.literal('candidate.interview.schedule.local'),
+    arguments: planningInterviewArgumentsSchema
   }).strict()
 ])
 
@@ -320,6 +357,13 @@ export const agentPlanningToolCatalog: readonly AgentPlanningToolCatalogEntry[] 
     argumentsShape: '{"draftOrdinal":number|null}',
     effect: 'read', approval: 'none',
     parse: (value) => ({ toolName: 'candidate.draft.read.local', arguments: planningDraftArgumentsSchema.parse(value) })
+  },
+  {
+    name: 'schedule_interview',
+    description: 'Schedule an interview for a candidate already in this conversation. Fill only what the operator actually stated and leave everything else null - the app asks them for the missing details rather than choosing on their behalf. date is YYYY-MM-DD and time is HH:mm in JST.',
+    argumentsShape: '{"rank":number|null,"date":string|null,"time":string|null,"method":"zoom"|"google-meet"|"phone"|"onsite"|null,"durationMinutes":30|45|60|90|null,"kind":"recruiting"|"client"|null,"note":string|null}',
+    effect: 'write', approval: 'none',
+    parse: (value) => ({ toolName: 'candidate.interview.schedule.local', arguments: planningInterviewArgumentsSchema.parse(value) })
   },
   {
     name: 'read_match_result',
@@ -721,6 +765,60 @@ export class LocalAgentUseCase {
           : textFor(locale, '候補者を特定できないため、面談情報を読み取れませんでした。', '无法确定候选人，未能读取面试信息。')
         const assistant = assistantMessage(content, [block], turnId)
         return save(assistant, { ...previousState, lastMatchRunId: tool.output.facts.runId }, 'completed', 'candidate.interview.read.local', tool.actionRunId ?? null)
+      }
+
+      if (plannedAction.toolName === 'candidate.interview.schedule.local') {
+        const args = plannedAction.arguments
+        const resolved = resolveMatchRunReference(previousState, previousMessages, args.rank, locale)
+        if ('clarification' in resolved) {
+          const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
+          return save(assistant, previousState, 'clarifying', null, null)
+        }
+        // Anything the operator did not actually say is asked for, never chosen
+        // for them. A vague "book an interview" can therefore not create one.
+        const missing: string[] = []
+        if (!args.date) missing.push(textFor(locale, '日付', '日期'))
+        if (!args.time) missing.push(textFor(locale, '開始時刻', '开始时间'))
+        if (!args.method) missing.push(textFor(locale, '実施方法（Zoom / Google Meet / 電話 / 対面）', '会议方式（Zoom / Google Meet / 电话 / 现场）'))
+        if (!args.durationMinutes) missing.push(textFor(locale, '所要時間（30 / 45 / 60 / 90 分）', '时长（30 / 45 / 60 / 90 分钟）'))
+        if (missing.length > 0) {
+          const prompt = textFor(
+            locale,
+            `面談を登録する前に次を教えてください：${missing.join('、')}。備考があれば併せてお知らせください。`,
+            `登记面试前还需要你确认：${missing.join('、')}。如果有备注也请一并说明。`
+          )
+          const clarification: AiConversationBlock = {
+            type: 'clarification', code: 'INTERVIEW_DETAILS_REQUIRED', prompt, options: []
+          }
+          return save(assistantMessage(prompt, [clarification], turnId), previousState, 'clarifying', null, null)
+        }
+        const candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
+        if (!candidate) {
+          const prompt = textFor(locale, '対象の候補者を特定できませんでした。', '无法确定要安排面试的候选人。')
+          return save(assistantMessage(prompt, [], turnId), previousState, 'clarifying', null, null)
+        }
+        const tool = await this.port.executeTool('candidate.interview.schedule.local', {
+          sourceDocumentId: candidate.sourceDocumentId,
+          candidateLabel: candidate.anonymousLabel,
+          scheduledAt: `${args.date}T${args.time}:00+09:00`,
+          durationMinutes: args.durationMinutes,
+          meetingMethod: args.method,
+          kind: args.kind ?? 'recruiting',
+          ...(args.note ? { contactNote: args.note } : {})
+        }, { conversationId: input.conversationId, turnId, requestId: input.requestId })
+        if (tool.toolName !== 'candidate.interview.schedule.local') {
+          throw new AgentExecutionError('TOOL_RESULT_INVALID', '面談登録结果无效。')
+        }
+        const methodLabels: Record<string, string> = {
+          zoom: 'Zoom', 'google-meet': 'Google Meet',
+          phone: textFor(locale, '電話', '电话'), onsite: textFor(locale, '対面', '现场')
+        }
+        const content = textFor(
+          locale,
+          `${tool.output.candidateLabel} の面談を ${args.date} ${args.time}（JST）に登録しました。実施方法は${methodLabels[tool.output.meetingMethod]}、所要 ${tool.output.durationMinutes} 分です。案内メールは送信していません。面談管理から内容を確認・変更できます。`,
+          `已登记 ${tool.output.candidateLabel} 的面试：${args.date} ${args.time}（JST），方式${methodLabels[tool.output.meetingMethod]}，时长 ${tool.output.durationMinutes} 分钟。未发送任何通知邮件，可在面试管理里查看或修改。`
+        )
+        return save(assistantMessage(content, [], turnId), previousState, 'completed', 'candidate.interview.schedule.local', tool.actionRunId ?? null)
       }
 
       if (plannedAction.toolName === 'candidate.draft.read.local') {

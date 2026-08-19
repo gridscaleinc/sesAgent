@@ -220,6 +220,21 @@ export function createDefaultDomainToolRegistry(): DomainToolRegistry {
       idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
     })
     .register({
+      name: 'candidate.interview.schedule.local', version: 1,
+      inputSchema: z.object({
+        sourceDocumentId: z.string().uuid(),
+        scheduledAt: z.string().min(1).max(40),
+        durationMinutes: z.number().int().positive().max(480),
+        meetingMethod: z.enum(['zoom', 'google-meet', 'phone', 'onsite']),
+        kind: z.enum(['recruiting', 'client']),
+        contactNote: z.string().max(1_500).optional()
+      }).strict(),
+      allowedOrigins: ['user-command'],
+      allowedScopeIds: ['selected-candidate-profile'],
+      effects: { localRead: true, localWrite: true, externalRead: false, externalWrite: false, fileWrite: false, cloudInvocation: false, cloudPayload: 'none' },
+      idempotencyMode: 'content-idempotent', replayPolicy: 'manual-review', approval: 'none'
+    })
+    .register({
       name: 'candidate.draft.read.local', version: 1,
       inputSchema: z.object({ sourceDocumentId: z.string().uuid() }).strict(),
       allowedOrigins: ['user-command'],

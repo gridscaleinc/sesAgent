@@ -259,6 +259,17 @@ export function registerCandidateMatchHandlers(
       await runResumeAnalysisTask({ fileToken, taskId: task.id })
       return { name: record.name, format: record.format }
     },
+    scheduleCandidateInterview: (input) => {
+      repository.saveCandidateInterviewSchedule({
+        sourceDocumentId: input.sourceDocumentId,
+        kind: input.kind,
+        scheduledAt: input.scheduledAt,
+        durationMinutes: input.durationMinutes as 30 | 45 | 60 | 90,
+        meetingMethod: input.meetingMethod,
+        interviewer: currentOperator().displayName,
+        ...(input.contactNote ? { contactNote: input.contactNote } : {})
+      }, currentOperator().displayName)
+    },
     cancelMatchTask: (taskId) => {
       const task = repository.getWorkTask(taskId)
       if (!task) return

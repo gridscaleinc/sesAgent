@@ -28,6 +28,7 @@ export type ProcessingJobStatus = 'queued' | 'running' | 'succeeded' | 'retry_wa
 export type DomainToolName =
   | 'resume.analyze.local'
   | 'candidate.draft.read.local'
+  | 'candidate.interview.schedule.local'
   | 'job-case.search.local'
   | 'candidate.match.local'
   | 'candidate.profile.read.local'
@@ -1797,7 +1798,7 @@ export interface AgentCandidateMatchCardsBlock {
 
 export interface AgentClarificationBlock {
   type: 'clarification'
-  code: 'SELECT_JOB_CASE' | 'SELECT_RESULT' | 'STALE_REFERENCE' | 'NO_ACTIVE_JOB_CASE'
+  code: 'SELECT_JOB_CASE' | 'SELECT_RESULT' | 'STALE_REFERENCE' | 'NO_ACTIVE_JOB_CASE' | 'INTERVIEW_DETAILS_REQUIRED'
   prompt: string
   options: TypedAiConversationReference[]
 }

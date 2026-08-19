@@ -60,8 +60,13 @@ function createHarness(attachmentTokens: string[] = []) {
     now: () => new Date('2026-08-18T03:00:00.000Z'),
     locale: () => 'zh-CN' as const,
     listAttachmentFileTokens: () => attachmentTokens,
-    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local', input: unknown): Promise<AgentToolResult> => {
+    resolveInterviewCandidate: () => ({ anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'candidate.interview.schedule.local', input: unknown): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
+      if (toolName === 'candidate.interview.schedule.local') {
+        const value = input as { candidateLabel: string; scheduledAt: string; durationMinutes: number; meetingMethod: 'zoom'; kind: 'recruiting' }
+        return { toolName, actionRunId: 'aaaaaaaa-1111-4111-8111-111111111111', output: value }
+      }
       if (toolName === 'candidate.draft.read.local') {
         const value = input as { sourceDocumentId: string; label: string }
         return {
@@ -181,6 +186,77 @@ function createHarness(attachmentTokens: string[] = []) {
 }
 
 describe('local conversational matching agent', () => {
+  const withMatchInContext = async (harness: ReturnType<typeof createHarness>, conversationId: string) => {
+    const seeded = await harness.useCase.execute(
+      {
+        conversationId, message: '给当前案件匹配候选人', expectedConversationRevision: null,
+        requestId: '99999999-9999-4999-8999-999999999999',
+        selectedJobCaseRef: { kind: 'job-case', objectId: caseOne, objectVersion: 2, resultHash: null, ordinal: 1, label: cases[0]!.title, target: `job-case:${caseOne}` }
+      },
+      matchPlan
+    )
+    harness.calls.length = 0
+    return seeded.conversation.revision
+  }
+
+  const scheduleInput = (overrides: Record<string, unknown> = {}) => ({
+    toolName: 'candidate.interview.schedule.local' as const,
+    arguments: {
+      rank: 1, date: null, time: null, method: null,
+      durationMinutes: null, kind: null, note: null, ...overrides
+    }
+  })
+
+  it('asks for the missing interview details instead of choosing them', async () => {
+    const harness = createHarness()
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
+    const result = await harness.useCase.execute(
+      {
+        conversationId,
+        message: '帮我安排一个20号的面试', expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ date: '2026-08-20' })
+    )
+    // Nothing is written from a half-specified instruction.
+    expect(harness.calls).toEqual([])
+    expect(result.status).toBe('clarifying')
+    expect(result.assistantMessage.content).toContain('开始时间')
+    expect(result.assistantMessage.content).toContain('会议方式')
+    expect(result.assistantMessage.content).toContain('时长')
+    expect(result.assistantMessage.blocks?.[0]).toMatchObject({ code: 'INTERVIEW_DETAILS_REQUIRED' })
+  })
+
+  it('schedules in JST once every detail is supplied and says no invitation was sent', async () => {
+    const harness = createHarness()
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
+    const result = await harness.useCase.execute(
+      {
+        conversationId,
+        message: '20号 14:00，Zoom，60分钟', expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60, note: '事前に職務経歴を共有' })
+    )
+    expect(harness.calls).toEqual([{
+      toolName: 'candidate.interview.schedule.local',
+      input: {
+        sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        candidateLabel: 'CANDIDATE_1',
+        scheduledAt: '2026-08-20T14:00:00+09:00',
+        durationMinutes: 60,
+        meetingMethod: 'zoom',
+        kind: 'recruiting',
+        contactNote: '事前に職務経歴を共有'
+      }
+    }])
+    expect(result.status).toBe('completed')
+    expect(result.assistantMessage.content).toContain('未发送任何通知邮件')
+  })
+
+
   it('summarises an imported resume from its draft and marks it unconfirmed', async () => {
     const token = '11111111-1111-4111-8111-111111111111'
     const harness = createHarness([token])
