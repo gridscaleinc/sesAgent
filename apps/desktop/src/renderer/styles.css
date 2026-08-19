@@ -16121,7 +16121,7 @@ body,
 }
 .agent-attachment-tray strong { overflow: hidden; font-weight: 640; text-overflow: ellipsis; white-space: nowrap; }
 .agent-attachment-tray span > small { color: #7c8797; font-size: 9px; }
-.agent-attachment-tray button {
+.agent-attachment-tray > span button {
   width: 17px; height: 17px; padding: 0;
   color: #6d7887; font-size: 13px; line-height: 1;
   background: transparent; border: 0; border-radius: 50%; cursor: pointer;
