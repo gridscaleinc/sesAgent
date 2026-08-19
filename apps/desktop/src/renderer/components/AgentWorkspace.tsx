@@ -332,7 +332,13 @@ export function AgentWorkspace({
     let failed = 0
     for (const file of attachments) {
       try {
-        await window.sesAgent.analyzeResumeFile({ fileToken: file.token, taskId: file.taskId })
+        await window.sesAgent.analyzeResumeFile({
+          fileToken: file.token,
+          taskId: file.taskId,
+          // Ties the import to this conversation, so "the one I just imported"
+          // means the same thing whether the button or the agent did it.
+          ...(activeConversation?.id ? { conversationId: activeConversation.id } : {})
+        })
         imported += 1
       } catch {
         failed += 1

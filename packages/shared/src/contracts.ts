@@ -2244,7 +2244,7 @@ export interface DesktopApi {
   beginResumeImport(): Promise<BeginResumeImportResult>
   stageDroppedResumeFiles(input: { files: Array<{ name: string; bytes: Uint8Array }> }): Promise<BeginResumeImportResult>
   previewStagedResumeFile(input: { fileToken: string }): Promise<AgentCandidateDraftFacts>
-  analyzeResumeFile(input: { fileToken: string; taskId: string }): Promise<ResumeAnalysisTaskExecutionResult>
+  analyzeResumeFile(input: { fileToken: string; taskId: string; conversationId?: string }): Promise<ResumeAnalysisTaskExecutionResult>
   getCandidateReview(documentId: string): Promise<CandidateReviewSnapshot | null>
   submitCandidateReview(input: SubmitCandidateReviewInput): Promise<SubmitCandidateReviewResult>
   createCandidateInterviewRound(input: CreateCandidateInterviewRoundInput): Promise<CandidateInterviewSnapshot>

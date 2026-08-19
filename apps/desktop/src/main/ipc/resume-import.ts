@@ -53,7 +53,7 @@ function documentTextForLocalPrivacy(document: Awaited<ReturnType<ParserWorkerCl
 
 /** Resume file staging, local analysis and candidate field review. */
 export function registerResumeImportHandlers(context: MainIpcContext) {
-  const { repository, fileVault, parserWorker, localOcr, localNer, processingResources, currentOperator, preflightAction, withTaskOperation, failPendingProcessingJob, previewedDrafts } = context
+  const { repository, fileVault, parserWorker, localOcr, localNer, processingResources, currentOperator, preflightAction, withTaskOperation, failPendingProcessingJob, previewedDrafts, conversationImports } = context
   ipcMain.handle(ipcChannels.beginResumeImport, async (event): Promise<BeginResumeImportResult> => {
     assertTrustedSender(event)
     const owner = BrowserWindow.fromWebContents(event.sender)
@@ -468,7 +468,18 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
     async (event, rawInput): Promise<ResumeAnalysisTaskExecutionResult> => {
       assertTrustedSender(event)
       const input = analyzeResumeFileInputSchema.parse(rawInput)
-      return withTaskOperation(input.taskId, () => runResumeAnalysisTask(input))
+      const registerConversationImport = (documentId: string) => {
+        if (!input.conversationId) return
+        const existing = conversationImports.get(input.conversationId) ?? []
+        if (existing.some((item) => item.sourceDocumentId === documentId)) return
+        conversationImports.set(input.conversationId, [
+          ...existing,
+          { label: `RESUME_${existing.length + 1}`, sourceDocumentId: documentId }
+        ])
+      }
+      const executed = await withTaskOperation(input.taskId, () => runResumeAnalysisTask(input))
+      registerConversationImport(input.fileToken)
+      return executed
     }
   )
 

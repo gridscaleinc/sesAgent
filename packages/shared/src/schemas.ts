@@ -187,7 +187,9 @@ export const previewStagedResumeFileInputSchema = z.object({
 
 export const analyzeResumeFileInputSchema = z.object({
   fileToken: z.string().uuid(),
-  taskId: z.string().min(1).max(128)
+  taskId: z.string().min(1).max(128),
+  /** Set when the import came from a conversation, so that turn can refer to it. */
+  conversationId: z.string().uuid().optional()
 })
 
 export const resumeAnalysisSummarySchema = z.object({

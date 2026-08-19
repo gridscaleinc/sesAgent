@@ -42,7 +42,8 @@ function createHarness(
   attachmentTokens: string[] = [],
   schedulable: Array<{ anonymousLabel: string; sourceDocumentId: string }> = [],
   matchCandidate: { anonymousLabel: string; sourceDocumentId: string } | null =
-    { anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+    { anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+  conversationImports: Array<{ anonymousLabel: string; sourceDocumentId: string }> = []
 ) {
   const conversations = new Map<string, AiConversationSnapshot>()
   const calls: Array<{ toolName: string; input: unknown }> = []
@@ -69,6 +70,7 @@ function createHarness(
     listAttachmentFileTokens: () => attachmentTokens,
     resolveInterviewCandidate: () => matchCandidate,
     listSchedulableCandidates: () => schedulable,
+    listConversationImports: () => conversationImports,
     executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'candidate.interview.schedule.local', input: unknown): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
       if (toolName === 'candidate.interview.schedule.local') {
@@ -330,6 +332,51 @@ describe('local conversational matching agent', () => {
     expect(result.assistantMessage.content).not.toContain('查询')
     expect(result.assistantMessage.content).toContain('请先导入简历')
     expect(harness.calls).toEqual([])
+  })
+
+  it('prefers what this conversation imported over everything already on the device', async () => {
+    // One resume was imported here while four candidates existed on the device,
+    // and the device list answered - so the operator was offered four strangers
+    // for the person they had just added.
+    const mine = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }
+    const deviceWide = ['1', '2', '3', '4'].map((n) => ({
+      anonymousLabel: `CANDIDATE_${n}`, sourceDocumentId: `${n}${n}${n}${n}${n}${n}${n}${n}-1111-4111-8111-111111111111`
+    }))
+    const book = async (imports: typeof deviceWide, device: typeof deviceWide, rank: number | null = null) => {
+      const harness = createHarness([], device, null, imports)
+      const result = await harness.useCase.execute(
+        {
+          conversationId: '33333333-3333-4333-8333-333333333333',
+          message: '安排一个20号14点的Zoom面试', expectedConversationRevision: null,
+          requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        },
+        scheduleInput({ rank, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+      )
+      return {
+        status: result.status,
+        content: result.assistantMessage.content,
+        target: (harness.calls[0]?.input as { sourceDocumentId?: string })?.sourceDocumentId ?? null
+      }
+    }
+
+    // One import here, four on the device: the import wins.
+    expect(await book([mine], deviceWide)).toMatchObject({ status: 'completed', target: mine.sourceDocumentId })
+
+    // Two imports here: list those two, never the device's four.
+    const second = { anonymousLabel: 'RESUME_2', sourceDocumentId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' }
+    const ambiguous = await book([mine, second], deviceWide)
+    expect(ambiguous.status).toBe('clarifying')
+    expect(ambiguous.content).toContain('1. RESUME_1')
+    expect(ambiguous.content).toContain('2. RESUME_2')
+    expect(ambiguous.content).not.toContain('CANDIDATE_')
+
+    // Picking by number selects from the conversation's own list.
+    expect(await book([mine, second], deviceWide, 2)).toMatchObject({ status: 'completed', target: second.sourceDocumentId })
+
+    // Nothing imported here: only then does the device list apply.
+    const deviceAsked = await book([], deviceWide)
+    expect(deviceAsked.status).toBe('clarifying')
+    expect(deviceAsked.content).toContain('4. CANDIDATE_4')
   })
 
   it('lists the candidates it can book and accepts the number back', async () => {

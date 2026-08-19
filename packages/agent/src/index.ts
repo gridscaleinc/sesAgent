@@ -186,6 +186,8 @@ export interface LocalAgentPort {
   resolveInterviewCandidate?(runId: string, resultId: string | null, rank: number | null): { anonymousLabel: string; sourceDocumentId: string } | null
   /** Candidates that already have a review record and can therefore hold an interview. */
   listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
+  /** Resumes imported during this conversation, by either the tool or the composer button. */
+  listConversationImports?(conversationId: string): Array<{ anonymousLabel: string; sourceDocumentId: string }>
   isCancelled?(conversationId: string, requestId: string): boolean
   loadConversation(conversationId: string): AiConversationSnapshot | null
   saveConversation(input: SaveAiConversationInput): AiConversationSnapshot
@@ -837,42 +839,36 @@ export class LocalAgentUseCase {
         // An interview attaches to a candidate review record, which exists as
         // soon as a resume is imported - a match run is one way to name that
         // person, not the only one.
-        const importedInConversation = previousMessages
+        // Precedence is what the operator means by "this person": whatever was
+        // imported in this conversation comes first, whichever route imported it.
+        // Only when this conversation imported nothing does the device-wide list
+        // apply - otherwise four unrelated candidates answer for the one resume
+        // that was just added.
+        const blockImports = previousMessages
           .flatMap((message) => message.blocks ?? [])
           .filter((block): block is Extract<AiConversationBlock, { type: 'resume-import' }> => block.type === 'resume-import')
           .flatMap((block) => block.imported)
+          .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.documentId }))
+        const registered = this.port.listConversationImports?.(input.conversationId) ?? []
+        const conversationImports = [...blockImports, ...registered]
+          .filter((item, index, all) => all.findIndex((other) => other.sourceDocumentId === item.sourceDocumentId) === index)
+        const scope = conversationImports.length > 0
+          ? conversationImports
+          : this.port.listSchedulableCandidates?.() ?? []
+
         let candidate: { anonymousLabel: string; sourceDocumentId: string } | null = null
-        // A rank only means something when a match run exists. The model tends to
-        // send rank 1 for "this person", which must not shadow the candidate the
-        // operator actually imported.
-        if (previousState.lastMatchRunId) {
-          // A match run that cannot be resolved - stale, deleted, or an ordinal
-          // that names nothing - just fails to produce a candidate. It must not
-          // short-circuit the sources that can still answer unambiguously.
+        if (conversationImports.length === 0 && previousState.lastMatchRunId) {
+          // A rank only means a match position when a match run exists and this
+          // conversation did not just import someone.
           const resolved = resolveMatchRunReference(previousState, previousMessages, args.rank, locale)
           if (!('clarification' in resolved)) {
             candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
           }
         }
-        if (!candidate && importedInConversation.length === 1) {
-          const only = importedInConversation[0]!
-          candidate = { anonymousLabel: only.label, sourceDocumentId: only.documentId }
-        }
+        if (!candidate && scope.length === 1) candidate = scope[0]!
+        if (!candidate && args.rank !== null && scope[args.rank - 1]) candidate = scope[args.rank - 1]!
         if (!candidate) {
-          const schedulable = this.port.listSchedulableCandidates?.() ?? []
-          if (schedulable.length === 1) {
-            candidate = schedulable[0]!
-          } else if (!previousState.lastMatchRunId && args.rank !== null && schedulable[args.rank - 1]) {
-            // With no match run, a number can only mean the list this turn just
-            // offered, so an ordinal picks from it instead of meaning nothing.
-            candidate = schedulable[args.rank - 1]!
-          }
-        }
-        if (!candidate) {
-          // Say what is actually on the device. "I could not determine who" with
-          // no list leaves the operator with nothing to answer.
-          const schedulable = this.port.listSchedulableCandidates?.() ?? []
-          const prompt = schedulable.length === 0
+          const prompt = scope.length === 0
             ? textFor(
                 locale,
                 'この端末には面談を設定できる候補者がまだありません。先に履歴書を取り込んでください。',
@@ -880,8 +876,8 @@ export class LocalAgentUseCase {
               )
             : textFor(
                 locale,
-                `どの候補者の面談か番号でお知らせください：${schedulable.map((item, index) => `${index + 1}. ${item.anonymousLabel}`).join('、')}`,
-                `请用序号告诉我是哪一位候选人：${schedulable.map((item, index) => `${index + 1}. ${item.anonymousLabel}`).join('、')}`
+                `どの候補者の面談か番号でお知らせください：${scope.map((item, index) => `${index + 1}. ${item.anonymousLabel}`).join('、')}`,
+                `请用序号告诉我是哪一位候选人：${scope.map((item, index) => `${index + 1}. ${item.anonymousLabel}`).join('、')}`
               )
           return save(assistantMessage(prompt, [], turnId), previousState, 'clarifying', null, null)
         }

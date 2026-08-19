@@ -198,6 +198,13 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
    */
   const previewedDrafts = new Map<string, AgentCandidateDraftFacts>()
 
+  /**
+   * Resumes imported during a conversation, however they were imported - through
+   * the agent's tool or the composer's direct button. "The one I just imported"
+   * has to mean the same thing either way.
+   */
+  const conversationImports = new Map<string, Array<{ label: string; sourceDocumentId: string }>>()
+
   const searchCandidates = async (query: string, maxResults: number) => {
     const profiles = repository.listEligibleTalentProfiles()
     const identities = new Map(profiles.map((profile) => [
@@ -266,6 +273,7 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
     failPendingProcessingJob,
     searchCandidates,
     previewedDrafts,
+    conversationImports,
     attachDispatcher: (dispatcher: SafeLocalProcessingDispatcher<ProcessingJobSummary>) => {
       safeLocalDispatcher = dispatcher
     },

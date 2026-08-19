@@ -51,6 +51,10 @@ export interface AgentIpcDependencies {
   /** Writes one interview through the same repository path the manual form uses. */
   /** How many candidates can hold an interview, so the planner knows one exists. */
   listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
+  /** Records an import against the conversation it happened in. */
+  registerConversationImport?(conversationId: string, sourceDocumentId: string): void
+  /** Resumes imported during this conversation, by either route. */
+  listConversationImports?(conversationId: string): Array<{ anonymousLabel: string; sourceDocumentId: string }>
   scheduleCandidateInterview(input: {
     sourceDocumentId: string
     scheduledAt: string
@@ -278,6 +282,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
       const sourceDocumentId = deps.repository.getCandidateSourceDocumentId(facts.candidate.candidateProfileId)
       return sourceDocumentId ? { anonymousLabel: facts.candidate.anonymousLabel, sourceDocumentId } : null
     },
+    listConversationImports: (conversationId) => deps.listConversationImports?.(conversationId) ?? [],
     listAttachmentFileTokens: (conversationId, requestId) => {
       const turn = activeTurns.get(conversationId)
       return turn?.requestId === requestId ? turn.attachmentFileTokens : []
@@ -434,6 +439,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           try {
             const analysed = await deps.runResumeAnalysisTask(fileToken, metadata)
             imported.push({ documentId: fileToken, name: analysed.name, format: analysed.format, reviewRequired: true })
+            deps.registerConversationImport?.(metadata.conversationId, fileToken)
           } catch (error) {
             failed.push({
               name: deps.repository.getStagedFileRecords([fileToken])[0]?.name ?? 'unknown',

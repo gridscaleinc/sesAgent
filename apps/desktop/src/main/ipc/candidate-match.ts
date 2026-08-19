@@ -27,7 +27,7 @@ export function registerCandidateMatchHandlers(
   context: MainIpcContext,
   runResumeAnalysisTask: (input: { fileToken: string; taskId: string }) => Promise<unknown>
 ) {
-  const { previewedDrafts, repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates } = context
+  const { conversationImports, previewedDrafts, repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates } = context
   const runCandidateMatchTask = async (
     taskId: string,
     existingJobId: string | null = null,
@@ -259,6 +259,13 @@ export function registerCandidateMatchHandlers(
       await runResumeAnalysisTask({ fileToken, taskId: task.id })
       return { name: record.name, format: record.format }
     },
+    registerConversationImport: (conversationId, sourceDocumentId) => {
+      const existing = conversationImports.get(conversationId) ?? []
+      if (existing.some((item) => item.sourceDocumentId === sourceDocumentId)) return
+      conversationImports.set(conversationId, [...existing, { label: `RESUME_${existing.length + 1}`, sourceDocumentId }])
+    },
+    listConversationImports: (conversationId) => (conversationImports.get(conversationId) ?? [])
+      .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.sourceDocumentId })),
     listSchedulableCandidates: () => repository.listCandidateReviews().map((review, index) => ({
       anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
       sourceDocumentId: review.documentId
