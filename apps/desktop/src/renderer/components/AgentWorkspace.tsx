@@ -375,8 +375,13 @@ export function AgentWorkspace({
         selectedJobCaseRef: selectedCase,
         attachmentFileTokens: attachments.map((file) => file.token)
       })
-      setAttachments([])
-      if (result.toolName === 'resume.analyze.local') await onLocalDataChanged?.()
+      // Attachments outlive the turn on purpose: the operator asks about a file
+      // first and decides to import it afterwards. They are cleared only once an
+      // import actually happened, or when the operator removes them.
+      if (result.toolName === 'resume.analyze.local') {
+        setAttachments([])
+        await onLocalDataChanged?.()
+      }
       history.acceptConversation(result.conversation)
       const nextSelected = typedReference(result.conversation.salesAgentState?.selectedJobCaseRef)
       if (nextSelected) setSelectedCase(nextSelected)

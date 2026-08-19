@@ -29,6 +29,47 @@ describe('AgentWorkspace', () => {
     window.sessionStorage.clear()
   })
 
+  it('keeps an attachment across a read-only turn so it can still be imported afterwards', async () => {
+    const token = '77777777-7777-4777-8777-777777777777'
+    const executeAgentTurn = vi.fn().mockResolvedValue({
+      status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
+      conversation: snapshot([
+        { id: 'user-1', role: 'user', content: '总结一下这个人', mode: 'cloud', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+      ])
+    })
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn(),
+      stageDroppedResumeFiles: vi.fn().mockResolvedValue({
+        cancelled: false,
+        task: { id: 'task-1' },
+        files: [{ token, name: 'candidate.pdf', format: 'pdf', size: 10, sha256: 'a'.repeat(64), createdAt: '2026-08-18T00:00:00.000Z', privacyStatus: 'awaiting-local-scan' }]
+      }),
+      previewStagedResumeFile: vi.fn().mockResolvedValue({
+        documentId: token, label: 'candidate', confirmed: false, reviewStatus: 'awaiting-review',
+        fields: [{ label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: [] }],
+        projects: []
+      })
+    } as unknown as DesktopApi
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
+    render(<AgentWorkspace onOpenMatching={vi.fn()} />)
+
+    const composer = await screen.findByRole('textbox', { name: '案件 Agent への質問' })
+    fireEvent.drop(composer.closest('section')!, { dataTransfer: { files: [new File(['x'], 'candidate.pdf')] } })
+    await waitFor(() => expect(api.stageDroppedResumeFiles).toHaveBeenCalled())
+    await screen.findByText('candidate.pdf')
+
+    fireEvent.change(composer, { target: { value: '总结一下这个人' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
+
+    // The summary turn must not consume the attachment - the import decision comes after it.
+    expect(await screen.findByText('candidate.pdf')).toBeInTheDocument()
+    expect(executeAgentTurn.mock.calls[0]?.[0]?.attachmentFileTokens).toEqual([token])
+  })
+
   it('refreshes the local snapshot after the agent imports a resume, so it appears in the candidate list', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({
       status: 'completed', toolName: 'resume.analyze.local', actionRunId: null, assistantMessage: null,
