@@ -5,6 +5,7 @@ import type {
   TypedAiConversationReference
 } from '@shared'
 import {
+  agentPlanningToolCatalog,
   loadAgentChatModelCatalog,
   LocalAgentUseCase,
   parseAgentPlannedToolAction,
@@ -205,6 +206,35 @@ describe('local conversational matching agent', () => {
       rank: 1, date: null, time: null, method: null,
       durationMinutes: null, kind: null, note: null, ...overrides
     }
+  })
+
+  it('accepts a plan that only states the date, which is what the model actually emits', () => {
+    // The model writes {"date":"2026-08-20"} and omits the rest rather than
+    // spelling out six nulls. Requiring every key turned that into
+    // AGENT_PLAN_INVALID and no interview could ever be scheduled.
+    const entry = agentPlanningToolCatalog.find((tool) => tool.name === 'schedule_interview')
+    expect(entry).toBeDefined()
+    expect(entry!.parse({ date: '2026-08-20' })).toEqual({
+      toolName: 'candidate.interview.schedule.local',
+      arguments: { rank: null, date: '2026-08-20', time: null, method: null, durationMinutes: null, kind: null, note: null }
+    })
+  })
+
+  it('treats an unusable date or time as missing rather than failing the plan', async () => {
+    const harness = createHarness()
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
+    const result = await harness.useCase.execute(
+      {
+        conversationId, message: '安排20号的面试', expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ date: '20号', time: '下午', method: 'zoom', durationMinutes: 60 })
+    )
+    expect(harness.calls).toEqual([])
+    expect(result.status).toBe('clarifying')
+    expect(result.assistantMessage.content).toContain('日期')
+    expect(result.assistantMessage.content).toContain('开始时间')
   })
 
   it('asks for the missing interview details instead of choosing them', async () => {

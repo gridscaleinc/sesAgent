@@ -223,15 +223,26 @@ export type AgentPlannedToolAction =
     }
 
 const nullableOrdinalSchema = z.number().int().min(1).max(20).nullable()
+/**
+ * Every field is optional because omission is the normal case: the operator
+ * states a date and nothing else. A plan that leaves the rest out is a valid
+ * plan for this tool - the app asks for what is missing. Formats are checked
+ * for shape only; anything unusable is treated as missing and asked for rather
+ * than failing the whole plan.
+ */
 const planningInterviewArgumentsSchema = z.object({
-  rank: nullableOrdinalSchema,
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).nullable(),
-  time: z.string().regex(/^\d{2}:\d{2}$/u).nullable(),
-  method: z.enum(['zoom', 'google-meet', 'phone', 'onsite']).nullable(),
-  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90)]).nullable(),
-  kind: z.enum(['recruiting', 'client']).nullable(),
-  note: z.string().trim().max(1_500).nullable()
+  rank: nullableOrdinalSchema.optional().default(null),
+  date: z.string().trim().max(40).nullable().optional().default(null),
+  time: z.string().trim().max(40).nullable().optional().default(null),
+  method: z.enum(['zoom', 'google-meet', 'phone', 'onsite']).nullable().optional().default(null),
+  durationMinutes: z.union([z.literal(30), z.literal(45), z.literal(60), z.literal(90)])
+    .nullable().optional().default(null),
+  kind: z.enum(['recruiting', 'client']).nullable().optional().default(null),
+  note: z.string().trim().max(1_500).nullable().optional().default(null)
 }).strict()
+
+const interviewDatePattern = /^\d{4}-\d{2}-\d{2}$/u
+const interviewTimePattern = /^\d{2}:\d{2}$/u
 
 const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
   z.object({
@@ -777,8 +788,10 @@ export class LocalAgentUseCase {
         // Anything the operator did not actually say is asked for, never chosen
         // for them. A vague "book an interview" can therefore not create one.
         const missing: string[] = []
-        if (!args.date) missing.push(textFor(locale, '日付', '日期'))
-        if (!args.time) missing.push(textFor(locale, '開始時刻', '开始时间'))
+        const date = args.date && interviewDatePattern.test(args.date) ? args.date : null
+        const time = args.time && interviewTimePattern.test(args.time) ? args.time : null
+        if (!date) missing.push(textFor(locale, '日付', '日期'))
+        if (!time) missing.push(textFor(locale, '開始時刻', '开始时间'))
         if (!args.method) missing.push(textFor(locale, '実施方法（Zoom / Google Meet / 電話 / 対面）', '会议方式（Zoom / Google Meet / 电话 / 现场）'))
         if (!args.durationMinutes) missing.push(textFor(locale, '所要時間（30 / 45 / 60 / 90 分）', '时长（30 / 45 / 60 / 90 分钟）'))
         if (missing.length > 0) {
@@ -800,7 +813,7 @@ export class LocalAgentUseCase {
         const tool = await this.port.executeTool('candidate.interview.schedule.local', {
           sourceDocumentId: candidate.sourceDocumentId,
           candidateLabel: candidate.anonymousLabel,
-          scheduledAt: `${args.date}T${args.time}:00+09:00`,
+          scheduledAt: `${date}T${time}:00+09:00`,
           durationMinutes: args.durationMinutes,
           meetingMethod: args.method,
           kind: args.kind ?? 'recruiting',
@@ -815,8 +828,8 @@ export class LocalAgentUseCase {
         }
         const content = textFor(
           locale,
-          `${tool.output.candidateLabel} の面談を ${args.date} ${args.time}（JST）に登録しました。実施方法は${methodLabels[tool.output.meetingMethod]}、所要 ${tool.output.durationMinutes} 分です。案内メールは送信していません。面談管理から内容を確認・変更できます。`,
-          `已登记 ${tool.output.candidateLabel} 的面试：${args.date} ${args.time}（JST），方式${methodLabels[tool.output.meetingMethod]}，时长 ${tool.output.durationMinutes} 分钟。未发送任何通知邮件，可在面试管理里查看或修改。`
+          `${tool.output.candidateLabel} の面談を ${date} ${time}（JST）に登録しました。実施方法は${methodLabels[tool.output.meetingMethod]}、所要 ${tool.output.durationMinutes} 分です。案内メールは送信していません。面談管理から内容を確認・変更できます。`,
+          `已登记 ${tool.output.candidateLabel} 的面试：${date} ${time}（JST），方式${methodLabels[tool.output.meetingMethod]}，时长 ${tool.output.durationMinutes} 分钟。未发送任何通知邮件，可在面试管理里查看或修改。`
         )
         return save(assistantMessage(content, [], turnId), previousState, 'completed', 'candidate.interview.schedule.local', tool.actionRunId ?? null)
       }
