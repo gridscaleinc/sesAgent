@@ -37,7 +37,12 @@ const cases = [
   { id: caseTwo, version: 1, title: 'AWS 数据平台', updatedAt: '2026-08-16T02:00:00.000Z', requiredSkills: 'AWS', rate: '¥75万', workStyle: 'hybrid', startDate: '2026-09-15', status: 'current' as const }
 ]
 
-function createHarness(attachmentTokens: string[] = [], schedulable: Array<{ anonymousLabel: string; sourceDocumentId: string }> = []) {
+function createHarness(
+  attachmentTokens: string[] = [],
+  schedulable: Array<{ anonymousLabel: string; sourceDocumentId: string }> = [],
+  matchCandidate: { anonymousLabel: string; sourceDocumentId: string } | null =
+    { anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+) {
   const conversations = new Map<string, AiConversationSnapshot>()
   const calls: Array<{ toolName: string; input: unknown }> = []
   const port = {
@@ -61,7 +66,7 @@ function createHarness(attachmentTokens: string[] = [], schedulable: Array<{ ano
     now: () => new Date('2026-08-18T03:00:00.000Z'),
     locale: () => 'zh-CN' as const,
     listAttachmentFileTokens: () => attachmentTokens,
-    resolveInterviewCandidate: () => ({ anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+    resolveInterviewCandidate: () => matchCandidate,
     listSchedulableCandidates: () => schedulable,
     executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'candidate.interview.schedule.local', input: unknown): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
@@ -263,6 +268,64 @@ describe('local conversational matching agent', () => {
     expect(result.status).toBe('clarifying')
     expect(result.assistantMessage.content).toContain('日期')
     expect(result.assistantMessage.content).toContain('开始时间')
+  })
+
+  it('resolves the interview candidate the same way from every entry point', async () => {
+    const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    const matched = { anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+    const full = { date: '2026-08-20', time: '14:00', method: 'zoom' as const, durationMinutes: 60 as const }
+    const run = async (
+      label: string,
+      opts: { schedulable?: typeof only[]; matchCandidate?: typeof matched | null; seedMatch?: boolean; rank?: number | null }
+    ) => {
+      const harness = createHarness([], opts.schedulable ?? [], opts.matchCandidate ?? null)
+      const conversationId = '33333333-3333-4333-8333-333333333333'
+      const revision = opts.seedMatch ? await withMatchInContext(harness, conversationId) : null
+      const result = await harness.useCase.execute(
+        {
+          conversationId, message: label, expectedConversationRevision: revision,
+          requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        },
+        scheduleInput({ rank: opts.rank ?? null, ...full })
+      )
+      return { status: result.status, target: (harness.calls[0]?.input as { sourceDocumentId?: string })?.sourceDocumentId ?? null }
+    }
+
+    // A resolvable match run wins when a rank was actually named.
+    expect(await run('第1名安排面试', { seedMatch: true, matchCandidate: matched, rank: 1, schedulable: [only] }))
+      .toEqual({ status: 'completed', target: matched.sourceDocumentId })
+    // No match run: the invented rank is ignored and the single candidate is used.
+    expect(await run('安排这个人的面试', { rank: 1, schedulable: [only] }))
+      .toEqual({ status: 'completed', target: only.sourceDocumentId })
+    // Match run present but unresolvable: fall through rather than clarify.
+    expect(await run('安排这个人的面试', { seedMatch: true, matchCandidate: null, rank: 1, schedulable: [only] }))
+      .toEqual({ status: 'completed', target: only.sourceDocumentId })
+    // Genuinely ambiguous: ask, and write nothing.
+    expect(await run('安排面试', { schedulable: [only, { anonymousLabel: 'RESUME_2', sourceDocumentId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }] }))
+      .toEqual({ status: 'clarifying', target: null })
+    // Nothing to schedule at all.
+    expect(await run('安排面试', {})).toEqual({ status: 'clarifying', target: null })
+  })
+
+  it('falls back to the imported candidate when a saved match run no longer resolves', async () => {
+    // A stale match run left in the conversation used to short-circuit into
+    // "specify the candidate rank" before the fallbacks ever ran.
+    const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    const harness = createHarness([], [only], null)
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
+    const result = await harness.useCase.execute(
+      {
+        conversationId, message: '安排这个人20号14点的Zoom面试', expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+    )
+    expect(result.status).toBe('completed')
+    expect(harness.calls[0]).toMatchObject({
+      toolName: 'candidate.interview.schedule.local',
+      input: { sourceDocumentId: only.sourceDocumentId }
+    })
   })
 
   it('ignores a rank the model invented when no match run exists', async () => {

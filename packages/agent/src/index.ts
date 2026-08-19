@@ -805,12 +805,13 @@ export class LocalAgentUseCase {
         // send rank 1 for "this person", which must not shadow the candidate the
         // operator actually imported.
         if (previousState.lastMatchRunId) {
+          // A match run that cannot be resolved - stale, deleted, or an ordinal
+          // that names nothing - just fails to produce a candidate. It must not
+          // short-circuit the sources that can still answer unambiguously.
           const resolved = resolveMatchRunReference(previousState, previousMessages, args.rank, locale)
-          if ('clarification' in resolved) {
-            const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
-            return save(assistant, previousState, 'clarifying', null, null)
+          if (!('clarification' in resolved)) {
+            candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
           }
-          candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
         }
         if (!candidate && importedInConversation.length === 1) {
           const only = importedInConversation[0]!
