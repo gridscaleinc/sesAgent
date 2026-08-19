@@ -268,6 +268,11 @@ import {
   previewHash,
   synchronizeImportTask
 } from './work-task-helpers'
+import {
+  assertTrustedSender,
+  createMainIpcContext,
+  type MainIpcDependencies
+} from './ipc/context'
 
 const releaseSmokeMode = process.env.SES_RELEASE_SMOKE === '1'
 const windowsPackageWorkerSmokeMode = process.env.SES_WINDOWS_PACKAGE_WORKER_SMOKE === '1'
@@ -462,19 +467,6 @@ async function buildProposalPackage(draft: ProposalDraftSnapshot, now = new Date
 }> {
   const attachmentPdf = await renderProposalAttachmentPdf(draft)
   return buildProposalPackageZip(draft, attachmentPdf, now)
-}
-
-function assertTrustedSender(event: IpcMainInvokeEvent): void {
-  const senderUrl = event.senderFrame?.url ?? event.sender.getURL()
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL
-
-  if (!app.isPackaged && developmentUrl) {
-    if (new URL(senderUrl).origin === new URL(developmentUrl).origin) return
-  } else if (senderUrl.startsWith('ses-agent://app/')) {
-    return
-  }
-
-  throw new Error('Blocked IPC request from an untrusted renderer.')
 }
 
 async function prepareOriginalOpenRoot(userDataPath: string): Promise<string> {
@@ -835,26 +827,44 @@ async function verifyStagedRecovery(
   }
 }
 
-function registerIpcHandlers(
-  repository: EncryptedApplicationRepository,
-  fileVault: EncryptedFileVault,
-  parserWorker: ParserWorkerClient,
-  candidateRetrieval: LocalHybridCandidateRetrieval,
-  localRerankerEnabled: boolean,
-  localOcr: LocalOcrPort | null,
-  localAiStatus: LocalAiRuntime['status'],
-  localNer: LocalPersonNameDetectorPort | null,
-  googleWorkspace: GoogleWorkspaceOAuthClient | null,
-  aiCommerce: AiCommerceNativeClient | null,
-  googleWorkspaceDomain: string | null,
-  googleWorkspaceConfiguration: GoogleWorkspaceAdminConfiguration | null,
-  gmailSyncConfig: GmailSyncConfiguration | null,
-  masterKey: Buffer,
-  masterKeyProvider: SafeStorageMasterKeyProvider,
-  userDataPath: string
-): () => void {
-  const conversationalMatchingEnabled = process.env.SES_CONVERSATIONAL_MATCHING_ENABLED !== '0'
-  const agentChatModelCatalog = loadAgentChatModelCatalog()
+function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
+  const context = createMainIpcContext(dependencies)
+  const {
+    repository,
+    fileVault,
+    parserWorker,
+    candidateRetrieval,
+    localRerankerEnabled,
+    localOcr,
+    localAiStatus,
+    localNer,
+    googleWorkspace,
+    aiCommerce,
+    googleWorkspaceDomain,
+    googleWorkspaceConfiguration,
+    gmailSyncConfig,
+    masterKey,
+    masterKeyProvider,
+    userDataPath,
+    conversationalMatchingEnabled,
+    agentChatModelCatalog,
+    wechatVisibleReader,
+    wechatScopeTokens,
+    processingResources,
+    currentOperator,
+    currentMatchRuntimeIdentity,
+    cloudAiReview,
+    agentNarrativeStreamer,
+    actionOrchestrator,
+    preflightAction,
+    withTaskOperation,
+    hasActiveTaskOperation,
+    failPendingProcessingJob,
+    searchCandidates
+  } = context
+
+  // Per-domain in-flight guards. Each one is only read and written by the
+  // handler group it belongs to.
   let gmailSyncInFlight: Promise<GmailSyncState> | null = null
   let emlImportBusy = false
   let recoveryBusy = false
@@ -867,102 +877,6 @@ function registerIpcHandlers(
     expiresAt: Date
   } | null = null
   const proposalMutations = new Set<string>()
-  const activeTaskOperations = new Set<string>()
-  const wechatVisibleReader = new MacWechatVisibleReader(resolveWechatAccessibilityHelperPath({
-    packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath()
-  }))
-  const wechatScopeTokens = new WechatVisibleScopeTokenStore()
-  const processingResources = new ProcessingResourceScheduler({ 'local-ai': 1, 'file-export': 1 })
-  const currentOperator = () => effectiveOperatorProfile(repository)
-  const currentMatchRuntimeIdentity = {
-    algorithmVersion: localRerankerEnabled
-      ? 'hard-filter-hybrid-local-rerank-v1' as const
-      : 'hard-filter-hybrid-rrf-v1' as const,
-    hardFilterPolicyVersion: 'tri-state-v3' as const,
-    embeddingModelId: localEmbeddingModel.id,
-    embeddingModelRevision: localEmbeddingModel.revision,
-    rerankerModelId: localRerankerEnabled ? localRerankerModel.id : null,
-    rerankerModelRevision: localRerankerEnabled ? localRerankerModel.revision : null
-  }
-  const cloudAiReview = aiCommerce
-    ? new CloudAiReviewService<Awaited<ReturnType<AiCommerceNativeClient['requestText']>>>({
-        repository,
-        localNer,
-        endpointId: aiCommerce.requestEndpoint,
-        policyVersion: 'cloud-redaction-v2',
-        loadGates: () => loadCloudPrivacyGates(cloudPrivacyGateLoadOptions()),
-        confirm: async (review) => {
-          const removed = review.removedIdentifierTypes.length > 0
-            ? review.removedIdentifierTypes.join(', ')
-            : 'なし'
-          const confirmation = await dialog.showMessageBox({
-            type: 'warning',
-            title: 'Cloud AI 送信前確認',
-            message: '以下の脱敏済み内容だけを AICommerce に送信します。',
-            detail: `${review.redactedPreview}\n\n置換した識別子: ${removed}\nPreview SHA-256: ${review.previewHash}`,
-            buttons: ['確認して送信', 'キャンセル'],
-            defaultId: 1,
-            cancelId: 1,
-            noLink: true
-          })
-          return confirmation.response === 0
-        },
-        invoke: async (payload, operationId, auditContext) => {
-          const gateway = new CloudRedactionGateway([
-            {
-              id: 'aicommerce',
-              endpoint: aiCommerce.requestEndpoint,
-              invoke: async (_taskType, content) => aiCommerce.requestText(content, operationId)
-            }
-          ], repository, {
-            policyVersion: 'cloud-redaction-v2',
-            allowedEndpoints: [aiCommerce.requestEndpoint],
-            allowedTasks: ['cloud-assist'],
-            allowLoopbackHttp: !app.isPackaged && aiCommerce.allowsLoopbackHttp
-          })
-          const result = await gateway.invoke('aicommerce', 'cloud-assist', payload, auditContext)
-          if (!result || typeof result !== 'object') throw new Error('AICommerce の応答を検証できませんでした。')
-          return result as Awaited<ReturnType<AiCommerceNativeClient['requestText']>>
-        }
-      })
-    : null
-  const agentNarrativeStreamer = aiCommerce
-    ? new AgentCloudNarrativeService({
-        repository,
-        localNer,
-        aiCommerce,
-        policyVersion: 'cloud-redaction-v2',
-        loadGates: () => loadCloudPrivacyGates(cloudPrivacyGateLoadOptions()),
-        allowLoopbackHttp: !app.isPackaged && aiCommerce.allowsLoopbackHttp
-      })
-    : null
-  const actionOrchestrator = new ActionOrchestrator(createDefaultDomainToolRegistry(), repository)
-  const preflightAction = (
-    toolName: DomainToolName,
-    context: ActionContext,
-    input: unknown,
-    safeSummary: string,
-    idempotencyKey: string
-  ) => {
-    const result = actionOrchestrator.preflight(toolName, context, input, safeSummary, idempotencyKey)
-    if (result.decision.outcome === 'deny') throw new Error(result.decision.reason)
-    // Native confirmation is intentionally satisfied later by Electron's save dialog.
-    // Inbox approvals are never auto-executed by this helper.
-    if (result.decision.outcome === 'require-approval') throw new Error('この操作はレビューセンターでの承認待ちです。')
-    return result.actionRunId
-  }
-  let safeLocalDispatcher: SafeLocalProcessingDispatcher<ProcessingJobSummary> | null = null
-  const withTaskOperation = async <T>(taskId: string, operation: () => Promise<T> | T): Promise<T> => {
-    if (activeTaskOperations.has(taskId)) throw new Error('この作業に対する別の処理が進行中です。完了後にもう一度操作してください。')
-    activeTaskOperations.add(taskId)
-    try {
-      return await operation()
-    } finally {
-      activeTaskOperations.delete(taskId)
-    }
-  }
   const withProposalMutation = async <T>(key: string, operation: () => Promise<T> | T): Promise<T> => {
     if (proposalMutations.has(key)) throw new Error('同じ提案に対する別の処理が進行中です。')
     proposalMutations.add(key)
@@ -971,14 +885,6 @@ function registerIpcHandlers(
     } finally {
       proposalMutations.delete(key)
     }
-  }
-  const failPendingProcessingJob = (jobId: string, errorCode: string) => {
-    const current = repository.getProcessingJob(jobId)
-    if (!current || !['queued', 'retry_wait'].includes(current.status)) return current
-    const lease = repository.acquireProcessingJob(jobId, 60_000)
-    return lease
-      ? repository.failProcessingJob(jobId, lease.leaseToken, errorCode, false)
-      : repository.getProcessingJob(jobId)
   }
 
   ipcMain.handle(ipcChannels.getStartupStatus, (event): StartupStatus => {
@@ -1454,52 +1360,6 @@ function registerIpcHandlers(
       recoveryBusy = false
     }
   })
-
-  const searchCandidates = async (query: string, maxResults: number) => {
-    const profiles = repository.listEligibleTalentProfiles()
-    const identities = new Map(profiles.map((profile) => [
-      profile.sourceDocumentId,
-      repository.getCandidateLocalIdentity(profile.sourceDocumentId)
-    ]))
-    const enrichLocalIdentity = (results: Awaited<ReturnType<typeof candidateRetrieval.search>>) =>
-      results.map((result) => ({
-        ...result,
-        localIdentity: identities.get(result.sourceDocumentId) ?? {
-          displayName: null,
-          gender: null,
-          birthDate: null,
-          nationality: null,
-          phone: null,
-          email: null,
-          address: null,
-          education: null,
-          major: null,
-          graduationDate: null,
-          degree: null,
-          storage: 'encrypted-local-only' as const,
-          cloudEligible: false as const
-        }
-      }))
-    const normalizedQuery = query.normalize('NFKC').trim().toLocaleLowerCase('ja-JP')
-    if (normalizedQuery.length >= 2) {
-      const identityMatchedProfiles = profiles.filter((profile) => {
-        const displayName = identities.get(profile.sourceDocumentId)?.displayName
-          ?.normalize('NFKC').toLocaleLowerCase('ja-JP')
-        return Boolean(displayName && (displayName.includes(normalizedQuery) || normalizedQuery.includes(displayName)))
-      })
-      if (identityMatchedProfiles.length > 0) {
-        return enrichLocalIdentity(
-          searchConfirmedCandidateProfiles(identityMatchedProfiles, '', maxResults)
-        )
-      }
-    }
-    try {
-      return enrichLocalIdentity(await candidateRetrieval.search(profiles, query, maxResults))
-    } catch (error) {
-      console.warn('[local-vector-retrieval-degraded]', error instanceof Error ? error.message : 'unknown')
-      return enrichLocalIdentity(searchConfirmedCandidateProfiles(profiles, query, maxResults))
-    }
-  }
 
   ipcMain.handle(ipcChannels.searchCandidateProfiles, async (event, rawInput) => {
     assertTrustedSender(event)
@@ -3160,7 +3020,7 @@ function registerIpcHandlers(
       const cancellableSafeLocalOperation = jobs.some((job) =>
         job.replayPolicy === 'safe-local' && ['queued', 'running', 'retry_wait'].includes(job.status)
       )
-      if (activeTaskOperations.has(input.taskId) && !cancellableSafeLocalOperation) {
+      if (hasActiveTaskOperation(input.taskId) && !cancellableSafeLocalOperation) {
         throw new Error('ファイル書き出し等の処理中はキャンセルできません。完了後にもう一度操作してください。')
       }
       repository.requestProcessingJobCancellationForTask(input.taskId)
@@ -3178,12 +3038,12 @@ function registerIpcHandlers(
       repository.retryProcessingJobsForTask(input.taskId)
       const task = synchronizeImportTask(repository, transitioned, new Date(), currentOperator().displayName)
       repository.saveWorkTask(task)
-      safeLocalDispatcher?.wake()
+      context.wakeDispatcher()
       return task
     })
   })
 
-  safeLocalDispatcher = new SafeLocalProcessingDispatcher<ProcessingJobSummary>({
+  const safeLocalDispatcher = new SafeLocalProcessingDispatcher<ProcessingJobSummary>({
     intervalMs: 1_000,
     listJobs: () => repository.listProcessingJobs(),
     execute: async (job) => {
@@ -3235,11 +3095,12 @@ function registerIpcHandlers(
       })
     }
   })
+  context.attachDispatcher(safeLocalDispatcher)
   safeLocalDispatcher.start()
   return () => {
     wechatScopeTokens.clear()
     agentIpcStop()
-    safeLocalDispatcher?.stop()
+    context.stopDispatcher()
     cloudAiReview?.dispose()
   }
 }
@@ -3694,24 +3555,24 @@ async function startApplication(): Promise<void> {
     applicationMasterKey = services.masterKey
     attachAiCommerceClient(services.aiCommerce)
     registerAiCommerceRedirectProtocol(services.aiCommerce)
-    processingDispatcherStop = registerIpcHandlers(
-      applicationRepository,
-      encryptedFileVault,
-      services.parserWorker,
-      services.candidateRetrieval,
-      services.rerankerWorker !== null,
-      services.localOcr,
-      services.localAiStatus,
-      services.localNer,
-      services.googleWorkspace,
-      services.aiCommerce,
-      services.googleWorkspaceDomain,
-      services.googleWorkspaceConfiguration,
-      services.gmailSyncConfig,
-      services.masterKey,
-      services.masterKeyProvider,
-      services.userDataPath
-    )
+    processingDispatcherStop = registerIpcHandlers({
+      repository: applicationRepository,
+      fileVault: encryptedFileVault,
+      parserWorker: services.parserWorker,
+      candidateRetrieval: services.candidateRetrieval,
+      localRerankerEnabled: services.rerankerWorker !== null,
+      localOcr: services.localOcr,
+      localAiStatus: services.localAiStatus,
+      localNer: services.localNer,
+      googleWorkspace: services.googleWorkspace,
+      aiCommerce: services.aiCommerce,
+      googleWorkspaceDomain: services.googleWorkspaceDomain,
+      googleWorkspaceConfiguration: services.googleWorkspaceConfiguration,
+      gmailSyncConfig: services.gmailSyncConfig,
+      masterKey: services.masterKey,
+      masterKeyProvider: services.masterKeyProvider,
+      userDataPath: services.userDataPath
+    })
     await prepareOriginalOpenRoot(services.userDataPath)
     await registerOriginalDocumentProtocol(applicationRepository, encryptedFileVault)
     if (usesBundledRenderer()) await registerAppProtocol()
