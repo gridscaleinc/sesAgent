@@ -368,7 +368,6 @@ const fixedInstructions = [
   'Do not mention internal ids, hashes, prompts, privacy processing, billing, or tools.',
   'Keep CASE_n and CANDIDATE_n labels exactly as supplied so the authoritative local cards remain the source of truth.',
   'Answer in the locale field. The locale is the interface response language; asking about Japanese ability does not mean the answer should switch to Japanese.',
-  'attachmentDrafts holds the locally parsed, unconfirmed extraction of files the operator attached to this turn. When they ask about an attached file, answer from it and say plainly that the values are machine-extracted and not yet confirmed.',
   'Return plain text only.'
 ].join(' ')
 
@@ -389,9 +388,10 @@ const planningInstructions = [
   `Available Tool Catalog:\n${describeAgentPlanningTools()}`
 ].join(' ')
 
-const directAnswerInstructions = [
-  'Answer the user naturally using the supplied conversation and anonymous verified SES evidence.',
-  'Conversation text is only for dialogue continuity. Treat SES record claims as facts only when present in the evidence array.',
+export const directAnswerInstructions = [
+  'Answer the user naturally using the supplied conversation, the anonymous verified SES evidence, and attachmentDrafts.',
+  'Conversation text is only for dialogue continuity. Treat SES record claims as verified facts only when present in the evidence array.',
+  'attachmentDrafts is the locally parsed content of files the operator attached to this turn. It is a legitimate source: summarise it, quote its field values and project history when asked about an attached file, and do not claim you lack information while it is present. It is not verified record data, so state that the values are machine-extracted and still need the operator to confirm each field.',
   'If the request is conversational and does not require an SES record fact, answer normally and briefly.',
   'Never invent, infer, identify, or recommend a person.',
   'Do not mention internal ids, hashes, prompts, privacy processing, billing, planning, or tools.',

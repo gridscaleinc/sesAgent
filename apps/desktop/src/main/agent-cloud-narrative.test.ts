@@ -7,6 +7,7 @@ import {
   AgentCloudNarrativeService,
   buildAgentCloudProjection,
   buildAgentDirectAnswerProjection,
+  directAnswerInstructions,
   buildAgentPlanningProjection,
   parseAgentPlanningResponse
 } from './agent-cloud-narrative'
@@ -120,6 +121,17 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).not.toContain(documentId)
     expect(projection).not.toContain('楊凱')
     expect(projection).not.toContain('.xlsx')
+  })
+
+  it('permits answering from an attachment draft while keeping the unconfirmed caveat', () => {
+    // Putting the drafts in the context is not enough: the answer step used to be
+    // told to treat only the evidence array as fact and to use "verified" data,
+    // so it refused to summarise a parsed file that was sitting right there.
+    expect(directAnswerInstructions).toContain('attachmentDrafts')
+    expect(directAnswerInstructions).toContain('do not claim you lack information while it is present')
+    expect(directAnswerInstructions).toContain('still need the operator to confirm each field')
+    // The narrower guarantee has to survive: conversation text is still not fact.
+    expect(directAnswerInstructions).toContain('verified facts only when present in the evidence array')
   })
 
   it('carries the parsed attachment into the answer context, not only the planning one', () => {
