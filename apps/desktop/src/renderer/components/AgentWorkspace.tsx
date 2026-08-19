@@ -275,6 +275,12 @@ export function AgentWorkspace({
     if (reference.kind === 'job-case') setSelectedCase(reference)
   }
 
+  // A conversation exists from the moment the workspace opens it, not from the
+  // first message. Anything done before that first turn - importing a resume -
+  // still belongs to it, so the id has to be stable from the start.
+  const [draftConversationId, setDraftConversationId] = useState(() => newId())
+  const currentConversationId = activeConversation?.id ?? draftConversationId
+
   const [attachments, setAttachments] = useState<Array<StagedLocalFile & { taskId: string; preview?: AgentCandidateDraftFacts; previewError?: string }>>([])
   const [importing, setImporting] = useState(false)
   const [importSummary, setImportSummary] = useState<{ imported: number; failed: number } | null>(null)
@@ -337,7 +343,7 @@ export function AgentWorkspace({
           taskId: file.taskId,
           // Ties the import to this conversation, so "the one I just imported"
           // means the same thing whether the button or the agent did it.
-          ...(activeConversation?.id ? { conversationId: activeConversation.id } : {})
+          conversationId: currentConversationId
         })
         imported += 1
       } catch {
@@ -354,7 +360,7 @@ export function AgentWorkspace({
     event?.preventDefault()
     const message = draft.trim()
     if (!message || pendingMessage) return
-    const conversationId = activeConversation?.id ?? newId()
+    const conversationId = currentConversationId
     const currentRequestId = newId()
     const lockedModelKey = selectedModelKey
     setPendingMessage(message)
@@ -446,7 +452,18 @@ export function AgentWorkspace({
         : ['最近の案件は？', '進行中の案件は？'])
 
   return <main className="agent-workspace" aria-labelledby="agent-workspace-title">
-    <aside className="agent-workspace-history"><AiConversationHistoryPanel activeConversationId={history.activeConversationId} busy={history.loading || history.saving || pendingMessage !== null} conversations={history.conversations} error={history.error} loading={history.loading} onDelete={history.deleteConversations} onNew={history.newConversation} onSelect={(id) => { history.selectConversation(id); setSelectedCase(null) }} /></aside>
+    <aside className="agent-workspace-history"><AiConversationHistoryPanel activeConversationId={history.activeConversationId} busy={history.loading || history.saving || pendingMessage !== null} conversations={history.conversations} error={history.error} loading={history.loading} onDelete={history.deleteConversations} onNew={() => {
+      history.newConversation()
+      setDraftConversationId(newId())
+      setAttachments([])
+      setImportSummary(null)
+    }} onSelect={(id) => {
+      history.selectConversation(id)
+      setSelectedCase(null)
+      setDraftConversationId(newId())
+      setAttachments([])
+      setImportSummary(null)
+    }} /></aside>
     <section
       className={dragActive ? 'agent-workspace-main is-drag-active' : 'agent-workspace-main'}
       onDragOver={(event) => { if (!cloudConnected) return; event.preventDefault(); setDragActive(true) }}

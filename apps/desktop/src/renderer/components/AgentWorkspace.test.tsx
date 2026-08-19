@@ -29,6 +29,52 @@ describe('AgentWorkspace', () => {
     window.sessionStorage.clear()
   })
 
+  it('ties an import made before the first message to the conversation it will become', async () => {
+    // A new conversation has no id until its first turn is saved, so an import
+    // done beforehand registered against nothing and the turn that followed did
+    // not know the operator had just added that person.
+    const token = '88888888-8888-4888-8888-888888888888'
+    const analyzeResumeFile = vi.fn().mockResolvedValue({})
+    const executeAgentTurn = vi.fn().mockResolvedValue({
+      status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
+      conversation: snapshot([
+        { id: 'user-1', role: 'user', content: '安排面试', mode: 'cloud', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+      ])
+    })
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn(),
+      analyzeResumeFile,
+      stageDroppedResumeFiles: vi.fn().mockResolvedValue({
+        cancelled: false,
+        task: { id: 'task-1' },
+        files: [{ token, name: 'candidate.pdf', format: 'pdf', size: 10, sha256: 'a'.repeat(64), createdAt: '2026-08-18T00:00:00.000Z', privacyStatus: 'awaiting-local-scan' }]
+      }),
+      previewStagedResumeFile: vi.fn().mockResolvedValue({
+        documentId: token, label: 'candidate', confirmed: false, reviewStatus: 'awaiting-review', fields: [], projects: []
+      })
+    } as unknown as DesktopApi
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
+    render(<AgentWorkspace onOpenMatching={vi.fn()} />)
+
+    const composer = await screen.findByRole('textbox', { name: '案件 Agent への質問' })
+    fireEvent.drop(composer.closest('section')!, { dataTransfer: { files: [new File(['x'], 'candidate.pdf')] } })
+    await screen.findByText('candidate.pdf')
+    fireEvent.click(screen.getByRole('button', { name: 'そのまま取込' }))
+    await waitFor(() => expect(analyzeResumeFile).toHaveBeenCalled())
+
+    const importedInto = analyzeResumeFile.mock.calls[0]?.[0]?.conversationId
+    expect(importedInto).toEqual(expect.any(String))
+
+    // The first turn must land in that same conversation, not a freshly minted one.
+    fireEvent.change(composer, { target: { value: '安排面试' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => expect(executeAgentTurn).toHaveBeenCalled())
+    expect(executeAgentTurn.mock.calls[0]?.[0]?.conversationId).toBe(importedInto)
+  })
+
   it('keeps an attachment across a read-only turn so it can still be imported afterwards', async () => {
     const token = '77777777-7777-4777-8777-777777777777'
     const executeAgentTurn = vi.fn().mockResolvedValue({
