@@ -184,6 +184,8 @@ export interface LocalAgentPort {
   listAttachmentFileTokens?(conversationId: string, requestId: string): string[]
   /** Local lookup, not a tool call: resolves a ranked candidate to the record an interview attaches to. */
   resolveInterviewCandidate?(runId: string, resultId: string | null, rank: number | null): { anonymousLabel: string; sourceDocumentId: string } | null
+  /** Candidates that already have a review record and can therefore hold an interview. */
+  listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
   isCancelled?(conversationId: string, requestId: string): boolean
   loadConversation(conversationId: string): AiConversationSnapshot | null
   saveConversation(input: SaveAiConversationInput): AiConversationSnapshot
@@ -780,10 +782,29 @@ export class LocalAgentUseCase {
 
       if (plannedAction.toolName === 'candidate.interview.schedule.local') {
         const args = plannedAction.arguments
-        const resolved = resolveMatchRunReference(previousState, previousMessages, args.rank, locale)
-        if ('clarification' in resolved) {
-          const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
-          return save(assistant, previousState, 'clarifying', null, null)
+        // An interview attaches to a candidate review record, which exists as
+        // soon as a resume is imported - a match run is one way to name that
+        // person, not the only one.
+        const importedInConversation = previousMessages
+          .flatMap((message) => message.blocks ?? [])
+          .filter((block): block is Extract<AiConversationBlock, { type: 'resume-import' }> => block.type === 'resume-import')
+          .flatMap((block) => block.imported)
+        let candidate: { anonymousLabel: string; sourceDocumentId: string } | null = null
+        if (args.rank === null && importedInConversation.length === 1) {
+          const only = importedInConversation[0]!
+          candidate = { anonymousLabel: only.label, sourceDocumentId: only.documentId }
+        }
+        if (!candidate && args.rank === null) {
+          const schedulable = this.port.listSchedulableCandidates?.() ?? []
+          if (schedulable.length === 1) candidate = schedulable[0]!
+        }
+        if (!candidate) {
+          const resolved = resolveMatchRunReference(previousState, previousMessages, args.rank, locale)
+          if ('clarification' in resolved) {
+            const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
+            return save(assistant, previousState, 'clarifying', null, null)
+          }
+          candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
         }
         // Anything the operator did not actually say is asked for, never chosen
         // for them. A vague "book an interview" can therefore not create one.
@@ -805,7 +826,6 @@ export class LocalAgentUseCase {
           }
           return save(assistantMessage(prompt, [clarification], turnId), previousState, 'clarifying', null, null)
         }
-        const candidate = this.port.resolveInterviewCandidate?.(resolved.runId, resolved.resultId ?? null, resolved.rank) ?? null
         if (!candidate) {
           const prompt = textFor(locale, '対象の候補者を特定できませんでした。', '无法确定要安排面试的候选人。')
           return save(assistantMessage(prompt, [], turnId), previousState, 'clarifying', null, null)

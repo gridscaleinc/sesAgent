@@ -37,7 +37,7 @@ const cases = [
   { id: caseTwo, version: 1, title: 'AWS 数据平台', updatedAt: '2026-08-16T02:00:00.000Z', requiredSkills: 'AWS', rate: '¥75万', workStyle: 'hybrid', startDate: '2026-09-15', status: 'current' as const }
 ]
 
-function createHarness(attachmentTokens: string[] = []) {
+function createHarness(attachmentTokens: string[] = [], schedulable: Array<{ anonymousLabel: string; sourceDocumentId: string }> = []) {
   const conversations = new Map<string, AiConversationSnapshot>()
   const calls: Array<{ toolName: string; input: unknown }> = []
   const port = {
@@ -62,6 +62,7 @@ function createHarness(attachmentTokens: string[] = []) {
     locale: () => 'zh-CN' as const,
     listAttachmentFileTokens: () => attachmentTokens,
     resolveInterviewCandidate: () => ({ anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
+    listSchedulableCandidates: () => schedulable,
     executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'candidate.interview.schedule.local', input: unknown): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
       if (toolName === 'candidate.interview.schedule.local') {
@@ -235,6 +236,43 @@ describe('local conversational matching agent', () => {
     expect(result.status).toBe('clarifying')
     expect(result.assistantMessage.content).toContain('日期')
     expect(result.assistantMessage.content).toContain('开始时间')
+  })
+
+  it('schedules for the one imported candidate without asking for a match rank', async () => {
+    // The operator imported a resume and said "book an interview". Requiring a
+    // match-run rank here made the obvious case impossible.
+    const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    const harness = createHarness([], [only])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '安排一个20号14点的Zoom面试', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+    )
+    expect(result.status).toBe('completed')
+    expect(harness.calls[0]).toMatchObject({
+      toolName: 'candidate.interview.schedule.local',
+      input: { sourceDocumentId: only.sourceDocumentId, candidateLabel: 'RESUME_1' }
+    })
+  })
+
+  it('asks which candidate when more than one could be meant', async () => {
+    const harness = createHarness([], [
+      { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+      { anonymousLabel: 'RESUME_2', sourceDocumentId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }
+    ])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '安排一个20号14点的Zoom面试', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+    )
+    expect(harness.calls).toEqual([])
+    expect(result.status).toBe('clarifying')
   })
 
   it('asks for the missing interview details instead of choosing them', async () => {

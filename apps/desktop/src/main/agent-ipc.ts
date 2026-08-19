@@ -265,6 +265,11 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     loadConversation: (conversationId) => deps.repository.getAiConversation(conversationId),
     saveConversation: (input) => deps.repository.saveAiConversation(input),
     locale: () => deps.locale(),
+    listSchedulableCandidates: () => deps.repository.listCandidateReviews().map((review, index) => ({
+      // Anonymous label only: the agent never receives the candidate's name or file name.
+      anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
+      sourceDocumentId: review.documentId
+    })),
     resolveInterviewCandidate: (runId, resultId, rank) => {
       const facts = deps.repository.getAgentCandidateProfileFacts(runId, deps.currentMatchRuntimeIdentity, resultId, rank)
       if (!facts.candidate) return null
