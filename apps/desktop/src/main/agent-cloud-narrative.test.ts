@@ -145,6 +145,32 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection.state.schedulableCandidateCount).toBe(1)
   })
 
+  it('keeps a supplied meeting link local while preserving its scheduling meaning', () => {
+    const meetingUrl = 'https://app.zoom.us/wc/12345678901/join?pwd=local-secret-test&_x_zm_rtaid=opaque'
+    const planning = JSON.parse(buildAgentPlanningProjection({
+      locale: 'zh-CN',
+      userMessage: `30分钟。Zoom 链接是 ${meetingUrl}`,
+      selectedJobCaseRef: null,
+      attachmentCount: 0,
+      attachmentDrafts: [],
+      schedulableCandidateCount: 1,
+      conversation: null
+    }))
+    expect(planning.state).toMatchObject({ currentMeetingLinkMethod: 'zoom', currentMeetingLinkCount: 1 })
+    expect(planning.userRequest).toContain('[ZOOM_MEETING_LINK_PROVIDED_LOCALLY]')
+
+    const direct = buildAgentDirectAnswerProjection({
+      locale: 'zh-CN', userMessage: `链接 ${meetingUrl}`,
+      conversation: null, selectedJobCaseRef: null
+    })
+    const narrative = buildAgentCloudProjection('zh-CN', 'job-case.search.local', assistantMessage, `链接 ${meetingUrl}`)
+    for (const projection of [JSON.stringify(planning), direct, narrative]) {
+      expect(projection).not.toContain(meetingUrl)
+      expect(projection).not.toContain('local-secret-test')
+      expect(projection).not.toContain('_x_zm_rtaid')
+    }
+  })
+
   it('does not let the interview read rule claim scheduling as well', () => {
     // read_candidate_interviews used to be introduced with "status, schedules,
     // notes", so a booking request matched it and the turn ended in "specify the
@@ -262,6 +288,85 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).not.toContain(caseId)
   })
 
+  it('adds the current right workspace as a separate de-identified authoritative projection', () => {
+    const projection = JSON.parse(buildAgentDirectAnswerProjection({
+      locale: 'zh-CN',
+      userMessage: '总结一下右侧页面',
+      selectedJobCaseRef: null,
+      attachmentDrafts: [],
+      conversation: null,
+      activeWorkspaceEvidence: {
+        destination: 'candidate',
+        data: {
+          candidate: 'WORKSPACE_CANDIDATE_1',
+          fields: [{ key: 'skills', value: 'Java / AWS' }],
+          interviews: [{ stage: 'scheduled', meetingMethod: 'zoom', meetingLinkStoredLocally: true }]
+        }
+      }
+    }))
+
+    expect(projection.activeWorkspace).toMatchObject({
+      destination: 'candidate',
+      data: { candidate: 'WORKSPACE_CANDIDATE_1' }
+    })
+    expect(JSON.stringify(projection.activeWorkspace)).toContain('Java / AWS')
+    expect(JSON.stringify(projection.activeWorkspace)).not.toContain('sourceDocumentId')
+    expect(JSON.stringify(projection.activeWorkspace)).not.toContain('meetingUrl')
+  })
+
+  it('compacts history by complete turns and keeps the newest dialogue pair together', () => {
+    const messages: AiConversationMessage[] = Array.from({ length: 8 }, (_, index) => {
+      const turnId = `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111`
+      return [
+        { id: `user-${index}`, role: 'user' as const, content: `问题 ${index + 1}`, turnId, createdAt: `2026-08-18T00:00:${String(index * 2).padStart(2, '0')}.000Z` },
+        { id: `assistant-${index}`, role: 'assistant' as const, content: `回答 ${index + 1}`, turnId, createdAt: `2026-08-18T00:00:${String(index * 2 + 1).padStart(2, '0')}.000Z` }
+      ]
+    }).flat()
+    const projection = JSON.parse(buildAgentPlanningProjection({
+      locale: 'zh-CN', userMessage: '继续', selectedJobCaseRef: null,
+      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
+      conversation: {
+        id: conversationId,
+        context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+        title: '长会话', messages,
+        salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
+        revision: 1, createdAt: '2026-08-18T00:00:00.000Z', updatedAt: '2026-08-18T00:01:00.000Z'
+      }
+    }))
+
+    expect(projection.recentConversation).toHaveLength(12)
+    expect(projection.recentConversation.map((message: { role: string }) => message.role))
+      .toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant'])
+    expect(projection.recentConversation.at(-2)?.content).toBe('问题 8')
+    expect(projection.recentConversation.at(-1)?.content).toBe('回答 8')
+    expect(projection.contextWindow).toMatchObject({ includedMessageCount: 12, omittedMessageCount: 4 })
+  })
+
+  it('keeps a many-attachment planning projection under the enforced local limit', () => {
+    const attachmentDrafts = Array.from({ length: 10 }, (_, draftIndex) => ({
+      documentId: `${String(draftIndex + 1).padStart(8, '0')}-2222-4222-8222-222222222222`,
+      label: `private-file-${draftIndex}.pdf`, confirmed: false as const, reviewStatus: 'awaiting-review' as const,
+      fields: Array.from({ length: 20 }, (_, fieldIndex) => ({
+        label: `字段 ${fieldIndex}`, value: 'x'.repeat(600), confidence: 0.8,
+        status: 'needs_review' as const, sources: ['private.xlsx!A1']
+      })),
+      projects: Array.from({ length: 8 }, (_, projectIndex) => ({
+        title: `项目 ${projectIndex}`, period: null, role: 'SE', technologies: Array(20).fill('TypeScript'),
+        summary: 'y'.repeat(2_000), confidence: 0.8, sources: ['private.xlsx!B2']
+      }))
+    }))
+    const projection = buildAgentPlanningProjection({
+      locale: 'zh-CN', userMessage: '请比较这些附件', selectedJobCaseRef: null,
+      attachmentCount: 10, attachmentDrafts, schedulableCandidateCount: 0, conversation: null
+    })
+    const parsed = JSON.parse(projection)
+    expect(projection.length).toBeLessThanOrEqual(20_000)
+    expect(parsed.attachmentDrafts.length).toBeGreaterThan(0)
+    expect(parsed.state.attachmentCount).toBe(10)
+    expect(projection).not.toContain('private-file')
+    expect(projection).not.toContain('private.xlsx')
+  })
+
   it('projects only anonymous structured evidence and omits local identifiers and commercial-only fields', () => {
     const projection = buildAgentCloudProjection('zh-CN', 'job-case.search.local', assistantMessage)
     expect(projection).toContain('CASE_1')
@@ -311,10 +416,10 @@ describe('Agent Cloud narrative boundary', () => {
       onClientRequestId: vi.fn(), onRemoteSettled
     })).resolves.toEqual({ kind: 'answer' })
     expect(onRemoteSettled).toHaveBeenCalledTimes(1)
-    // Planning gets a floor, not the model's answer-sized cap: this model allows
-    // 1200, which is less than a reasoning plan needs, and 768 truncated it.
+    // Planning uses the protocol maximum because reasoning tokens share the
+    // output budget; 2,048 truncated a real scheduling follow-up.
     expect(streamResponses).toHaveBeenCalledWith(expect.objectContaining({
-      operationId: `${requestId}-plan`, maxOutputTokens: 2_048
+      operationId: `${requestId}-plan`, maxOutputTokens: 8_192
     }))
     const planningInput = streamResponses.mock.calls[0]![0]
     expect(planningInput.instructions).toContain('machine-only planning step')
@@ -425,6 +530,7 @@ describe('Agent Cloud narrative boundary', () => {
 
   it('projects confirmed candidate profile fields for a short follow-up without exposing the local profile id', () => {
     const candidateProfileId = '99999999-9999-4999-8999-999999999999'
+    const sourceDocumentId = '77777777-7777-4777-8777-777777777777'
     const message: AiConversationMessage = {
       id: 'assistant-profile', role: 'assistant', content: '已读取候选人档案。', mode: 'local',
       createdAt: '2026-08-18T00:00:00.000Z',
@@ -432,7 +538,7 @@ describe('Agent Cloud narrative boundary', () => {
         type: 'candidate-profile-evidence',
         facts: {
           runId: '88888888-8888-4888-8888-888888888888', validity: 'current',
-          candidate: { candidateProfileId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
+          candidate: { candidateProfileId, sourceDocumentId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
           profile: {
             profileVersion: 3, skills: 'Java', experienceYears: '8年', availability: '即日', rate: '90万円',
             japaneseLevel: 'N1', workStyle: 'リモート', role: 'バックエンド', location: '東京',
@@ -446,6 +552,7 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).toContain('"japaneseLevel":"N1"')
     expect(projection).toContain('"candidate":"CANDIDATE_1"')
     expect(projection).not.toContain(candidateProfileId)
+    expect(projection).not.toContain(sourceDocumentId)
   })
 
   it('passes the projection through local NER, DLP, the synthetic quality gate, and CloudRedactionGateway before streaming', async () => {

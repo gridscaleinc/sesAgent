@@ -22,6 +22,7 @@ export type IconName =
   | 'database'
   | 'alert'
   | 'edit'
+  | 'copy'
   | 'phone'
   | 'external-link'
 
@@ -47,6 +48,7 @@ const paths: Record<IconName, string[]> = {
   database: ['M4 6c0 2 16 2 16 0s-16-2-16 0Z', 'M4 6v6c0 2 16 2 16 0V6', 'M4 12v6c0 2 16 2 16 0v-6'],
   alert: ['M12 3 2.5 20h19Z', 'M12 9v4', 'M12 17h.01'],
   edit: ['M4 20h4l11-11-4-4L4 16z', 'm13.5 2.5 4 4'],
+  copy: ['M9 9h11v11H9z', 'M5 15H4V4h11v1'],
   phone: ['M6.6 3h3l1.5 4-2 1.6a16 16 0 0 0 6.3 6.3l1.6-2 4 1.5v3c0 1.1-.9 2-2 2C10.2 19.4 3.6 12.8 3.6 5a2 2 0 0 1 2-2Z'],
   'external-link': ['M14 3h7v7', 'M10 14 21 3', 'M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5']
 }

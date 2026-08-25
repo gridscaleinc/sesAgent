@@ -1,0 +1,14 @@
+{
+  "name": "加藤 真央",
+  "title": "AI アプリケーションエンジニア",
+  "skills": [
+    "Python",
+    "RAG",
+    "Vector DB",
+    "Azure OpenAI"
+  ],
+  "project_summary": "社内ナレッジ検索 RAG の設計、プロンプト評価、セキュリティレビューを担当。",
+  "availability": "2026年8月開始可",
+  "location_preference": "大手町週2可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

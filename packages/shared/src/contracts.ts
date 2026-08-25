@@ -243,6 +243,8 @@ export interface ResumeAnalysisTaskExecutionResult {
   analysis: ResumeAnalysisSummary
   task: WorkTask
   processingJob: ProcessingJobSummary
+  /** Present when the import was initiated from an Agent conversation. */
+  conversation?: AiConversationSnapshot
 }
 
 export interface CandidateReviewFieldSnapshot {
@@ -943,7 +945,7 @@ export interface CandidateInterviewSnapshot {
   parentInterviewId: string | null
   stage: CandidateInterviewStage
   scheduledAt: string | null
-  durationMinutes: 30 | 45 | 60 | 90
+  durationMinutes: number
   meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
   meetingUrl: string | null
   meetingDetails?: CandidateInterviewMeetingDetails
@@ -970,7 +972,7 @@ export interface SaveCandidateInterviewScheduleInput {
   roundNumber?: number
   parentInterviewId?: string
   scheduledAt: string
-  durationMinutes: 30 | 45 | 60 | 90
+  durationMinutes: number
   meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
   meetingUrl?: string
   meetingDetails?: CandidateInterviewMeetingDetails
@@ -1689,6 +1691,8 @@ export interface AgentJobCaseCard {
 export interface AgentCandidateMatchCard {
   reference: TypedAiConversationReference
   candidateProfileId: string
+  /** Local-only route target. Cloud projections must never serialize it. */
+  sourceDocumentId?: string
   runId: string
   rank: number
   anonymousLabel: string
@@ -1720,6 +1724,8 @@ export interface AgentCandidateProfileFacts {
   validity: AgentEntityStatus
   candidate: {
     candidateProfileId: string
+    /** Local-only route target. Cloud projections must never serialize it. */
+    sourceDocumentId?: string
     rank: number
     anonymousLabel: string
   } | null
@@ -1749,10 +1755,14 @@ export interface AgentCandidateInterviewFacts {
   validity: AgentEntityStatus
   candidate: {
     candidateProfileId: string
+    /** Local-only route target. Cloud projections must never serialize it. */
+    sourceDocumentId?: string
     rank: number
     anonymousLabel: string
   } | null
   interviews: Array<{
+    /** Local-only route target. Cloud projections must never serialize it. */
+    interviewId?: string
     kind: 'recruiting' | 'client'
     roundNumber: number
     stage: string
@@ -1868,6 +1878,47 @@ export interface AgentResumeImportBlock {
   failedCount: number
 }
 
+/**
+ * A local, allowlisted route back into a structured SES business workspace.
+ * It deliberately cannot carry a URL. Entity IDs are route metadata for the
+ * Renderer and must not be included in Cloud narrative projections.
+ */
+export type AgentSystemAccessBlock =
+  | { type: 'system-access'; destination: 'job-cases' }
+  | { type: 'system-access'; destination: 'case-import' }
+  | { type: 'system-access'; destination: 'case-review'; reviewId: string }
+  | { type: 'system-access'; destination: 'matching'; jobCaseId?: string }
+  | { type: 'system-access'; destination: 'candidate-management' }
+  | {
+      type: 'system-access'
+      destination: 'candidate'
+      sourceDocumentId: string
+      view: 'overview' | 'resume' | 'schedule' | 'prepare' | 'workbench' | 'decision' | 'client' | 'records' | 'entry'
+      interviewId?: string | null
+      interviewKind?: 'recruiting' | 'client'
+    }
+  | { type: 'system-access'; destination: 'original-document'; sourceDocumentId: string }
+  | { type: 'system-access'; destination: 'review-center' }
+  | { type: 'system-access'; destination: 'task'; taskId: string }
+  | {
+      type: 'system-access'
+      destination: 'interview-schedule'
+      /**
+       * Authoritative local-write receipt. Older conversations do not have it,
+       * so the renderer must keep the generic schedule link as a fallback.
+       * Route ids stay in the local block and are never projected to Cloud.
+       */
+      receipt?: {
+        sourceDocumentId: string
+        candidateLabel: string
+        scheduledAt: string
+        durationMinutes: number
+        meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
+        kind: 'recruiting' | 'client'
+        meetingLinkStoredLocally: boolean
+      }
+    }
+
 export type AiConversationBlock =
   | AgentTextBlock
   | AgentJobCaseCardsBlock
@@ -1878,6 +1929,7 @@ export type AiConversationBlock =
   | AgentMatchRunExplanationBlock
   | AgentCandidateDraftBlock
   | AgentResumeImportBlock
+  | AgentSystemAccessBlock
   | AgentErrorBlock
 
 export interface AiConversationSalesAgentState {
@@ -1906,6 +1958,12 @@ export interface AiConversationMessage {
 
 export interface AiConversationSnapshot {
   id: string
+  /**
+   * Edited-message branches remain part of one user-visible conversation.
+   * The original branch stays in SQLCipher for audit/recovery, while history
+   * uses this root to show only the latest branch as one sidebar item.
+   */
+  branchRootConversationId?: string
   context: AiConversationContext
   title: string
   messages: AiConversationMessage[]
@@ -1922,8 +1980,24 @@ export interface ExecuteAgentTurnInput {
   requestId: string
   modelKey?: string
   selectedJobCaseRef?: TypedAiConversationReference | null
+  /**
+   * The structured business workspace currently visible beside the chat.
+   * Main treats this as a local lookup reference only, reloads authoritative
+   * records and projects an allowlisted, de-identified summary for Cloud AI.
+   */
+  activeSystemAccess?: AgentSystemAccessBlock | null
   /** Vault tokens for files attached to this turn, in the order they were added. */
   attachmentFileTokens?: string[]
+  /**
+   * Creates a new conversation from the trusted prefix immediately before the
+   * referenced user message, then executes the edited replacement as its first
+   * new turn. Main resolves the source; Renderer never persists Agent history.
+   */
+  branchFrom?: {
+    conversationId: string
+    messageId: string
+    expectedRevision: number
+  }
 }
 
 export interface AgentChatModelOption {
@@ -2006,6 +2080,7 @@ export interface CancelAgentTurnResult {
 
 export interface SaveAiConversationInput {
   conversationId: string
+  branchRootConversationId?: string
   context: AiConversationContext
   messages: AiConversationMessage[]
   salesAgentState?: AiConversationSalesAgentState

@@ -1,0 +1,18 @@
+{
+  "id": "salesforce-crm",
+  "title": "CRM 統合 Salesforce 改修",
+  "industry": "営業支援 / CRM",
+  "location": "東京駅",
+  "period": "2026年8月開始",
+  "contract": "準委任",
+  "skills": [
+    "Salesforce",
+    "Apex",
+    "Visualforce",
+    "外部API連携",
+    "要件定義"
+  ],
+  "plus": [
+    "Sales Cloud 認定"
+  ]
+}

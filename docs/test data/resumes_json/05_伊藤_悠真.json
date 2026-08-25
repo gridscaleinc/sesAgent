@@ -1,0 +1,15 @@
+{
+  "name": "伊藤 悠真",
+  "title": "SRE / クラウドエンジニア",
+  "skills": [
+    "AWS",
+    "ECS",
+    "Terraform",
+    "Datadog",
+    "障害対応"
+  ],
+  "project_summary": "SaaS 基盤の ECS 運用、IaC 整備、障害一次対応、監視改善を担当。",
+  "availability": "2026年8月後半可",
+  "location_preference": "渋谷常駐相談可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

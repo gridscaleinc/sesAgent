@@ -1,0 +1,4 @@
+"name","title","skills","summary","availability","location"
+"鈴木 翔","React / Node.js エンジニア","React, Node.js, TypeScript, PostgreSQL","医療予約 SaaS のフロント改修と Node.js API 実装を担当。外部予約 API 連携経験あり。","即日可","品川出社可"
+"高橋 葵","データエンジニア","Python, SQL, BigQuery, ETL, Looker","EC 需要予測向けデータマート構築、日次 ETL、可視化ダッシュボードを担当。","2026年10月開始可","豊洲週3可"
+"伊藤 悠真","SRE / クラウドエンジニア","AWS, ECS, Terraform, Datadog, 障害対応","SaaS 基盤の ECS 運用、IaC 整備、障害一次対応、監視改善を担当。","2026年8月後半可","渋谷常駐相談可"

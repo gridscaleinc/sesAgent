@@ -1,0 +1,16 @@
+{
+  "name": "佐藤 蓮",
+  "title": "Laravel エンジニア",
+  "skills": [
+    "Laravel",
+    "Filament",
+    "PHP 8",
+    "PostgreSQL",
+    "外部API連携",
+    "日本語流暢"
+  ],
+  "project_summary": "公共サービスの職員向け申請管理システムで、画面追加とリファクタリングを担当。PL と週次で設計レビューを実施。",
+  "availability": "2026年8月から稼働可",
+  "location_preference": "大森常駐可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

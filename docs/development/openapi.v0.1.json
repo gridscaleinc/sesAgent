@@ -1,0 +1,80 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Secure Talent Match AI API",
+    "version": "0.1.0",
+    "description": "API contract for AI-assisted recruiting matching. AI outputs are decision support only; final recruiting decisions require human review."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:4173/api/v1",
+      "description": "Local API"
+    }
+  ],
+  "paths": {
+    "/": { "get": { "summary": "Get API catalog", "responses": { "200": { "description": "Endpoint catalog" } } } },
+    "/health": { "get": { "summary": "Get API status", "responses": { "200": { "description": "API status" } } } },
+    "/openapi.json": { "get": { "summary": "Get OpenAPI contract", "responses": { "200": { "description": "OpenAPI contract" } } } },
+    "/workspace-schema.json": { "get": { "summary": "Get workspace schema", "responses": { "200": { "description": "Workspace schema" } } } },
+    "/project-requirements": { "post": { "summary": "Create project requirement", "responses": { "201": { "description": "Created requirement" } } } },
+    "/project-requirements/{id}/analyze": { "post": { "summary": "Analyze project requirement", "responses": { "200": { "description": "Analyzed requirement" }, "400": { "description": "JD text is required" } } } },
+    "/project-requirements/{id}/criteria": { "put": { "summary": "Confirm criteria", "responses": { "200": { "description": "Confirmed criteria" } } } },
+    "/resume-files/parse": {
+      "post": {
+        "summary": "Extract resume text from an uploaded file",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Extracted resume text" },
+          "400": { "description": "Missing file upload" },
+          "415": { "description": "Unsupported file format" }
+        }
+      }
+    },
+    "/resume-imports": { "post": { "summary": "Create resume import job", "responses": { "202": { "description": "Import job accepted" } } } },
+    "/jobs/{id}": { "get": { "summary": "Get job status", "responses": { "200": { "description": "Job status" }, "404": { "description": "Job not found" } } } },
+    "/match-runs": { "post": { "summary": "Create matching run", "responses": { "202": { "description": "Match run accepted" } } } },
+    "/project-requirements/{id}/match-results": { "get": { "summary": "List match results", "responses": { "200": { "description": "Match results" } } } },
+    "/match-results/{id}": { "get": { "summary": "Get match result detail", "responses": { "200": { "description": "Match result" }, "404": { "description": "Match result not found" } } } },
+    "/match-results/{id}/notes": { "post": { "summary": "Add human note", "responses": { "201": { "description": "Created note" } } } },
+    "/match-results/{id}/review-decision": { "put": { "summary": "Save human review decision", "responses": { "200": { "description": "Saved review decision" } } } },
+    "/match-results/{id}/interview-questions": { "post": { "summary": "Generate interview questions", "responses": { "200": { "description": "Generated questions" }, "502": { "description": "AI questions unavailable" } } } },
+    "/exports/shortlist": { "post": { "summary": "Create shortlist export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/interview-pack": { "post": { "summary": "Create interview pack export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/audit-summary": { "post": { "summary": "Create audit summary export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/compliance-report": { "post": { "summary": "Create compliance report export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/candidate-quality": { "post": { "summary": "Create candidate quality export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/filtered-results": { "post": { "summary": "Create filtered results export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/review-summary": { "post": { "summary": "Create review summary export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/pilot-report": { "post": { "summary": "Create pilot report export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/delivery-pack": { "post": { "summary": "Create delivery pack export", "responses": { "202": { "description": "Export accepted" } } } },
+    "/exports/{id}/download": { "get": { "summary": "Download export", "responses": { "200": { "description": "Export file" }, "404": { "description": "Export not found" } } } }
+  },
+  "components": {
+    "schemas": {
+      "WorkspaceState": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "object",
+            "properties": {
+              "sortBy": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

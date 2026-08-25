@@ -14,6 +14,7 @@ import { candidateBenchmarkQueryFromJobCase } from '@job-cases'
 import {
   type CandidateMatchTaskExecutionResult,
   type ProcessingJobSummary,
+  type ResumeAnalysisTaskExecutionResult,
   executeCandidateMatchTaskInputSchema,
   ipcChannels
 } from '@shared'
@@ -21,11 +22,12 @@ import { registerAgentIpcHandlers } from '../agent-ipc'
 import { effectiveApplicationPreferences } from '../app-defaults'
 import { assertWorkTaskAllowsExecution, createVerifiedPreview } from '../work-task-helpers'
 import { assertTrustedSender, type MainIpcContext } from './context'
+import { agentDraftFactsFromResumeAnalysis } from './resume-import'
 
 /** Candidate matching execution and the conversational matching agent IPC surface. */
 export function registerCandidateMatchHandlers(
   context: MainIpcContext,
-  runResumeAnalysisTask: (input: { fileToken: string; taskId: string }) => Promise<unknown>
+  runResumeAnalysisTask: (input: { fileToken: string; taskId: string }) => Promise<ResumeAnalysisTaskExecutionResult>
 ) {
   const { conversationImports, previewedDrafts, repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates } = context
   const runCandidateMatchTask = async (
@@ -256,27 +258,43 @@ export function registerCandidateMatchHandlers(
         candidate.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === fileToken)
       )
       if (!task) throw new Error('スキルシート取込タスクが見つかりません。')
-      await runResumeAnalysisTask({ fileToken, taskId: task.id })
-      return { name: record.name, format: record.format }
+      const execution = await runResumeAnalysisTask({ fileToken, taskId: task.id })
+      return {
+        name: record.name,
+        format: record.format,
+        facts: agentDraftFactsFromResumeAnalysis(execution.analysis, 'RESUME')
+      }
     },
     registerConversationImport: (conversationId, sourceDocumentId) => {
       const existing = conversationImports.get(conversationId) ?? []
       if (existing.some((item) => item.sourceDocumentId === sourceDocumentId)) return
       conversationImports.set(conversationId, [...existing, { label: `RESUME_${existing.length + 1}`, sourceDocumentId }])
     },
-    listConversationImports: (conversationId) => (conversationImports.get(conversationId) ?? [])
-      .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.sourceDocumentId })),
-    listSchedulableCandidates: () => repository.listCandidateReviews().map((review, index) => ({
-      anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
-      sourceDocumentId: review.documentId
-    })),
+    listConversationImports: (conversationId) => {
+      const persisted = (repository.getAiConversation(conversationId)?.messages ?? [])
+        .flatMap((message) => message.blocks ?? [])
+        .filter((block) => block.type === 'resume-import')
+        .flatMap((block) => block.type === 'resume-import' ? block.imported : [])
+        .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.documentId }))
+      const runtime = (conversationImports.get(conversationId) ?? [])
+        .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.sourceDocumentId }))
+      return [...persisted, ...runtime]
+        .filter((item, index, all) => all.findIndex((other) => other.sourceDocumentId === item.sourceDocumentId) === index)
+    },
+    listSchedulableCandidates: () => repository.listCandidateReviews()
+      .filter((review) => review.recordStatus === 'active')
+      .map((review, index) => ({
+        anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
+        sourceDocumentId: review.documentId
+      })),
     scheduleCandidateInterview: (input) => {
       repository.saveCandidateInterviewSchedule({
         sourceDocumentId: input.sourceDocumentId,
         kind: input.kind,
         scheduledAt: input.scheduledAt,
-        durationMinutes: input.durationMinutes as 30 | 45 | 60 | 90,
+        durationMinutes: input.durationMinutes,
         meetingMethod: input.meetingMethod,
+        ...(input.meetingUrl ? { meetingUrl: input.meetingUrl } : {}),
         interviewer: currentOperator().displayName,
         ...(input.contactNote ? { contactNote: input.contactNote } : {})
       }, currentOperator().displayName)

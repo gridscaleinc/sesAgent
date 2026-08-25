@@ -1,0 +1,14 @@
+{
+  "name": "中村 里奈",
+  "title": "セキュリティエンジニア",
+  "skills": [
+    "Azure AD",
+    "SAML",
+    "IdP",
+    "ネットワーク設計"
+  ],
+  "project_summary": "ゼロトラスト移行で認証基盤設計、SAML 連携、監査資料作成を担当。",
+  "availability": "2026年10月開始可",
+  "location_preference": "六本木出社可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

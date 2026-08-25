@@ -1,0 +1,19 @@
+{
+  "id": "game-backend",
+  "title": "オンラインゲーム課金基盤改修",
+  "industry": "ゲーム / 課金",
+  "location": "秋葉原",
+  "period": "2026年11月開始",
+  "contract": "準委任",
+  "skills": [
+    "Go",
+    "gRPC",
+    "Redis",
+    "MySQL",
+    "高負荷 API",
+    "課金処理"
+  ],
+  "plus": [
+    "ゲーム運用経験"
+  ]
+}

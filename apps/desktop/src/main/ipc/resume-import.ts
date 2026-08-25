@@ -18,8 +18,11 @@ import { redactTextForCloud } from '@privacy'
 import { extractCandidateDraft } from '@resume'
 import {
   type AgentCandidateDraftFacts,
+  type AiConversationMessage,
+  type AiConversationSnapshot,
   type BeginResumeImportResult,
   type ProcessingJobSummary,
+  type ResumeAnalysisSummary,
   type ResumeAnalysisTaskExecutionResult,
   type StagedLocalFile,
   analyzeResumeFileInputSchema,
@@ -28,6 +31,7 @@ import {
   candidateProfileSourceInputSchema,
   ipcChannels
 } from '@shared'
+import { effectiveApplicationPreferences } from '../app-defaults'
 import { assertWorkTaskAllowsExecution, synchronizeImportTask } from '../work-task-helpers'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
@@ -51,9 +55,162 @@ function documentTextForLocalPrivacy(document: Awaited<ReturnType<ParserWorkerCl
     .join('\n')
 }
 
+function bounded(value: string, maximum: number): string {
+  return value.length <= maximum ? value : `${value.slice(0, Math.max(1, maximum - 1))}…`
+}
+
+/**
+ * Converts the committed local analysis into the only resume representation a
+ * Sales Agent conversation may persist or project to Cloud AI. Direct identity,
+ * the original file name and local document identifiers are excluded upstream
+ * when the conversation projection is serialized.
+ */
+export function agentDraftFactsFromResumeAnalysis(
+  analysis: ResumeAnalysisSummary,
+  label: string
+): AgentCandidateDraftFacts {
+  return {
+    documentId: analysis.fileToken,
+    label: bounded(label, 60),
+    confirmed: false,
+    reviewStatus: 'awaiting-review',
+    fields: analysis.extractedFields.slice(0, 20).map((field) => ({
+      label: bounded(field.label, 80),
+      value: field.value === null ? null : bounded(field.value, 600),
+      confidence: field.confidence,
+      status: field.status,
+      sources: [...new Set(field.sourceLabels)].slice(0, 12).map((source) => bounded(source, 180))
+    })),
+    projects: (analysis.extractedProjectExperiences ?? []).slice(0, 30).map((project) => ({
+      title: bounded(project.title, 300),
+      period: project.period === null ? null : bounded(project.period, 120),
+      role: project.role === null ? null : bounded(project.role, 180),
+      technologies: project.technologies.slice(0, 40).map((technology) => bounded(technology, 120)),
+      summary: bounded(project.summary, 2_000),
+      confidence: project.confidence,
+      sources: [...new Set(project.sourceLabels)].slice(0, 12).map((source) => bounded(source, 180))
+    }))
+  }
+}
+
+/** Backfills legacy import cards with their already-committed local draft. */
+export function hydrateConversationResumeFacts(
+  repository: EncryptedApplicationRepository,
+  conversation: AiConversationSnapshot,
+  zh: boolean
+): AiConversationSnapshot {
+  if (conversation.context.assistant !== 'sales-agent') return conversation
+  const imports = conversation.messages
+    .flatMap((message) => message.blocks ?? [])
+    .filter((block) => block.type === 'resume-import')
+    .flatMap((block) => block.type === 'resume-import' ? block.imported : [])
+  const existingDraftIds = new Set(conversation.messages
+    .flatMap((message) => message.blocks ?? [])
+    .filter((block) => block.type === 'candidate-draft-facts')
+    .map((block) => block.type === 'candidate-draft-facts' ? block.facts.documentId : ''))
+  const missingFacts = imports.flatMap((imported) => {
+    if (existingDraftIds.has(imported.documentId)) return []
+    const analysis = repository.getResumeAnalysis(imported.documentId)
+    return analysis ? [agentDraftFactsFromResumeAnalysis(analysis, imported.label)] : []
+  })
+  if (missingFacts.length === 0) return conversation
+  const knownFieldCount = missingFacts.reduce(
+    (total, facts) => total + facts.fields.filter((field) => field.status !== 'missing').length,
+    0
+  )
+  const projectCount = missingFacts.reduce((total, facts) => total + facts.projects.length, 0)
+  const missingByDocumentId = new Map(missingFacts.map((facts) => [facts.documentId, facts]))
+  const attached = new Set<string>()
+  const messages = conversation.messages.map((message) => {
+    const additions = (message.blocks ?? [])
+      .filter((block) => block.type === 'resume-import')
+      .flatMap((block) => block.type === 'resume-import' ? block.imported : [])
+      .flatMap((imported) => {
+        const facts = missingByDocumentId.get(imported.documentId)
+        if (!facts || attached.has(imported.documentId)) return []
+        attached.add(imported.documentId)
+        return [{ type: 'candidate-draft-facts' as const, facts }]
+      })
+    if (additions.length === 0) return message
+    const suffix = zh
+      ? `已恢复本地抽取内容：${knownFieldCount} 个已识别字段，${projectCount} 段项目经历。现在可以直接针对这份简历继续对话。`
+      : `ローカル抽出内容を復元しました。識別済み${knownFieldCount}項目、プロジェクト${projectCount}件です。この履歴書についてそのまま会話を続けられます。`
+    return { ...message, content: `${message.content}\n\n${suffix}`, blocks: [...(message.blocks ?? []), ...additions] }
+  })
+  return repository.saveAiConversation({
+    conversationId: conversation.id,
+    context: conversation.context,
+    messages,
+    salesAgentState: conversation.salesAgentState,
+    expectedRevision: conversation.revision
+  })
+}
+
 /** Resume file staging, local analysis and candidate field review. */
 export function registerResumeImportHandlers(context: MainIpcContext) {
   const { repository, fileVault, parserWorker, localOcr, localNer, processingResources, currentOperator, preflightAction, withTaskOperation, failPendingProcessingJob, previewedDrafts, conversationImports } = context
+
+  const persistConversationImport = (
+    conversationId: string,
+    analysis: ResumeAnalysisSummary
+  ): AiConversationSnapshot => {
+    const documentId = analysis.fileToken
+    const current = repository.getAiConversation(conversationId)
+    if (current && current.context.assistant !== 'sales-agent') {
+      throw new Error('CONVERSATION_CONTEXT_MISMATCH')
+    }
+    const persistedImports = (current?.messages ?? [])
+      .flatMap((message) => message.blocks ?? [])
+      .filter((block) => block.type === 'resume-import')
+      .flatMap((block) => block.type === 'resume-import' ? block.imported : [])
+    const persistedImport = persistedImports.find((item) => item.documentId === documentId) ?? null
+    const ordinal = persistedImport?.ordinal ?? persistedImports.reduce((maximum, item) => Math.max(maximum, item.ordinal), 0) + 1
+    const label = persistedImport?.label ?? `RESUME_${ordinal}`
+    const runtimeImports = conversationImports.get(conversationId) ?? []
+    if (!runtimeImports.some((item) => item.sourceDocumentId === documentId)) {
+      conversationImports.set(conversationId, [...runtimeImports, { label, sourceDocumentId: documentId }])
+    }
+    const hasDraftFacts = (current?.messages ?? []).some((message) =>
+      (message.blocks ?? []).some((block) => block.type === 'candidate-draft-facts' && block.facts.documentId === documentId)
+    )
+    if (persistedImport && hasDraftFacts) return current!
+    const facts = agentDraftFactsFromResumeAnalysis(analysis, label)
+    const knownFieldCount = facts.fields.filter((field) => field.status !== 'missing').length
+    const zh = effectiveApplicationPreferences(repository).locale === 'zh-CN'
+    const message: AiConversationMessage = {
+      id: randomUUID(),
+      role: 'assistant',
+      content: zh
+        ? `已在本机导入 ${label}，并将简历内容加入当前会话。共识别 ${knownFieldCount} 个字段、${facts.projects.length} 段项目经历，现在可以直接针对这份简历继续提问。抽取结果仍需逐项审核。`
+        : `${label}を端末内に取り込み、履歴書の内容をこの会話に追加しました。識別済み${knownFieldCount}項目、プロジェクト${facts.projects.length}件です。この履歴書についてそのまま質問できます。抽出結果は項目ごとの確認が必要です。`,
+      mode: 'local',
+      narrativeStatus: 'local',
+      turnId: null,
+      blocks: [
+        ...(persistedImport ? [] : [{
+          type: 'resume-import' as const,
+          imported: [{ documentId, label, ordinal }],
+          failedCount: 0
+        }]),
+        ...(hasDraftFacts ? [] : [{ type: 'candidate-draft-facts' as const, facts }]),
+        { type: 'system-access' as const, destination: 'review-center' as const }
+      ],
+      createdAt: new Date().toISOString()
+    }
+    return repository.saveAiConversation({
+      conversationId,
+      context: current?.context ?? {
+        assistant: 'sales-agent', candidateDocumentId: null, interviewId: null,
+        interviewKind: null, roundNumber: null
+      },
+      messages: [...(current?.messages ?? []), message].slice(-200),
+      salesAgentState: current?.salesAgentState ?? {
+        selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null
+      },
+      expectedRevision: current?.revision ?? null
+    })
+  }
+
   ipcMain.handle(ipcChannels.beginResumeImport, async (event): Promise<BeginResumeImportResult> => {
     assertTrustedSender(event)
     const owner = BrowserWindow.fromWebContents(event.sender)
@@ -468,18 +625,11 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
     async (event, rawInput): Promise<ResumeAnalysisTaskExecutionResult> => {
       assertTrustedSender(event)
       const input = analyzeResumeFileInputSchema.parse(rawInput)
-      const registerConversationImport = (documentId: string) => {
-        if (!input.conversationId) return
-        const existing = conversationImports.get(input.conversationId) ?? []
-        if (existing.some((item) => item.sourceDocumentId === documentId)) return
-        conversationImports.set(input.conversationId, [
-          ...existing,
-          { label: `RESUME_${existing.length + 1}`, sourceDocumentId: documentId }
-        ])
-      }
       const executed = await withTaskOperation(input.taskId, () => runResumeAnalysisTask(input))
-      registerConversationImport(input.fileToken)
-      return executed
+      const conversation = input.conversationId
+        ? persistConversationImport(input.conversationId, executed.analysis)
+        : undefined
+      return { ...executed, ...(conversation ? { conversation } : {}) }
     }
   )
 

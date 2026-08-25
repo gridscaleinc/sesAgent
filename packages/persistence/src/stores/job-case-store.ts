@@ -516,6 +516,7 @@ export class JobCaseStore extends DomainStore {
       .all()
       .filter((row) => agentRunIds.has(row.run_id))
     const agentReferences = this.stores.agentConversations.countSalesAgentReferences({
+      candidateDocumentIds: new Set(),
       jobCaseIds: caseIdSet,
       matchRunIds: agentRunIds,
       matchResultIds: new Set(agentResultRows.map((row) => row.id))
@@ -582,6 +583,7 @@ export class JobCaseStore extends DomainStore {
       .all()
       .filter((row) => agentRunIds.has(row.run_id))
     const agentTargets: AgentReferenceTargets = {
+      candidateDocumentIds: new Set(),
       jobCaseIds: new Set(caseIds),
       matchRunIds: agentRunIds,
       matchResultIds: new Set(agentResultRows.map((row) => row.id))

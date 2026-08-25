@@ -26,7 +26,7 @@ for (const document of currentDocuments) {
 
 const readme = await readFile(resolve(root, 'README.md'), 'utf8')
 if (!readme.includes('普通 Cloud AI 采用失败关闭的两阶段协议')) failures.push('README.md:cloud-two-stage-contract')
-if (!readme.includes('当前 Schema v38')) failures.push('README.md:current-schema-statement')
+if (!readme.includes('当前 Schema v39')) failures.push('README.md:current-schema-statement')
 if (readme.includes('当前验收产物为')) failures.push('README.md:stale-build-artifact-claim')
 
 const expertEvidenceSource = await readFile(resolve(root, 'scripts/privacy-expert-evidence.mjs'), 'utf8')

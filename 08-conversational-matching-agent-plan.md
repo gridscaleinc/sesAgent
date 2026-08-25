@@ -1,21 +1,21 @@
-# SES Agent Desktop 对话式案件匹配 Agent 最小实现方案
+# SES Agent Desktop Agent-first 主工作区与对话式匹配方案
 
 <!-- ses-current-state package=0.1.0 schema=38 -->
 
-> 版本：v0.7  
-> 日期：2026-08-18  
-> 状态：v0.7 AI 规划式单 Tool Agent 已进入源码并通过本机自动测试；生产真实账号端到端 SSE/Tool 选择仍待受控验收，Expert Attestation 作为非阻断质量、审计与发布准备度建议项单独记录  
-> 当前主系统：/Users/yk/project/life/ses-agent-desktop  
-> 首发平台：macOS  
-> 当前运行基线：Package 0.1.0、Schema v38、AI 规划式受控单 Tool Agent  
-> 计划目标：用户自然语言先进入所选 AI；AI 只能返回直接回答或一个白名单 Tool 计划；Main 校验并执行本地 Tool，再以真实 SSE 生成最终回答  
-> 核心决策：AI 负责理解自然语言和请求 Tool；Main 的 DomainToolRegistry、Schema、Scope、SQLCipher、WorkTask/ProcessingJob 与 Hybrid RAG 仍是权限、执行、恢复、事实和排名的唯一权威。AI 不能直接访问接口，也不能提交内部 ID 或任意 Tool。模型可请求的写操作仅限本地摄取层（当前为会话附件的履历取込），且其产物是必须经人工逐项确认的草稿；外部写、不可逆操作与业务状态变更仍然禁止。
+> 版本：v0.9.2
+> 日期：2026-08-20
+> 状态：Agent-first 主工作区、Codex 式核心对话布局、用户输入复制/编辑分支重发、完整轮次上下文裁剪、会议链接本地隔离、可交互本地证据卡、AI 规划式单 Tool Agent 与 8 个 Agent allowlist Tool 已进入源码并通过相关本机自动测试；生产真实账号端到端 SSE/Tool 选择仍待受控验收，Expert Attestation 作为非阻断质量、审计与发布准备度建议项单独记录
+> 当前主系统：/Users/yk/project/life/ses-agent-desktop
+> 首发平台：macOS
+> 当前运行基线：Package 0.1.0、Schema v38、Agent-first SES 工作区、AI 规划式受控单 Tool Agent
+> 计划目标：用户自然语言先进入所选 AI；AI 只能返回直接回答或一个白名单 Tool 计划；Main 校验并执行本地 Tool，再以真实 SSE 生成最终回答
+> 核心决策：AI 负责理解自然语言和请求 Tool；Main 的 DomainToolRegistry、Schema、Scope、SQLCipher、WorkTask/ProcessingJob 与 Hybrid RAG 仍是权限、执行、恢复、事实和排名的唯一权威。AI 不能直接访问接口，也不能提交内部 ID 或任意 Tool。模型可请求的本地写只有会话附件履历摄取，以及用户把候选人、日期、时间、方式和时长全部说清后的本地面谈登记；Zoom / Google Meet 还必须由用户提供有效会议链接。会议链接由 Main 在本机提取和验证，Cloud 只看到“链接已在本机提供”的占位语义，真实 URL 仅写入 SQLCipher 面谈记录，ActionRun 只保存绑定哈希。前者只产生必须逐项人工确认的草稿，后者不发送通知且沿用手工表单的持久化路径。外部写、提案导出、删除、不可逆操作和任意业务写仍然禁止。
 
 ## 1. 文档目的与状态合同
 
-本文档冻结“对话式案件匹配 Agent v0.7”的最小可交付范围、交互合同、AI 规划协议、工具边界、真实 SSE、模型选择、取消、数据生命周期、安全门、灰度方式和验收标准。
+本文档冻结“SES Agent v0.9.2”的主界面信息架构、最小可交付范围、交互合同、会话上下文、AI 规划协议、工具边界、真实 SSE、模型选择、取消、数据生命周期、安全门、灰度方式和验收标准。
 
-本文档不是发布证明。AgentWorkspace、3 个受控 Tool、Sales Agent 会话和 Schema v38 是实现基线；v0.7 的 AI 规划、直接回答、受控 Tool 请求和两阶段 SSE 仍需以源码、单测、真实网络与包级证据验收。
+本文档不是发布证明。AgentWorkspace、8 个 Agent allowlist Tool、Sales Agent 会话和 Schema v38 是实现基线；Agent-first 冷启动与本地回退已经进入 Renderer，AI 规划、直接回答、受控 Tool 请求和两阶段 SSE 仍需分别以源码、单测、真实网络与包级证据验收。
 
 本轮不得改变：
 
@@ -55,7 +55,7 @@ v0.3 明确 supersede v0.2 中以下规范性结论：
 | Stop 只取消本地匹配 | Stop 先中止本地读取/展示，再独立请求 AICommerce client-request cancel；不保证零成本或退款 |
 | Cloud 失败不影响本地 MVP | Cloud 失败时明确显示失败，保留已持久化 typed blocks 和本地确定性 narrative，不伪造流式 |
 
-v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留的收缩边界是：一轮最多一个本地 Tool、固定白名单 Tool（当前 9 个：7 个只读/计算 + 1 个本地摄取写 + 1 个内部状态写）、严格 ANSWER/TOOL 协议、Main 白名单与参数校验、不做任意 Tool、多 Tool 循环或外部写操作、不新增 Agent 专用表、不改变本地 Rank。
+v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。v0.8 把 Agent 提升为默认主工作区并冻结 8 个 Tool；v0.9 不改变单 Tool 协议，而是把对话本身升级为产品核心入口，并修复按会话隔离的可变状态、导入证据、完整轮次上下文、附件竞态和删除后历史语义。Main 继续执行白名单、Schema、引用和 Scope 校验；不做任意 Tool、多 Tool 循环或外部写操作，不新增 Agent 专用表，不改变本地 Rank。
 
 最小实现验证三个业务闭环：
 
@@ -65,7 +65,7 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 
 ## 3. 当前基线与复用边界
 
-截至 2026-08-18，当前工作区和本机 App 已具备：
+截至 2026-08-20，当前工作区和本机 App 已具备：
 
 | 能力 | 当前状态 | v0.2 处理 |
 |---|---|---|
@@ -81,7 +81,7 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 | Cloud 出网硬门与专家证据 | 合成质量门、CloudRedactionGateway、本地 NER/脱敏/DLP、匿名安全投影和 Endpoint Allowlist 是失败关闭硬门；Expert Attestation 只提供质量/审计/发布证据 | Agent egress 必须复用硬门，不得放宽或绕过；专家证据可选但不得伪造 |
 | 本地 ONNX | Embedding/Reranker，不是生成式聊天模型 | 只做现有匹配 |
 
-当前已存在：全局 Sales Agent 会话、job-case.search.local、candidate.match.local、match-run.read.local、resume.analyze.local（会话附件取込）、candidate.draft.read.local（未确认草稿读取）、candidate.interview.schedule.local（面谈登记）、AgentWorkspace、typed blocks、AI 规划协议、Main 受控执行器和 Schema v38。
+当前 Agent allowlist 已存在 8 个 Tool：`job-case.search.local`、`candidate.match.local`、`candidate.profile.read.local`、`candidate.interview.read.local`、`match-run.read.local`、`resume.analyze.local`、`candidate.draft.read.local` 和 `candidate.interview.schedule.local`。此外已具备全局 Sales Agent 会话、typed blocks、AI 规划协议、Main 受控执行器、Schema v38，以及以 `SES Agent` 为首屏、业务概览为次级页面、经典匹配为受管回退的 Renderer 信息架构。会话现在以完整 Turn 作为上下文裁剪单位；本地卡片可以进入候选人、面谈、完整匹配或打开原文档，但这些路由字段不会进入 Cloud Projection。
 
 本轮 v0.3 已实现：Responses SSE 客户端、模型 allowlist、AgentTurnEvent、流式 UI、Cloud 两阶段持久化与远端 cancel；正式 Cloud 可用仍受本地硬性出网门、账号凭证和真实受控网络验收约束。Expert Attestation 缺失或过期只降低质量/审计/发布准备度，不阻断满足硬门的 Cloud narrative。
 
@@ -99,7 +99,7 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 8. **引用必须唯一**：“这个案件”“第二个”“他”无法唯一解析时先澄清。
 9. **不可变 Context 与可变 State 分离**：Sales Agent 类型不随轮次改变；选择和过滤条件可以改变。
 10. **历史状态可见**：Deleted/Stale 不能继续冒充 Current。
-11. **人工决定**：不自动推荐、录用、淘汰、发送、导出或改变业务状态。
+11. **人工决定**：不自动录用、淘汰、发送或导出；面谈登记只有在候选人和全部日程参数可唯一解析时才允许写入本地，并且不发送通知。匹配卡和 AI narrative 仍只是人工判断材料。
 12. **保留旧匹配页**：新入口通过 Feature Flag 灰度，失败时回退现有页面。
 13. **外部内容是不可信数据**：邮件、微信、EML、简历和案件文本不能成为 Tool Call、Scope、Actor 或审批。
 14. **真实流式**：UI delta 必须来自 AICommerce text/event-stream 网络帧，禁止 setInterval、逐字 reveal 或完整响应后伪流式。
@@ -110,8 +110,12 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 
 ### 5.1 必须交付
 
-- 一个 ChatGPT 风格的全局 AgentWorkspace。
+- 正常启动直接进入名为 `SES Agent` 的全局 AgentWorkspace；旧工作台作为“业务概览”，经典匹配页作为 Feature Flag 回退。
+- Agent 顶部显示与 Sidebar 同源的有效案件、可匹配人才、待审核、处理中任务和备份提醒，并能进入对应结构化页面。
+- 空状态提供简历导入、案件导入和审核中心快捷入口；Cloud 未连接时这些本地确定性入口仍可使用。
 - 复用现有会话历史的“新建、切换、单个删除”。
+- 每条已发送的 User Message 支持显式复制和编辑重发；编辑以新 Conversation 分支执行，复制目标消息之前的完整上下文，原会话、ActionRun 和已经发生的本地副作用保持不变。
+- 每个会话独立保存当前案件和最近 Match Run；历史异步加载、附件预解析和直接导入完成时不得覆盖用户已经切换到的新会话。
 - “最近有什么案件？”本地查询。
 - “只看 Java”“第二个详细说一下”等单轮跟进。
 - 从案件卡片选择当前案件。
@@ -119,6 +123,9 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 - 展示前 5 名摘要卡片，并进入现有完整匹配详情。
 - “为什么第一名排第一？”读取已保存 Match Run。
 - “总结一下候选人的整体情况”等追问优先由 AI 使用当前会话的匿名权威证据直接回答，不重新运行匹配。
+- 会话附件支持文件选择和拖放；先本地预解析，再由用户决定直接导入或请求 `resume.analyze.local`，导入结果必须进入人工字段审核。
+- 可以读取候选人档案、既有面谈和未确认导入草稿；可以在候选人、日期、时间、方式和时长全部明确时登记本地面谈。
+- Assistant 结构化结果提供受控按钮，可打开候选人详情、面谈、完整匹配、审核或本地原文档；模型文本不能生成任意 URL、路径、IPC 或命令。
 - Current/Stale/Deleted 状态。
 - 本地确定性 Tool 结果先保存；正常 Tool 成功时使用真实 AICommerce SSE 整理 narrative。
 - 受控模型选择和历史 model metadata。
@@ -137,6 +144,7 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 - 右侧 Evidence Drawer。
 - 伪造 BM25/Vector/RRF/Reranker 或 Provider 的逐阶段进度。
 - 提案、导出、跟进、Gmail、微信或 ATS 写操作。
+- 由 Agent 发送面谈通知、邮件、日历邀请或会议链接。
 - Shell、浏览器、任意 HTTP、任意文件、任意 SQL 和桌面自动化。
 - Agent 专用恢复平台或新的后台 Scheduler。
 - agent_turns、agent_tool_runs、agent_evidence_refs 三张表。
@@ -150,16 +158,21 @@ v0.7 supersede“本地关键词 Planner 决定 Intent”的旧实现。保留�
 
 | 区域 | 内容 |
 |---|---|
-| 左侧 | 复用会话历史、新建、切换、单个删除 |
-| 中央 | User/Assistant 消息、澄清、Inline Card 和错误 |
-| 底部 | 多行输入、受控模型选择、发送、停止和取消成本说明 |
+| 左侧 | Codex 式任务/会话列表；新建、切换、单个删除，小窗口使用抽屉 |
+| 顶部 | 紧凑的 `SES Agent` 身份和动态会话标题；隐私状态、有效案件/人才/审核/任务/备份入口 |
+| 中央 | 纯文本式 Assistant 内容、弱化的 User Bubble、澄清、Inline Card 和错误 |
+| 空状态 | 受控快捷问题；本地简历导入、案件导入和审核入口 |
+| 底部 | 悬浮圆角 Composer、会话附件、多行输入、受控模型选择、发送、停止和取消成本说明 |
 | 当前选择 | 在消息流顶部显示一个轻量案件 Chip |
 
 不实现独立 Context Bar 和右侧证据抽屉。完整证据继续使用现有匹配详情页。
 
-默认快捷问题只有：
+这里的“Codex 式”是稳定交互模型，不是对某一版本像素截图的复制：对话是默认首屏，历史任务在左，当前任务标题紧凑，Assistant 回答不包在沉重气泡中，输入框固定在内容底部。SES 的隐私状态、业务证据、人工审核和经典匹配回退继续保留，不为了视觉相似而删除领域控制。
+
+默认快捷问题包括：
 
 - 最近有什么案件？
+- 有哪些候选人可以安排面谈？
 - 给当前案件匹配候选人。
 - 为什么第一名排第一？
 
@@ -379,6 +392,7 @@ Main 默认只暴露以下受控模型；Provider、Endpoint 和 Token 字段都
 - DeepSeek 与 GPT 共用登录后由 Members 签发并存入系统保护区的 `account_ai_token`；它不是 DeepSeek 原生 API Key，应用不新增 BYOK 输入框，也不读取 Clear 的遗留 `deepseekKey`。
 - DeepSeek 请求固定使用 `max_tokens`、`stream=true`、`stream_options.include_usage=true`；本地解析 `choices[].delta.content`，忽略仅供模型内部推理的 `reasoning_content`，必须看到 `[DONE]` 且拒绝 `finish_reason=length|max_tokens` 的半截回答。
 - 两种协议都复用相同的 AICommerce 计费 Header、client request ID、显式远端 cancel、本地匿名 Projection、DLP 和 Endpoint Allowlist。
+- 上表是用户可见 Answer/Narrative 的输出上限；Planning 的 JSON 协议固定使用 `max_output_tokens=8192`。推理 token 与最终 JSON 共用输出预算，真实面谈补充轮次已经证明 2,048 会在完整 JSON 产生前触发 incomplete；固定上限只约束最大值，实际计费仍以 Provider 真实输出证据为准。
 
 ## 10. 最小 Tool 目录
 
@@ -519,6 +533,16 @@ Sales Agent 的不可变 Context：
 ~~~
 
 日期范围、查询词和有序结果引用绑定在产生它们的 Message Block 上，不进入不可变 context_key。
+
+v0.9.2 的连续性约束：
+
+- `selectedJobCaseRef` 等可变 State 必须按当前 Conversation 保存，不能由组件级共享状态串到另一个会话。
+- Renderer 新建会话时先产生稳定 Conversation ID；直接导入把匿名 `resume-import` typed block 保存到同一个会话，后续 `candidate.draft.read.local` 同时读取原有 Tool 导入块和会话导入登记。
+- 历史加载使用单调序列拒绝迟到结果，不能覆盖刚完成并已经接受的新 Turn。
+- 附件暂存、预览和直接导入绑定启动时的 Conversation ID；用户切换会话后，迟到回调不得把附件或消息写入新会话。
+- 同一 `requestId` 只有在完整输入指纹相同的情况下才能幂等复用；Conversation、Revision、Model、消息、选择或附件令牌任一不同都必须拒绝。
+- 编辑历史 User Message 不原地删除或改写 SQLCipher 会话。Renderer 从目标消息之前截取完整前缀，以新 Conversation ID 保存分支，再用新 requestId 发送编辑文本；目标消息及其后的旧分支、Action Audit、WorkTask、Match Run、导入和面谈记录继续保留。
+- 分支仅从前缀 typed blocks 确定性恢复可证明的 `lastMatchRunId`、单案件详情和 `lastSearchMessageId`；无法证明的后续案件选择不带入分支，必要时由 Agent 重新澄清。暂存附件不自动复制到编辑分支。
 
 ## 12. Schema v38 最小迁移
 
@@ -676,12 +700,13 @@ Flag=false：
 
 Flag=true：
 
-- 主入口进入 AgentWorkspace。
-- 页面保留“打开经典匹配页”。
+- 正常冷启动直接进入 `SES Agent`，侧栏最醒目的一级入口也指向同一工作区。
+- 原工作台保留为次级“业务概览”，结构化案件、人才、面谈、审核和活动页面继续保留。
+- 页面保留进入经典匹配详情的路径。
 
 ### 15.2 Kill Switch
 
-紧急回退时使用 `SES_CONVERSATIONAL_MATCHING_ENABLED=0` 启动；正常 Finder 启动不依赖终端环境变量，默认进入 AgentWorkspace。
+紧急回退时使用 `SES_CONVERSATIONAL_MATCHING_ENABLED=0` 启动；正常 Finder 启动不依赖终端环境变量，第一次 Bootstrap 将 Feature Flag 与首屏路由一起提交，默认直接进入 AgentWorkspace，不先绘制旧工作台再切换。
 
 以下任一条件触发本地回退：
 
@@ -705,7 +730,7 @@ Flag=true：
 
 ## 16. 安全与数据边界
 
-### 16.1 v0.7 Cloud egress
+### 16.1 v0.9.2 Cloud egress
 
 - 用户自然语言和最近会话文本可以进入 AI planning，但必须先经过本地 NER、脱敏、DLP、长度上限和硬性出网门；简历/案件/邮件/微信原文仍不进入 Cloud。
 - 模型可以请求一个固定 Tool 及有限业务参数，但不能指定 Scope、Actor、内部对象 ID、数据库过滤器或 Endpoint；写操作只能请求白名单内已开放的本地摄取 Tool，附件按序号引用而不是令牌。Main 是最终校验与执行权威。
@@ -757,12 +782,15 @@ Header 内部包含：Authorization Bearer account_ai_token、x-aicommerce-app-c
 
 冻结：
 
-- 完整请求最多 12,000 字符。
-- Tool Evidence 最多 8,000 字符。
+- Planning/Direct Answer 的安全 Projection JSON 硬上限为 20,000 字符，19,000 字符开始自适应压缩；Tool Final Evidence 同样不得超过 20,000 字符。
+- 最近上下文最多保留 6 个完整 Turn、12 条 Message；每条 Message 文本最多 1,200 字符。裁剪只能从最旧的完整 Turn 开始，禁止留下只有 User 或只有 Assistant 的半轮上下文。
+- 匿名 Evidence 最多 8 组；案件、候选人、字段、项目和面谈各自还有确定性的字段数与文本长度上限。
 - 最多 5 名候选人。
 - 每人最多 1 条 Project Evidence。
-- 确定性按 Rank 截断完整记录，不截断 JSON。
-- 超限时返回本地结果，不自动上传更多内容。
+- 本轮附件草稿优先保留；超限时依次移除最旧完整 Turn、较旧 Evidence、压缩附件字段/项目，最后才从末尾省略附件并记录 `omittedAttachmentCount`。
+- 所有投影均先构造合法 JSON 再按完整记录裁剪，不截断序列化 JSON；仍超限时返回本地结果，不自动上传更多内容。
+- 候选人 Document ID、Interview ID、本地文件令牌、原路径和用于 UI 跳转的路由字段固定只留在 Display Projection。
+- Zoom / Google Meet URL 以及其他 HTTPS URL 固定只留在本机；Planning/Direct Answer/Final Narrative 只接收 `[ZOOM_MEETING_LINK_PROVIDED_LOCALLY]`、`[GOOGLE_MEET_LINK_PROVIDED_LOCALLY]` 或通用本地 URL 占位符。Planner 可以据此填写会议方式，但不能读取、复述、生成或提交链接。
 
 ### 17.4 SSE parser
 
@@ -858,12 +886,14 @@ MVP 聚合指标：
 - 用户可以打开完整匹配详情。
 - “为什么第一名排第一”不重新运行模型。
 - 历史会话重新打开时 Current/Stale/Deleted 正确。
+- 会话切换后案件选择、附件、迟到历史加载和直接导入不会串到另一个会话。
 - 中文/日文回答跟随当前 Application Locale。
 - 用户可以选择 Main allowlist 中的模型，历史消息可识别最终 model key/display name。
 - “总结一下候选人的整体情况”等已有证据追问由 planning SSE 直接回答，candidate.match.local 调用次数为 0，不重复显示候选人卡。
 - 需要新数据时 AI 只能请求一个白名单 Tool；Main 校验后执行，随后以同一模型生成最终 SSE 回答。
 - 正常 Tool 成功后 narrative 由真实 SSE 增量显示；最终 typed blocks/cards 与本地事实一致。
 - Cloud 失败时没有伪 delta，并保留本地结果。
+- 结构化 Assistant 卡片可进入候选人、面谈、完整匹配、审核和本地原文档；普通模型文本不能触发导航或文件打开。
 
 ### 20.2 运行时
 
@@ -872,6 +902,7 @@ MVP 聚合指标：
 - 未注册 Tool 执行次数为 0。
 - 同一 Conversation 不并发执行两个 Turn。
 - 重复 requestId 不产生重复 Match Run。
+- 重复 requestId 携带不同完整输入时失败关闭，不能复用旧结果。
 - candidate.match.local 保持现有 Preview、Fingerprint、Lease、取消、重试和持久化。
 - Agent 失败可进入经典匹配页。
 - Main 只向发起 event.sender 发送 AgentTurnEvent；跨会话、跨 request、旧 sequence 被 Renderer 忽略。
@@ -884,6 +915,7 @@ MVP 聚合指标：
 - Conversation 不复制完整 Match Evidence。
 - Candidate/JobCase 删除预览包含 Agent 引用。
 - 删除后历史不显示本机姓名或旧卡片。
+- 候选人档案/面谈证据在对象更新后标为 Stale，在候选人删除后替换为不含旧路由和原文的 Deleted 墓碑。
 - 恢复旧备份后重新计算 Stale/Deleted。
 - 删除会话不删除 Action Audit 和 Match Run。
 
@@ -945,18 +977,26 @@ MVP 必须覆盖：
 35. “总结一下候选人的整体情况”返回 ANSWER 并且 candidate.match.local 调用次数为 0；显式“重新匹配候选人”才允许请求 match_candidates。
 36. 未知 Tool、额外字段、ordinal/rank 越界、畸形 JSON、混合 ANSWER/TOOL 和 Prompt Injection 全部在本地执行前失败关闭。
 37. 直接回答每轮只有 planning 请求；需要 Tool 的轮次是 planning 请求 + final narrative 请求，审计和计费标识可区分 planning/narrative。
+38. 上下文只保留完整 Turn；在 20,000 字符内按确定性顺序裁剪旧 Turn/Evidence 并优先保留本轮附件，投影中不出现本地路由 ID。
+39. 直接导入保存到原 Conversation，导入后追问能读取同一会话的未确认草稿；切换会话后的迟到附件/历史结果被忽略。
+40. 相同 requestId + 相同输入幂等复用；相同 requestId + 不同 Conversation/Revision/Model/消息/选择/附件必须拒绝。
+41. candidate-profile/interview/resume-import/match typed blocks 的按钮只调用预定义本地 Renderer/Main 路由；删除后按钮和本地标识被清理。
+42. 面谈补充轮次可以只发送“30 分钟 + Zoom 链接”；Planning 使用 8,192 输出预算并返回完整单 Tool JSON。真实链接不出现在任一 Cloud Projection、模型参数、Assistant 回答或 ActionRun 输入中，只进入本地面谈记录；ActionRun 仅保存 SHA-256 绑定哈希。
+43. 已发送 User Message 的“复制”只在用户点击后写入系统剪贴板，不调用 Main、AI 或网络；“编辑并重新发送”创建新 Conversation 分支，只复制目标消息之前的上下文并使用新 requestId。原会话及已执行副作用不被截断、回滚或隐藏，分支不自动继承旧附件。
 
-Provider 任意 Function Calling、多 Tool 循环、Cloud 业务原文自由问答和外部写操作测试不属于 v0.7。
+Provider 任意 Function Calling、多 Tool 循环、Cloud 业务原文自由问答和外部写操作测试不属于 v0.9.2。
 
 ## 22. 实施顺序
 
 | Stage | 范围 | 退出门槛 |
 |---|---|---|
 | Stage 0 v0.3 文档冻结 | supersede 无 Cloud/无 SSE，冻结数据与计费边界 | 无阻断问题 |
-| Stage 1 本地权威基线 | v38、3 个 Tool、AgentWorkspace、经典页回退、两阶段本地检查点 | 现有回归保持通过 |
+| Stage 1 本地权威基线 | v38、首批 3 个匹配 Tool、AgentWorkspace、经典页回退、两阶段本地检查点 | 现有回归保持通过 |
 | Stage 2 受控 Responses SSE | 模型 allowlist、真实 SSE、事件 IPC、取消、两阶段 narrative | 第 20/21 节新增项通过 |
+| Stage 3 v0.8 Agent-first | 8 个 Agent Tool、会话附件、草稿读取、面谈登记、默认首屏、状态与本地快捷入口 | Renderer/Agent/Policy 回归、类型检查、本地化与构建通过 |
+| Stage 4 v0.9 Core chat | Codex 式核心对话布局、按会话 State、完整 Turn 上下文预算、直接导入连续性、typed block 本地交互与删除后清理 | Context/IPC/Renderer/Persistence 回归、完整测试、类型检查和构建通过 |
 
-Function Calling 和受控写操作不作为本文件的实施 Stage，仅保留为未来扩展方向；需要时单独形成范围冻结文档。
+Provider 任意 Function Calling 和更多写操作不属于本文件的实施 Stage。当前两个本地写 Tool 必须继续遵守本文白名单、显式参数、审计和无外部副作用边界；任何新增写 Tool 需要单独冻结影响与验收合同。
 
 ## 23. 计划代码触点
 
@@ -969,7 +1009,7 @@ Function Calling 和受控写操作不作为本文件的实施 Stage，仅保留
 
 修改：
 
-- packages/action-runtime：新增 2 个 Tool Spec。
+- packages/action-runtime：为 Agent allowlist 提供 8 个 Tool Spec 所需的输入、Scope、Effect、幂等、Replay 与审批策略。
 - packages/shared：Context、State、Typed Block、Reference、IPC。
 - packages/persistence：v38 表重建和 Conversation/ActionRun 关联。
 - apps/desktop/src/preload：保留 execute/cancel，并新增受限 onAgentTurnEvent 订阅。
@@ -988,18 +1028,23 @@ Function Calling 和受控写操作不作为本文件的实施 Stage，仅保留
 
 ## 24. 完成口径
 
-### 24.1 v0.3 Agent 完成
+### 24.1 v0.9.2 Agent 完成
 
-只有以下条件全部满足，才能称为“本地对话式案件匹配 Agent 已实现”：
+只有以下条件全部满足，才能称为“本地 SES Agent v0.9.2 已实现”：
 
 - Stage 1 代码完成。
 - v38 迁移和旧数据回读通过。
-- 3 个本地 Tool 和一轮一个 Tool 合同通过。
+- 8 个 Agent Tool 和一轮一个 Tool 合同通过；未列入 allowlist 的 Registry Tool 不能被模型调用。
+- Agent-first 冷启动、Flag=false 旧工作台、业务概览返回、状态跳转和 Cloud 未连接时的本地入口通过。
+- Codex 式任务列表、紧凑标题、纯文本 Assistant、弱化 User Bubble、底部 Composer 和移动历史抽屉通过。
+- 会话 State、完整 Turn 上下文预算、请求完整输入指纹、附件跨会话保护和直接导入连续性通过。
+- 会话附件预解析/保留/导入、未确认草稿读取和参数完整的本地面谈登记通过。
 - 安全 Projection 不含用户原文和直接标识符，且通过现有 CloudRedactionGateway/门。
 - Responses SSE 是真实网络流，parser、fallback、cancel 和 event sender 隔离通过。
 - 模型 allowlist、metadata 和 UI selector 通过。
 - Cloud 失败时本地 typed blocks 可恢复且没有伪流式。
 - 删除、备份、并发、回退通过。
+- 结构化证据卡按钮只执行 allowlist 内的本地导航/文件打开，Cloud Projection 不包含这些路由字段。
 - 包级真实 SQLCipher/ONNX 冒烟通过。
 - 当前构建证据可定位。
 
@@ -1023,9 +1068,9 @@ Function Calling 和受控写操作不作为本文件的实施 Stage，仅保留
 ## 25. 已冻结决策
 
 - AI 负责自然语言理解并返回 ANSWER 或一个白名单 TOOL 计划；Main 负责计划校验、引用解析、Tool、Rank、typed blocks、Scope、Actor 和业务状态。
-- 核心场景只有最近案件、当前案件匹配、排名解释。
+- 核心场景以最近案件、当前案件匹配和排名解释为基础，并扩展到候选人档案/面谈读取、会话附件履历摄取、未确认草稿读取和参数完整的本地面谈登记。
 - 一轮只执行一个 Tool。
-- Tool 只有 job-case.search.local、candidate.match.local、match-run.read.local。
+- Agent Tool 固定为 `job-case.search.local`、`candidate.match.local`、`candidate.profile.read.local`、`candidate.interview.read.local`、`match-run.read.local`、`resume.analyze.local`、`candidate.draft.read.local`、`candidate.interview.schedule.local`。
 - 现有匹配详情继续保留。
 - 最近定义为 Asia/Tokyo 最近 30 个自然日，最多 20 条。
 - 匹配对话展示前 5 名，完整结果进入旧详情。
@@ -1035,18 +1080,18 @@ Function Calling 和受控写操作不作为本文件的实施 Stage，仅保留
 - Agent 命令 IPC 为 execute/cancel；Main→Renderer 另有受限 typed event channel。
 - Feature Flag 在 macOS 包中默认开启；显式 `SES_CONVERSATIONAL_MATCHING_ENABLED=0` 时保留经典页回退。
 - 同一 Conversation 只允许一个活动 Turn。
-- LLM 可以请求一个 Tool，但不能直接执行、扩展 Tool 目录、改变 Rank/Scope/Actor 或业务状态；模型由 Main allowlist 控制。
+- LLM 可以请求一个 Tool，但不能直接执行、扩展 Tool 目录、改变 Rank/Scope/Actor，或执行 allowlist 之外的业务状态写；面谈登记仍由 Main 完整解析参数并沿用本地手工路径。模型由 Main allowlist 控制。
 - 默认模型 gpt-5.6-luna，可选 terra/sol/DeepSeek V4 Flash；不宣称动态账户模型目录。
 - 真实 SSE，禁止本地 reveal 冒充。
 - Stop 是止损，不保证免费/退款。
-- Provider 任意 Function Calling、多 Tool 循环和写操作另行立项；当前只支持固定 ANSWER/TOOL 单动作协议。
+- Provider 任意 Function Calling、多 Tool 循环、外部写和新增业务写另行立项；当前只支持固定 ANSWER/TOOL 单动作协议以及本文冻结的两个本地写 Tool。
 - 首发只做 macOS。
 
 ## 26. 待项目方指定但不改变范围
 
 - Product Owner、Security Owner 和试点 Owner。
 - Stage 1 目标版本与排期。
-- 工作台显示名采用“SES Agent”或“案件匹配 Agent”。
+- 工作台显示名采用“SES Agent”；“案件匹配”保留为能力与经典详情页名称，不再作为主工作区名称。
 - Feature Flag 的受管配置来源。
 - 首批脱敏试点数据和试点账号。
 - 真实专家评审安排（质量/审计/发布准备度建议项，不改变 Cloud 硬门范围）。
@@ -1064,3 +1109,10 @@ Function Calling 和受控写操作不作为本文件的实施 Stage，仅保留
 | v0.5 | 2026-08-18 | macOS 默认入口修正：未设置 Feature Flag 时直接进入 AgentWorkspace；仅显式 `SES_CONVERSATIONAL_MATCHING_ENABLED=0` 回退经典匹配页，并把两种启动路径纳入包级 smoke |
 | v0.6 | 2026-08-18 | 参考 Clear 的账户模型路由接入 DeepSeek V4 Flash：复用 account_ai_token，经 AICommerce `/native/deepseek/.../chat/completions` SSE 调用，不新增 DeepSeek 原生 Key；增加协议专属解析、输出完整性检查、取消与包级静态验收 |
 | v0.7 | 2026-08-18 | 用户纠正 Agent 语义：删除关键词 Intent 作为 Tool 主路由；用户自然语言先经 NER/DLP 送入锁定模型，模型通过严格 ANSWER/TOOL 协议直接回答或请求一个白名单 Tool，Main 校验执行后再以 SSE 生成最终回答；已有证据总结不再重跑匹配 |
+| v0.8 | 2026-08-20 | 将 `SES Agent` 提升为默认主工作区和侧栏一级入口，旧工作台降级为业务概览；按当前源码冻结 8 个 Agent Tool，加入同源状态导航、本地快捷入口、文件选择附件、Cloud 未连接时的本地可用路径，并保留经典匹配与 Feature Flag 回退 |
+| v0.9 | 2026-08-20 | 把对话本身升级为核心任务界面：采用 Codex 式稳定交互模型，按 Conversation 隔离并持久化可变 State，以完整 Turn 和 20,000 字符硬上限裁剪安全上下文，修复直接导入与附件竞态；候选人/面谈/匹配/原文档 typed blocks 增加预定义本地交互，并在 Cloud 投影与删除后历史中清除路由标识 |
+| v0.9.1 | 2026-08-20 | 修复面谈补充轮次在 2,048 输出 token 内产生 incomplete 的真实回归；Planning 固定 8,192 上限。Zoom / Google Meet 链接改为 Main 本地提取、allowlist 验证和 SQLCipher 单点保存，Cloud 只接收占位语义，ActionRun 只保留链接哈希 |
+| v0.9.2 | 2026-08-20 | User Message 增加悬停/聚焦可见的复制与编辑重发；编辑不会破坏性改写旧会话，而是从目标消息之前创建新 Conversation 分支，以新 requestId 发送，保留原 Action Audit 和所有既有业务副作用，且不自动复制附件 |
+| v0.9.3 | 2026-08-24 | 简历导入会同时把本地抽取的未确认字段和项目经历写入当前会话并立即展示，后续 Planning/Answer 直接复用该证据；旧导入卡在有本地分析证据时确定性补全，编辑分支同时继承导入关系与简历事实，Cloud 投影继续排除直接身份与本地路由字段 |
+| v0.9.4 | 2026-08-24 | 修正实际产品入口：Agent 空状态“导入简历”卡片不再调用无 Conversation 的全局导入；点击时锁定会话 ID，贯穿 `beginResumeImport` 后的 WorkTask 执行和 `analyzeResumeFile`，并把 Main 返回的持久会话快照交回发起的 AgentWorkspace；其他候选人页的全局导入仍不强行绑定聊天 |
+| v0.9.5 | 2026-08-24 | 修复面试时间持久化：用户和 Planner 仍以 JST 表达日期/时刻，LocalAgentUseCase 先校验日历有效性再转为 UTC `Z` ISO 交给 `saveCandidateInterviewScheduleInputSchema`，不再传入被 `datetime()` 拒绝的 `+09:00` 字符串；持久化异常改为友好本地错误，Renderer 对重复的 Assistant Error 正文/Error Block 只渲染一次 |

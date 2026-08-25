@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://secure-talent-match-ai.local/schemas/workspace-schema.v0.2.json",
+  "title": "Secure Talent Match AI Workspace State",
+  "description": "Browser-local workspace export format for MVP pilots. This schema does not represent production storage.",
+  "type": "object",
+  "required": [
+    "appVersion",
+    "workspaceSchemaVersion",
+    "criteria",
+    "validationPoints",
+    "candidates",
+    "notes",
+    "auditLog",
+    "reviewDecisions",
+    "filters",
+    "aiConfig",
+    "apiMode",
+    "userRole",
+    "requirementConfirmed",
+    "lastCsvMapping",
+    "selectedCandidateId"
+  ],
+  "properties": {
+    "appVersion": {
+      "type": "string",
+      "examples": ["0.1.0"]
+    },
+    "workspaceSchemaVersion": {
+      "type": "string",
+      "const": "0.2.0"
+    },
+    "criteria": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/criterion" }
+    },
+    "validationPoints": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "candidates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/note" }
+    },
+    "auditLog": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/auditEvent" }
+    },
+    "reviewDecisions": {
+      "type": "object",
+      "description": "Map of candidate id to human review decision.",
+      "additionalProperties": {
+        "enum": ["pending", "interview", "hold", "reject"]
+      }
+    },
+    "filters": {
+      "$ref": "#/$defs/filters"
+    },
+    "aiConfig": {
+      "$ref": "#/$defs/aiConfig"
+    },
+    "apiMode": {
+      "type": "boolean",
+      "description": "Whether sanitized API enhancement mode is enabled."
+    },
+    "userRole": {
+      "enum": ["hr", "owner", "auditor"],
+      "description": "Current workspace role: HR recruiter, project owner, or audit viewer."
+    },
+    "requirementConfirmed": {
+      "type": "boolean"
+    },
+    "lastCsvMapping": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/csvMapping" }
+    },
+    "lastSavedAt": {
+      "type": "string",
+      "description": "Last browser-local auto-save timestamp in ISO 8601 format."
+    },
+    "lastMatchDurationMs": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Most recent match run duration in milliseconds."
+    },
+    "selectedCandidateId": {
+      "type": "string",
+      "description": "Candidate currently selected in the workspace."
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "required": ["id", "name", "weight"],
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string" },
+        "name": { "type": "string" },
+        "priority": { "type": "string" },
+        "weight": { "type": "number", "minimum": 0, "maximum": 100 },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["id", "name", "title", "level", "total", "scores", "tags", "risks", "evidence"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "level": { "type": "string" },
+        "levelType": { "enum": ["strong", "possible", "review"] },
+        "total": { "type": "number", "minimum": 0, "maximum": 100 },
+        "summary": { "type": "string" },
+        "scores": { "$ref": "#/$defs/scores" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "strengths": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "gaps": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "risks": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "scores": {
+      "type": "object",
+      "required": ["skill", "project", "industry", "seniority", "language", "availability"],
+      "properties": {
+        "skill": { "type": "number", "minimum": 0, "maximum": 100 },
+        "project": { "type": "number", "minimum": 0, "maximum": 100 },
+        "industry": { "type": "number", "minimum": 0, "maximum": 100 },
+        "seniority": { "type": "number", "minimum": 0, "maximum": 100 },
+        "language": { "type": "number", "minimum": 0, "maximum": 100 },
+        "availability": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["label", "text"],
+      "properties": {
+        "label": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "note": {
+      "type": "object",
+      "required": ["candidateId", "text", "time"],
+      "properties": {
+        "candidateId": { "type": "string" },
+        "text": { "type": "string" },
+        "time": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "auditEvent": {
+      "type": "object",
+      "required": ["time", "actor", "action", "target", "mode", "metadata"],
+      "properties": {
+        "time": { "type": "string" },
+        "actor": { "type": "string" },
+        "action": { "type": "string" },
+        "target": { "type": "string" },
+        "mode": { "enum": ["local", "sanitized_api"] },
+        "metadata": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "aiConfig": {
+      "type": "object",
+      "required": ["model", "promptVersion", "redactionLevel"],
+      "properties": {
+        "model": { "type": "string" },
+        "promptVersion": { "type": "string" },
+        "redactionLevel": { "enum": ["standard", "strict"] }
+      },
+      "additionalProperties": true
+    },
+    "filters": {
+      "type": "object",
+      "description": "Current result-list filter state for restoring a pilot workspace.",
+      "required": ["query", "level", "reviewDecision", "sortBy", "shortlistOnly"],
+      "properties": {
+        "query": { "type": "string" },
+        "level": { "type": "string" },
+        "reviewDecision": {
+          "enum": ["all", "pending", "interview", "hold", "reject"]
+        },
+        "sortBy": {
+          "enum": ["total", "skill", "project", "industry", "seniority", "language", "availability"]
+        },
+        "shortlistOnly": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "csvMapping": {
+      "type": "object",
+      "required": ["header", "mappedTo"],
+      "properties": {
+        "header": { "type": "string" },
+        "mappedTo": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

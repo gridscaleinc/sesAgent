@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import {
   AgentExecutionError,
@@ -21,15 +21,17 @@ import {
   executeAgentTurnInputSchema,
   ipcChannels,
   type ApplicationLocale,
+  type AgentSystemAccessBlock,
   type AgentTurnEvent,
   type AiConversationMessage,
+  type AiConversationSalesAgentState,
   type AiConversationSnapshot,
   type CancelAgentTurnResult,
   type CandidateMatchTaskExecutionResult,
   type ExecuteAgentTurnResult
 } from '@shared'
 import type { AgentCandidateDraftFacts } from '@shared'
-import type { AgentNarrativeStreamer } from './agent-cloud-narrative'
+import type { AgentActiveWorkspaceEvidence, AgentNarrativeStreamer } from './agent-cloud-narrative'
 
 interface AgentMatchTaskResult extends CandidateMatchTaskExecutionResult {
   actionRunId?: string | null
@@ -47,7 +49,11 @@ export interface AgentIpcDependencies {
   runCandidateMatchTask(taskId: string, metadata: AgentToolExecutionMetadata): Promise<AgentMatchTaskResult>
   cancelMatchTask(taskId: string): void
   /** Runs the existing local resume analysis for one staged file. */
-  runResumeAnalysisTask(fileToken: string, metadata: AgentToolExecutionMetadata): Promise<{ name: string; format: string }>
+  runResumeAnalysisTask(fileToken: string, metadata: AgentToolExecutionMetadata): Promise<{
+    name: string
+    format: string
+    facts?: AgentCandidateDraftFacts
+  }>
   /** Writes one interview through the same repository path the manual form uses. */
   /** How many candidates can hold an interview, so the planner knows one exists. */
   listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
@@ -60,6 +66,7 @@ export interface AgentIpcDependencies {
     scheduledAt: string
     durationMinutes: number
     meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
+    meetingUrl?: string
     kind: 'recruiting' | 'client'
     contactNote?: string
   }): void
@@ -111,8 +118,286 @@ function safeJobCaseRecord(jobCase: ReturnType<EncryptedApplicationRepository['l
   }
 }
 
+function boundedWorkspaceText(value: string | null | undefined, maximum = 600): string | null {
+  if (!value) return null
+  return value.length <= maximum ? value : `${value.slice(0, Math.max(1, maximum - 1))}…`
+}
+
+function buildActiveWorkspaceEvidence(
+  access: AgentSystemAccessBlock | null | undefined,
+  deps: Pick<AgentIpcDependencies, 'repository' | 'currentMatchRuntimeIdentity'>
+): AgentActiveWorkspaceEvidence | null {
+  if (!access) return null
+  const candidateReviews = () => deps.repository.listCandidateReviews()
+  const interviews = () => deps.repository.listCandidateInterviews()
+  const candidateProjection = (sourceDocumentId: string) => {
+    const reviews = candidateReviews()
+    const review = reviews.find((item) => item.documentId === sourceDocumentId)
+    if (!review) return null
+    const ordinal = Math.max(1, reviews.findIndex((item) => item.documentId === sourceDocumentId) + 1)
+    return {
+      candidate: `WORKSPACE_CANDIDATE_${ordinal}`,
+      reviewStatus: review.status,
+      recruitingStatus: review.recruitingStatus,
+      talentPoolStatus: review.talentPoolStatus,
+      recordStatus: review.recordStatus,
+      profileVersion: review.profile?.version ?? null,
+      fields: review.fields.filter((field) => field.value).slice(0, 12).map((field) => ({
+        key: field.key,
+        label: boundedWorkspaceText(field.label, 80),
+        value: boundedWorkspaceText(field.value, 400),
+        status: field.status
+      })),
+      projects: review.projectExperiences.slice(0, 6).map((project) => ({
+        title: boundedWorkspaceText(project.title, 180),
+        period: boundedWorkspaceText(project.period, 100),
+        role: boundedWorkspaceText(project.role, 120),
+        technologies: project.technologies.slice(0, 12).map((item) => boundedWorkspaceText(item, 80)),
+        summary: boundedWorkspaceText(project.summary, 600)
+      }))
+    }
+  }
+  const interviewProjection = (interview: ReturnType<typeof interviews>[number]) => ({
+    kind: interview.kind,
+    roundNumber: interview.roundNumber,
+    stage: interview.stage,
+    scheduledAt: interview.scheduledAt,
+    durationMinutes: interview.durationMinutes,
+    meetingMethod: interview.meetingMethod,
+    interviewer: boundedWorkspaceText(interview.interviewer, 120),
+    contactNote: boundedWorkspaceText(interview.contactNote, 500),
+    interviewGoal: boundedWorkspaceText(interview.interviewGoal, 500),
+    interviewNotes: boundedWorkspaceText(interview.interviewNotes, 900),
+    unresolvedItems: interview.unresolvedItems.slice(0, 8).map((item) => boundedWorkspaceText(item, 240)),
+    decision: interview.decision,
+    decisionReason: boundedWorkspaceText(interview.decisionReason, 600),
+    updatedAt: interview.updatedAt,
+    meetingLinkStoredLocally: Boolean(interview.meetingUrl)
+  })
+
+  if (access.destination === 'job-cases' || access.destination === 'case-import') {
+    const reviews = deps.repository.listJobCaseReviews()
+    const active = reviews.filter((review) => review.lifecycle === 'active')
+    return {
+      destination: access.destination,
+      data: {
+        activeCount: active.filter((review) => review.status === 'completed').length,
+        pendingReviewCount: active.filter((review) => review.status === 'awaiting-review').length,
+        archivedCount: reviews.filter((review) => review.lifecycle === 'archived').length,
+        cases: active.slice(0, 8).map((review, index) => ({
+          case: `WORKSPACE_CASE_${index + 1}`,
+          status: review.status,
+          sourceType: review.sourceType,
+          title: boundedWorkspaceText(review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject, 240),
+          fields: review.fields.filter((field) => field.value).slice(0, 10).map((field) => ({
+            key: field.key,
+            label: boundedWorkspaceText(field.label, 80),
+            value: boundedWorkspaceText(field.value, 400),
+            status: field.status
+          })),
+          warningCount: review.warningCodes.length
+        }))
+      }
+    }
+  }
+
+  if (access.destination === 'case-review') {
+    const review = deps.repository.listJobCaseReviews().find((item) => item.reviewId === access.reviewId)
+    return {
+      destination: access.destination,
+      data: review ? {
+        status: review.status,
+        lifecycle: review.lifecycle,
+        sourceType: review.sourceType,
+        title: boundedWorkspaceText(review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject, 240),
+        preview: boundedWorkspaceText(review.redactedPreview, 800),
+        fields: review.fields.slice(0, 14).map((field) => ({
+          key: field.key,
+          label: boundedWorkspaceText(field.label, 80),
+          value: boundedWorkspaceText(field.value, 500),
+          status: field.status
+        })),
+        warnings: review.warningCodes.slice(0, 12)
+      } : { unavailable: true }
+    }
+  }
+
+  if (access.destination === 'matching') {
+    const projection = deps.repository.getMatchingHomeProjection(deps.currentMatchRuntimeIdentity)
+    const selectedCase = projection.jobCases.find((item) => item.id === access.jobCaseId)
+      ?? projection.jobCases.find((item) => item.id === projection.selectedJobCaseId)
+      ?? projection.jobCases[0]
+    const runMatchesCase = Boolean(selectedCase && projection.currentRun?.run.binding?.jobCaseId === selectedCase.id)
+    return {
+      destination: access.destination,
+      data: {
+        state: projection.state,
+        eligibleCandidateCount: projection.eligibleCandidateCount,
+        selectedCase: selectedCase ? {
+          title: boundedWorkspaceText(selectedCase.title, 240),
+          version: selectedCase.version,
+          validity: selectedCase.validity,
+          lastRunCreatedAt: selectedCase.lastRunCreatedAt
+        } : null,
+        results: runMatchesCase ? projection.currentRun!.results.slice(0, 8).map((result) => ({
+          candidate: `WORKSPACE_CANDIDATE_${result.fit.rank}`,
+          rank: result.fit.rank,
+          matchScore: result.fit.matchScore,
+          termCoverage: result.fit.termCoverage,
+          hardFilterUnknownCount: result.fit.hardFilterUnknownCount,
+          matchedTerms: result.fit.matchedTerms.slice(0, 12).map((item) => boundedWorkspaceText(item, 180)),
+          evidence: result.fit.evidence.slice(0, 8).map((item) => ({
+            key: item.key,
+            label: boundedWorkspaceText(item.label, 80),
+            value: boundedWorkspaceText(item.value, 300)
+          })),
+          projectEvidence: result.fit.projectEvidence ? {
+            title: boundedWorkspaceText(result.fit.projectEvidence.title, 180),
+            role: boundedWorkspaceText(result.fit.projectEvidence.role, 120),
+            technologies: result.fit.projectEvidence.technologies.slice(0, 10).map((item) => boundedWorkspaceText(item, 80)),
+            summary: boundedWorkspaceText(result.fit.projectEvidence.summary, 500)
+          } : null,
+          businessPriority: result.businessPriority.effectiveLevel
+        })) : []
+      }
+    }
+  }
+
+  if (access.destination === 'candidate-management') {
+    const reviews = candidateReviews()
+    return {
+      destination: access.destination,
+      data: {
+        totalCount: reviews.length,
+        pendingReviewCount: reviews.filter((review) => review.status === 'awaiting-review').length,
+        eligibleCount: reviews.filter((review) => review.talentPoolStatus === 'eligible').length,
+        candidates: reviews.slice(0, 10).map((review, index) => ({
+          candidate: `WORKSPACE_CANDIDATE_${index + 1}`,
+          reviewStatus: review.status,
+          recruitingStatus: review.recruitingStatus,
+          talentPoolStatus: review.talentPoolStatus,
+          role: boundedWorkspaceText(review.fields.find((field) => field.key === 'role')?.value, 160),
+          skills: boundedWorkspaceText(review.fields.find((field) => field.key === 'skills')?.value, 400),
+          availability: boundedWorkspaceText(review.fields.find((field) => field.key === 'availability')?.value, 160)
+        }))
+      }
+    }
+  }
+
+  if (access.destination === 'candidate' || access.destination === 'original-document') {
+    const candidate = candidateProjection(access.sourceDocumentId)
+    const candidateInterviews = interviews().filter((item) => item.sourceDocumentId === access.sourceDocumentId)
+      .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    const focused = access.destination === 'candidate' && access.interviewId
+      ? candidateInterviews.find((item) => item.id === access.interviewId) ?? null
+      : null
+    return {
+      destination: access.destination,
+      data: {
+        source: access.destination === 'original-document' ? 'structured-extraction-only' : 'candidate-profile',
+        candidate,
+        focusedInterview: focused ? interviewProjection(focused) : null,
+        interviews: candidateInterviews.slice(0, 8).map(interviewProjection)
+      }
+    }
+  }
+
+  if (access.destination === 'interview-schedule') {
+    const allInterviews = interviews()
+    const receipt = access.receipt
+    const focused = receipt
+      ? allInterviews.find((item) => item.sourceDocumentId === receipt.sourceDocumentId && item.kind === receipt.kind && item.scheduledAt === receipt.scheduledAt)
+        ?? allInterviews.filter((item) => item.sourceDocumentId === receipt.sourceDocumentId && item.kind === receipt.kind).toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+      : allInterviews.filter((item) => item.scheduledAt).toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+    return {
+      destination: access.destination,
+      data: {
+        scheduledCount: allInterviews.filter((item) => item.scheduledAt).length,
+        focusedCandidate: focused ? candidateProjection(focused.sourceDocumentId) : null,
+        focusedInterview: focused ? interviewProjection(focused) : null,
+        visibleInterviews: allInterviews.filter((item) => item.scheduledAt).slice(0, 12).map(interviewProjection)
+      }
+    }
+  }
+
+  if (access.destination === 'review-center') {
+    const candidates = candidateReviews()
+    const cases = deps.repository.listJobCaseReviews()
+    const tasks = deps.repository.listWorkTasks()
+    const approvals = deps.repository.listActionApprovals()
+    return {
+      destination: access.destination,
+      data: {
+        pendingCandidateCount: candidates.filter((item) => item.status === 'awaiting-review').length,
+        pendingCaseCount: cases.filter((item) => item.lifecycle === 'active' && item.status === 'awaiting-review').length,
+        pendingTaskCount: tasks.filter((item) => item.status === 'awaiting_review').length,
+        pendingApprovalCount: approvals.filter((item) => item.status === 'pending').length,
+        candidates: candidates.filter((item) => item.status === 'awaiting-review').slice(0, 8).map((item, index) => ({
+          candidate: `WORKSPACE_CANDIDATE_${index + 1}`,
+          confirmedFieldCount: item.fields.filter((field) => field.value).length,
+          projectCount: item.projectExperiences.length
+        })),
+        cases: cases.filter((item) => item.lifecycle === 'active' && item.status === 'awaiting-review').slice(0, 8).map((item, index) => ({
+          case: `WORKSPACE_CASE_${index + 1}`,
+          title: boundedWorkspaceText(item.redactedSubject, 240),
+          warningCount: item.warningCodes.length
+        })),
+        approvals: approvals.filter((item) => item.status === 'pending').slice(0, 8).map((item) => ({
+          toolName: item.toolName,
+          safeSummary: boundedWorkspaceText(item.safeSummary, 500),
+          reason: boundedWorkspaceText(item.reason, 300)
+        }))
+      }
+    }
+  }
+
+  const task = deps.repository.getWorkTask(access.taskId)
+  return {
+    destination: access.destination,
+    data: task ? {
+      type: task.type,
+      typeLabel: boundedWorkspaceText(task.typeLabel, 120),
+      status: task.status,
+      progress: task.progress,
+      evidenceCount: task.evidenceCount,
+      scope: boundedWorkspaceText(task.scope.label, 300),
+      updatedAt: task.updatedAt
+    } : { unavailable: true }
+  }
+}
+
 function actionIdempotencyKey(toolName: string, conversationId: string, requestId: string): string {
   return createHash('sha256').update(`${toolName}:${conversationId}:${requestId}`).digest('hex')
+}
+
+function agentRequestFingerprint(input: ReturnType<typeof executeAgentTurnInputSchema.parse>): string {
+  return createHash('sha256').update(JSON.stringify({
+    conversationId: input.conversationId,
+    message: input.message,
+    expectedConversationRevision: input.expectedConversationRevision,
+    modelKey: input.modelKey,
+    selectedJobCaseRef: input.selectedJobCaseRef,
+    activeSystemAccess: input.activeSystemAccess ?? null,
+    attachmentFileTokens: input.attachmentFileTokens ?? [],
+    branchFrom: input.branchFrom ?? null
+  })).digest('hex')
+}
+
+function branchedSalesAgentState(messages: readonly AiConversationMessage[]): AiConversationSalesAgentState {
+  let selectedJobCaseRef: AiConversationSalesAgentState['selectedJobCaseRef'] = null
+  let lastMatchRunId: string | null = null
+  let lastSearchMessageId: string | null = null
+  for (const message of messages) for (const block of message.blocks ?? []) {
+    if (block.type === 'job-case-cards') {
+      lastSearchMessageId = message.id
+      // A one-card detail answer carries an unambiguous case selection. Search
+      // result lists do not reveal which card the operator selected afterwards.
+      selectedJobCaseRef = block.cards.length === 1 ? block.cards[0]!.reference : null
+    }
+    if (block.type === 'candidate-match-cards') lastMatchRunId = block.runId
+    if (block.type === 'match-run-explanation') lastMatchRunId = block.facts.runId
+  }
+  return { selectedJobCaseRef, lastMatchRunId, lastSearchMessageId }
 }
 
 function actionContext(
@@ -146,8 +431,9 @@ function caseMatchesQuery(record: AgentJobCaseRecord, query: string | null): boo
 export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void {
   const modelCatalog = deps.modelCatalog ?? loadAgentChatModelCatalog()
   const activeTurns = new Map<string, ActiveAgentTurn>()
-  const inFlightRequests = new Map<string, { conversationId: string; promise: Promise<ExecuteAgentTurnResult> }>()
-  const requestResults = new Map<string, { conversationId: string; promise: Promise<ExecuteAgentTurnResult> }>()
+  type AgentRequestRecord = { conversationId: string; fingerprint: string; promise: Promise<ExecuteAgentTurnResult> }
+  const inFlightRequests = new Map<string, AgentRequestRecord>()
+  const requestResults = new Map<string, AgentRequestRecord>()
   const maximumCompletedRequestResults = 100
   let disposed = false
 
@@ -256,7 +542,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     }
   }
 
-  const rememberCompletedRequest = (requestId: string, record: { conversationId: string; promise: Promise<ExecuteAgentTurnResult> }) => {
+  const rememberCompletedRequest = (requestId: string, record: AgentRequestRecord) => {
     inFlightRequests.delete(requestId)
     requestResults.set(requestId, record)
     while (requestResults.size > maximumCompletedRequestResults) {
@@ -271,11 +557,13 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     loadConversation: (conversationId) => deps.repository.getAiConversation(conversationId),
     saveConversation: (input) => deps.repository.saveAiConversation(input),
     locale: () => deps.locale(),
-    listSchedulableCandidates: () => deps.repository.listCandidateReviews().map((review, index) => ({
-      // Anonymous label only: the agent never receives the candidate's name or file name.
-      anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
-      sourceDocumentId: review.documentId
-    })),
+    listSchedulableCandidates: () => deps.repository.listCandidateReviews()
+      .filter((review) => review.recordStatus === 'active')
+      .map((review, index) => ({
+        // Anonymous label only: the agent never receives the candidate's name or file name.
+        anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
+        sourceDocumentId: review.documentId
+      })),
     resolveInterviewCandidate: (runId, resultId, rank) => {
       const facts = deps.repository.getAgentCandidateProfileFacts(runId, deps.currentMatchRuntimeIdentity, resultId, rank)
       if (!facts.candidate) return null
@@ -328,6 +616,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         if (active?.cancelled) throw new AgentExecutionError('TURN_CANCELLED', '当前案件匹配操作已取消。')
         const cards: AgentCandidateMatchRecord[] = execution.matches.map((match, index) => ({
           candidateProfileId: match.id,
+          sourceDocumentId: match.sourceDocumentId,
           runId: execution.run.id,
           resultId: match.matchResultId,
           resultHash: match.matchResultHash,
@@ -352,14 +641,16 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         const input = rawInput as {
           sourceDocumentId: string; candidateLabel: string; scheduledAt: string
           durationMinutes: number; meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
-          kind: 'recruiting' | 'client'; contactNote?: string
+          meetingUrl?: string; kind: 'recruiting' | 'client'; contactNote?: string
         }
         const preflight = deps.actionOrchestrator.preflight(
           toolName, context,
           {
             sourceDocumentId: input.sourceDocumentId, scheduledAt: input.scheduledAt,
             durationMinutes: input.durationMinutes, meetingMethod: input.meetingMethod,
-            kind: input.kind, ...(input.contactNote ? { contactNote: input.contactNote } : {})
+            kind: input.kind,
+            ...(input.meetingUrl ? { meetingUrlHash: createHash('sha256').update(input.meetingUrl).digest('hex') } : {}),
+            ...(input.contactNote ? { contactNote: input.contactNote } : {})
           },
           '担当者が指定した日時・方法で面談を端末内に登録します。',
           actionIdempotencyKey(toolName, metadata.conversationId, metadata.requestId)
@@ -375,14 +666,17 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             scheduledAt: input.scheduledAt,
             durationMinutes: input.durationMinutes,
             meetingMethod: input.meetingMethod,
+            ...(input.meetingUrl ? { meetingUrl: input.meetingUrl } : {}),
             kind: input.kind,
             contactNote: input.contactNote
           })
-        } catch (error) {
+        } catch {
           deps.repository.updateActionRun(preflight.actionRunId, 'failed', { errorCode: 'INTERVIEW_SCHEDULE_FAILED' })
           throw new AgentExecutionError(
             'AGENT_INTERVIEW_SCHEDULE_FAILED',
-            error instanceof Error ? error.message : '面談を登録できませんでした。'
+            deps.locale() === 'zh-CN'
+              ? '面试登记失败，未保存任何记录。请确认日期、时间、时长和会议链接后重试。'
+              : '面談の登録に失敗し、レコードは保存されませんでした。日付、時刻、所要時間、会議リンクを確認して再試行してください。'
           )
         }
         const output = {
@@ -438,7 +732,13 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         for (const fileToken of input.fileTokens) {
           try {
             const analysed = await deps.runResumeAnalysisTask(fileToken, metadata)
-            imported.push({ documentId: fileToken, name: analysed.name, format: analysed.format, reviewRequired: true })
+            imported.push({
+              documentId: fileToken,
+              name: analysed.name,
+              format: analysed.format,
+              reviewRequired: true,
+              ...(analysed.facts ? { facts: analysed.facts } : {})
+            })
             deps.registerConversationImport?.(metadata.conversationId, fileToken)
           } catch (error) {
             failed.push({
@@ -543,20 +843,31 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
   const handleExecute = async (event: IpcMainInvokeEvent, rawInput: unknown): Promise<ExecuteAgentTurnResult> => {
     deps.assertTrustedSender(event)
     if (!deps.conversationalMatchingEnabled()) throw new Error('FEATURE_DISABLED')
-    const input = executeAgentTurnInputSchema.parse(rawInput)
+    let input = executeAgentTurnInputSchema.parse(rawInput)
     const model = resolveAgentChatModel(modelCatalog, input.modelKey)
+    const fingerprint = agentRequestFingerprint(input)
     const previous = requestResults.get(input.requestId)
     if (previous) {
       if (previous.conversationId !== input.conversationId) throw new Error('REQUEST_ID_CONVERSATION_MISMATCH')
+      if (previous.fingerprint !== fingerprint) throw new Error('REQUEST_ID_INPUT_MISMATCH')
       return previous.promise
     }
     const inFlight = inFlightRequests.get(input.requestId)
     if (inFlight) {
       if (inFlight.conversationId !== input.conversationId) throw new Error('REQUEST_ID_CONVERSATION_MISMATCH')
+      if (inFlight.fingerprint !== fingerprint) throw new Error('REQUEST_ID_INPUT_MISMATCH')
       return inFlight.promise
     }
     const active = activeTurns.get(input.conversationId)
     if (active && active.requestId !== input.requestId) throw new Error('TURN_ALREADY_RUNNING')
+    const requestedAttachmentTokens = input.attachmentFileTokens ?? []
+    const stagedAttachmentRecords = requestedAttachmentTokens.length === 0
+      ? []
+      : deps.repository.getStagedFileRecords(requestedAttachmentTokens)
+    const stagedAttachmentByToken = new Map(stagedAttachmentRecords.map((record) => [record.token, record]))
+    if (requestedAttachmentTokens.some((token) => !stagedAttachmentByToken.has(token))) {
+      throw new Error('AGENT_ATTACHMENT_NOT_FOUND')
+    }
     const state: ActiveAgentTurn = active ?? {
       requestId: input.requestId,
       taskId: null,
@@ -577,12 +888,100 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
       eventDeliveryStopped: false,
       // Only tokens this process staged itself are accepted; a renderer cannot
       // name a file the vault never validated.
-      attachmentFileTokens: (input.attachmentFileTokens ?? []).length === 0
-        ? []
-        : deps.repository.getStagedFileRecords(input.attachmentFileTokens ?? []).map((record) => record.token)
+      attachmentFileTokens: requestedAttachmentTokens.map((token) => stagedAttachmentByToken.get(token)!.token)
     }
     activeTurns.set(input.conversationId, state)
     const promise = (async () => {
+      if (input.branchFrom) {
+        const target = deps.repository.getAiConversation(input.conversationId)
+        if (target) {
+          throw new AgentExecutionError('AGENT_BRANCH_TARGET_EXISTS', '编辑分支的目标会话已存在，请重试。')
+        }
+        const source = deps.repository.getAiConversation(input.branchFrom.conversationId)
+        if (!source || source.context.assistant !== 'sales-agent') {
+          throw new AgentExecutionError('AGENT_BRANCH_SOURCE_NOT_FOUND', '原会话已不存在，无法创建编辑分支。')
+        }
+        if (source.revision !== input.branchFrom.expectedRevision) {
+          throw new AgentExecutionError('CONVERSATION_REVISION_CONFLICT', '原会话已更新，请重新打开后再编辑。')
+        }
+        const branchIndex = source.messages.findIndex((message) =>
+          message.id === input.branchFrom!.messageId && message.role === 'user'
+        )
+        if (branchIndex < 0) {
+          throw new AgentExecutionError('AGENT_BRANCH_MESSAGE_NOT_FOUND', '要编辑的原始输入已不存在，请重新打开会话。')
+        }
+        const prefixMessages = source.messages.slice(0, branchIndex)
+        const sourceImports = deps.listConversationImports?.(source.id) ?? []
+        const prefixImports = prefixMessages
+          .flatMap((message) => message.blocks ?? [])
+          .filter((block) => block.type === 'resume-import')
+          .flatMap((block) => block.type === 'resume-import' ? block.imported : [])
+        const prefixImportIds = new Set(prefixImports.map((item) => item.documentId))
+        const inheritedFirstOrdinal = prefixImports.reduce((maximum, item) => Math.max(maximum, item.ordinal), 0) + 1
+        const inheritedImports = sourceImports.filter((item) => !prefixImportIds.has(item.sourceDocumentId))
+        const prefixDraftIds = new Set(prefixMessages
+          .flatMap((message) => message.blocks ?? [])
+          .filter((block) => block.type === 'candidate-draft-facts')
+          .map((block) => block.type === 'candidate-draft-facts' ? block.facts.documentId : ''))
+        const sourceDraftFacts = source.messages
+          .flatMap((message) => message.blocks ?? [])
+          .filter((block) => block.type === 'candidate-draft-facts')
+          .map((block) => block.type === 'candidate-draft-facts' ? block.facts : null)
+          .filter((facts): facts is AgentCandidateDraftFacts => Boolean(facts))
+        const inheritedDraftFacts = sourceDraftFacts.filter((facts) =>
+          sourceImports.some((item) => item.sourceDocumentId === facts.documentId) &&
+          !prefixDraftIds.has(facts.documentId)
+        )
+        const inheritedImportMessage: AiConversationMessage | null = inheritedImports.length > 0 || inheritedDraftFacts.length > 0
+          ? {
+              id: randomUUID(),
+              role: 'assistant',
+              content: deps.locale() === 'zh-CN'
+                ? `已继承原会话中导入的 ${sourceImports.length} 份简历及其本地抽取内容。`
+                : `元の会話で取り込んだ${sourceImports.length}件の履歴書とローカル抽出内容を引き継ぎました。`,
+              mode: 'local',
+              narrativeStatus: 'local',
+              turnId: null,
+              blocks: [
+                ...(inheritedImports.length > 0 ? [{
+                  type: 'resume-import' as const,
+                  imported: inheritedImports.map((item, index) => ({
+                    documentId: item.sourceDocumentId,
+                    label: item.anonymousLabel,
+                    ordinal: inheritedFirstOrdinal + index
+                  })),
+                  failedCount: 0
+                }] : []),
+                ...inheritedDraftFacts.map((facts) => ({ type: 'candidate-draft-facts' as const, facts })),
+                { type: 'system-access' as const, destination: 'review-center' as const }
+              ],
+              createdAt: new Date().toISOString()
+            }
+          : null
+        const branchMessages = inheritedImportMessage
+          ? [...prefixMessages, inheritedImportMessage]
+          : prefixMessages
+        const salesAgentState = branchedSalesAgentState(prefixMessages)
+        const seeded = branchMessages.length > 0
+          ? deps.repository.saveAiConversation({
+              conversationId: input.conversationId,
+              branchRootConversationId: source.branchRootConversationId ?? source.id,
+              context: source.context,
+              messages: branchMessages,
+              salesAgentState,
+              expectedRevision: null
+            })
+          : null
+        for (const imported of sourceImports) {
+          deps.registerConversationImport?.(input.conversationId, imported.sourceDocumentId)
+        }
+        input = {
+          ...input,
+          expectedConversationRevision: seeded?.revision ?? null,
+          selectedJobCaseRef: salesAgentState.selectedJobCaseRef,
+          attachmentFileTokens: []
+        }
+      }
       if (!deps.narrativeStreamer) {
         const message = 'Cloud AI 当前不可用，无法理解自然语言或选择 Tool。'
         emit(state, {
@@ -595,6 +994,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         .map((token) => deps.previewedDrafts?.get(token))
         .filter((draft): draft is AgentCandidateDraftFacts => Boolean(draft))
       const planningConversation = useCase.loadPlanningConversation(input)
+      const activeWorkspaceEvidence = buildActiveWorkspaceEvidence(input.activeSystemAccess, deps)
       const emitDelta = (delta: string) => {
         if (state.cancelled) return
         if (!state.streamingStarted) {
@@ -621,9 +1021,11 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           userMessage: input.message,
           conversation: planningConversation,
           selectedJobCaseRef: input.selectedJobCaseRef ?? null,
-            attachmentCount: state.attachmentFileTokens.length,
-            schedulableCandidateCount: (deps.listSchedulableCandidates?.() ?? []).length,
-            attachmentDrafts: turnAttachmentDrafts(),
+          activeWorkspaceEvidence,
+          attachmentCount: state.attachmentFileTokens.length,
+          conversationImportCount: (deps.listConversationImports?.(input.conversationId) ?? []).length,
+          schedulableCandidateCount: (deps.listSchedulableCandidates?.() ?? []).length,
+          attachmentDrafts: turnAttachmentDrafts(),
           model,
           signal: state.abortController.signal,
           onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
@@ -680,6 +1082,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             userMessage: input.message,
             conversation: planningConversation,
             selectedJobCaseRef: input.selectedJobCaseRef ?? null,
+            activeWorkspaceEvidence,
             attachmentDrafts: turnAttachmentDrafts(),
             model,
             signal: state.abortController.signal,
@@ -738,6 +1141,20 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         return result
       }
 
+      // These write Tools already persist a complete, localized, authoritative
+      // result with structured system-access cards. A second Cloud narrative
+      // request cannot improve the business outcome, but can incorrectly turn a
+      // successful local mutation into a failed-looking conversation and add an
+      // avoidable billed request. Read and matching Tools may still use Cloud
+      // narrative because summarization is part of their value.
+      if (
+        result.toolName === 'candidate.interview.schedule.local' ||
+        result.toolName === 'resume.analyze.local'
+      ) {
+        emit(state, { type: 'completed' })
+        return result
+      }
+
       emit(state, { type: 'started', phase: 'connecting-model' })
       try {
         const streamed = await deps.narrativeStreamer.stream({
@@ -792,7 +1209,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         return fallback
       }
     })()
-    const record = { conversationId: input.conversationId, promise }
+    const record = { conversationId: input.conversationId, fingerprint, promise }
     inFlightRequests.set(input.requestId, record)
     void promise.then(() => {
       if (activeTurns.get(input.conversationId) === state) activeTurns.delete(input.conversationId)

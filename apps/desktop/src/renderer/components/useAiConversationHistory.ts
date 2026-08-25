@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AiConversationContext, AiConversationMessage, AiConversationSnapshot } from '@shared'
+import type {
+  AiConversationContext,
+  AiConversationMessage,
+  AiConversationSalesAgentState,
+  AiConversationSnapshot
+} from '@shared'
+
+interface PersistMessagesOptions {
+  conversationId?: string
+  salesAgentState?: AiConversationSalesAgentState
+}
 
 function createConversationId(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
@@ -82,7 +92,8 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
 
   const persistMessages = useCallback(async (
     nextMessages: AiConversationMessage[],
-    baseConversation?: AiConversationSnapshot | null
+    baseConversation?: AiConversationSnapshot | null,
+    options: PersistMessagesOptions = {}
   ): Promise<AiConversationSnapshot> => {
     const boundedMessages = nextMessages.slice(-200)
     const messageSequence = latestMessageSequenceRef.current + 1
@@ -95,9 +106,10 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
       const base = baseConversation === undefined ? activeConversationRef.current : baseConversation
       try {
         const saved = await window.sesAgent.saveAiConversation({
-          conversationId: base?.id ?? createConversationId(),
+          conversationId: options.conversationId ?? base?.id ?? createConversationId(),
           context: stableContext,
           messages: boundedMessages,
+          ...(options.salesAgentState ? { salesAgentState: options.salesAgentState } : {}),
           expectedRevision: base?.revision ?? null
         })
         activeConversationRef.current = saved
@@ -119,6 +131,17 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
     saveQueueRef.current = operation.then(() => undefined, () => undefined)
     return operation
   }, [stableContext])
+
+  const persistSalesAgentState = useCallback(async (
+    salesAgentState: AiConversationSalesAgentState
+  ): Promise<AiConversationSnapshot | null> => {
+    const base = activeConversationRef.current
+    if (!base || base.context.assistant !== 'sales-agent' || base.messages.length === 0) return null
+    return persistMessages(base.messages, undefined, {
+      conversationId: base.id,
+      salesAgentState
+    })
+  }, [persistMessages])
 
   const deleteConversations = useCallback(async (conversationIds: string[]) => {
     if (conversationIds.length === 0) return
@@ -142,6 +165,9 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
   }, [conversations])
 
   const acceptConversation = useCallback((saved: AiConversationSnapshot) => {
+    // A late initial-history read must never overwrite a conversation that the
+    // Main process has just completed and returned to this renderer.
+    latestMessageSequenceRef.current += 1
     activeConversationRef.current = saved
     setActiveConversationId(saved.id)
     setMessages(saved.messages)
@@ -160,6 +186,7 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
     messages,
     newConversation,
     persistMessages,
+    persistSalesAgentState,
     saving,
     selectConversation,
     setMessages,

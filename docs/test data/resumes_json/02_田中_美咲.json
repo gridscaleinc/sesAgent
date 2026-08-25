@@ -1,0 +1,15 @@
+{
+  "name": "田中 美咲",
+  "title": "Java バックエンドエンジニア",
+  "skills": [
+    "Java",
+    "Spring Boot",
+    "REST API",
+    "MySQL",
+    "決済"
+  ],
+  "project_summary": "カード決済 API の改修、障害調査、性能改善を担当。設計からリリースまで一貫対応。",
+  "availability": "2026年9月開始可",
+  "location_preference": "週2出社可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

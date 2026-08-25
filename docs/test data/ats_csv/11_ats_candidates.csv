@@ -1,0 +1,4 @@
+"name","title","skills","summary","availability","location"
+"吉田 海斗","Go バックエンドエンジニア","Go, gRPC, Redis, MySQL, 高負荷 API","ゲーム課金基盤の API 改修、Redis キャッシュ、負荷試験を担当。","2026年11月開始可","秋葉原出社可"
+"森 花音","Vue / Laravel エンジニア","Vue.js, Laravel, PostgreSQL, BI, 権限管理","人材分析ダッシュボードで Vue 画面、Laravel API、権限管理を担当。","2026年9月開始可","池袋出社可"
+"佐藤 蓮","Laravel エンジニア","Laravel, Filament, PHP 8, PostgreSQL, 外部API連携, 日本語流暢","公共サービスの職員向け申請管理システムで、画面追加とリファクタリングを担当。PL と週次で設計レビューを実施。","2026年8月から稼働可","大森常駐可"

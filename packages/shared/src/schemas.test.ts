@@ -199,6 +199,34 @@ describe('Schema v38 local Agent conversation schemas', () => {
     expect(executeAgentTurnInputSchema.safeParse({ ...parsed, modelKey: 'https://evil.invalid/model' }).success).toBe(false)
   })
 
+  it('accepts an allowlisted right workspace reference but never on a historical edit branch', () => {
+    const activeSystemAccess = {
+      type: 'system-access' as const,
+      destination: 'candidate' as const,
+      sourceDocumentId: '33333333-3333-4333-8333-333333333333',
+      view: 'records' as const,
+      interviewId: '44444444-4444-4444-8444-444444444444',
+      interviewKind: 'recruiting' as const
+    }
+    const parsed = executeAgentTurnInputSchema.parse({
+      conversationId: '11111111-1111-4111-8111-111111111111',
+      message: '总结右侧记录', expectedConversationRevision: 2,
+      requestId: '22222222-2222-4222-8222-222222222222',
+      activeSystemAccess
+    })
+    expect(parsed.activeSystemAccess).toEqual(activeSystemAccess)
+    expect(executeAgentTurnInputSchema.safeParse({
+      ...parsed,
+      conversationId: '55555555-5555-4555-8555-555555555555',
+      expectedConversationRevision: null,
+      branchFrom: {
+        conversationId: parsed.conversationId,
+        messageId: 'old-user-message',
+        expectedRevision: 2
+      }
+    }).success).toBe(false)
+  })
+
   it('accepts bounded typed Agent SSE events and rejects oversized deltas', () => {
     const event = {
       type: 'delta' as const,

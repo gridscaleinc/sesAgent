@@ -1,0 +1,20 @@
+{
+  "id": "fintech-java-payment",
+  "title": "決済プラットフォーム刷新",
+  "industry": "金融 / 決済",
+  "location": "日本橋",
+  "period": "2026年9月開始",
+  "contract": "業務委託",
+  "skills": [
+    "Java",
+    "Spring Boot",
+    "REST API",
+    "MySQL",
+    "決済業務",
+    "日本語ビジネス"
+  ],
+  "plus": [
+    "AWS",
+    "PCI DSS 知識"
+  ]
+}

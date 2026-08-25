@@ -1,10 +1,10 @@
 # SES Agent Desktop 文档总览
 
-<!-- ses-current-state package=0.1.0 schema=38 -->
+<!-- ses-current-state package=0.1.0 schema=39 -->
 
-> 文档版本：v0.37
-> 更新日期：2026-08-18
-> 状态：A-01 两阶段 Cloud Review 与本地硬性出网门已完成本机代码/测试/构建验证；真实日文专家报告作为非阻断的质量/审计/发布准备度建议证据仍未完成，当前安装包、签名、公证与 Windows x64 实机证据也未完成
+> 文档版本：v0.41
+> 更新日期：2026-08-20
+> 状态：Agent-first Codex 式核心对话、用户输入复制/编辑分支重发、按完整 Turn 裁剪的受控上下文、会议链接本地隔离、typed block 本地交互、受控对话 Tool 与 A-01 两阶段 Cloud Review 已进入源码；本机回归与构建证据按各节口径分别记录。真实日文专家报告作为非阻断的质量/审计/发布准备度建议证据仍未完成，当前安装包、签名、公证与 Windows x64 实机证据也未完成
 
 ## 1. 项目定义
 
@@ -50,7 +50,7 @@ SES Agent Desktop 是面向日本 SES 公司的桌面业务助手，服务对象
 5. [开发周期与交付计划](./05-delivery-roadmap.md)：8 周脱敏演示、16 周 macOS 安全试点、随后 Windows 同功能版本、验收门槛、资源与风险。
 6. [密钥丢失与离线恢复手册](./06-key-loss-and-recovery-runbook.md)：Keychain/数据库不可用时的受限恢复模式、禁止操作、IT 取证和签名版演练门槛。
 7. [整改与外部能力吸收改造方案](./07-remediation-and-external-adoption-plan.md)：当前系统整改、外部项目吸收边界、微信读取和发布证据状态。
-8. [对话式案件匹配 Agent 最小实现方案](./08-conversational-matching-agent-plan.md)：用户自然语言先经本地 NER/DLP 和硬性出网门发送给所选 AI；模型只能通过严格 `ANSWER/TOOL` 协议直接回答或请求一个白名单 Tool，Main 再校验 Schema、引用、Scope、Actor 并最多执行一个本地 Tool，随后以真实 SSE 整理权威结果。已有证据的总结追问不会重新运行匹配。macOS 包默认进入 AgentWorkspace，仅显式 `SES_CONVERSATIONAL_MATCHING_ENABLED=0` 时回退经典匹配页。模型选择包含 GPT-5.6 Luna/Terra/Sol 和 DeepSeek V4 Flash；DeepSeek 复用登录后的 `account_ai_token` 经 AICommerce 原生 SSE 路由，不要求或保存 DeepSeek 原生 API Key。
+8. [Agent-first 主工作区与对话式匹配方案](./08-conversational-matching-agent-plan.md)：`SES Agent` 是正常启动的主工作区，采用 Codex 式任务列表、紧凑标题、纯文本 Assistant 和底部 Composer；旧工作台保留为业务概览，经典匹配页继续作为受管回退。用户自然语言先经本地 NER/DLP 和硬性出网门发送给所选 AI；模型只能通过严格 `ANSWER/TOOL` 协议直接回答或请求一个白名单 Tool，Main 再校验 Schema、引用、Scope、Actor 并最多执行一个本地 Tool，随后以真实 SSE 整理权威结果。会话上下文按完整 Turn 裁剪并受 20,000 字符硬上限约束，候选人/面谈/匹配/原文档按钮只执行预定义本地动作，路由标识不进入 Cloud。当前 Agent allowlist 包含案件、候选人、匹配、草稿和面谈相关的 8 个受控 Tool；本地写仅允许履历摄取与参数完整的面谈登记，不开放外部发送、提案导出、删除或任意业务写。模型选择包含 GPT-5.6 Luna/Terra/Sol 和 DeepSeek V4 Flash；DeepSeek 复用登录后的 `account_ai_token` 经 AICommerce 原生 SSE 路由，不要求或保存 DeepSeek 原生 API Key。
 
 ## 4. 第一阶段边界
 
@@ -115,7 +115,7 @@ SES Agent Desktop 是面向日本 SES 公司的桌面业务助手，服务对象
 8. 本地确定性 PII 引擎生成稳定占位符，独立 DLP 复检后才产生带品牌的 `RedactedPayload`；Cloud Gateway 还会检查持久化会话、策略、来源版本、哈希、有效期和 HTTPS Endpoint Allowlist。
 9. PDF.js、SheetJS、Mammoth 和 PostalMime 在一次一进程的 Parser Worker 中处理不可信文件；简历生成 `DocumentIR v1`，EML 只返回受限正文、哈希身份和非身份域名。
 10. Parser Worker 不继承应用密钥或 Provider 环境变量，并安装 Node 网络拒绝守卫；宏、公式和外部链接不执行、不加载。
-11. 解析结果、PII 映射、候选人/案件字段草稿、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话和备份修订状态持久化到当前 Schema v38；应用重启后仍能恢复。
+11. 解析结果、PII 映射、候选人/案件字段草稿、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话和备份修订状态持久化到当前 Schema v39；应用重启后仍能恢复。
 12. macOS 原生 Helper 使用 Apple Vision 在本地处理扫描 PDF，输出文字、置信度、坐标、人脸和条码候选区域；进程由系统沙箱禁止联网，原 PDF 不进入云端。
 13. Apple Natural Language 处理其可靠覆盖的英文姓名；日文姓名采用保守标签/形式规则生成候选，所有姓名候选都必须人工确认，不把当前实现包装成已经达到发布质量的日文 NER。
 14. 技能、经验年数、稼动时间、单价、日语等级、工作方式和角色由确定性本地提取器生成草稿；每个字段显示置信度和页码/Sheet/Cell 来源，缺失项保持 `null`。
@@ -204,12 +204,24 @@ Windows AppContainer 补充：OCR、Parser、Embedding 与 Reranker 现在共用
 89. P0-18 提案生命周期已进入主链。`exported` 固定表示“已导出、未发送”，营业员必须从“应用外发送完成”开始，才能按时间顺序追加“收到回复 → 面谈进行 → 参画决定/见送り/辞退”；终态不可继续推进，同一状态不可重复写入，旧窗口以乐观 Revision 拒绝覆盖。Schema v27 的 `proposal_follow_up_events` 只保存本地人工事件、日期、可选备注和由 Electron Main 绑定的操作员；`cloudEligible=false`，不调用 AI、不写 Gmail、不扩大 `gmail.readonly`。备注命中电话或邮箱等直接标识符时拒绝保存；第一条跟进后锁定提案正文、附件、审批和再次导出，候选人/案件删除继续通过外键级联清除关联记录。
 90. 显示与语言设置已支持日文与简体中文。侧栏“表示と言語/显示与语言”打开本机设置，选择后立即更新当前 Renderer 的标准 UI、`html lang` 与中文字体栈；受控翻译只覆盖界面词条，不会机器翻译、改写或上传任务指令、候选人/案件字段、原文、备注和审计记录。Schema v28 的 `local_application_preferences` 使用乐观 Revision、SQLCipher、加密快照和恢复包保存语言偏好，固定 `cloudEligible=false`；保存不刷新 Bootstrap、不调用 AI、Gmail 或任何网络接口。
 
-91. Agent 的 Tool 权限已按可逆性分层，注册表全覆盖与对模型开放是两个独立决定。只读/计算层（案件检索、案件详情、候选人档案、面试、匹配依据、执行匹配）保持 `approval:'none'`；本地摄取层允许模型请求，但其产物只能是必须经人工逐项确认的草稿；内部状态变更层须落到审核中心的 `approval:'inbox'` 审批；永久删除、提案导出与恢复包激活固定不对模型开放，即使带审批也不开放 —— 这三类的安全价值来自“影响预览 → 哈希绑定 → 手动输入确认”的人工仪式，该仪式不能由一句自然语言代替。
+91. Agent 的 Tool 权限已按可逆性分层，注册表全覆盖与对模型开放是两个独立决定。只读/计算层（案件检索、案件详情、候选人档案、面试、匹配依据、执行匹配）保持 `approval:'none'`；本地摄取层允许模型请求，但其产物只能是必须经人工逐项确认的草稿；内部状态变更默认须落到审核中心的 `approval:'inbox'` 审批。当前唯一冻结例外是 `candidate.interview.schedule.local`：只有候选人、日期、时间、方式和时长全部由用户明确给出且可唯一解析时，才以 `approval:'none'` 写入与手工表单相同的本地记录；它不发送通知，`replayPolicy:'manual-review'`，并保留 ActionRun 审计。永久删除、提案导出与恢复包激活固定不对模型开放，即使带审批也不开放 —— 这三类的安全价值来自“影响预览 → 哈希绑定 → 手动输入确认”的人工仪式，该仪式不能由一句自然语言代替。
 92. 第一个本地摄取写 Tool `resume.analyze.local` 已接入对话。拖入会话的 PDF/Excel/Word 由 Renderer 交出字节而非路径，Electron Main 复用与原生对话框完全相同的暂存校验：扩展名白名单、Magic Bytes 必须与扩展名一致、25 MB 上限、AES-256-GCM 入库；声明文件名只取 basename（`../../` 被中和而非拒绝），格式由字节决定而不是由 Renderer 或模型声明。模型通过 `import_resume` 按**附件序号**请求取込，不能提交令牌或内部 ID；Main 只接受本进程暂存过的令牌，导入任务由暂存文件反查而不采信 Renderer 传来的 Task ID。本轮没有附件时固定回答“没有可导入的附件”，不会伪造导入结果。取込产物仍是 `awaiting-review` 草稿，未经字段人工确认不会成为候选人档案，`cloudEligible=false`。
 
 93. 拖入对话的简历**先解析、后决定是否导入**。暂存后立即在本机运行同一条解析管线（Parser Worker → 本地 OCR → 姓名候选 → 确定性 PII 脱敏 → 字段/项目抽取），但**不写入任何持久化**：不创建候选人审核、不创建 WorkTask、不保存 Redaction Session。解析结果只存在于本进程内存，随轮次注入模型上下文，因此“总结一下这个人”不需要任何 Tool 调用即可回答。预览与正式导入共用同一个 `analyzeStagedFileLocally`，脱敏策略不可能在“给你看的”和“存下来的”之间漂移。投影仍只放行 9 类业务字段与项目摘要，Document ID、原文件名和来源单元格标签留在本机；确认导入后才落库并进入字段人工审核。另有只读 Tool `candidate.draft.read.local` 用于读取已导入但未确认的草稿，导入轮次留下 `RESUME_1` 形式的匿名引用供后续轮次按序号解析，模型全程不接触 Document ID。所有草稿回答固定标注“机器抽取、未确认”，界面以警示条重申任何字段经人工确认后才会成为候选人档案。
 
-94. 面谈登记已成为可对话调用的写 Tool `candidate.interview.schedule.local`。模型只能填写营业员**实际说出**的参数，其余一律留 `null`；日期、开始时刻、实施方法、所要时间任一缺失即返回 `INTERVIEW_DETAILS_REQUIRED` 澄清追问，**不替用户选择**，因此“帮我安排个面试”这类模糊指令不可能创建记录。候选人按三级回退解析：显式排名 → 本会话内唯一一次导入 → 本机唯一一位可排面试的候选人；都不成立时反问是哪一位。面试记录挂在 `candidate_review_states` 上，因此**导入后即可排面试，不必先完成字段确认** —— 招聘实务本就是先面谈后补全资料。模型全程只提交排名或不提交，不接触内部 ID；时间按 JST 组装为 `YYYY-MM-DDTHH:mm:00+09:00`。写入复用手动表单同一条 `saveCandidateInterviewSchedule` 路径，面谈者绑定当前操作员，`replayPolicy` 为 `manual-review`。不发送任何通知邮件，回答固定说明这一点，记录可在面试管理中查看与修改。
+94. 面谈登记已成为可对话调用的写 Tool `candidate.interview.schedule.local`。模型只能填写营业员**实际说出**的参数，其余一律留 `null`；日期、开始时刻、实施方法、所要时间任一缺失即返回 `INTERVIEW_DETAILS_REQUIRED` 澄清追问，Zoom / Google Meet 还必须由用户提供有效会议链接，**不替用户选择**，因此“帮我安排个面试”这类模糊指令不可能创建记录。候选人按三级回退解析：显式排名 → 本会话内唯一一次导入 → 本机唯一一位可排面试的候选人；都不成立时反问是哪一位。面试记录挂在 `candidate_review_states` 上，因此**导入后即可排面试，不必先完成字段确认** —— 招聘实务本就是先面谈后补全资料。模型全程只提交排名或不提交，不接触内部 ID；时间按 JST 组装为 `YYYY-MM-DDTHH:mm:00+09:00`。会议链接由 Main 从当前消息或待补充面谈的最近本地消息中提取并按 `zoom.us` / `meet.google.com` allowlist 校验，真实 URL 不进入 Planning、Final Narrative、Assistant 回答或 ActionRun，Cloud 只看到“已在本机提供”的占位符，ActionRun 只保存 SHA-256 绑定哈希。写入复用手动表单同一条 `saveCandidateInterviewSchedule` 路径，真实链接仅保存于 SQLCipher 面谈记录，面谈者绑定当前操作员，`replayPolicy` 为 `manual-review`。不发送任何通知邮件，回答固定说明这一点，记录可在面试管理中查看与修改。
+
+95. `SES Agent` 已升级为应用的默认主工作区和侧栏最醒目的一级入口。第一次 Bootstrap 会把 Feature Flag 与首屏路由作为同一次 React 状态提交，避免真实冷启动先绘制旧 Dashboard 再切换；后续 Bootstrap 刷新不会把用户从当前页面强制拉回 Agent。旧“工作台”降级为可显式进入的“业务概览”，Flag 关闭时仍冷启动旧工作台并保留经典 `AI 匹配`。Agent 顶部状态条与侧栏共用同一组 Bootstrap 派生值，可进入有效案件、可匹配人才、审核中心、活动记录和备份治理；空状态提供本地简历导入、案件导入与审核快捷入口。未连接受管 AICommerce 时不显示必然失败的聊天 Composer，但本地确定性入口继续可用。已连接时可用文件选择或拖放把 PDF/Excel/Word 作为会话附件，预解析后再由用户决定直接导入或交给受控 Tool。结构化案件、人才、审核和活动页面仍是事实与人工决定界面，Agent narrative 不替代这些页面。
+
+96. Agent 对话已经从“一个功能页”升级为核心任务界面。左侧是可新建、切换和删除的任务/会话历史，小窗口改为抽屉；顶部使用紧凑动态标题，Assistant 回答采用无重气泡正文，User 消息弱化，输入框悬浮在底部。每个会话独立保存当前案件与最近 Match Run，历史异步加载、附件预解析和直接导入都绑定启动时的 Conversation ID，迟到结果不会污染已经切换到的新会话。Planning/Direct Answer 最多携带最近 6 个完整 Turn、12 条 Message 和 8 组匿名证据，19,000 字符开始按完整 Turn 自适应压缩，20,000 字符失败关闭；本轮附件优先保留并记录省略计数。相同 requestId 只有完整输入指纹一致时才幂等复用。候选人档案、面谈、匹配解释、导入草稿和原文档卡片提供预定义的本地打开/跳转按钮，普通模型文本不能产生任意 URL、文件路径、IPC 或命令；候选人删除后相关卡片替换为不含旧姓名和路由的墓碑，所有本地 Document/Interview ID 在 Cloud Projection 中被剥离。
+
+97. Planning 的输出预算已从 2,048 提升并固定到协议允许的 8,192，用于容纳 Responses 推理 token 后仍产出完整的单 Tool JSON；用户可见 Answer/Narrative 继续使用各模型原有的 1,200/4,096 上限。真实回归覆盖“上一轮已给出候选人、日期和时间，本轮只补 30 分钟与 Zoom 链接”：Main 会延续 `INTERVIEW_DETAILS_REQUIRED` 上下文，本地恢复并验证链接，Planner 只看到链接方式和本地占位符，Tool 把真实链接写入 SQLCipher。任一 Cloud Projection、Assistant 内容和 ActionRun 输入都不包含会议 URL 或密码参数；ActionRun 只保存链接 SHA-256，非法、冲突或多个链接继续澄清而不写入。
+
+98. 已发送的 User Message 现在具有 Codex 式消息操作：悬停、键盘聚焦或触屏环境中显示“复制”和“编辑并重新发送”。复制只在明确点击后把该条输入写入系统剪贴板，不调用 Main、模型或网络。编辑在消息原位置显示多行输入、Esc/取消、`⌘/Ctrl+Enter` 和“创建分支并发送”；提交时不破坏性截断原 SQLCipher 会话，而是把目标消息之前的上下文保存为新 Conversation，并以新 requestId 发送编辑内容。原会话、ActionRun、WorkTask、Match Run、简历导入和面谈登记等既有副作用全部保留；无法从前缀 typed blocks 证明的后续案件选择不会混入新分支，附件也不自动复制，需要时由用户重新附加。
+
+99. 简历导入不再只向会话追加“已导入”操作卡。聊天空状态中的“导入简历”卡片会在点击时锁定当前 Conversation ID，并把该 ID 贯穿原生文件选择、全局导入任务和每个文件的 `analyzeResumeFile`；完成时 Main 返回同一会话的最新快照，而不是把它当作与聊天无关的全局候选人导入。Main 会把同一条本地分析产生的未确认字段、技术和项目经历作为 `candidate-draft-facts` 证据块写入该 SQLCipher 会话，导入完成后立即在聊天流中展示并可继续追问。Planning 和 Direct Answer 复用这一持久证据；Cloud Projection 只包含脱敏业务字段和项目摘要，不包含 Document ID、原文件名、姓名、电话、邮箱或 Source Label。已有信任 `resume-import` 卡但缺少事实块的旧会话，仅在本机仍能找到对应分析结果时确定性补全；不从全局候选人库猜测归属。编辑重发分支会同时继承导入关系和这些简历事实，暂存附件仍不自动复制。
+
+100. 面试登记的日期和时间按 JST 理解，但不再把 `YYYY-MM-DDTHH:mm:ss+09:00` 直接交给只接受 UTC ISO 的持久化 Schema。Agent 会在 Tool 执行前校验真实日历日期与 24 小时时刻，再确定性转换成 `...Z`；例如 `2026-08-26 14:00 JST` 保存为 `2026-08-26T05:00:00.000Z`，界面仍按本地时区显示下午 2 点。无效日期/时刻继续澄清而不写入；Main 的持久化异常映射为可理解的本地错误，不再向会话暴露 Zod 正则或原始 Schema 详情。当 Error Block 已与 Assistant 内容相同时，Renderer 只显示一次。
 
 文本型 PDF/Office、扫描 PDF、字段/项目经历人工审核、匿名 Profile、候选人库搜索/版本/归档/删除、Google Workspace 应用内管理配置、Gmail 只读同步、EML/手动案件输入、案件草稿审核/版本/归档/删除、七类三态硬条件 + 本地 BM25/Profile Vector/Project Vector/RRF/日文 Cross-Encoder 精排、项目证据、营业员匹配反馈、应用内专家标注、本地 Benchmark 质量门、提案审批/导出/提案后人工跟进、加密备份恢复和本地变更提醒已进入本地主链路。真实 ONNX 的 1,000 Profile 合成回归中，相关 Rank 为 1/1/1，30-case 质量门 Recall@20/NDCG@20/Project Evidence 均为 1.0；`hardFilterPolicyVersion=tri-state-v3`、`humanLabeledDataset=false`，不能据此宣布达到真实试点门槛。普通 Cloud AI 的本地硬性出网门、两阶段 Review Ticket 和实现绑定已经进入源码并通过本机自动测试；真实日文隐私专家报告尚未生成，只表示质量/审计/发布准备度证据缺失，不再单独阻断满足硬门的 Cloud 请求。真实 30–50 件 SES 检索专家标注集、Developer ID、公证和 Gmail 真实 Workspace 在线验收也仍未完成。
 
@@ -303,7 +315,7 @@ npm run dev
 
 桌面端通过 `/v1/wallet` 和 `/v1/ai/capabilities` 读取普通钱包与当前产品能力，自动选择第一个 active 的 chat/text 能力，不让用户猜 capability alias；统一调用 `/v1/ai/requests`，为一次业务操作在各计费池生成稳定且彼此区分的 `request_id`。401 时通过 Native refresh/reset 单飞安全换 token，202 最多轮询 60 秒。设置页可刷新会员状态、手动重发 AI Token、打开 Member Center 或退出登录。Member Center 的套餐、充值、账单和 Stripe Portal 是 cookie BFF，因此从应用打开已登录的系统浏览器页面管理，不用 Native JWT 伪造 BFF 请求。环境变量的优先级高于内置生产值，可用于本地联调；旧的 `SES_*` 变量暂时作为兼容别名读取。
 
-普通 Cloud AI 采用失败关闭的两阶段协议。`prepareAiCommerceCloudPrompt` 只在 Main 重新验证合成质量门、本地 NER、当前实现安全绑定和其他硬性出网控制后生成脱敏预览与最长 10 分钟的一次性 Review Ticket，不创建 Provider 请求；`executeAiCommerceCloudPrompt` 只接受 Ticket，并在 Main 原生窗口确认后再次复核 Endpoint、Actor、内容/检测摘要/预览哈希、Redaction Session 与 DLP，随后才进入 allowlisted `CloudRedactionGateway`。匹配 Agent 使用独立的受控 planning/final 路径：经本地 NER/DLP 处理的用户请求、最小会话文本和匿名证据可用于 AI 选择 `ANSWER` 或一个白名单 `TOOL`；模型不能直接访问本地接口，Main 会严格拒绝未知 Tool、越界参数、内部 ID、多 Tool 和写操作。真实日文专家 Attestation 若存在只进入质量/审计/发布准备度状态，缺失或过期不单独阻断满足硬门的请求。登录成功、钱包可用或 Renderer 布尔值都不能启用 Cloud。原始简历、邮件、图片、Token、Ticket Secret 和服务端内部密钥不会离开设备。`com.gridscale.native.ses-agent` 已静态注册到 macOS `CFBundleURLTypes` 和 Windows NSIS 安装协议；上线验收仍需在已签名安装包上实测冷启动 callback、PKCE 登录、会员权益、自动能力发现、三类包月回退错误、402 充值引导和生产 202 完整链路。
+普通 Cloud AI 采用失败关闭的两阶段协议。`prepareAiCommerceCloudPrompt` 只在 Main 重新验证合成质量门、本地 NER、当前实现安全绑定和其他硬性出网控制后生成脱敏预览与最长 10 分钟的一次性 Review Ticket，不创建 Provider 请求；`executeAiCommerceCloudPrompt` 只接受 Ticket，并在 Main 原生窗口确认后再次复核 Endpoint、Actor、内容/检测摘要/预览哈希、Redaction Session 与 DLP，随后才进入 allowlisted `CloudRedactionGateway`。匹配 Agent 使用独立的受控 planning/final 路径：经本地 NER/DLP 处理的用户请求、最小会话文本和匿名证据可用于 AI 选择 `ANSWER` 或一个白名单 `TOOL`；模型不能直接访问本地接口，Main 会严格拒绝未知 Tool、越界参数、内部 ID、多 Tool，以及不在 Agent allowlist 中的写操作。当前只开放本地履历摄取与参数完整的本地面谈登记，不开放外部发送、提案导出、删除或任意业务写。真实日文专家 Attestation 若存在只进入质量/审计/发布准备度状态，缺失或过期不单独阻断满足硬门的请求。登录成功、钱包可用或 Renderer 布尔值都不能启用 Cloud。原始简历、邮件、图片、Token、Ticket Secret 和服务端内部密钥不会离开设备。`com.gridscale.native.ses-agent` 已静态注册到 macOS `CFBundleURLTypes` 和 Windows NSIS 安装协议；上线验收仍需在已签名安装包上实测冷启动 callback、PKCE 登录、会员权益、自动能力发现、三类包月回退错误、402 充值引导和生产 202 完整链路。
 
 已有会员登录凭证的测试设备可用 `SES_AICOMMERCE_PRODUCTION_PROBE=1` 启动打包应用。该模式不打开窗口、不读取任何业务数据，只发送代码内固定文本“请只回复 OK。”，核对钱包、能力发现、自动计费和 AI 响应后立即退出；日志只输出请求/计费元数据、`diagnosticOnly=true` 和固定的 `privacyGateExemption=fixed-synthetic-connectivity-probe`，不输出 Token 或响应正文。它是与普通业务入口隔离的固定合成连接诊断，因此不进入业务正文的 NER/脱敏/Review Ticket 流程；该豁免不能用于用户数据，也不会改变普通 Cloud AI 的硬门、专家质量提示或正式发布状态。
 

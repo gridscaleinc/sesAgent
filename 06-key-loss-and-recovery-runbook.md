@@ -1,9 +1,9 @@
 # SES Agent Desktop 密钥丢失与离线恢复手册
 
-<!-- ses-current-state package=0.1.0 schema=38 -->
+<!-- ses-current-state package=0.1.0 schema=39 -->
 
-> 文档版本：v1.1  
-> 更新日期：2026-08-18  
+> 文档版本：v1.1
+> 更新日期：2026-08-18
 > 适用范围：macOS 试点版；Windows 版发布前必须完成同等 DPAPI 演练
 
 ## 1. 适用场景

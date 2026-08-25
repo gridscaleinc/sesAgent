@@ -1,0 +1,19 @@
+{
+  "id": "public-laravel-omori",
+  "title": "公共サービスシステム構築",
+  "industry": "公共 / 官公庁",
+  "location": "大森",
+  "period": "2026年8月から10月",
+  "contract": "SES / 準委任",
+  "skills": [
+    "Laravel",
+    "Filament",
+    "PHP 8",
+    "PostgreSQL",
+    "外部API連携",
+    "日本語流暢"
+  ],
+  "plus": [
+    "AWS ECS 運用"
+  ]
+}

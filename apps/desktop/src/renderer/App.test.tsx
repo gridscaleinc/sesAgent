@@ -539,7 +539,7 @@ describe('App workbench', () => {
     expect(screen.getByRole('button', { name: '確認して開始' })).toBeInTheDocument()
   })
 
-  it('enters AgentWorkspace on cold start, with no navigation, when conversational matching is enabled', async () => {
+  it('enters SES Agent on cold start when conversational matching is enabled', async () => {
     cleanup()
     const connected = {
       ...bootstrap,
@@ -548,11 +548,17 @@ describe('App workbench', () => {
     }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
     render(<App />)
-    expect(await screen.findByRole('heading', { name: '案件マッチング Agent' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '案件 Agent への質問' })).toBeEnabled()
+    expect(await screen.findByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toBeEnabled()
+    expect(screen.getByRole('region', { name: 'タスク' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'システムナビゲーション' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '候補者' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '面談' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '設定' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '業務概要' })).not.toBeInTheDocument()
   })
 
-  it('carries the dashboard counts into the Agent shell and routes the review badge to the review center', async () => {
+  it('keeps Agent open and shows the review center in the right business workspace', async () => {
     cleanup()
     const connected = {
       ...bootstrap,
@@ -561,11 +567,15 @@ describe('App workbench', () => {
     }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
     render(<App />)
-    await screen.findByRole('heading', { name: '案件マッチング Agent' })
-    // Same source as the sidebar badge, so the two can never disagree.
-    const pendingReviews = screen.getByRole('button', { name: /1\s*未レビュー/u })
+    await screen.findByRole('heading', { name: 'SES Agent' })
+    expect(screen.queryByRole('navigation', { name: '業務ステータス' })).not.toBeInTheDocument()
+    // The count now appears only where it advances the current task.
+    const pendingReviews = screen.getByRole('button', { name: /レビューセンターを開く1件が人の確認待ち/u })
     fireEvent.click(pendingReviews)
-    expect(await screen.findByRole('heading', { name: 'レビューセンター' })).toBeInTheDocument()
+    expect(await screen.findByRole('complementary', { name: '業務ワークスペース' })).toBeInTheDocument()
+    expect(screen.getByText('会話コンテキストに接続')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'レビューセンター' })).not.toBeInTheDocument()
   })
 
   it('keeps the classic dashboard on cold start when conversational matching is disabled', async () => {
@@ -574,7 +584,7 @@ describe('App workbench', () => {
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(disabled)
     render(<App />)
     await screen.findByRole('button', { name: 'AI マッチング' })
-    expect(screen.queryByRole('heading', { name: '案件マッチング Agent' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'SES Agent' })).not.toBeInTheDocument()
   })
 
   it('lands an unconnected operator in AgentWorkspace but withholds the composer until the managed account is connected', async () => {
@@ -586,19 +596,22 @@ describe('App workbench', () => {
     }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(unconnected)
     render(<App />)
-    expect(await screen.findByRole('heading', { name: '案件マッチング Agent' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '受管アカウントに接続' })).toBeInTheDocument()
-    // A composer that always fails is worse than no composer.
-    expect(screen.queryByRole('textbox', { name: '案件 Agent への質問' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /履歴書を取り込む/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /案件を取り込む/ })).toBeInTheDocument()
+    // Cloud chat is withheld, while deterministic local work stays available.
+    expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
   })
 
-  it('opens AgentWorkspace from the matching nav item and keeps an explicit classic fallback', async () => {
+  it('uses a standalone Agent shell and keeps an explicit classic fallback', async () => {
     cleanup()
     const enabledBootstrap = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: true } }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(enabledBootstrap)
     render(<App />)
-    fireEvent.click(await screen.findByRole('button', { name: 'AI マッチング' }))
-    expect(await screen.findByRole('heading', { name: '案件マッチング Agent' })).toBeInTheDocument()
+    await screen.findByRole('heading', { name: 'SES Agent' })
+    expect(screen.getByRole('region', { name: 'タスク' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '業務概要' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'マッチングをプレビュー' })).not.toBeInTheDocument()
 
     cleanup()
@@ -607,7 +620,7 @@ describe('App workbench', () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'AI マッチング' }))
     expect(await screen.findByRole('button', { name: 'マッチングをプレビュー' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '案件マッチング Agent' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'SES Agent' })).not.toBeInTheDocument()
   })
 
   it('opens the local confirmed-candidate library from the primary navigation', async () => {

@@ -1,0 +1,14 @@
+{
+  "name": "小林 直樹",
+  "title": "Java モダナイズエンジニア",
+  "skills": [
+    "Java",
+    "Struts",
+    "Spring Boot",
+    "Oracle"
+  ],
+  "project_summary": "基幹システムの Struts から Spring Boot への段階移行を担当。",
+  "availability": "2026年9月開始可",
+  "location_preference": "横浜常駐可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

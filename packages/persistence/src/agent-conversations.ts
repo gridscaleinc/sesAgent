@@ -45,6 +45,7 @@ export function aiConversationFromRow(row: AiConversationRow): AiConversationSna
 }
 
 export interface AgentReferenceTargets {
+  candidateDocumentIds: ReadonlySet<string>
   jobCaseIds: ReadonlySet<string>
   matchRunIds: ReadonlySet<string>
   matchResultIds: ReadonlySet<string>
@@ -84,7 +85,9 @@ export function sanitizeAgentBlock(block: AiConversationBlock, targets: AgentRef
     const runDeleted = targets.matchRunIds.has(block.runId)
     const cards = runDeleted
       ? []
-      : block.cards.filter((card) => !agentReferenceIsTargeted(card.reference, targets))
+      : block.cards.filter((card) =>
+          !agentReferenceIsTargeted(card.reference, targets) &&
+          (!card.sourceDocumentId || !targets.candidateDocumentIds.has(card.sourceDocumentId)))
     if (!runDeleted && cards.length === block.cards.length) return { blocks: [block], affected: false }
     return cards.length > 0
       ? { blocks: [{ ...block, cards }], affected: true }
@@ -104,6 +107,34 @@ export function sanitizeAgentBlock(block: AiConversationBlock, targets: AgentRef
       : false
     return runAffected || resultAffected
       ? { blocks: [agentErrorBlock(runAffected ? 'match-run' : 'match-result')], affected: true }
+      : { blocks: [block], affected: false }
+  }
+  if (block.type === 'candidate-profile-evidence' || block.type === 'candidate-interview-evidence') {
+    const sourceDocumentId = block.facts.candidate?.sourceDocumentId
+    return sourceDocumentId && targets.candidateDocumentIds.has(sourceDocumentId)
+      ? { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联候选人已删除，历史证据和文件入口已移除。' }], affected: true }
+      : { blocks: [block], affected: false }
+  }
+  if (block.type === 'candidate-draft-facts') {
+    return targets.candidateDocumentIds.has(block.facts.documentId)
+      ? { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联候选人已删除，历史草稿和文件入口已移除。' }], affected: true }
+      : { blocks: [block], affected: false }
+  }
+  if (block.type === 'resume-import') {
+    const imported = block.imported.filter((item) => !targets.candidateDocumentIds.has(item.documentId))
+    if (imported.length === block.imported.length) return { blocks: [block], affected: false }
+    return imported.length > 0
+      ? { blocks: [{ ...block, imported }], affected: true }
+      : { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联候选人已删除，历史导入记录和文件入口已移除。' }], affected: true }
+  }
+  if (block.type === 'system-access') {
+    const candidateDeleted = block.destination === 'candidate' &&
+      targets.candidateDocumentIds.has(block.sourceDocumentId)
+    const jobCaseDeleted = block.destination === 'matching' && block.jobCaseId
+      ? targets.jobCaseIds.has(block.jobCaseId)
+      : false
+    return candidateDeleted || jobCaseDeleted
+      ? { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联业务对象已删除，历史系统入口已移除。' }], affected: true }
       : { blocks: [block], affected: false }
   }
   return { blocks: [block], affected: false }

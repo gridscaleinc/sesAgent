@@ -2,6 +2,8 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import type { SignedWorkTaskPreview, WorkTask } from '@domain'
 import type {
   BootstrapPayload,
+  AiConversationSnapshot,
+  AgentSystemAccessBlock,
   CandidateMatchResult,
   CandidateMatchRunSummary,
   CreateWorkTaskInput,
@@ -32,6 +34,9 @@ import { TaskList } from './components/TaskList'
 import { TaskWorkspace } from './components/TaskWorkspace'
 import { MatchingHomeDashboard } from './components/MatchingHomeDashboard'
 import { AgentWorkspace } from './components/AgentWorkspace'
+import { AgentInterviewSchedulePanel } from './components/AgentInterviewSchedulePanel'
+import { AgentBusinessWorkspacePanel } from './components/AgentBusinessWorkspacePanel'
+import { AgentSystemRail } from './components/AgentSystemRail'
 import { StartupRecoveryScreen } from './components/StartupRecoveryScreen'
 import { localizedWorkDate, UiLocaleProvider, useLegacyRendererLocalization } from './i18n'
 
@@ -62,6 +67,7 @@ export function App() {
   const [manualCaseRequestId, setManualCaseRequestId] = useState<number | null>(null)
   const [matchingJobCaseId, setMatchingJobCaseId] = useState<string | null>(null)
   const [agentHistoryReloadToken, setAgentHistoryReloadToken] = useState(0)
+  const [agentContextAccess, setAgentContextAccess] = useState<AgentSystemAccessBlock | null>(null)
   const [requestedJobCaseReviewId, setRequestedJobCaseReviewId] = useState<string | null>(null)
   const [candidateMatch, setCandidateMatch] = useState<{
     taskId: string | null
@@ -81,12 +87,22 @@ export function App() {
   const proposalRequest = useRef(0)
   const backgroundHydratedJobIds = useRef(new Set<string>())
   const resumeImportRequest = useRef(0)
+  const initialRouteApplied = useRef(false)
   const commandPaletteOpener = useRef<HTMLElement | null>(null)
   const candidateMatchStateRef = useRef(candidateMatch)
   candidateMatchStateRef.current = candidateMatch
   const hasActiveProcessingJobs = bootstrap?.processingJobs.some((job) =>
     ['queued', 'running', 'retry_wait'].includes(job.status)
   ) ?? false
+  const activeProcessingJobCount = bootstrap?.processingJobs.filter((job) =>
+    ['queued', 'running', 'retry_wait'].includes(job.status)
+  ).length ?? 0
+  const activeCaseCount = bootstrap?.jobCaseReviews.filter((review) =>
+    review.lifecycle === 'active' && review.status === 'completed'
+  ).length ?? 0
+  const eligibleCandidateCount = bootstrap?.candidateReviews.filter((review) =>
+    review.talentPoolStatus === 'eligible'
+  ).length ?? 0
   const selectedTaskId = selectedTask?.id ?? null
   const commandPaletteAvailable = bootstrap !== null && startupRecovery === null && loadError === null
   const normalSessionReady = bootstrap !== null && startupRecovery === null
@@ -122,7 +138,15 @@ export function App() {
           return
         }
         const payload = await window.sesAgent.getBootstrap()
-        if (active) setBootstrap(payload)
+        if (active) {
+          // Commit the first route with the first bootstrap payload. This keeps a
+          // normal launch from painting the legacy dashboard before AgentWorkspace.
+          if (!initialRouteApplied.current) {
+            initialRouteApplied.current = true
+            setActiveView(payload.featureFlags?.conversationalMatchingEnabled === true ? 'agent' : 'home')
+          }
+          setBootstrap(payload)
+        }
       })
       .catch((cause: unknown) => {
         if (active) setLoadError(cause instanceof Error ? cause.message : 'アプリを初期化できませんでした。')
@@ -131,16 +155,6 @@ export function App() {
       active = false
     }
   }, [startupRecovery])
-
-  // Agent-first cold start. Applied once, on the first bootstrap: setBootstrap also
-  // runs for AICommerce/recovery/task updates, and those must not yank the user
-  // back out of whatever page they navigated to.
-  const initialRouteApplied = useRef(false)
-  useEffect(() => {
-    if (!bootstrap || initialRouteApplied.current) return
-    initialRouteApplied.current = true
-    if (bootstrap.featureFlags?.conversationalMatchingEnabled === true) setActiveView('agent')
-  }, [bootstrap])
 
   useEffect(() => {
     if (!commandPaletteAvailable) return undefined
@@ -161,6 +175,10 @@ export function App() {
     setBootstrap((current) => current ? { ...current, aiCommerce: update.state } : current)
     setAiCommerceCallbackError(update.error)
   }), [])
+
+  useEffect(() => {
+    if (activeView !== 'agent') setAgentContextAccess(null)
+  }, [activeView])
 
   useEffect(() => {
     // The recovery screen deliberately exposes only recovery-safe IPC methods.
@@ -728,6 +746,24 @@ export function App() {
     setActiveView('candidate-management')
   }
 
+  const openCandidateFromAgent = (
+    sourceDocumentId: string,
+    view: PipelineView = 'overview',
+    interviewId: string | null = null,
+    interviewKind: 'recruiting' | 'client' = 'recruiting'
+  ) => {
+    setGovernanceOpen(false)
+    setSelectedTask(null)
+    setCandidateWorkspaceDetail({
+      scope: 'candidate',
+      documentId: sourceDocumentId,
+      view,
+      interviewId,
+      interviewKind
+    })
+    setActiveView('candidate-management')
+  }
+
   const openInterviewSchedule = () => {
     setGovernanceOpen(false)
     setSelectedTask(null)
@@ -776,6 +812,26 @@ export function App() {
     setActiveView('matching')
   }
 
+  const openAgentSystemAccess = (access: AgentSystemAccessBlock) => {
+    setGovernanceOpen(false)
+    setSelectedTask(null)
+    setAgentContextAccess(access)
+  }
+
+  const openAgentCandidateAccess = (
+    sourceDocumentId: string,
+    view: PipelineView = 'overview',
+    interviewId?: string | null,
+    interviewKind?: 'recruiting' | 'client'
+  ) => openAgentSystemAccess({
+    type: 'system-access',
+    destination: 'candidate',
+    sourceDocumentId,
+    view,
+    ...(interviewId !== undefined ? { interviewId } : {}),
+    ...(interviewKind ? { interviewKind } : {})
+  })
+
   const openApplicationSettings = (section: ApplicationSettingsSection = 'general') => {
     setApplicationSettingsSection(section)
     setApplicationSettingsOpen(true)
@@ -793,7 +849,12 @@ export function App() {
     setComposerFocusRequestId(1)
   }
 
-  const executeResumeImportTask = async (task: WorkTask, request: number) => {
+  const executeResumeImportTask = async (
+    task: WorkTask,
+    request: number,
+    conversationId?: string
+  ): Promise<AiConversationSnapshot | null> => {
+    let latestConversation: AiConversationSnapshot | null = null
     const completedTokens = new Set(bootstrap.resumeAnalyses
       .filter((analysis) => analysis.analysisVersion === 'resume-analysis-v6')
       .map((analysis) => analysis.fileToken))
@@ -801,14 +862,19 @@ export function App() {
       (binding) => binding.objectType === 'staged-file' && !completedTokens.has(binding.objectId)
     )
     for (const binding of bindings) {
-      if (resumeImportRequest.current !== request) return
+      if (resumeImportRequest.current !== request) return latestConversation
       setResumeImportProgress((current) => current?.taskId === task.id ? {
         ...current,
         files: current.files.map((file) => file.token === binding.objectId ? { ...file, status: 'parsing', error: null } : file)
       } : current)
       try {
-        const execution = await window.sesAgent.analyzeResumeFile({ fileToken: binding.objectId, taskId: task.id })
-        if (resumeImportRequest.current !== request) return
+        const execution = await window.sesAgent.analyzeResumeFile({
+          fileToken: binding.objectId,
+          taskId: task.id,
+          ...(conversationId ? { conversationId } : {})
+        })
+        if (execution.conversation) latestConversation = execution.conversation
+        if (resumeImportRequest.current !== request) return latestConversation
         setBootstrap((current) => {
           if (!current) return current
           const tasks = new Map(current.tasks.map((item) => [item.id, item]))
@@ -824,7 +890,7 @@ export function App() {
           files: current.files.map((file) => file.token === binding.objectId ? { ...file, status: 'success', error: null } : file)
         } : current)
       } catch (cause) {
-        if (resumeImportRequest.current !== request) return
+        if (resumeImportRequest.current !== request) return latestConversation
         setResumeImportProgress((current) => current?.taskId === task.id ? {
           ...current,
           files: current.files.map((file) => file.token === binding.objectId ? {
@@ -833,6 +899,7 @@ export function App() {
         } : current)
       }
     }
+    return latestConversation
   }
 
   const resumeImportProgressFiles = (task: WorkTask): ResumeImportProgress['files'] => {
@@ -851,10 +918,14 @@ export function App() {
       })
   }
 
-  const runResumeImportTask = async (task: WorkTask, request: number) => {
+  const runResumeImportTask = async (
+    task: WorkTask,
+    request: number,
+    conversationId?: string
+  ): Promise<AiConversationSnapshot | null> => {
     try {
-      await executeResumeImportTask(task, request)
-      if (resumeImportRequest.current !== request) return
+      const conversation = await executeResumeImportTask(task, request, conversationId)
+      if (resumeImportRequest.current !== request) return conversation
       const refreshed = await window.sesAgent.getBootstrap()
       setBootstrap(refreshed)
       setSelectedTask((current) => refreshed.tasks.find((item) => item.id === current?.id) ?? current)
@@ -862,6 +933,7 @@ export function App() {
         ...current,
         phase: current.files.some((file) => file.status === 'error') ? 'partial-failed' : 'completed'
       } : current)
+      return conversation
     } catch (cause) {
       if (resumeImportRequest.current === request) {
         setResumeImportProgress((current) => current ? {
@@ -870,27 +942,28 @@ export function App() {
           error: cause instanceof Error ? cause.message : '履歴書を取り込めませんでした。'
         } : current)
       }
+      return null
     } finally {
       if (resumeImportRequest.current === request) resumeImportRequest.current = 0
     }
   }
 
-  const startResumeImport = async () => {
-    if (resumeImportRequest.current !== 0) return
+  const startResumeImport = async (conversationId?: string): Promise<AiConversationSnapshot | null> => {
+    if (resumeImportRequest.current !== 0) return null
     const request = Date.now()
     resumeImportRequest.current = request
     setResumeImportProgress({ phase: 'choosing', taskId: null, files: [], error: null })
     try {
       const created = await window.sesAgent.beginResumeImport()
-      if (resumeImportRequest.current !== request) return
+      if (resumeImportRequest.current !== request) return null
       if (created.cancelled) {
         setResumeImportProgress(null)
         resumeImportRequest.current = 0
-        return
+        return null
       }
       setBootstrap((current) => current ? { ...current, tasks: [created.task, ...current.tasks] } : current)
       setResumeImportProgress({ phase: 'parsing', taskId: created.task.id, files: progressFiles(created.files), error: null })
-      await runResumeImportTask(created.task, request)
+      return await runResumeImportTask(created.task, request, conversationId)
     } catch (cause) {
       if (resumeImportRequest.current === request) {
         setResumeImportProgress((current) => current ? {
@@ -900,6 +973,7 @@ export function App() {
         } : current)
       }
       if (resumeImportRequest.current === request) resumeImportRequest.current = 0
+      return null
     }
   }
 
@@ -938,7 +1012,7 @@ export function App() {
       id: 'input-resume', group: '入力', label: 'スキルシートを取り込む', icon: 'upload',
       description: 'ファイル選択後も実行前プレビューとローカル解析を維持します。',
       keywords: ['履歴書', '職務経歴書', 'resume', 'candidate', '候補者', 'ファイル'],
-      run: startResumeImport
+      run: async () => { await startResumeImport() }
     },
     {
       id: 'input-case', group: '入力', label: '案件を手動で追加', icon: 'briefcase',
@@ -1009,6 +1083,17 @@ export function App() {
     }))
   ]
 
+  const saveCandidateInterviewSchedule = async (
+    input: Parameters<typeof window.sesAgent.saveCandidateInterviewSchedule>[0]
+  ) => {
+    const interview = await window.sesAgent.saveCandidateInterviewSchedule(input)
+    setBootstrap((current) => current ? {
+      ...current,
+      candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
+    } : current)
+    return interview
+  }
+
   const renderCandidatePipelineDetail = (
     detail: NonNullable<typeof candidateWorkspaceDetail>,
     showBackToQueue = true
@@ -1062,14 +1147,7 @@ export function App() {
       } : current)
       return interview
     }}
-    onSaveSchedule={async (input) => {
-      const interview = await window.sesAgent.saveCandidateInterviewSchedule(input)
-      setBootstrap((current) => current ? {
-        ...current,
-        candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
-      } : current)
-      return interview
-    }}
+    onSaveSchedule={saveCandidateInterviewSchedule}
     onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
     onSetTaskLifecycle={setWorkTaskLifecycle}
     onViewChange={(nextView) => setCandidateWorkspaceDetail((current) => current
@@ -1088,15 +1166,24 @@ export function App() {
       view: route.view
     })
   }
+  const agentPrimary = activeView === 'agent' && bootstrap.featureFlags?.conversationalMatchingEnabled === true
 
   return (
     <UiLocaleProvider locale={locale}>
-      <div className="app-shell">
-      <Sidebar
+      <div className={agentPrimary ? 'app-shell is-agent-primary' : 'app-shell'}>
+      {agentPrimary ? <AgentSystemRail
+        onAgent={() => setActiveView('agent')}
+        onCandidates={() => openAgentSystemAccess({ type: 'system-access', destination: 'candidate-management' })}
+        onCases={() => openAgentSystemAccess({ type: 'system-access', destination: 'job-cases' })}
+        onInterviews={() => openAgentSystemAccess({ type: 'system-access', destination: 'interview-schedule' })}
+        onReviews={() => openAgentSystemAccess({ type: 'system-access', destination: 'review-center' })}
+        onSettings={() => openApplicationSettings('general')}
+      /> : <Sidebar
         active={activeView}
-        caseCount={bootstrap.jobCaseReviews.filter((review) => review.lifecycle === 'active' && review.status === 'completed').length}
+        agentEnabled={bootstrap.featureFlags?.conversationalMatchingEnabled === true}
+        caseCount={activeCaseCount}
         candidateManagementCount={bootstrap.candidateReviews.length}
-        candidateCount={bootstrap.candidateReviews.filter((review) => review.talentPoolStatus === 'eligible').length}
+        candidateCount={eligibleCandidateCount}
         clientInterviewCount={new Set(bootstrap.candidateInterviews.filter((interview) => interview.kind === 'client' && interview.stage !== 'passed' && interview.stage !== 'closed').map((interview) => interview.sourceDocumentId)).size}
         interviewDecisionCount={new Set([
           ...bootstrap.candidateReviews.filter((review) => review.status === 'awaiting-review').map((review) => review.documentId),
@@ -1136,7 +1223,7 @@ export function App() {
         onReviews={openReviewCenter}
         onTasks={openTaskCenter}
         taskCount={bootstrap.tasks.length}
-      />
+      />}
 
       <ResumeImportProgressDrawer
         onClose={() => setResumeImportProgress(null)}
@@ -1284,21 +1371,60 @@ export function App() {
         />
       ) : activeView === 'agent' && bootstrap.featureFlags?.conversationalMatchingEnabled === true ? (
         <AgentWorkspace
+          activeSystemAccess={agentContextAccess}
           cloudConnected={bootstrap.aiCommerce.connection === 'connected'}
+          contextPanel={agentContextAccess
+            ? agentContextAccess.destination === 'interview-schedule'
+              ? <AgentInterviewSchedulePanel
+                  access={agentContextAccess}
+                  interviews={bootstrap.candidateInterviews}
+                  onClose={() => setAgentContextAccess(null)}
+                  onSave={saveCandidateInterviewSchedule}
+                  reviews={bootstrap.candidateReviews}
+                />
+              : <AgentBusinessWorkspacePanel
+                  access={agentContextAccess}
+                  candidateReviews={bootstrap.candidateReviews}
+                  interviews={bootstrap.candidateInterviews}
+                  jobCaseReviews={bootstrap.jobCaseReviews}
+                  matchingHome={bootstrap.matchingHome}
+                  onClose={() => setAgentContextAccess(null)}
+                  onCreateManualCase={createManualJobCaseDraft}
+                  onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
+                  onOpenAccess={openAgentSystemAccess}
+                  onResolveActionApproval={resolveActionApproval}
+                  reviewQueue={reviewQueue}
+                  tasks={bootstrap.tasks}
+                />
+            : null}
+          contextPanelLabel={locale === 'zh-CN' ? '业务工作区' : '業務ワークスペース'}
           defaultModelKey={bootstrap.defaultAgentChatModelKey}
           models={bootstrap.agentChatModels}
           onConnectCloud={() => setAiCommerceOpen(true)}
-          onOpenMatching={openMatchingForCase}
+          onCloseContextPanel={() => setAgentContextAccess(null)}
+          onImportResume={(conversationId) => startResumeImport(conversationId)}
+          onOpenCandidate={openAgentCandidateAccess}
+          onOpenCandidatePool={() => openAgentSystemAccess({ type: 'system-access', destination: 'candidate-management' })}
+          onOpenCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
+          onOpenCases={() => openAgentSystemAccess({ type: 'system-access', destination: 'job-cases' })}
+          onOpenGovernance={() => setGovernanceOpen(true)}
+          onOpenMatching={(jobCaseId) => openAgentSystemAccess({ type: 'system-access', destination: 'matching', jobCaseId })}
+          onOpenOriginalDocument={async (sourceDocumentId) => openAgentSystemAccess({ type: 'system-access', destination: 'original-document', sourceDocumentId })}
+          onOpenOperatorProfile={() => setOperatorProfileOpen(true)}
           onLocalDataChanged={async () => {
             const refreshed = await window.sesAgent.getBootstrap()
             setBootstrap(refreshed)
           }}
-          onOpenReviews={() => setActiveView('reviews')}
+          onOpenReviews={() => openAgentSystemAccess({ type: 'system-access', destination: 'review-center' })}
+          onOpenSystemAccess={openAgentSystemAccess}
+          onOpenTasks={openTaskCenter}
+          operatorLabel={bootstrap.operatorProfile.displayName || bootstrap.operatorProfile.operatorId}
           reloadToken={agentHistoryReloadToken}
           status={{
-            eligibleCandidateCount: bootstrap.matchingHome.eligibleCandidateCount,
+            activeCaseCount,
+            eligibleCandidateCount,
             pendingReviewCount: reviewQueue.length,
-            runningJobCount: bootstrap.processingJobs.filter((job) => job.status === 'running').length,
+            runningJobCount: activeProcessingJobCount,
             backupReminder: bootstrap.recovery.reminder.status
           }}
         />

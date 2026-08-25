@@ -329,8 +329,8 @@ async function launchSmoke(featureMode = 'default', agentSmokeConversationId = n
         reject(new Error(`Packaged preload bridge was unavailable.\n${output}`))
         return
       }
-      if (!/schemaVersion:\s*38\b/u.test(output)) {
-        reject(new Error(`Packaged application did not initialize Schema v38.\n${output}`))
+      if (!/schemaVersion:\s*39\b/u.test(output)) {
+        reject(new Error(`Packaged application did not initialize Schema v39.\n${output}`))
         return
       }
       resolveResult({ output, errors, agentSmoke: parseAgentSmoke(output) })
@@ -468,10 +468,10 @@ try {
     !packagedMainSource.includes('read_candidate_profile') || !packagedMainSource.includes('read_candidate_interviews') ||
     !packagedMainSource.includes('candidate.profile.read.local') || !packagedMainSource.includes('candidate.interview.read.local') ||
     !packagedMainSource.includes('AI 未按受控规划 JSON 协议返回') ||
-    !packagedMainSource.includes('ses-agent-direct-answer-context-v1') ||
+    !packagedMainSource.includes('ses-agent-direct-answer-context-v2') ||
     !packagedMainSource.includes('CONVERSATION_CONTEXT_MISMATCH') || !packagedMainSource.includes('job-case.search.local') ||
     !packagedPreloadSource.includes('executeAgentTurn') || !packagedPreloadSource.includes('cancelAgentTurn') || !packagedPreloadSource.includes('onAgentTurnEvent') ||
-    !packagedRendererSource.includes('conversationalMatchingEnabled') || !packagedRendererSource.includes('案件マッチング Agent') ||
+    !packagedRendererSource.includes('conversationalMatchingEnabled') || !packagedRendererSource.includes('发送下一条消息时，Agent 会读取此工作区的最新本机数据') ||
     !packagedRendererSource.includes('DeepSeek V4 Flash') || !packagedRendererSource.includes('正在理解问题并选择 Tool') ||
     !packagedRendererSource.includes('matching-page')
   ) throw new Error('Packaged ASAR is missing the Agent Main/Preload/Renderer surface or classic matching fallback.')
@@ -589,7 +589,7 @@ try {
     localNerExpectedNamesDetected: true,
     packagedEmlParser: eml.version,
     emlAttachmentPersisted: eml.attachmentPersisted,
-    schemaVersion: 38,
+    schemaVersion: 39,
     encryptedDatabase: true,
     rendererReady: defaultLaunch.output.includes('[renderer-ready]') && classicFallbackLaunch.output.includes('[renderer-ready]') && agentDeleteLaunch.output.includes('[renderer-ready]'),
     agentBridge: true,

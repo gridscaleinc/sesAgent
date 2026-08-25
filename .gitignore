@@ -21,3 +21,7 @@ models/**
 !.env.example
 local/privacy-expert/
 *.privacy-expert.local.json
+
+# Real HR source material must never be published to the public repository.
+docs/test data/王san data.txt
+docs/test data/resumes_xlsx/職務経歴書(CR)20260805.xlsx

@@ -216,6 +216,7 @@ describe('local conversational matching agent', () => {
       durationMinutes: null, kind: null, note: null, ...overrides
     }
   })
+  const zoomMeetingUrl = 'https://company.zoom.us/wc/12345678901/join?pwd=local-test-only'
 
   it('names what the plan got wrong instead of only saying it was invalid', () => {
     // "Could not form a plan" hid an unknown tool name, a strict-schema
@@ -239,9 +240,9 @@ describe('local conversational matching agent', () => {
     // Unknown keys are dropped, not fatal - zod strips them, so nothing is smuggled through.
     expect(parse({ date: '2026-08-20', candidate: 'CANDIDATE_1' })).not.toHaveProperty('candidate')
     expect(parse({ datetime: '2026-08-20 14:00' }).date).toBeNull()
-    // A numeric string is understood; an unsupported duration becomes "not stated".
+    // Numeric strings and arbitrary valid business durations are understood.
     expect(parse({ durationMinutes: '60' }).durationMinutes).toBe(60)
-    expect(parse({ durationMinutes: 120 }).durationMinutes).toBeNull()
+    expect(parse({ durationMinutes: 120 }).durationMinutes).toBe(120)
   })
 
   it('accepts a plan that only states the date, which is what the model actually emits', () => {
@@ -347,7 +348,7 @@ describe('local conversational matching agent', () => {
       const result = await harness.useCase.execute(
         {
           conversationId: '33333333-3333-4333-8333-333333333333',
-          message: '安排一个20号14点的Zoom面试', expectedConversationRevision: null,
+          message: `安排一个20号14点的Zoom面试 ${zoomMeetingUrl}`, expectedConversationRevision: null,
           requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
         },
         scheduleInput({ rank, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
@@ -404,7 +405,7 @@ describe('local conversational matching agent', () => {
         message: '第2位', expectedConversationRevision: null,
         requestId: '55555555-5555-4555-8555-555555555555', selectedJobCaseRef: null
       },
-      scheduleInput({ rank: 2, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+      scheduleInput({ rank: 2, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
     expect(picked.status).toBe('completed')
     expect((picked as { toolName: string | null }).toolName).toBe('candidate.interview.schedule.local')
@@ -428,7 +429,7 @@ describe('local conversational matching agent', () => {
   it('resolves the interview candidate the same way from every entry point', async () => {
     const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
     const matched = { anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
-    const full = { date: '2026-08-20', time: '14:00', method: 'zoom' as const, durationMinutes: 60 as const }
+    const full = { date: '2026-08-20', time: '14:00', method: 'phone' as const, durationMinutes: 60 as const }
     const run = async (
       label: string,
       opts: { schedulable?: typeof only[]; matchCandidate?: typeof matched | null; seedMatch?: boolean; rank?: number | null }
@@ -471,10 +472,10 @@ describe('local conversational matching agent', () => {
     const revision = await withMatchInContext(harness, conversationId)
     const result = await harness.useCase.execute(
       {
-        conversationId, message: '安排这个人20号14点的Zoom面试', expectedConversationRevision: revision,
+        conversationId, message: '安排这个人20号14点的电话面试', expectedConversationRevision: revision,
         requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
       },
-      scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+      scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
     expect(result.status).toBe('completed')
     expect(harness.calls[0]).toMatchObject({
@@ -492,10 +493,10 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '安排这个人20号14点的Zoom面试', expectedConversationRevision: null,
+        message: '安排这个人20号14点的电话面试', expectedConversationRevision: null,
         requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
       },
-      scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+      scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
     expect(result.status).toBe('completed')
     expect(harness.calls[0]).toMatchObject({
@@ -512,10 +513,10 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '安排一个20号14点的Zoom面试', expectedConversationRevision: null,
+        message: '安排一个20号14点的电话面试', expectedConversationRevision: null,
         requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
       },
-      scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
+      scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
     expect(result.status).toBe('completed')
     expect(harness.calls[0]).toMatchObject({
@@ -562,6 +563,56 @@ describe('local conversational matching agent', () => {
     expect(result.assistantMessage.blocks?.[0]).toMatchObject({ code: 'INTERVIEW_DETAILS_REQUIRED' })
   })
 
+  it('completes a pending Zoom booking from a duration-and-link follow-up without exposing the link', async () => {
+    const harness = createHarness()
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
+    const pending = await harness.useCase.execute(
+      {
+        conversationId,
+        message: '20号 14:00 的 Zoom 面试', expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      scheduleInput({ date: '2026-08-20', time: '14:00', method: 'zoom' })
+    )
+    expect(pending.status).toBe('clarifying')
+    expect(pending.assistantMessage.content).toContain('Zoom 会议链接')
+
+    harness.calls.length = 0
+    const completed = await harness.useCase.execute(
+      {
+        conversationId,
+        message: `30分钟。Zoom 链接是 ${zoomMeetingUrl}`,
+        expectedConversationRevision: pending.conversation.revision,
+        requestId: '55555555-5555-4555-8555-555555555555', selectedJobCaseRef: null
+      },
+      scheduleInput({ date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 30 })
+    )
+
+    expect(completed.status).toBe('completed')
+    expect(harness.calls).toEqual([{
+      toolName: 'candidate.interview.schedule.local',
+      input: expect.objectContaining({
+        scheduledAt: '2026-08-20T05:00:00.000Z',
+        durationMinutes: 30,
+        meetingMethod: 'zoom',
+        meetingUrl: zoomMeetingUrl
+      })
+    }])
+    expect(completed.assistantMessage.content).not.toContain(zoomMeetingUrl)
+    expect(completed.assistantMessage.blocks?.[0]).toMatchObject({
+      type: 'system-access',
+      destination: 'interview-schedule',
+      receipt: {
+        sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        scheduledAt: '2026-08-20T05:00:00.000Z',
+        durationMinutes: 30,
+        meetingMethod: 'zoom',
+        meetingLinkStoredLocally: true
+      }
+    })
+  })
+
   it('schedules in JST once every detail is supplied and says no invitation was sent', async () => {
     const harness = createHarness()
     const conversationId = '33333333-3333-4333-8333-333333333333'
@@ -569,7 +620,7 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId,
-        message: '20号 14:00，Zoom，60分钟', expectedConversationRevision: revision,
+        message: `20号 14:00，Zoom，60分钟，链接 ${zoomMeetingUrl}`, expectedConversationRevision: revision,
         requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
       },
       scheduleInput({ date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60, note: '事前に職務経歴を共有' })
@@ -579,15 +630,19 @@ describe('local conversational matching agent', () => {
       input: {
         sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         candidateLabel: 'CANDIDATE_1',
-        scheduledAt: '2026-08-20T14:00:00+09:00',
+        scheduledAt: '2026-08-20T05:00:00.000Z',
         durationMinutes: 60,
         meetingMethod: 'zoom',
+        meetingUrl: zoomMeetingUrl,
         kind: 'recruiting',
         contactNote: '事前に職務経歴を共有'
       }
     }])
     expect(result.status).toBe('completed')
-    expect(result.assistantMessage.content).toContain('未发送任何通知邮件')
+    expect(result.assistantMessage.blocks?.[0]).toMatchObject({
+      destination: 'interview-schedule',
+      receipt: { durationMinutes: 60, meetingLinkStoredLocally: true }
+    })
   })
 
 
@@ -612,6 +667,27 @@ describe('local conversational matching agent', () => {
     expect(summary.assistantMessage.content).toContain('逐项确认')
     const block = summary.assistantMessage.blocks?.[0]
     expect(block).toMatchObject({ type: 'candidate-draft-facts', facts: { confirmed: false, reviewStatus: 'awaiting-review' } })
+  })
+
+  it('resolves a draft imported by the composer even before an Agent import block exists', async () => {
+    const importedByComposer = {
+      anonymousLabel: 'RESUME_1', sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    }
+    const harness = createHarness([], [], null, [importedByComposer])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '总结一下刚导入的简历', expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+      },
+      { toolName: 'candidate.draft.read.local', arguments: { draftOrdinal: null } }
+    )
+
+    expect(harness.calls).toContainEqual({
+      toolName: 'candidate.draft.read.local',
+      input: { sourceDocumentId: importedByComposer.sourceDocumentId, label: 'RESUME_1' }
+    })
+    expect(result.status).toBe('completed')
   })
 
   it('asks which resume instead of guessing when nothing has been imported', async () => {

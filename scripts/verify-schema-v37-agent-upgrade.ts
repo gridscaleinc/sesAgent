@@ -186,14 +186,14 @@ try {
     DROP TABLE action_events_backup;
     DROP TABLE action_runs_backup;
     DROP TABLE ai_conversations_backup;
-    DELETE FROM schema_migrations WHERE version = 38;
+    DELETE FROM schema_migrations WHERE version IN (38, 39);
     COMMIT;
   `)
   downgrade.pragma('foreign_keys=ON')
   downgrade.close()
 
   const upgraded = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(upgraded.getSchemaVersion(), 38)
+  assert.equal(upgraded.getSchemaVersion(), 39)
   assert.equal(upgraded.getAiConversation(candidateConversationId)?.context.assistant, 'candidate-profile')
   assert.equal(upgraded.getAiConversation(interviewConversationId)?.context.assistant, 'interview')
   assert.equal(upgraded.getActionRunStatus(oldActionRunId), 'queued')
@@ -230,7 +230,7 @@ try {
 
   process.stdout.write(JSON.stringify({
     fromSchema: 37,
-    toSchema: 38,
+    toSchema: 39,
     legacyCandidateConversationPreserved: true,
     legacyInterviewConversationPreserved: true,
     legacyActionRunPreserved: true,

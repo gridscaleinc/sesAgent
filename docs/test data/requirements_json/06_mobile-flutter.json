@@ -1,0 +1,18 @@
+{
+  "id": "mobile-flutter",
+  "title": "店舗スタッフ向けモバイルアプリ開発",
+  "industry": "小売 / 店舗運営",
+  "location": "新宿",
+  "period": "2026年9月から12月",
+  "contract": "派遣",
+  "skills": [
+    "Flutter",
+    "Dart",
+    "Firebase",
+    "REST API",
+    "アジャイル開発"
+  ],
+  "plus": [
+    "店舗業務理解"
+  ]
+}

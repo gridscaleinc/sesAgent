@@ -166,12 +166,16 @@ export class CandidateInterviewStore extends DomainStore {
     this.assertCandidateInterviewSubject(validated.sourceDocumentId)
     const kind = validated.kind ?? 'recruiting'
     if (kind === 'recruiting') {
-      const currentProfile = this.database
-        .prepare<[string], { id: string }>(
-          "SELECT id FROM candidate_profiles WHERE source_document_id = ? AND status = 'current'"
+      // Recruiting interviews may be arranged as soon as a resume has been
+      // imported. Human profile confirmation is still required before matching
+      // or talent-pool admission, but it must not block the earlier scheduling
+      // workflow exposed by the Agent conversation.
+      const activeCandidate = this.database
+        .prepare<[string], { source_document_id: string }>(
+          "SELECT source_document_id FROM candidate_records WHERE source_document_id = ? AND record_status = 'active'"
         )
         .get(validated.sourceDocumentId)
-      if (!currentProfile) throw new Error('Confirm the candidate profile before scheduling a recruiting interview.')
+      if (!activeCandidate) throw new Error('Only an active imported candidate can enter a recruiting interview.')
     } else {
       const eligibleMembership = this.database
         .prepare<[string], { source_document_id: string }>(

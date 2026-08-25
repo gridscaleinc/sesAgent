@@ -1,0 +1,4 @@
+"name","title","skills","summary","availability","location"
+"加藤 真央","AI アプリケーションエンジニア","Python, RAG, Vector DB, Azure OpenAI","社内ナレッジ検索 RAG の設計、プロンプト評価、セキュリティレビューを担当。","2026年8月開始可","大手町週2可"
+"吉田 海斗","Go バックエンドエンジニア","Go, gRPC, Redis, MySQL, 高負荷 API","ゲーム課金基盤の API 改修、Redis キャッシュ、負荷試験を担当。","2026年11月開始可","秋葉原出社可"
+"森 花音","Vue / Laravel エンジニア","Vue.js, Laravel, PostgreSQL, BI, 権限管理","人材分析ダッシュボードで Vue 画面、Laravel API、権限管理を担当。","2026年9月開始可","池袋出社可"

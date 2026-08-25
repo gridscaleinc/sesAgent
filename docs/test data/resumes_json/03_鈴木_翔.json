@@ -1,0 +1,14 @@
+{
+  "name": "鈴木 翔",
+  "title": "React / Node.js エンジニア",
+  "skills": [
+    "React",
+    "Node.js",
+    "TypeScript",
+    "PostgreSQL"
+  ],
+  "project_summary": "医療予約 SaaS のフロント改修と Node.js API 実装を担当。外部予約 API 連携経験あり。",
+  "availability": "即日可",
+  "location_preference": "品川出社可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

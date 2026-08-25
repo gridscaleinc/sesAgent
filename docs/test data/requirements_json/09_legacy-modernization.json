@@ -1,0 +1,18 @@
+{
+  "id": "legacy-modernization",
+  "title": "基幹システムモダナイズ",
+  "industry": "製造 / 基幹",
+  "location": "横浜",
+  "period": "2026年9月開始",
+  "contract": "SES / 準委任",
+  "skills": [
+    "Java",
+    "Struts",
+    "Spring Boot",
+    "Oracle",
+    "移行設計"
+  ],
+  "plus": [
+    "製造業務知識"
+  ]
+}

@@ -27,7 +27,7 @@ import { DomainStore } from './base'
 
 export class AgentConversationStore extends DomainStore {
   private salesAgentKnownPersonNames(targets: AgentReferenceTargets): string[] {
-    if (targets.matchRunIds.size === 0 && targets.matchResultIds.size === 0) return []
+    if (targets.candidateDocumentIds.size === 0 && targets.matchRunIds.size === 0 && targets.matchResultIds.size === 0) return []
     const targetRows = this.database
       .prepare<[], { id: string; run_id: string; candidate_profile_id: string }>(
         'SELECT id, run_id, candidate_profile_id FROM candidate_match_results'
@@ -35,14 +35,15 @@ export class AgentConversationStore extends DomainStore {
       .all()
       .filter((row) => targets.matchRunIds.has(row.run_id) || targets.matchResultIds.has(row.id))
     const profileIds = [...new Set(targetRows.map((row) => row.candidate_profile_id))]
-    if (profileIds.length === 0) return []
-    const placeholders = profileIds.map(() => '?').join(', ')
-    const sourceDocumentIds = this.database
-      .prepare<string[], { source_document_id: string }>(
-        `SELECT DISTINCT source_document_id FROM candidate_profiles WHERE id IN (${placeholders})`
-      )
-      .all(...profileIds)
-      .map((row) => row.source_document_id)
+    const matchedSourceDocumentIds = profileIds.length === 0
+      ? []
+      : this.database
+          .prepare<string[], { source_document_id: string }>(
+            `SELECT DISTINCT source_document_id FROM candidate_profiles WHERE id IN (${profileIds.map(() => '?').join(', ')})`
+          )
+          .all(...profileIds)
+          .map((row) => row.source_document_id)
+    const sourceDocumentIds = [...new Set([...targets.candidateDocumentIds, ...matchedSourceDocumentIds])]
     return [...new Set(sourceDocumentIds.flatMap((sourceDocumentId) => {
       const displayName = this.stores.candidates.getCandidateLocalIdentity(sourceDocumentId).displayName
       return displayName ? [displayName] : []
@@ -216,6 +217,15 @@ export class AgentConversationStore extends DomainStore {
       : 'stale'
   }
 
+  private agentMatchCandidateStatus(runId: string, candidateProfileId: string): AgentEntityStatus {
+    const result = this.database
+      .prepare<[string, string], { id: string }>(
+        'SELECT id FROM candidate_match_results WHERE run_id = ? AND candidate_profile_id = ? ORDER BY result_rank ASC LIMIT 1'
+      )
+      .get(runId, candidateProfileId)
+    return result ? this.agentMatchReferenceStatus(runId, result.id) : 'deleted'
+  }
+
   private hydrateSalesAgentSnapshot(snapshot: AiConversationSnapshot): AiConversationSnapshot {
     if (snapshot.context.assistant !== 'sales-agent') return snapshot
     const activeCases = new Map(this.stores.jobCases.listActiveJobCases().map((item) => [item.id, item]))
@@ -261,6 +271,37 @@ export class AgentConversationStore extends DomainStore {
           return messageChanged
             ? { ...block, facts: { ...block.facts, validity, candidate } }
             : block
+        }
+        if (block.type === 'candidate-profile-evidence') {
+          const candidate = block.facts.candidate
+          const validity = candidate
+            ? this.agentMatchCandidateStatus(block.facts.runId, candidate.candidateProfileId)
+            : block.facts.validity
+          if (validity === block.facts.validity) return block
+          messageChanged = true
+          return { ...block, facts: { ...block.facts, validity } }
+        }
+        if (block.type === 'candidate-interview-evidence') {
+          const candidate = block.facts.candidate
+          let validity = candidate
+            ? this.agentMatchCandidateStatus(block.facts.runId, candidate.candidateProfileId)
+            : block.facts.validity
+          const sourceDocumentId = candidate?.sourceDocumentId ?? (candidate
+            ? this.stores.candidates.getCandidateSourceDocumentId(candidate.candidateProfileId)
+            : null)
+          if (validity === 'current' && sourceDocumentId) {
+            const currentInterviews = this.stores.candidateInterviews.listCandidateInterviews()
+              .filter((interview) => interview.sourceDocumentId === sourceDocumentId)
+              .map((interview) => `${interview.kind}:${interview.roundNumber}:${interview.updatedAt}`)
+              .toSorted()
+            const savedInterviews = block.facts.interviews
+              .map((interview) => `${interview.kind}:${interview.roundNumber}:${interview.updatedAt}`)
+              .toSorted()
+            if (JSON.stringify(currentInterviews) !== JSON.stringify(savedInterviews)) validity = 'stale'
+          }
+          if (validity === block.facts.validity) return block
+          messageChanged = true
+          return { ...block, facts: { ...block.facts, validity } }
         }
         return block
       })
@@ -310,6 +351,7 @@ export class AgentConversationStore extends DomainStore {
          FROM ai_conversations WHERE id = ?`
       )
       .get(input.conversationId)
+    const existingSnapshot = existing ? aiConversationFromRow(existing) : null
     if (existing) {
       if (existing.revision !== input.expectedRevision) throw new Error('AI会話が更新されました。履歴を再読み込みしてください。')
       if (existing.context_key !== contextKey) throw new Error('AI会話を別の候補者または面談へ移動できません。')
@@ -339,6 +381,7 @@ export class AgentConversationStore extends DomainStore {
     const timestamp = now.toISOString()
     const snapshot = aiConversationSnapshotSchema.parse({
       id: input.conversationId,
+      branchRootConversationId: input.branchRootConversationId ?? existingSnapshot?.branchRootConversationId,
       context: input.context,
       title: aiConversationTitle(input.messages),
       messages: input.messages,

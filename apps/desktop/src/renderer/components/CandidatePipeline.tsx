@@ -28,7 +28,7 @@ type FinalDecision = Extract<CandidateInterviewDecision, 'passed' | 'next-round'
 
 type ScheduleDraft = {
   dateTime: string
-  duration: 30 | 45 | 60 | 90
+  duration: number | ''
   method: CandidateInterviewSnapshot['meetingMethod']
   meetingUrl: string
   meetingDetails: CandidateInterviewMeetingDetails
@@ -479,7 +479,7 @@ export function CandidatePipeline({
         kind: activeInterviewKind,
         roundNumber: selectedInterview?.roundNumber ?? 1,
         scheduledAt: new Date(schedule.dateTime).toISOString(),
-        durationMinutes: schedule.duration,
+        durationMinutes: Number(schedule.duration),
         meetingMethod: schedule.method,
         ...((schedule.method === 'zoom' || schedule.method === 'google-meet') ? { meetingUrl: schedule.meetingUrl.trim() } : {}),
         meetingDetails: schedule.method === 'phone'
@@ -814,7 +814,7 @@ export function CandidatePipeline({
     return <form className="recruiting-schedule-page" onSubmit={(event) => { event.preventDefault(); void saveSchedule() }}>
       <section><header><h2>{roundLabel}</h2><p>{zh ? '先确认时间、负责人和对应会议方式；保存后进入问题准备。' : '日時、担当者、会議方法を確認してから質問準備へ進みます。'}</p></header><div className="recruiting-form-grid">
         <label><span>{zh ? '面试时间' : '面談日時'}</span><input onChange={(event) => setSchedule((current) => ({ ...current, dateTime: event.target.value }))} required type="datetime-local" value={schedule.dateTime} /></label>
-        <label><span>{zh ? '时长' : '時間'}</span><select onChange={(event) => setSchedule((current) => ({ ...current, duration: Number(event.target.value) as ScheduleDraft['duration'] }))} value={schedule.duration}>{[30, 45, 60, 90].map((minutes) => <option key={minutes} value={minutes}>{minutes} {zh ? '分钟' : '分'}</option>)}</select></label>
+        <label><span>{zh ? '时长（分钟）' : '時間（分）'}</span><input max={480} min={5} onChange={(event) => setSchedule((current) => ({ ...current, duration: event.target.value === '' ? '' : Number(event.target.value) }))} required step={1} type="number" value={schedule.duration} /></label>
         <label><span>{zh ? '面试官/负责人' : '面談者・担当者'}</span><input onChange={(event) => setSchedule((current) => ({ ...current, interviewer: event.target.value }))} placeholder={zh ? '请输入负责人姓名' : '担当者名を入力'} required value={schedule.interviewer} /></label>
         <label><span>{zh ? '会议方式' : '会議方法'}</span><select onChange={(event) => updateMethod(event.target.value as ScheduleDraft['method'])} value={schedule.method}><option value="zoom">Zoom</option><option value="google-meet">Google Meet</option><option value="phone">{zh ? '电话' : '電話'}</option><option value="onsite">{zh ? '现场' : '対面'}</option></select></label>
         {schedule.method === 'zoom' ? <label className="is-wide"><span>{zh ? 'Zoom 会议链接' : 'Zoom会議リンク'}</span><div className="recruiting-url-input"><input aria-label={zh ? 'Zoom 会议链接' : 'Zoom会議リンク'} onChange={(event) => setSchedule((current) => ({ ...current, meetingUrl: event.target.value }))} placeholder="https://your-company.zoom.us/j/…" required type="url" value={schedule.meetingUrl} />{schedule.meetingUrl ? <button onClick={() => void onOpenZoomMeeting({ url: schedule.meetingUrl })} type="button"><Icon name="external-link" size={15} />{zh ? '测试打开' : '起動テスト'}</button> : null}</div><small>{zh ? '仅保存到本地加密数据库，不发送给云端 AI。' : '端末内暗号化DBだけに保存し、Cloud AIへ送信しません。'}</small></label> : null}

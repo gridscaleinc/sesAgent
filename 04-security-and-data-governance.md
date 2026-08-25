@@ -1,6 +1,6 @@
 # 安全与数据治理设计
 
-<!-- ses-current-state package=0.1.0 schema=38 -->
+<!-- ses-current-state package=0.1.0 schema=39 -->
 
 > 版本：v0.7
 > 适用范围：桌面 MVP、本地简历库、案件邮件、模型调用和提案草稿

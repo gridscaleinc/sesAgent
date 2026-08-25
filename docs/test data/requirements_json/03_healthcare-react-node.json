@@ -1,0 +1,18 @@
+{
+  "id": "healthcare-react-node",
+  "title": "医療予約 SaaS 機能拡張",
+  "industry": "医療 / ヘルスケア",
+  "location": "品川",
+  "period": "2026年8月中旬開始",
+  "contract": "準委任",
+  "skills": [
+    "React",
+    "Node.js",
+    "TypeScript",
+    "PostgreSQL",
+    "外部API連携"
+  ],
+  "plus": [
+    "医療ドメイン経験"
+  ]
+}

@@ -38,7 +38,8 @@ import {
   migrationV35,
   migrationV36,
   migrationV37,
-  migrationV38
+  migrationV38,
+  migrationV39
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
@@ -373,5 +374,18 @@ export function applyMigrations(database: Database.Database): void {
     }
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v38 foreign key verification failed.')
+  }
+  const hasV39 = database
+    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 39')
+    .get()
+  if (!hasV39) {
+    database.pragma('foreign_keys=OFF')
+    try {
+      database.exec(migrationV39)
+    } finally {
+      database.pragma('foreign_keys=ON')
+    }
+    const violations = database.pragma('foreign_key_check') as unknown[]
+    if (violations.length > 0) throw new Error('Schema v39 foreign key verification failed.')
   }
 }

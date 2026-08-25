@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 38
+export const currentSchemaVersion = 39
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -1778,6 +1778,85 @@ BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strft
 
 INSERT INTO schema_migrations(version, applied_at)
 VALUES (38, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+COMMIT;
+`
+
+// v39 preserves the exact interview duration supplied by the operator. The
+// previous fixed preset CHECK rejected legitimate values such as 50 minutes,
+// so SQLite requires an atomic table rebuild to widen the constraint.
+export const migrationV39 = `
+BEGIN IMMEDIATE;
+
+DROP TRIGGER IF EXISTS backup_revision_candidate_interview_sessions_insert;
+DROP TRIGGER IF EXISTS backup_revision_candidate_interview_sessions_update;
+DROP TRIGGER IF EXISTS backup_revision_candidate_interview_sessions_delete;
+
+CREATE TABLE candidate_interview_sessions_v39 (
+  id TEXT PRIMARY KEY,
+  source_document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'recruiting' CHECK (kind IN ('recruiting', 'client')),
+  round_number INTEGER NOT NULL DEFAULT 1 CHECK (round_number > 0 AND round_number <= 20),
+  parent_interview_id TEXT REFERENCES candidate_interview_sessions_v39(id) ON DELETE SET NULL,
+  stage TEXT NOT NULL CHECK (stage IN (
+    'new', 'contacting', 'scheduled', 'prepared', 'interviewing', 'awaiting-decision', 'on-hold', 'passed', 'closed'
+  )),
+  scheduled_at TEXT,
+  duration_minutes INTEGER NOT NULL DEFAULT 60 CHECK (
+    typeof(duration_minutes) = 'integer' AND duration_minutes BETWEEN 5 AND 480
+  ),
+  meeting_method TEXT NOT NULL DEFAULT 'zoom' CHECK (meeting_method IN ('zoom', 'google-meet', 'phone', 'onsite')),
+  meeting_url TEXT,
+  meeting_details_json TEXT NOT NULL DEFAULT '{}',
+  interviewer TEXT,
+  contact_note TEXT,
+  interview_goal TEXT,
+  question_plan_json TEXT NOT NULL DEFAULT '[]',
+  interview_notes TEXT,
+  unresolved_items_json TEXT NOT NULL DEFAULT '[]',
+  decision TEXT CHECK (decision IN ('passed', 'next-round', 'on-hold', 'failed', 'no-show', 'withdrawn')),
+  decision_reason TEXT,
+  decided_at TEXT,
+  decided_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  cloud_eligible INTEGER NOT NULL DEFAULT 0 CHECK (cloud_eligible = 0),
+  UNIQUE(source_document_id, kind, round_number),
+  CHECK ((decision IS NULL AND decision_reason IS NULL AND decided_at IS NULL AND decided_by IS NULL) OR
+         (decision IS NOT NULL AND decision_reason IS NOT NULL AND decided_at IS NOT NULL AND decided_by IS NOT NULL))
+);
+
+INSERT INTO candidate_interview_sessions_v39(
+  id, source_document_id, kind, round_number, parent_interview_id, stage,
+  scheduled_at, duration_minutes, meeting_method, meeting_url, meeting_details_json, interviewer,
+  contact_note, interview_goal, question_plan_json, interview_notes, unresolved_items_json,
+  decision, decision_reason, decided_at, decided_by, created_at, updated_at, updated_by, cloud_eligible
+)
+SELECT id, source_document_id, kind, round_number, parent_interview_id, stage,
+       scheduled_at, duration_minutes, meeting_method, meeting_url, meeting_details_json, interviewer,
+       contact_note, interview_goal, question_plan_json, interview_notes, unresolved_items_json,
+       decision, decision_reason, decided_at, decided_by, created_at, updated_at, updated_by, cloud_eligible
+FROM candidate_interview_sessions
+ORDER BY source_document_id, kind, round_number;
+
+DROP TABLE candidate_interview_sessions;
+ALTER TABLE candidate_interview_sessions_v39 RENAME TO candidate_interview_sessions;
+
+CREATE INDEX candidate_interview_sessions_candidate_idx
+  ON candidate_interview_sessions(source_document_id, kind, round_number DESC);
+CREATE INDEX candidate_interview_sessions_stage_schedule_idx
+  ON candidate_interview_sessions(stage, scheduled_at ASC, updated_at DESC);
+
+CREATE TRIGGER backup_revision_candidate_interview_sessions_insert AFTER INSERT ON candidate_interview_sessions
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_interview_sessions_update AFTER UPDATE ON candidate_interview_sessions
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_interview_sessions_delete AFTER DELETE ON candidate_interview_sessions
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+INSERT INTO schema_migrations(version, applied_at)
+VALUES (39, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 
 COMMIT;
 `

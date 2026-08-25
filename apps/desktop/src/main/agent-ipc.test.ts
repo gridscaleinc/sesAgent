@@ -5,6 +5,7 @@ import {
   type AiConversationSnapshot,
   type CandidateMatchTaskExecutionResult,
   type ExecuteAgentTurnInput,
+  type JobCaseReviewSnapshot,
   type SaveAiConversationInput
 } from '@shared'
 import type { ActionOrchestrator } from '@action-runtime'
@@ -52,13 +53,17 @@ function input(message: string, id = requestId, options: {
   conversationId?: string
   expectedConversationRevision?: number | null
   selectedJobCaseRef?: ExecuteAgentTurnInput['selectedJobCaseRef']
+  activeSystemAccess?: ExecuteAgentTurnInput['activeSystemAccess']
+  attachmentFileTokens?: string[]
 } = {}): ExecuteAgentTurnInput {
   return {
     conversationId: options.conversationId ?? conversationId,
     message,
     expectedConversationRevision: options.expectedConversationRevision ?? null,
     requestId: id,
-    selectedJobCaseRef: options.selectedJobCaseRef ?? null
+    selectedJobCaseRef: options.selectedJobCaseRef ?? null,
+    ...(options.activeSystemAccess ? { activeSystemAccess: options.activeSystemAccess } : {}),
+    ...(options.attachmentFileTokens ? { attachmentFileTokens: options.attachmentFileTokens } : {})
   }
 }
 
@@ -118,6 +123,16 @@ function createDependencies(options: {
         workStyle: 'リモート', role: 'バックエンド', location: '東京', workAuthorization: '就労制限なし',
         projectExperiences: []
       }
+    })),
+    getCandidateSourceDocumentId: vi.fn(() => '88888888-8888-4888-8888-888888888888'),
+    listCandidateReviews: vi.fn(() => []),
+    listCandidateInterviews: vi.fn(() => []),
+    listJobCaseReviews: vi.fn(() => []),
+    listWorkTasks: vi.fn(() => []),
+    getWorkTask: vi.fn(() => null),
+    listActionApprovals: vi.fn(() => []),
+    getMatchingHomeProjection: vi.fn(() => ({
+      state: 'onboarding', eligibleCandidateCount: 0, selectedJobCaseId: null, jobCases: [], currentRun: null
     }))
   } as unknown as EncryptedApplicationRepository
   const actionOrchestrator = {
@@ -254,6 +269,24 @@ describe('agent IPC boundary', () => {
     stop()
   })
 
+  it('binds request idempotency to the complete turn input', async () => {
+    const stop = registerAgentIpcHandlers(createDependencies())
+    await expect(invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？'))).resolves.toMatchObject({ status: 'completed' })
+    await expect(invoke(ipcChannels.executeAgentTurn, input('换一个完全不同的问题'))).rejects.toThrow('REQUEST_ID_INPUT_MISMATCH')
+    stop()
+  })
+
+  it('rejects an attachment token that Main did not stage', async () => {
+    const dependencies = createDependencies()
+    Object.assign(dependencies.repository, { getStagedFileRecords: vi.fn(() => []) })
+    const stop = registerAgentIpcHandlers(dependencies)
+    await expect(invoke(ipcChannels.executeAgentTurn, input('总结附件', requestId, {
+      attachmentFileTokens: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']
+    }))).rejects.toThrow('AGENT_ATTACHMENT_NOT_FOUND')
+    expect(dependencies.narrativeStreamer?.plan).not.toHaveBeenCalled()
+    stop()
+  })
+
   it('links a first-turn candidate match ActionRun only after the new conversation is saved', async () => {
     const actionRunId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
     const runCandidateMatchTask = vi.fn(async () => ({
@@ -342,6 +375,116 @@ describe('agent IPC boundary', () => {
     expect(sender.send.mock.calls.map((call) => (call[1] as { type: string }).type)).toEqual([
       'started', 'started', 'started', 'delta', 'completed'
     ])
+    stop()
+  })
+
+  it('re-resolves the active right workspace in Main and passes only its safe projection to planning and answer', async () => {
+    const plan = vi.fn(async (_planInput: Parameters<AgentNarrativeStreamer['plan']>[0]) => ({ kind: 'answer' as const }))
+    const streamAnswer = vi.fn(async (streamInput: Parameters<AgentNarrativeStreamer['streamAnswer']>[0]) => {
+      streamInput.onClientRequestId('workspace-answer-request')
+      streamInput.onDelta('右侧有一个待审核 Java 案件。')
+      streamInput.onRemoteSettled()
+      return {
+        clientRequestId: 'workspace-answer-request', responseId: 'workspace-answer-response',
+        content: '右侧有一个待审核 Java 案件。', billingModeUsed: 'subscription' as const
+      }
+    })
+    const dependencies = createDependencies({
+      narrativeStreamer: {
+        plan,
+        streamAnswer,
+        stream: vi.fn(),
+        cancel: vi.fn(async (clientRequestId) => ({ clientRequestId, status: 'cancel_requested' as const }))
+      }
+    })
+    vi.mocked(dependencies.repository.listJobCaseReviews).mockReturnValue([{
+      reviewId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      sourceId: 'source-1', sourceType: 'manual', providerMessageId: null, threadId: 'thread-1', fromDomain: null,
+      messageDate: '2026-08-24T00:00:00.000Z', redactedSubject: 'Java 案件', redactedPreview: 'Java、AWS',
+      reviewRevision: 1, status: 'awaiting-review', privacyReviewed: false,
+      fields: [{ key: 'required_skills', label: '必須スキル', originalValue: 'Java', value: 'Java', confidence: 1, status: 'needs_review', sourceLabels: [], changed: false, changeReason: null }],
+      warningCodes: [], completedAt: null, reviewerDisplayName: null, jobCase: null, lifecycle: 'active', cloudEligible: false
+    } as JobCaseReviewSnapshot])
+    const stop = registerAgentIpcHandlers(dependencies)
+
+    await invoke(ipcChannels.executeAgentTurn, input('总结右侧案件', secondRequestId, {
+      activeSystemAccess: { type: 'system-access', destination: 'job-cases' }
+    }))
+
+    expect(plan).toHaveBeenCalledWith(expect.objectContaining({
+      activeWorkspaceEvidence: expect.objectContaining({
+        destination: 'job-cases',
+        data: expect.objectContaining({ pendingReviewCount: 1 })
+      })
+    }))
+    expect(streamAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      activeWorkspaceEvidence: expect.objectContaining({ destination: 'job-cases' })
+    }))
+    const serialized = JSON.stringify(vi.mocked(plan).mock.calls[0]?.[0]?.activeWorkspaceEvidence)
+    expect(serialized).toContain('Java')
+    expect(serialized).not.toContain('reviewId')
+    expect(serialized).not.toContain('aaaaaaaa-aaaa')
+    stop()
+  })
+
+  it('passes a validated meeting link only to local persistence and binds ActionRun with its hash', async () => {
+    const meetingUrl = 'https://app.zoom.us/wc/12345678901/join?pwd=local-test-only'
+    const initialConversation: AiConversationSnapshot = {
+      id: conversationId,
+      context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+      title: '面试安排',
+      messages: [{ id: 'assistant-match', role: 'assistant', content: '候选人匹配结果', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' }],
+      salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: matchRunId, lastSearchMessageId: null },
+      revision: 1,
+      createdAt: '2026-08-18T00:00:00.000Z',
+      updatedAt: '2026-08-18T00:00:00.000Z'
+    }
+    const plan = vi.fn(async (planInput: Parameters<AgentNarrativeStreamer['plan']>[0]) => {
+      planInput.onClientRequestId('schedule-planning-request')
+      planInput.onRemoteSettled()
+      return {
+        kind: 'tool' as const,
+        action: {
+          toolName: 'candidate.interview.schedule.local' as const,
+          arguments: {
+            rank: 1, date: '2026-08-20', time: '14:00', method: 'zoom' as const,
+            durationMinutes: 30, kind: 'recruiting' as const, note: null
+          }
+        }
+      }
+    })
+    const dependencies = createDependencies({
+      initialConversation,
+      narrativeStreamer: {
+        plan,
+        streamAnswer: vi.fn(),
+        stream: vi.fn(async (streamInput) => {
+          streamInput.onClientRequestId('schedule-narrative-request')
+          streamInput.onDelta('面谈已登记。')
+          streamInput.onRemoteSettled()
+          return {
+            clientRequestId: 'schedule-narrative-request', responseId: 'schedule-narrative-response',
+            content: '面谈已登记。', billingModeUsed: 'subscription' as const
+          }
+        }),
+        cancel: vi.fn(async (clientRequestId) => ({ clientRequestId, status: 'cancel_requested' as const }))
+      }
+    })
+    const stop = registerAgentIpcHandlers(dependencies)
+
+    const result = await invoke(ipcChannels.executeAgentTurn, input(
+      `30分钟。Zoom 链接是 ${meetingUrl}`,
+      secondRequestId,
+      { expectedConversationRevision: 1 }
+    )) as { status: string; toolName: string | null }
+
+    expect(result).toMatchObject({ status: 'completed', toolName: 'candidate.interview.schedule.local' })
+    expect(dependencies.scheduleCandidateInterview).toHaveBeenCalledWith(expect.objectContaining({
+      meetingMethod: 'zoom', meetingUrl, durationMinutes: 30
+    }))
+    const preflightInput = vi.mocked(dependencies.actionOrchestrator.preflight).mock.calls[0]?.[2]
+    expect(preflightInput).toMatchObject({ meetingUrlHash: expect.stringMatching(/^[a-f0-9]{64}$/u) })
+    expect(JSON.stringify(preflightInput)).not.toContain(meetingUrl)
     stop()
   })
 

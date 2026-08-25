@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secure Talent Match AI Wireframe</title>
+<style>
+:root{--background:#fff;--foreground:#111;--card:#fff;--card-foreground:#111;--muted:#eceff3;--muted-foreground:#5f6673;--primary:#2563eb;--primary-foreground:#fff;--border:#c9ced6;--ring:#2563eb;--viz-series-1:#3D8DFF}
+body{margin:0;padding:24px;font-family:Arial,"Helvetica Neue",sans-serif;background:var(--background);color:var(--foreground)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--border);background:var(--background);color:var(--foreground);padding:8px 12px;font:inherit;cursor:pointer}
+.btn-primary{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
+.form-label{display:grid;gap:8px;font-weight:500}
+.form-control{border:1px solid var(--border);padding:10px;font:inherit;background:var(--background);color:var(--foreground)}
+.text-small{font-size:13px}.text-muted{color:var(--muted-foreground)}
+</style>
+</head>
+<body>
+<div id="hr-ai-wireframe" class="hr-wireframe">
+  <style>
+    #hr-ai-wireframe {
+      color: var(--foreground);
+      background: transparent;
+    }
+    #hr-ai-wireframe * {
+      box-sizing: border-box;
+    }
+    #hr-ai-wireframe .wire-shell {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 14px;
+      width: 100%;
+    }
+    #hr-ai-wireframe .wire-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-right: 1px solid var(--border);
+      padding-right: 12px;
+    }
+    #hr-ai-wireframe .wire-nav .btn {
+      justify-content: flex-start;
+      width: 100%;
+    }
+    #hr-ai-wireframe .wire-main {
+      min-width: 0;
+      display: grid;
+      gap: 14px;
+    }
+    #hr-ai-wireframe .wire-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    #hr-ai-wireframe .wire-title {
+      display: grid;
+      gap: 2px;
+    }
+    #hr-ai-wireframe .wire-stage {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    #hr-ai-wireframe .stage-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted-foreground);
+    }
+    #hr-ai-wireframe .stage-dot::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--background);
+    }
+    #hr-ai-wireframe .stage-dot.is-active {
+      color: var(--foreground);
+    }
+    #hr-ai-wireframe .stage-dot.is-active::before {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+    #hr-ai-wireframe .page {
+      display: none;
+      gap: 14px;
+    }
+    #hr-ai-wireframe .page.is-active {
+      display: grid;
+    }
+    #hr-ai-wireframe .wire-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    #hr-ai-wireframe .wire-grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    #hr-ai-wireframe .wire-box {
+      border: 1px dashed var(--border);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+    #hr-ai-wireframe .wire-box.solid {
+      border-style: solid;
+      background: color-mix(in srgb, var(--card) 70%, transparent);
+    }
+    #hr-ai-wireframe .wire-line {
+      min-height: 12px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--muted) 72%, transparent);
+    }
+    #hr-ai-wireframe .wire-line.short {
+      width: 48%;
+    }
+    #hr-ai-wireframe .wire-line.mid {
+      width: 72%;
+    }
+    #hr-ai-wireframe .wire-row {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr) 72px;
+      gap: 10px;
+      align-items: center;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    #hr-ai-wireframe .wire-row:last-child {
+      border-bottom: 0;
+    }
+    #hr-ai-wireframe .score {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      border: 1px solid var(--border);
+      background: var(--background);
+      font-weight: 500;
+    }
+    #hr-ai-wireframe .meter {
+      height: 8px;
+      background: color-mix(in srgb, var(--muted) 74%, transparent);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    #hr-ai-wireframe .meter span {
+      display: block;
+      height: 100%;
+      background: var(--viz-series-1);
+    }
+    #hr-ai-wireframe .candidate-list {
+      display: grid;
+      gap: 8px;
+    }
+    #hr-ai-wireframe .candidate-btn {
+      text-align: left;
+      display: grid;
+      gap: 5px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--foreground);
+      padding: 10px;
+      font: inherit;
+      cursor: pointer;
+    }
+    #hr-ai-wireframe .candidate-btn[aria-pressed="true"] {
+      border-color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+    }
+    #hr-ai-wireframe .detail-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 220px;
+      gap: 12px;
+    }
+    #hr-ai-wireframe .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    #hr-ai-wireframe .tag {
+      border: 1px solid var(--border);
+      padding: 4px 7px;
+      color: var(--muted-foreground);
+    }
+    #hr-ai-wireframe textarea {
+      min-height: 130px;
+      resize: vertical;
+    }
+    #hr-ai-wireframe .question {
+      display: grid;
+      gap: 6px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    #hr-ai-wireframe .question:last-child {
+      border-bottom: 0;
+    }
+    @media (max-width: 640px) {
+      #hr-ai-wireframe .wire-shell,
+      #hr-ai-wireframe .wire-grid,
+      #hr-ai-wireframe .wire-grid.three,
+      #hr-ai-wireframe .detail-layout {
+        grid-template-columns: 1fr;
+      }
+      #hr-ai-wireframe .wire-nav {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        padding-right: 0;
+        padding-bottom: 10px;
+      }
+      #hr-ai-wireframe .wire-row {
+        grid-template-columns: 68px minmax(0, 1fr);
+      }
+      #hr-ai-wireframe .wire-row .score {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
+  <div class="wire-shell">
+    <nav class="wire-nav" aria-label="低保真原型页面">
+      <button type="button" class="btn btn-primary" data-page="needs">项目需求</button>
+      <button type="button" class="btn" data-page="import">简历导入</button>
+      <button type="button" class="btn" data-page="results">匹配结果</button>
+      <button type="button" class="btn" data-page="detail">候选人详情</button>
+      <button type="button" class="btn" data-page="interview">面试问题</button>
+    </nav>
+    <main class="wire-main">
+      <section class="wire-top" aria-label="流程进度">
+        <div class="wire-title">
+          <strong id="wire-page-title">项目需求页</strong>
+          <span class="text-small text-muted" id="wire-page-subtitle">把项目/JD 拆成可评分的条件与权重</span>
+        </div>
+        <div class="wire-stage">
+          <span class="stage-dot is-active" data-stage="needs">需求</span>
+          <span class="stage-dot" data-stage="import">导入</span>
+          <span class="stage-dot" data-stage="results">匹配</span>
+          <span class="stage-dot" data-stage="detail">确认</span>
+          <span class="stage-dot" data-stage="interview">面试</span>
+        </div>
+      </section>
+
+      <section class="page is-active" data-page-view="needs" aria-label="项目需求页">
+        <div class="wire-grid">
+          <label class="form-label">项目需求 / JD
+            <textarea class="form-control">Java 后端工程师，5 年以上，支付系统经验，能读写日语，3 周内到岗。</textarea>
+          </label>
+          <div class="wire-box solid">
+            <strong>AI 需求拆解</strong>
+            <div class="tag-row">
+              <span class="tag">必须: Java</span>
+              <span class="tag">必须: 5 年以上</span>
+              <span class="tag">加分: 支付系统</span>
+              <span class="tag">确认: 到岗时间</span>
+            </div>
+            <div class="wire-line"></div>
+            <div class="wire-line mid"></div>
+            <button type="button" class="btn btn-primary" data-page="import">确认需求并导入简历</button>
+          </div>
+        </div>
+        <div class="wire-grid three">
+          <div class="wire-box">
+            <strong>评分权重</strong>
+            <span class="text-small text-muted">技能 30% / 项目 25% / 行业 15%</span>
+            <div class="meter"><span style="width: 70%"></span></div>
+          </div>
+          <div class="wire-box">
+            <strong>硬性条件</strong>
+            <div class="wire-line"></div>
+            <div class="wire-line mid"></div>
+          </div>
+          <div class="wire-box">
+            <strong>面试验证点</strong>
+            <div class="wire-line"></div>
+            <div class="wire-line short"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page-view="import" aria-label="简历导入页">
+        <div class="wire-grid">
+          <div class="wire-box solid">
+            <strong>导入来源</strong>
+            <button type="button" class="btn">上传 PDF / Word 简历</button>
+            <button type="button" class="btn">导入 ATS 导出的 CSV</button>
+            <button type="button" class="btn">选择本地简历文件夹</button>
+          </div>
+          <div class="wire-box">
+            <strong>本地处理状态</strong>
+            <div class="wire-row"><span>解析</span><div class="meter"><span style="width: 88%"></span></div><span class="score">88%</span></div>
+            <div class="wire-row"><span>脱敏</span><div class="meter"><span style="width: 100%"></span></div><span class="score">完成</span></div>
+            <div class="wire-row"><span>入库</span><div class="meter"><span style="width: 74%"></span></div><span class="score">74%</span></div>
+          </div>
+        </div>
+        <div class="wire-box">
+          <strong>字段预览</strong>
+          <div class="wire-grid three">
+            <div><span class="text-small text-muted">候选人</span><div class="wire-line"></div></div>
+            <div><span class="text-small text-muted">技能标签</span><div class="wire-line"></div></div>
+            <div><span class="text-small text-muted">最近项目</span><div class="wire-line"></div></div>
+          </div>
+          <button type="button" class="btn btn-primary" data-page="results">开始匹配评分</button>
+        </div>
+      </section>
+
+      <section class="page" data-page-view="results" aria-label="匹配结果页">
+        <div class="wire-box solid">
+          <strong>候选人排序</strong>
+          <div class="wire-row"><span>田中 A</span><div><div class="wire-line mid"></div><span class="text-small text-muted">Java / 支付 / 日语 OK</span></div><span class="score">91</span></div>
+          <div class="wire-row"><span>佐藤 B</span><div><div class="wire-line mid"></div><span class="text-small text-muted">后端强 / 支付较弱</span></div><span class="score">84</span></div>
+          <div class="wire-row"><span>鈴木 C</span><div><div class="wire-line mid"></div><span class="text-small text-muted">经验匹配 / 到岗未知</span></div><span class="score">78</span></div>
+        </div>
+        <div class="wire-grid three">
+          <div class="wire-box"><strong>推荐理由</strong><div class="wire-line"></div><div class="wire-line mid"></div></div>
+          <div class="wire-box"><strong>风险点</strong><div class="wire-line"></div><div class="wire-line short"></div></div>
+          <div class="wire-box"><strong>人工确认</strong><div class="wire-line"></div><div class="wire-line mid"></div></div>
+        </div>
+        <button type="button" class="btn btn-primary" data-page="detail">查看候选人详情</button>
+      </section>
+
+      <section class="page" data-page-view="detail" aria-label="候选人详情页">
+        <div class="detail-layout">
+          <div class="wire-box solid">
+            <strong>田中 A｜匹配分 91</strong>
+            <div class="tag-row">
+              <span class="tag">Java 7 年</span>
+              <span class="tag">支付网关</span>
+              <span class="tag">日语 N1</span>
+              <span class="tag">3 周内可动</span>
+            </div>
+            <div class="wire-grid">
+              <div class="wire-box">
+                <strong>为什么适合</strong>
+                <div class="wire-line"></div>
+                <div class="wire-line mid"></div>
+              </div>
+              <div class="wire-box">
+                <strong>需要确认</strong>
+                <div class="wire-line"></div>
+                <div class="wire-line short"></div>
+              </div>
+            </div>
+            <div class="wire-box">
+              <strong>简历证据</strong>
+              <div class="wire-line"></div>
+              <div class="wire-line"></div>
+              <div class="wire-line mid"></div>
+            </div>
+          </div>
+          <aside class="wire-box">
+            <strong>分项评分</strong>
+            <span class="text-small text-muted">技能匹配</span><div class="meter"><span style="width: 92%"></span></div>
+            <span class="text-small text-muted">项目经验</span><div class="meter"><span style="width: 88%"></span></div>
+            <span class="text-small text-muted">语言能力</span><div class="meter"><span style="width: 80%"></span></div>
+            <button type="button" class="btn btn-primary" data-page="interview">生成面试问题</button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="page" data-page-view="interview" aria-label="面试问题页">
+        <div class="wire-grid">
+          <div class="wire-box solid">
+            <strong>面试问题草案</strong>
+            <div class="question">
+              <span>请说明支付网关重构中你负责的模块，以及异常交易如何处理。</span>
+              <span class="text-small text-muted">验证点：真实职责 / 资金一致性 / 障害対応</span>
+            </div>
+            <div class="question">
+              <span>项目高峰期并发量是多少？你做过哪些性能优化？</span>
+              <span class="text-small text-muted">验证点：规模感 / 技术深度 / 可复现经验</span>
+            </div>
+            <div class="question">
+              <span>请用日语解释一次跨团队沟通中的技术取舍。</span>
+              <span class="text-small text-muted">验证点：日语业务沟通 / 协作能力</span>
+            </div>
+          </div>
+          <div class="wire-box">
+            <strong>面试评分表</strong>
+            <div class="wire-row"><span>技术</span><div class="wire-line"></div><span class="score">/5</span></div>
+            <div class="wire-row"><span>项目</span><div class="wire-line"></div><span class="score">/5</span></div>
+            <div class="wire-row"><span>沟通</span><div class="wire-line"></div><span class="score">/5</span></div>
+            <button type="button" class="btn">导出面试准备表</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    (function () {
+      const root = document.getElementById('hr-ai-wireframe');
+      const titles = {
+        needs: ['项目需求页', '把项目/JD 拆成可评分的条件与权重'],
+        import: ['简历导入页', '导入简历、ATS CSV，并在本地解析和脱敏'],
+        results: ['匹配结果页', '按项目需求输出排序、推荐理由和风险点'],
+        detail: ['候选人详情页', '查看分项评分、证据来源和人工确认项'],
+        interview: ['面试问题页', '生成针对候选人的追问和评分表']
+      };
+      function showPage(page) {
+        root.querySelectorAll('[data-page-view]').forEach((view) => {
+          view.classList.toggle('is-active', view.dataset.pageView === page);
+        });
+        root.querySelectorAll('[data-page]').forEach((button) => {
+          const isActive = button.dataset.page === page;
+          button.classList.toggle('btn-primary', isActive);
+        });
+        root.querySelectorAll('[data-stage]').forEach((stage) => {
+          stage.classList.toggle('is-active', stage.dataset.stage === page);
+        });
+        root.querySelector('#wire-page-title').textContent = titles[page][0];
+        root.querySelector('#wire-page-subtitle').textContent = titles[page][1];
+      }
+      root.querySelectorAll('[data-page]').forEach((button) => {
+        button.addEventListener('click', () => showPage(button.dataset.page));
+      });
+    })();
+  </script>
+</div>
+
+</body>
+</html>

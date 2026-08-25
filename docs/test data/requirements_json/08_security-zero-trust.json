@@ -1,0 +1,19 @@
+{
+  "id": "security-zero-trust",
+  "title": "社内ゼロトラスト移行支援",
+  "industry": "セキュリティ",
+  "location": "六本木",
+  "period": "2026年10月から",
+  "contract": "業務委託",
+  "skills": [
+    "認証基盤",
+    "IdP",
+    "SAML",
+    "Azure AD",
+    "ネットワーク設計"
+  ],
+  "plus": [
+    "CISSP",
+    "監査対応"
+  ]
+}

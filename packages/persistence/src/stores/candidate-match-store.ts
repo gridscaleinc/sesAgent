@@ -206,6 +206,7 @@ export class CandidateMatchStore extends DomainStore {
       validity,
       candidate: {
         candidateProfileId: candidate.candidateProfileId,
+        sourceDocumentId: profile.sourceDocumentId,
         rank: candidate.rank,
         anonymousLabel: candidate.anonymousLabel
       },
@@ -259,6 +260,7 @@ export class CandidateMatchStore extends DomainStore {
       .filter((interview) => interview.sourceDocumentId === profile.sourceDocumentId)
       .slice(0, 40)
       .map((interview) => ({
+        interviewId: interview.id,
         kind: interview.kind,
         roundNumber: interview.roundNumber,
         stage: interview.stage,
@@ -276,7 +278,12 @@ export class CandidateMatchStore extends DomainStore {
     return {
       runId,
       validity,
-      candidate: { candidateProfileId: candidate.candidateProfileId, rank: candidate.rank, anonymousLabel: candidate.anonymousLabel },
+      candidate: {
+        candidateProfileId: candidate.candidateProfileId,
+        sourceDocumentId: profile.sourceDocumentId,
+        rank: candidate.rank,
+        anonymousLabel: candidate.anonymousLabel
+      },
       interviews
     }
   }

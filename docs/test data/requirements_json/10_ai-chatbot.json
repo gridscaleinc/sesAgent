@@ -1,0 +1,19 @@
+{
+  "id": "ai-chatbot",
+  "title": "社内ナレッジ AI チャット導入",
+  "industry": "社内 DX",
+  "location": "大手町",
+  "period": "2026年8月開始",
+  "contract": "業務委託",
+  "skills": [
+    "LLM",
+    "RAG",
+    "Python",
+    "Vector DB",
+    "Azure OpenAI",
+    "セキュリティレビュー"
+  ],
+  "plus": [
+    "社内問い合わせ運用"
+  ]
+}

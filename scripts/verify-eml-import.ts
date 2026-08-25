@@ -84,7 +84,7 @@ try {
   }
 
   const reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(reopened.getSchemaVersion(), 38)
+  assert.equal(reopened.getSchemaVersion(), 39)
   assert.equal(reopened.getEmlJobCaseReview(parsed.sourceMessageKey)?.reviewId, review.reviewId)
   reopened.close()
   bytes.fill(0)
@@ -97,7 +97,7 @@ try {
     attachmentPersisted: parsed.security.attachmentsPersisted,
     rawFileCloudEligible: parsed.security.rawFileCloudEligible,
     encryptedDatabase: true,
-    schemaVersion: 38
+    schemaVersion: 39
   })}\n`)
 } finally {
   bytes.fill(0)

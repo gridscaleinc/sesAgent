@@ -1,0 +1,19 @@
+{
+  "id": "ec-python-data",
+  "title": "EC 需要予測データ基盤",
+  "industry": "EC / 流通",
+  "location": "豊洲",
+  "period": "2026年10月開始",
+  "contract": "業務委託",
+  "skills": [
+    "Python",
+    "SQL",
+    "BigQuery",
+    "ETL",
+    "データ可視化"
+  ],
+  "plus": [
+    "Vertex AI",
+    "小売データ分析"
+  ]
+}

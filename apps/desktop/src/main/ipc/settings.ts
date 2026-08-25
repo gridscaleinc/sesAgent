@@ -14,7 +14,9 @@ import {
   saveLocalApplicationPreferencesInputSchema,
   saveLocalOperatorProfileInputSchema
 } from '@shared'
+import { effectiveApplicationPreferences } from '../app-defaults'
 import { assertTrustedSender, type MainIpcContext } from './context'
+import { hydrateConversationResumeFacts } from './resume-import'
 
 /** Local operator profile, application preferences and AI conversation history. */
 export function registerSettingsHandlers(context: MainIpcContext) {
@@ -42,7 +44,16 @@ export function registerSettingsHandlers(context: MainIpcContext) {
     (event, rawContext): AiConversationSnapshot[] => {
       assertTrustedSender(event)
       const context: AiConversationContext = aiConversationContextSchema.parse(rawContext)
-      return repository.listAiConversations(context)
+      const zh = effectiveApplicationPreferences(repository).locale === 'zh-CN'
+      return repository.listAiConversations(context).map((conversation) => {
+        try {
+          return hydrateConversationResumeFacts(repository, conversation, zh)
+        } catch {
+          // History loading remains available if a concurrent turn updated the
+          // same revision. The next read can retry this deterministic backfill.
+          return repository.getAiConversation(conversation.id) ?? conversation
+        }
+      })
     }
   )
 

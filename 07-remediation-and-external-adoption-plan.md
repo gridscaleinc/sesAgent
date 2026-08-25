@@ -1,12 +1,12 @@
 # SES Agent Desktop 整改与外部能力吸收改造方案
 
-<!-- ses-current-state package=0.1.0 schema=38 -->
+<!-- ses-current-state package=0.1.0 schema=39 -->
 
-> 版本：v0.7  
-> 日期：2026-08-18  
-> 状态：A-01 与 B-01/B-02/B-03/B-04/B-05/B-06 已完成本机实现与自动验证；B-03-1 已在获授权开发 Mac 上完成真实微信 4.1.5 AX/窗口捕获探针和本地 Helper 验收，但最终签名包、四方批准、真实日文专家质量/审计证据和正式发布证据仍未验证  
-> 当前主系统：`/Users/yk/project/life/ses-agent-desktop`  
-> 外部对照项目：`/Users/yk/Downloads/Secure Talent Match AI/Secure Talent Match AI`  
+> 版本：v0.7
+> 日期：2026-08-18
+> 状态：A-01 与 B-01/B-02/B-03/B-04/B-05/B-06 已完成本机实现与自动验证；B-03-1 已在获授权开发 Mac 上完成真实微信 4.1.5 AX/窗口捕获探针和本地 Helper 验收，但最终签名包、四方批准、真实日文专家质量/审计证据和正式发布证据仍未验证
+> 当前主系统：`/Users/yk/project/life/ses-agent-desktop`
+> 外部对照项目：`/Users/yk/Downloads/Secure Talent Match AI/Secure Talent Match AI`
 > 核心决策：继续以 SES Agent Desktop 为唯一产品与技术主干；外部项目只作为产品交互、连接器思路和合成测试资料的参考，不进行代码合并或技术栈迁移。
 
 ## 1. 文档目的
@@ -79,7 +79,7 @@ A-01 实施卡：Owner 尚待项目方指定；目标版本为下一个 P0 安�
 
 ### A-01 普通 Cloud AI 的硬性出网门与真实日文专家证据分层
 
-**优先级：P0**  
+**优先级：P0**
 **当前状态：已完成本机代码、自动测试、策略文档、兼容迁移、macOS 封装与包内验收**
 
 #### 现状问题
@@ -194,7 +194,7 @@ Privacy Implementation Manifest 覆盖 NER、PII、脱敏、DLP、Worker 网络�
 
 ### A-02 修正文档、Schema 与运行状态漂移
 
-**优先级：P0**  
+**优先级：P0**
 **当前状态：实施中（Schema 已升至 v37，文档与验证脚本已同步；正式来源仍不可证明）**
 
 #### 现状问题
@@ -227,7 +227,7 @@ Privacy Implementation Manifest 覆盖 NER、PII、脱敏、DLP、Worker 网络�
 
 ### A-03 扩大受控执行内核覆盖并建立覆盖规则
 
-**优先级：P1**  
+**优先级：P1**
 **当前状态：未开始**
 
 #### 现状问题
@@ -291,7 +291,7 @@ Privacy Implementation Manifest 覆盖 NER、PII、脱敏、DLP、Worker 网络�
 
 ### A-04 建立真实 SES 匹配质量门
 
-**优先级：P1**  
+**优先级：P1**
 **当前状态：未开始**
 
 #### 现状问题
@@ -364,7 +364,7 @@ Privacy Implementation Manifest 覆盖 NER、PII、脱敏、DLP、Worker 网络�
 
 ### A-05 恢复版本来源与可复现构建闭环
 
-**优先级：P0**  
+**优先级：P0**
 **当前状态：未开始**
 
 #### 现状问题
@@ -397,7 +397,7 @@ Privacy Implementation Manifest 覆盖 NER、PII、脱敏、DLP、Worker 网络�
 
 ### A-06 重建可重复的测试与发布证据
 
-**优先级：P1**  
+**优先级：P1**
 **当前状态：未开始**
 
 #### 现状问题
@@ -433,7 +433,7 @@ Privacy Implementation Manifest 覆盖 NER、PII、脱敏、DLP、Worker 网络�
 
 ### A-07 拆分超大模块，降低安全修改风险
 
-**优先级：P2**  
+**优先级：P2**
 **当前状态：未开始**
 
 #### 现状问题
@@ -532,7 +532,7 @@ flowchart LR
 
 ### B-01 条件式 Matching-first 首页
 
-**优先级：P1**  
+**优先级：P1**
 **当前状态：实施中（本机实现与自动测试通过；正式来源、真实质量门和发布验收未完成）**
 
 当前实现已在 Main/Repository 中建立 `MatchRunValidity`，绑定 JobCase ID/Version、候选池指纹、CandidateProfile Versions、算法/硬条件策略、Embedding/Reranker ID/Revision、Result Hash 和时间。首页只读取持久化结果快照：无确认数据时保留三步引导，有数据但无 Current Run 时只显示重新执行入口，有 Current Run 时按正式 Fit Rank 显示人工确认对象；Stale Run 的结果不返回 Renderer。营业优先级为独立排序视图，不覆盖默认 Fit 顺序。
@@ -570,7 +570,7 @@ flowchart LR
 
 ### B-02 统一案件来源收件箱
 
-**优先级：P1**  
+**优先级：P1**
 **当前状态：实施中（Gmail/EML/手工/一次性聊天粘贴和 macOS 微信可见消息已接入同一 Review 主链；微信正式发布证据待外部条件）**
 
 来源中心已显示每个入口的权限、范围、同步/失败/重複、确认待ち和网络状态。聊天粘贴在提交时先清空 Renderer 输入，再一次性送入 Main 的本地 NER/Redaction；只保存脱敏后的 `JobCaseSource(sourceType=chat-paste)`、Redaction Session 和既有 Extraction Draft。所有来源均标记为不可信内容，确定性 Parser 不解释来源中的 Tool Call/系统指令；业务指纹用于跨入口相似项提示。
@@ -607,7 +607,7 @@ flowchart LR
 
 ### B-03 macOS 微信当前可见消息受控连接器
 
-**优先级：P1，受控试点已实现，正式发布仍需独立证据**  
+**优先级：P1，受控试点已实现，正式发布仍需独立证据**
 **当前状态：实施中（B-03-1 在获授权开发 Mac 上可运行；最终签名/Hardened Runtime/公证候选包和四方 Go 待外部条件）**
 
 当前代码已实现独立 Swift Helper、`wechat.visible.read`、Main 原生确认、30 秒一次性 Scope Token、两阶段 IPC、窗口级本地 Vision OCR、PII/DLP、Schema v37 `wechat-visible` 来源、ActionRun 审计和可执行来源卡片。`scripts/verify-wechat-feasibility-gate.mjs` 校验实现边界；无正式目标机报告时输出 `implemented-release-no-go`，不会把开发机成功冒充为正式发布批准。报告模板位于 `evidence/wechat/`。
@@ -751,7 +751,7 @@ Scope Fingerprint、Scope Token 与脱敏 Content Hash 必须分开。不得把�
 
 ### B-04 案件、候选人证据与提案响应式确认
 
-**优先级：P1**  
+**优先级：P1**
 **当前状态：实施中（本机实现、组件测试与 Chromium 1100/1280/1440 响应式验收通过；打包后验收待外部条件）**
 
 Proposal Workspace 现在按草稿绑定的 JobCase/CandidateProfile 精确版本从数据库回读确认字段、来源标签和项目证据，不使用当前版本替换历史绑定。Renderer 只从同一 Workspace 派生三块视图，不复制领域状态；1440px 为三栏，1280px 为两栏加提案详情，1100px 为单栏堆叠。第三栏继续复用原有 Revision、Content Hash、审批失效和 Export Confirmation。真实 Chromium 复测还发现并修复了 1440px 下“视口命中三栏、但右侧实际容器不足导致第三栏被裁切”的问题；修复后 1440px 提案容器 `clientWidth=scrollWidth=718`，三列约为 174/208/312px。
@@ -783,7 +783,7 @@ Proposal Workspace 现在按草稿绑定的 JobCase/CandidateProfile 精确版�
 
 ### B-05 分离人才适配度与营业优先级
 
-**优先级：P1**  
+**优先级：P1**
 **当前状态：实施中（`business-priority-v1`、持久化历史、理由/期限绑定手动覆盖和分离 UI 已通过本机测试）**
 
 Fit 继续只来自硬条件、BM25/Vector/RRF/Reranker 和项目证据。营业优先级只读取案件时机、候选人可用时间、提案状态和人工跟进阶段；每个 Projection 保存 Rule Version、输入快照哈希、Reason Codes、生成时间和可选的 Actor/Reason/Expiry/Revision 覆盖。输入或规则变化生成新 Projection，不改写 Match Run、Fit Rank 或历史证据。
@@ -821,7 +821,7 @@ Business Priority 第一版使用透明规则并展示原因，不使用 LLM 黑
 
 ### B-06 吸收合成 Parser/ATS Fixture
 
-**优先级：P2**  
+**优先级：P2**
 **当前状态：实施中（未复制外部字节；内部从零生成的合成 Fixture Manifest 与回归测试已通过）**
 
 外部项目确认其测试文件由脚本生成，但仓库未提供 License，且当前工作树包含大量未提交改动。因此未复制其 TXT/JSON/DOCX/XLSX/CSV 字节或生成脚本；本系统在 `tests/fixtures/external-adoption/` 从零生成等价格式，Manifest 明确 `externalBytesCopied=false / synthetic=true / containsRealPersonalData=false`。Fixture 仅验证 DOCX 段落/表格、XLSX 多 Sheet/空单元格/公式/外链、ATS CSV 不在简历 Parser Allowlist、Prompt Injection 作为数据处理；不计入真实隐私、Recall@20 或客户试点证据。

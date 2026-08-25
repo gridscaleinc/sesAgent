@@ -226,6 +226,9 @@ export function createDefaultDomainToolRegistry(): DomainToolRegistry {
         scheduledAt: z.string().min(1).max(40),
         durationMinutes: z.number().int().positive().max(480),
         meetingMethod: z.enum(['zoom', 'google-meet', 'phone', 'onsite']),
+        // The link itself is encrypted only in the interview record. ActionRun
+        // receives a binding hash so audits cannot reveal meeting passwords.
+        meetingUrlHash: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
         kind: z.enum(['recruiting', 'client']),
         contactNote: z.string().max(1_500).optional()
       }).strict(),

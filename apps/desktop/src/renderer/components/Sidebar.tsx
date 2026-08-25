@@ -21,6 +21,7 @@ export type SidebarView =
 
 interface SidebarProps {
   active: SidebarView
+  agentEnabled: boolean
   taskCount: number
   caseCount: number
   candidateManagementCount: number
@@ -66,6 +67,7 @@ type NavigationGroup = {
 
 export function Sidebar({
   active,
+  agentEnabled,
   taskCount,
   caseCount,
   candidateManagementCount,
@@ -104,6 +106,7 @@ export function Sidebar({
       ? 'interviews'
       : active === 'case-import' || active === 'cases' ? 'cases' : null
   const [expanded, setExpanded] = useState<Set<NavigationGroup['id']>>(() => new Set(groupForActive ? [groupForActive as NavigationGroup['id']] : ['talent']))
+  const agentActive = active === 'matching' || active === 'agent'
 
   useEffect(() => {
     if (!groupForActive) return
@@ -145,10 +148,18 @@ export function Sidebar({
 
   return <aside className="sidebar">
     <div className="brand-row"><span className="brand-mark">S</span><div><strong>SESAI</strong><span>Agent Desktop</span></div></div>
-    <button className="primary-new-task" onClick={onResumeImport} type="button"><Icon name="upload" size={18} />{zh ? '快速导入简历' : '履歴書をすぐ取込'}</button>
+    <button
+      aria-current={agentEnabled && agentActive ? 'page' : undefined}
+      className={`primary-new-task${agentEnabled ? ' is-agent-workspace' : ''}${agentEnabled && agentActive ? ' is-active' : ''}`}
+      onClick={agentEnabled ? onMatching : onResumeImport}
+      type="button"
+    >
+      <Icon name={agentEnabled ? 'sparkles' : 'upload'} size={18} />
+      {agentEnabled ? 'SES Agent' : (zh ? '快速导入简历' : '履歴書をすぐ取込')}
+    </button>
 
     <nav aria-label={t('メインナビゲーション')} className="sidebar-nav sidebar-tree-nav">
-      <button aria-current={active === 'home' ? 'page' : undefined} className={active === 'home' ? 'nav-item is-active' : 'nav-item'} onClick={onHome} type="button"><Icon name="home" size={18} /><span>{zh ? '工作台' : 'ワークベンチ'}</span></button>
+      <button aria-current={active === 'home' ? 'page' : undefined} className={active === 'home' ? 'nav-item is-active' : 'nav-item'} onClick={onHome} type="button"><Icon name="home" size={18} /><span>{agentEnabled ? (zh ? '业务概览' : '業務概要') : (zh ? '工作台' : 'ワークベンチ')}</span></button>
       {groups.map((group) => {
         const open = expanded.has(group.id)
         const containsActive = group.items.some((item) => (item.activeWhen ?? [item.id]).includes(active))
@@ -161,7 +172,7 @@ export function Sidebar({
         </section>
       })}
       <p className="nav-label nav-label-spaced">{zh ? 'AI 与审核' : 'AI と確認'}</p>
-      <button aria-current={active === 'matching' || active === 'agent' ? 'page' : undefined} className={active === 'matching' || active === 'agent' ? 'nav-item is-active' : 'nav-item'} onClick={onMatching} type="button"><Icon name="sparkles" size={18} /><span>{zh ? 'AI 匹配' : 'AI マッチング'}</span></button>
+      {!agentEnabled ? <button aria-current={agentActive ? 'page' : undefined} className={agentActive ? 'nav-item is-active' : 'nav-item'} onClick={onMatching} type="button"><Icon name="sparkles" size={18} /><span>{zh ? 'AI 匹配' : 'AI マッチング'}</span></button> : null}
       <button aria-current={active === 'reviews' ? 'page' : undefined} className={active === 'reviews' ? 'nav-item is-active' : 'nav-item'} onClick={onReviews} type="button"><Icon name="shield" size={18} /><span>{zh ? '审核中心' : 'レビューセンター'}</span>{reviewCount > 0 ? <span className="nav-count">{reviewCount}</span> : null}</button>
     </nav>
 

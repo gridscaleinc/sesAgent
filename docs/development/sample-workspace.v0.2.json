@@ -1,0 +1,135 @@
+{
+  "appVersion": "0.1.0",
+  "workspaceSchemaVersion": "0.2.0",
+  "criteria": [
+    {
+      "id": "skill-java",
+      "category": "技能匹配",
+      "name": "Java / Spring Boot",
+      "priority": "must",
+      "weight": 30,
+      "description": "核心后端技术栈，需结合项目证据确认。"
+    },
+    {
+      "id": "project-payment",
+      "category": "项目经验",
+      "name": "支付 / 金融系统经验",
+      "priority": "must",
+      "weight": 25,
+      "description": "需要相似系统、接口和可靠性经验。"
+    },
+    {
+      "id": "language",
+      "category": "语言能力",
+      "name": "日语商务沟通",
+      "priority": "must",
+      "weight": 10,
+      "description": "需要面试确认客户沟通能力。"
+    }
+  ],
+  "validationPoints": [
+    "确认候选人与支付系统项目最接近的真实职责。",
+    "追问 Spring Boot 模块设计、接口设计和故障处理经验。",
+    "确认到岗时间、东京混合办公和日语沟通可行性。"
+  ],
+  "candidates": [
+    {
+      "id": "sample-workspace-candidate-001",
+      "name": "Sample Workspace Candidate",
+      "title": "Java Backend Engineer",
+      "level": "建议优先确认",
+      "levelType": "strong",
+      "total": 86,
+      "summary": "用于 workspace schema v0.2.0 联调的匿名样例候选人。AI 输出仅作为辅助判断。",
+      "scores": {
+        "skill": 90,
+        "project": 88,
+        "industry": 82,
+        "seniority": 86,
+        "language": 78,
+        "availability": 80
+      },
+      "tags": [
+        "Java",
+        "Spring Boot",
+        "Payment",
+        "SQL",
+        "Japanese"
+      ],
+      "strengths": [
+        "Java / Spring Boot 项目证据明确",
+        "支付 API 经验较接近",
+        "可作为短名单候选人复核"
+      ],
+      "gaps": [
+        "AWS 深度需面试确认"
+      ],
+      "risks": [
+        "到岗时间需确认",
+        "客户沟通场景需人工确认"
+      ],
+      "evidence": [
+        {
+          "label": "项目经历",
+          "text": "匿名样例：支付系统刷新项目，负责 Java / Spring Boot API。"
+        },
+        {
+          "label": "技能证据",
+          "text": "匿名样例：Java 7 年、Spring Boot 5 年、SQL 6 年。"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "candidateId": "sample-workspace-candidate-001",
+      "text": "样例备注：建议项目负责人复核支付系统职责和日语沟通场景。",
+      "time": "2026/07/23 10:00:00"
+    }
+  ],
+  "auditLog": [
+    {
+      "time": "2026-07-23T01:00:00.000Z",
+      "actor": "demo-user",
+      "action": "sample_workspace_created",
+      "target": "workspace",
+      "mode": "local",
+      "metadata": {
+        "model": "ollama-qwen-local",
+        "promptVersion": "match-v0.1",
+        "redactionLevel": "standard"
+      }
+    }
+  ],
+  "reviewDecisions": {
+    "sample-workspace-candidate-001": "interview"
+  },
+  "filters": {
+    "query": "",
+    "level": "all",
+    "reviewDecision": "all",
+    "sortBy": "total",
+    "shortlistOnly": false
+  },
+  "aiConfig": {
+    "model": "ollama-qwen-local",
+    "promptVersion": "match-v0.1",
+    "redactionLevel": "standard"
+  },
+  "requirementConfirmed": true,
+  "lastCsvMapping": [
+    {
+      "header": "skills",
+      "mappedTo": "技能标签"
+    },
+    {
+      "header": "project_experience",
+      "mappedTo": "项目经历"
+    }
+  ],
+  "apiMode": false,
+  "userRole": "hr",
+  "lastSavedAt": "2026-07-23T01:00:00.000Z",
+  "lastMatchDurationMs": 1420,
+  "selectedCandidateId": "sample-workspace-candidate-001"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "山本 大輔",
+  "title": "Salesforce エンジニア",
+  "skills": [
+    "Salesforce",
+    "Apex",
+    "Visualforce",
+    "外部API連携"
+  ],
+  "project_summary": "CRM 統合で Apex バッチ、外部 API 連携、権限設計を担当。",
+  "availability": "2026年8月開始可",
+  "location_preference": "東京駅周辺可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

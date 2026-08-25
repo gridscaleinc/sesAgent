@@ -359,14 +359,15 @@ try {
   }, rejectedRedaction.session.id, rejectedExtraction)
   const rejectedReview = repository.getCandidateReview(rejectedDocumentId)
   assert.ok(rejectedReview)
-  assert.throws(() => repository.saveCandidateInterviewSchedule({
+  const preConfirmationInterview = repository.saveCandidateInterviewSchedule({
     sourceDocumentId: rejectedDocumentId,
     scheduledAt: '2026-07-18T02:00:00.000Z',
     durationMinutes: 30,
     meetingMethod: 'phone',
     interviewer: '検証担当者'
-  }, '検証担当者', new Date('2026-07-17T00:02:00.050Z')), /confirm the candidate profile/iu,
-  'recruiting interview was scheduled before candidate profile confirmation')
+  }, '検証担当者', new Date('2026-07-17T00:02:00.050Z'))
+  assert.equal(preConfirmationInterview.stage, 'scheduled', 'imported candidate could not enter recruiting before profile confirmation')
+  assert.equal(rejectedReview.profile, null, 'pre-confirmation recruiting unexpectedly created a candidate profile')
   repository.confirmCandidateReview({
     documentId: rejectedDocumentId,
     reviewRevision: rejectedReview.reviewRevision,
@@ -682,7 +683,7 @@ try {
     '山田 更新後',
     'PII mapping did not decrypt with the derived mapping key'
   )
-  assert.equal(reopened.getSchemaVersion(), 38, 'schema v38 migration did not apply')
+  assert.equal(reopened.getSchemaVersion(), 39, 'schema v39 migration did not apply')
   const actionRun = reopened.createActionRun({
     toolName: 'proposal.export', workTaskId: task.id, origin: 'system', scopeId: 'selected-case',
     scopeFingerprint: 'a'.repeat(64), inputHash: 'b'.repeat(64), contentRevision: '1:b'.repeat(1),
@@ -1908,7 +1909,7 @@ try {
       agentFirstTurnActionRunAssociationVerified: true,
       agentCandidateMatchFirstTurnAssociationVerified: true,
       agentMatchRunReadFirstTurnAssociationVerified: true,
-      schemaVersion: 38,
+      schemaVersion: 39,
       fileMode: '0600'
     })}\n`
   )

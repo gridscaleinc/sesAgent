@@ -162,20 +162,20 @@ try {
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_hash;
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_status;
     ALTER TABLE cloud_call_audits DROP COLUMN gate_policy_version;
-    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38);
+    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39);
     COMMIT;
   `)
   assert.equal(legacy.prepare<{ version: number }>('SELECT max(version) AS version FROM schema_migrations').get()?.version, 13)
   legacy.close()
 
   const upgraded = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(upgraded.getSchemaVersion(), 38)
+  assert.equal(upgraded.getSchemaVersion(), 39)
   assert.equal(upgraded.getJobCaseReview(reviewId)?.redactedSubject, 'Java 案件')
   assert.equal(upgraded.getLocalDataRevision().revision, 1, 'existing managed data was not conservatively marked changed')
   assert.equal(upgraded.getRecoveryState().reminder.reason, 'data-changed', 'legacy backup was incorrectly treated as revision-aware')
   const revisionBeforeMutation = upgraded.getLocalDataRevision().revision
   const upgradeTask = materializeWorkTask(
-    createWorkTaskPreview('Schema v38 trigger verification'),
+    createWorkTaskPreview('Schema v39 trigger verification'),
     'schema-v35-trigger-verification',
     '2026-07-19T00:02:00.000Z'
   )
@@ -323,7 +323,7 @@ try {
 
   process.stdout.write(`${JSON.stringify({
     fromSchema: 13,
-    toSchema: 38,
+    toSchema: 39,
     existingReviewPreserved: true,
     sampleTasksIgnored: true,
     legacyBackupConservativelyStale: true,

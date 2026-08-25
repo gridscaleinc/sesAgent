@@ -1,0 +1,18 @@
+{
+  "id": "hr-analytics",
+  "title": "人材分析ダッシュボード開発",
+  "industry": "HR Tech",
+  "location": "池袋",
+  "period": "2026年9月開始",
+  "contract": "業務委託",
+  "skills": [
+    "Vue.js",
+    "Laravel",
+    "PostgreSQL",
+    "BI",
+    "権限管理"
+  ],
+  "plus": [
+    "人事データ取扱い"
+  ]
+}

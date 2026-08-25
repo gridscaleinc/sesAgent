@@ -1,0 +1,14 @@
+{
+  "name": "渡辺 結衣",
+  "title": "Flutter エンジニア",
+  "skills": [
+    "Flutter",
+    "Dart",
+    "Firebase",
+    "REST API"
+  ],
+  "project_summary": "店舗スタッフ向け在庫確認アプリで Flutter 実装と Firebase 連携を担当。",
+  "availability": "2026年9月開始可",
+  "location_preference": "新宿出社可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}

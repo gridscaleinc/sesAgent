@@ -325,12 +325,7 @@ const candidateInterviewStageSchema = z.enum(candidateInterviewStages)
 const candidateInterviewDecisionSchema = z.enum(candidateInterviewDecisions)
 const candidateInterviewKindSchema = z.enum(candidateInterviewKinds)
 const candidateInterviewMethodSchema = z.enum(['zoom', 'google-meet', 'phone', 'onsite'])
-const candidateInterviewDurationSchema = z.union([
-  z.literal(30),
-  z.literal(45),
-  z.literal(60),
-  z.literal(90)
-])
+const candidateInterviewDurationSchema = z.number().int().min(5).max(480)
 
 const candidateInterviewQuestionSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
@@ -358,6 +353,55 @@ function isAllowedGoogleMeetUrl(value: string): boolean {
   } catch {
     return false
   }
+}
+
+export interface AllowedInterviewMeetingLink {
+  method: 'zoom' | 'google-meet'
+  url: string
+}
+
+const httpsUrlInTextPattern = /https:\/\/[^\s<>"']+/giu
+const trailingUrlPunctuationPattern = /[，。；：！？、）\)\]\}】》]+$/u
+
+/**
+ * Extract only meeting links already accepted by the manual interview flow.
+ * The original URL is preserved for the encrypted local record; callers must
+ * never log it because query parameters can contain meeting passwords.
+ */
+export function extractAllowedInterviewMeetingLinks(value: string): AllowedInterviewMeetingLink[] {
+  const links: AllowedInterviewMeetingLink[] = []
+  const seen = new Set<string>()
+  for (const match of value.matchAll(httpsUrlInTextPattern)) {
+    const candidate = match[0].replace(trailingUrlPunctuationPattern, '')
+    if (!candidate || candidate.length > 1_000 || seen.has(candidate)) continue
+    const method = isAllowedZoomMeetingUrl(candidate)
+      ? 'zoom' as const
+      : isAllowedGoogleMeetUrl(candidate)
+        ? 'google-meet' as const
+        : null
+    if (!method) continue
+    seen.add(candidate)
+    links.push({ method, url: candidate })
+  }
+  return links
+}
+
+/**
+ * Meeting links stay in SQLCipher and must not enter planning or narrative
+ * projections. The placeholder preserves only the business fact the planner
+ * needs to choose a method and Tool.
+ */
+export function redactInterviewMeetingLinksForCloud(value: string): string {
+  let redacted = value
+  for (const link of extractAllowedInterviewMeetingLinks(value)) {
+    const placeholder = link.method === 'zoom'
+      ? '[ZOOM_MEETING_LINK_PROVIDED_LOCALLY]'
+      : '[GOOGLE_MEET_LINK_PROVIDED_LOCALLY]'
+    redacted = redacted.split(link.url).join(placeholder)
+  }
+  // Unknown or malformed URLs are not useful to the controlled Tool catalog
+  // and may still carry access tokens. Keep them local as well.
+  return redacted.replace(httpsUrlInTextPattern, '[URL_PROVIDED_LOCALLY]')
 }
 
 export const zoomMeetingUrlSchema = z.string().trim().min(1).max(1_000).refine(
@@ -944,6 +988,7 @@ const agentJobCaseCardSchema = z.object({
 const agentCandidateMatchCardSchema = z.object({
   reference: typedAiConversationReferenceSchema,
   candidateProfileId: z.string().uuid(),
+  sourceDocumentId: z.string().uuid().optional(),
   runId: z.string().uuid(),
   rank: z.number().int().positive(),
   anonymousLabel: z.string().min(1).max(120),
@@ -954,6 +999,54 @@ const agentCandidateMatchCardSchema = z.object({
   projectEvidence: z.string().max(1_500).nullable(),
   status: z.enum(['current', 'stale', 'deleted'])
 })
+
+const agentSystemAccessBlockSchema = z.discriminatedUnion('destination', [
+  z.object({ type: z.literal('system-access'), destination: z.literal('job-cases') }),
+  z.object({ type: z.literal('system-access'), destination: z.literal('case-import') }),
+  z.object({
+    type: z.literal('system-access'),
+    destination: z.literal('case-review'),
+    reviewId: z.string().uuid()
+  }),
+  z.object({
+    type: z.literal('system-access'),
+    destination: z.literal('matching'),
+    jobCaseId: z.string().uuid().optional()
+  }),
+  z.object({ type: z.literal('system-access'), destination: z.literal('candidate-management') }),
+  z.object({
+    type: z.literal('system-access'),
+    destination: z.literal('candidate'),
+    sourceDocumentId: z.string().uuid(),
+    view: z.enum(['overview', 'resume', 'schedule', 'prepare', 'workbench', 'decision', 'client', 'records', 'entry']),
+    interviewId: z.string().uuid().nullable().optional(),
+    interviewKind: z.enum(['recruiting', 'client']).optional()
+  }),
+  z.object({
+    type: z.literal('system-access'),
+    destination: z.literal('original-document'),
+    sourceDocumentId: z.string().uuid()
+  }),
+  z.object({ type: z.literal('system-access'), destination: z.literal('review-center') }),
+  z.object({
+    type: z.literal('system-access'),
+    destination: z.literal('task'),
+    taskId: z.string().uuid()
+  }),
+  z.object({
+    type: z.literal('system-access'),
+    destination: z.literal('interview-schedule'),
+    receipt: z.object({
+      sourceDocumentId: z.string().uuid(),
+      candidateLabel: z.string().min(1).max(120),
+      scheduledAt: z.string().datetime(),
+      durationMinutes: z.number().int().min(5).max(480),
+      meetingMethod: z.enum(['zoom', 'google-meet', 'phone', 'onsite']),
+      kind: z.enum(['recruiting', 'client']),
+      meetingLinkStoredLocally: z.boolean()
+    }).optional()
+  })
+])
 
 const agentBlocksSchema = z.union([
   z.object({ type: z.literal('text'), text: z.string().min(1).max(20_000) }),
@@ -984,6 +1077,7 @@ const agentBlocksSchema = z.union([
       validity: z.enum(['current', 'stale', 'deleted']),
       candidate: z.object({
         candidateProfileId: z.string().uuid(),
+        sourceDocumentId: z.string().uuid().optional(),
         rank: z.number().int().positive().max(20),
         anonymousLabel: z.string().min(1).max(120)
       }).nullable(),
@@ -1015,10 +1109,12 @@ const agentBlocksSchema = z.union([
       validity: z.enum(['current', 'stale', 'deleted']),
       candidate: z.object({
         candidateProfileId: z.string().uuid(),
+        sourceDocumentId: z.string().uuid().optional(),
         rank: z.number().int().positive().max(20),
         anonymousLabel: z.string().min(1).max(120)
       }).nullable(),
       interviews: z.array(z.object({
+        interviewId: z.string().uuid().optional(),
         kind: z.enum(['recruiting', 'client']),
         roundNumber: z.number().int().positive().max(20),
         stage: z.string().min(1).max(120),
@@ -1097,7 +1193,8 @@ const agentBlocksSchema = z.union([
     code: z.string().min(1).max(120),
     message: z.string().min(1).max(2_000),
     entityKind: z.enum(['job-case', 'match-run', 'match-result']).optional()
-  })
+  }),
+  agentSystemAccessBlockSchema
 ])
 
 const salesAgentStateSchema = z.object({
@@ -1126,6 +1223,7 @@ export const aiConversationMessageSchema = z.object({
 
 export const aiConversationSnapshotSchema = z.object({
   id: z.string().uuid(),
+  branchRootConversationId: z.string().uuid().optional(),
   context: aiConversationContextSchema,
   title: z.string().min(1).max(120),
   messages: z.array(aiConversationMessageSchema).max(200),
@@ -1141,6 +1239,7 @@ export const aiConversationSnapshotSchema = z.object({
 
 export const saveAiConversationInputSchema = z.object({
   conversationId: z.string().uuid(),
+  branchRootConversationId: z.string().uuid().optional(),
   context: aiConversationContextSchema,
   messages: z.array(aiConversationMessageSchema).min(1).max(200),
   salesAgentState: salesAgentStateSchema.optional(),
@@ -1158,13 +1257,38 @@ export const executeAgentTurnInputSchema = z.object({
   requestId: z.string().uuid(),
   modelKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u).default('gpt-5.6-luna'),
   selectedJobCaseRef: typedAiConversationReferenceSchema.nullable().optional(),
+  activeSystemAccess: agentSystemAccessBlockSchema.nullable().optional(),
   /**
    * Vault tokens for files the operator attached to this turn. Only tokens
    * cross the boundary; the main process resolves them against staged records
    * and refuses anything it did not stage itself.
    */
-  attachmentFileTokens: z.array(z.string().uuid()).max(10).optional()
-}).strict()
+  attachmentFileTokens: z.array(z.string().uuid()).max(10)
+    .refine((tokens) => new Set(tokens).size === tokens.length, '附件 Token 不能重复。')
+    .optional(),
+  branchFrom: z.object({
+    conversationId: z.string().uuid(),
+    messageId: z.string().trim().min(1).max(160),
+    expectedRevision: z.number().int().positive()
+  }).strict().optional()
+}).strict().superRefine((value, context) => {
+  if (!value.branchFrom) return
+  if (value.branchFrom.conversationId === value.conversationId) {
+    context.addIssue({ code: 'custom', path: ['branchFrom', 'conversationId'], message: '编辑分支必须使用新会话。' })
+  }
+  if (value.expectedConversationRevision !== null) {
+    context.addIssue({ code: 'custom', path: ['expectedConversationRevision'], message: '编辑分支的目标会话必须是新会话。' })
+  }
+  if (value.selectedJobCaseRef != null) {
+    context.addIssue({ code: 'custom', path: ['selectedJobCaseRef'], message: '编辑分支的案件上下文由主进程从历史恢复。' })
+  }
+  if (value.activeSystemAccess != null) {
+    context.addIssue({ code: 'custom', path: ['activeSystemAccess'], message: '编辑分支不能继承分支点之后打开的右侧工作区。' })
+  }
+  if ((value.attachmentFileTokens?.length ?? 0) > 0) {
+    context.addIssue({ code: 'custom', path: ['attachmentFileTokens'], message: '编辑分支不会自动复制附件。' })
+  }
+})
 
 export const agentChatModelOptionSchema = z.object({
   key: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u),

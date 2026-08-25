@@ -1,0 +1,19 @@
+{
+  "id": "saas-sre-aws",
+  "title": "SaaS 基盤 SRE 支援",
+  "industry": "業務システム / SaaS",
+  "location": "渋谷",
+  "period": "即日から長期",
+  "contract": "業務委託",
+  "skills": [
+    "AWS",
+    "ECS",
+    "Terraform",
+    "Datadog",
+    "障害対応",
+    "日本語ビジネス"
+  ],
+  "plus": [
+    "SOC2 運用"
+  ]
+}

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
+import { extractAllowedInterviewMeetingLinks, type AllowedInterviewMeetingLink } from '@shared'
 import type {
   AgentCandidateDraftFacts,
   AgentCandidateMatchCard,
@@ -105,6 +106,7 @@ export interface AgentJobCaseRecord {
 
 export interface AgentCandidateMatchRecord {
   candidateProfileId: string
+  sourceDocumentId?: string
   runId: string
   resultId: string
   resultHash: string
@@ -146,7 +148,14 @@ export interface AgentCandidateInterviewReadOutput {
 }
 
 export interface AgentResumeImportOutput {
-  imported: Array<{ documentId: string; name: string; format: string; reviewRequired: true }>
+  imported: Array<{
+    documentId: string
+    name: string
+    format: string
+    reviewRequired: true
+    /** Locally extracted, identity-free draft shown in the importing turn. */
+    facts?: AgentCandidateDraftFacts
+  }>
   failed: Array<{ name: string; code: string }>
 }
 
@@ -234,17 +243,15 @@ const nullableOrdinalSchema = z.number().int().min(1).max(20).nullable()
  * for shape only; anything unusable is treated as missing and asked for rather
  * than failing the whole plan.
  */
-const interviewDurationValues = [30, 45, 60, 90] as const
-
 const planningInterviewArgumentsSchema = z.object({
   rank: z.coerce.number().int().min(1).max(20).nullable().catch(null).optional().default(null),
   date: z.string().trim().max(40).nullable().catch(null).optional().default(null),
   time: z.string().trim().max(40).nullable().catch(null).optional().default(null),
   method: z.enum(['zoom', 'google-meet', 'phone', 'onsite']).nullable().catch(null).optional().default(null),
-  // Anything outside the supported set becomes "not stated" and is asked for,
-  // rather than invalidating the whole plan.
-  durationMinutes: z.coerce.number().int()
-    .refine((value): value is 30 | 45 | 60 | 90 => (interviewDurationValues as readonly number[]).includes(value))
+  // Preserve the operator's exact integer duration instead of snapping to a
+  // preset. Values outside the local business bound become "not stated" and
+  // are clarified rather than invalidating the entire plan.
+  durationMinutes: z.coerce.number().int().min(5).max(480)
     .nullable().catch(null).optional().default(null),
   kind: z.enum(['recruiting', 'client']).nullable().catch(null).optional().default(null),
   note: z.string().trim().max(1_500).nullable().catch(null).optional().default(null)
@@ -252,6 +259,29 @@ const planningInterviewArgumentsSchema = z.object({
 
 const interviewDatePattern = /^\d{4}-\d{2}-\d{2}$/u
 const interviewTimePattern = /^\d{2}:\d{2}$/u
+const jstOffsetMilliseconds = 9 * 60 * 60 * 1_000
+
+/** Converts an explicitly supplied JST wall-clock value to canonical UTC ISO. */
+export function jstInterviewDateTimeToIso(date: string, time: string): string | null {
+  if (!interviewDatePattern.test(date) || !interviewTimePattern.test(time)) return null
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  if (
+    year === undefined || month === undefined || day === undefined ||
+    hour === undefined || minute === undefined ||
+    hour < 0 || hour > 23 || minute < 0 || minute > 59
+  ) return null
+  const utcMilliseconds = Date.UTC(year, month - 1, day, hour, minute) - jstOffsetMilliseconds
+  const normalizedJst = new Date(utcMilliseconds + jstOffsetMilliseconds)
+  if (
+    normalizedJst.getUTCFullYear() !== year ||
+    normalizedJst.getUTCMonth() !== month - 1 ||
+    normalizedJst.getUTCDate() !== day ||
+    normalizedJst.getUTCHours() !== hour ||
+    normalizedJst.getUTCMinutes() !== minute
+  ) return null
+  return new Date(utcMilliseconds).toISOString()
+}
 
 const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
   z.object({
@@ -381,7 +411,7 @@ export const agentPlanningToolCatalog: readonly AgentPlanningToolCatalogEntry[] 
   {
     name: 'schedule_interview',
     description: 'Schedule an interview for a candidate. Fill only what the operator actually stated and leave everything else null - the app asks them for the missing details rather than choosing on their behalf. Set rank only when they named a position in a match result; for "this person" or a single imported resume leave it null, because the app resolves who is meant. date is YYYY-MM-DD and time is HH:mm in JST.',
-    argumentsShape: '{"rank":number|null,"date":string|null,"time":string|null,"method":"zoom"|"google-meet"|"phone"|"onsite"|null,"durationMinutes":30|45|60|90|null,"kind":"recruiting"|"client"|null,"note":string|null}',
+    argumentsShape: '{"rank":number|null,"date":string|null,"time":string|null,"method":"zoom"|"google-meet"|"phone"|"onsite"|null,"durationMinutes":integer(5..480)|null,"kind":"recruiting"|"client"|null,"note":string|null}',
     effect: 'write', approval: 'none',
     parse: (value) => ({ toolName: 'candidate.interview.schedule.local', arguments: planningInterviewArgumentsSchema.parse(value) })
   },
@@ -491,6 +521,7 @@ function candidateCard(record: AgentCandidateMatchRecord, ordinal: number): Agen
   return {
     reference: typedReference('match-result', record.resultId, record.anonymousLabel, null, record.resultHash, ordinal),
     candidateProfileId: record.candidateProfileId,
+    ...(record.sourceDocumentId ? { sourceDocumentId: record.sourceDocumentId } : {}),
     runId: record.runId,
     rank: record.rank,
     anonymousLabel: record.anonymousLabel,
@@ -668,6 +699,51 @@ export function looksLikeInterviewBookingRequest(message: string): boolean {
   )
 }
 
+function latestInterviewDetailsClarificationIndex(messages: readonly AiConversationMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const hasClarification = (messages[index]?.blocks ?? []).some((block) =>
+      block.type === 'clarification' && block.code === 'INTERVIEW_DETAILS_REQUIRED'
+    )
+    if (hasClarification) return index
+  }
+  return -1
+}
+
+export function hasPendingInterviewDetailsClarification(messages: readonly AiConversationMessage[]): boolean {
+  return latestInterviewDetailsClarificationIndex(messages) >= 0
+}
+
+type LocalMeetingLinkResolution =
+  | { status: 'none'; link: null }
+  | { status: 'resolved'; link: AllowedInterviewMeetingLink }
+  | { status: 'conflict'; link: null }
+
+/**
+ * Meeting URLs are resolved from local conversation text only. They never
+ * become planner arguments and therefore never have to leave the device.
+ */
+function resolveLocalMeetingLink(
+  currentMessage: string,
+  previousMessages: readonly AiConversationMessage[]
+): LocalMeetingLinkResolution {
+  const current = extractAllowedInterviewMeetingLinks(currentMessage)
+  if (current.length > 1) return { status: 'conflict', link: null }
+  if (current.length === 1) return { status: 'resolved', link: current[0]! }
+
+  const clarificationIndex = latestInterviewDetailsClarificationIndex(previousMessages)
+  if (clarificationIndex < 0) return { status: 'none', link: null }
+  // Include the user request immediately before the clarification: it may have
+  // supplied the link while the app asked only for date, time, or duration.
+  for (let index = previousMessages.length - 1; index >= Math.max(0, clarificationIndex - 1); index -= 1) {
+    const message = previousMessages[index]
+    if (message?.role !== 'user') continue
+    const links = extractAllowedInterviewMeetingLinks(message.content)
+    if (links.length > 1) return { status: 'conflict', link: null }
+    if (links.length === 1) return { status: 'resolved', link: links[0]! }
+  }
+  return { status: 'none', link: null }
+}
+
 export class LocalAgentUseCase {
   constructor(private readonly port: LocalAgentPort) {}
 
@@ -684,6 +760,7 @@ export class LocalAgentUseCase {
     actionRunId: string | null
   }> {
     const current = this.loadCurrentConversation(input)
+    const branchRootConversationId = this.resolveBranchRootConversationId(input, current)
     const requestedAction = parseAgentPlannedToolAction(rawPlannedAction)
     // The planner keeps choosing the read tool for a booking, and two rounds of
     // prompt wording did not settle it. A plan is a request; main redirects one
@@ -713,6 +790,7 @@ export class LocalAgentUseCase {
     const save = (assistant: AiConversationMessage, state: AiConversationSalesAgentState, status: 'clarifying' | 'completed' | 'failed' | 'cancelled', toolName: DomainToolName | null, actionRunId: string | null) => {
       const saveInput: SaveAiConversationInput = {
         conversationId: input.conversationId,
+        ...(branchRootConversationId ? { branchRootConversationId } : {}),
         context: current?.context ?? salesAgentContext(),
         messages: [...messages, assistant].slice(-200),
         salesAgentState: state,
@@ -748,7 +826,10 @@ export class LocalAgentUseCase {
           : cards.length > 0
             ? textFor(locale, `現在の Active 案件は${tool.output.totalMatched}件です。更新日時の新しい順に表示します。`, `当前有 ${tool.output.totalMatched} 个 Active 案件，按更新时间倒序显示。`)
             : textFor(locale, '現在利用できる Active 案件はありません。', '当前没有可用的 Active 案件。')
-        const assistant = assistantMessage(content, [block], turnId)
+        const assistant = assistantMessage(content, [
+          block,
+          { type: 'system-access', destination: 'job-cases' }
+        ], turnId)
         return save(assistant, { ...previousState, lastSearchMessageId: assistant.id }, 'completed', 'job-case.search.local', tool.actionRunId ?? null)
       }
 
@@ -771,7 +852,10 @@ export class LocalAgentUseCase {
         const content = cards[0]
           ? textFor(locale, `案件「${cards[0].title}」の現在のバージョンは v${cards[0].version} です。`, `这是案件「${cards[0].title}」的当前版本 v${cards[0].version}。`)
           : textFor(locale, 'この案件は存在しないか、現在利用できません。', '这个案件已不存在或不可用。')
-        const assistant = assistantMessage(content, [block], turnId)
+        const accessBlock: AiConversationBlock = cards[0]
+          ? { type: 'system-access', destination: 'matching', jobCaseId: resolved.reference.objectId }
+          : { type: 'system-access', destination: 'job-cases' }
+        const assistant = assistantMessage(content, [block, accessBlock], turnId)
         return save(assistant, { ...previousState, selectedJobCaseRef: cards[0]?.reference ?? resolved.reference, lastSearchMessageId: assistant.id }, 'completed', 'job-case.search.local', tool.actionRunId ?? null)
       }
 
@@ -790,7 +874,10 @@ export class LocalAgentUseCase {
         const content = cards.length > 0
           ? textFor(locale, `現在の案件と確認済み人材プールでローカルマッチングを実行し、上位${cards.length}名を表示します。`, `已使用当前案件和确认人才池完成本地匹配，显示前 ${cards.length} 名。`)
           : textFor(locale, '現在の確認済み人材プールからマッチ結果が返りませんでした。', '当前确认人才池没有返回匹配结果。')
-        const assistant = assistantMessage(content, [block], turnId)
+        const assistant = assistantMessage(content, [
+          block,
+          { type: 'system-access', destination: 'matching', jobCaseId: resolved.reference.objectId }
+        ], turnId)
         return save(assistant, { ...previousState, selectedJobCaseRef: resolved.reference, lastMatchRunId: tool.output.runId }, 'completed', 'candidate.match.local', tool.actionRunId ?? null)
       }
 
@@ -810,7 +897,11 @@ export class LocalAgentUseCase {
         const content = tool.output.facts.profile && tool.output.facts.candidate
           ? textFor(locale, `${tool.output.facts.candidate.anonymousLabel} の確認済みプロフィールを読み取りました。`, `已读取 ${tool.output.facts.candidate.anonymousLabel} 的已确认档案。`)
           : textFor(locale, '候補者プロフィールが存在しないか、現在参照できません。', '候选人档案不存在或当前不可读取。')
-        const assistant = assistantMessage(content, [block], turnId)
+        const candidate = tool.output.facts.candidate
+        const accessBlock: AiConversationBlock = candidate?.sourceDocumentId
+          ? { type: 'system-access', destination: 'candidate', sourceDocumentId: candidate.sourceDocumentId, view: 'overview' }
+          : { type: 'system-access', destination: 'candidate-management' }
+        const assistant = assistantMessage(content, [block, accessBlock], turnId)
         return save(assistant, { ...previousState, lastMatchRunId: tool.output.facts.runId }, 'completed', 'candidate.profile.read.local', tool.actionRunId ?? null)
       }
 
@@ -830,12 +921,17 @@ export class LocalAgentUseCase {
         const content = tool.output.facts.candidate
           ? textFor(locale, `${tool.output.facts.candidate.anonymousLabel} の面談情報を${tool.output.facts.interviews.length}件読み取りました。`, `已读取 ${tool.output.facts.candidate.anonymousLabel} 的 ${tool.output.facts.interviews.length} 条面试信息。`)
           : textFor(locale, '候補者を特定できないため、面談情報を読み取れませんでした。', '无法确定候选人，未能读取面试信息。')
-        const assistant = assistantMessage(content, [block], turnId)
+        const candidate = tool.output.facts.candidate
+        const accessBlock: AiConversationBlock = candidate?.sourceDocumentId
+          ? { type: 'system-access', destination: 'candidate', sourceDocumentId: candidate.sourceDocumentId, view: 'records' }
+          : { type: 'system-access', destination: 'interview-schedule' }
+        const assistant = assistantMessage(content, [block, accessBlock], turnId)
         return save(assistant, { ...previousState, lastMatchRunId: tool.output.facts.runId }, 'completed', 'candidate.interview.read.local', tool.actionRunId ?? null)
       }
 
       if (plannedAction.toolName === 'candidate.interview.schedule.local') {
         const args = plannedAction.arguments
+        const localMeetingLink = resolveLocalMeetingLink(input.message, previousMessages)
         // An interview attaches to a candidate review record, which exists as
         // soon as a resume is imported - a match run is one way to name that
         // person, not the only one.
@@ -886,10 +982,32 @@ export class LocalAgentUseCase {
         const missing: string[] = []
         const date = args.date && interviewDatePattern.test(args.date) ? args.date : null
         const time = args.time && interviewTimePattern.test(args.time) ? args.time : null
+        const scheduledAt = date && time ? jstInterviewDateTimeToIso(date, time) : null
+        const method = args.method ?? (localMeetingLink.status === 'resolved' ? localMeetingLink.link.method : null)
+        if (localMeetingLink.status === 'conflict' ||
+          (localMeetingLink.status === 'resolved' && method !== localMeetingLink.link.method)) {
+          const prompt = textFor(
+            locale,
+            '会議方法とリンクを一意に確認できません。Zoom または Google Meet のリンクを1件だけ指定してください。',
+            '无法唯一确认会议方式和链接，请只提供一个 Zoom 或 Google Meet 链接。'
+          )
+          const clarification: AiConversationBlock = {
+            type: 'clarification', code: 'INTERVIEW_DETAILS_REQUIRED', prompt, options: []
+          }
+          return save(assistantMessage(prompt, [clarification], turnId), previousState, 'clarifying', null, null)
+        }
         if (!date) missing.push(textFor(locale, '日付', '日期'))
         if (!time) missing.push(textFor(locale, '開始時刻', '开始时间'))
-        if (!args.method) missing.push(textFor(locale, '実施方法（Zoom / Google Meet / 電話 / 対面）', '会议方式（Zoom / Google Meet / 电话 / 现场）'))
-        if (!args.durationMinutes) missing.push(textFor(locale, '所要時間（30 / 45 / 60 / 90 分）', '时长（30 / 45 / 60 / 90 分钟）'))
+        if (date && time && !scheduledAt) {
+          missing.push(textFor(locale, '実在する日付と有効な開始時刻', '有效的日期和开始时间'))
+        }
+        if (!method) missing.push(textFor(locale, '実施方法（Zoom / Google Meet / 電話 / 対面）', '会议方式（Zoom / Google Meet / 电话 / 现场）'))
+        if (!args.durationMinutes) missing.push(textFor(locale, '所要時間（5〜480分の整数。例：50分）', '时长（5–480 分钟的整数，例如 50 分钟）'))
+        if ((method === 'zoom' || method === 'google-meet') && localMeetingLink.status !== 'resolved') {
+          missing.push(method === 'zoom'
+            ? textFor(locale, 'Zoom会議リンク', 'Zoom 会议链接')
+            : textFor(locale, 'Google Meetリンク', 'Google Meet 会议链接'))
+        }
         if (missing.length > 0) {
           const prompt = textFor(
             locale,
@@ -904,34 +1022,55 @@ export class LocalAgentUseCase {
         const tool = await this.port.executeTool('candidate.interview.schedule.local', {
           sourceDocumentId: candidate.sourceDocumentId,
           candidateLabel: candidate.anonymousLabel,
-          scheduledAt: `${date}T${time}:00+09:00`,
+          scheduledAt: scheduledAt!,
           durationMinutes: args.durationMinutes,
-          meetingMethod: args.method,
+          meetingMethod: method,
+          ...(localMeetingLink.status === 'resolved' ? { meetingUrl: localMeetingLink.link.url } : {}),
           kind: args.kind ?? 'recruiting',
-          ...(args.note ? { contactNote: args.note } : {})
+          ...(args.note ? { contactNote: args.note
+            .replaceAll('[ZOOM_MEETING_LINK_PROVIDED_LOCALLY]', '')
+            .replaceAll('[GOOGLE_MEET_LINK_PROVIDED_LOCALLY]', '')
+            .trim() } : {})
         }, { conversationId: input.conversationId, turnId, requestId: input.requestId })
         if (tool.toolName !== 'candidate.interview.schedule.local') {
           throw new AgentExecutionError('TOOL_RESULT_INVALID', '面談登録结果无效。')
         }
-        const methodLabels: Record<string, string> = {
-          zoom: 'Zoom', 'google-meet': 'Google Meet',
-          phone: textFor(locale, '電話', '电话'), onsite: textFor(locale, '対面', '现场')
-        }
         const content = textFor(
           locale,
-          `${tool.output.candidateLabel} の面談を ${date} ${time}（JST）に登録しました。実施方法は${methodLabels[tool.output.meetingMethod]}、所要 ${tool.output.durationMinutes} 分です。案内メールは送信していません。面談管理から内容を確認・変更できます。`,
-          `已登记 ${tool.output.candidateLabel} 的面试：${date} ${time}（JST），方式${methodLabels[tool.output.meetingMethod]}，时长 ${tool.output.durationMinutes} 分钟。未发送任何通知邮件，可在面试管理里查看或修改。`
+          `${tool.output.candidateLabel} の面談を登録しました。面談日程から確認・変更できます。`,
+          `${tool.output.candidateLabel} 的面试已经登记，可以在面试日程中查看或修改。`
         )
-        return save(assistantMessage(content, [], turnId), previousState, 'completed', 'candidate.interview.schedule.local', tool.actionRunId ?? null)
+        return save(assistantMessage(content, [
+          {
+            type: 'system-access',
+            destination: 'interview-schedule',
+            receipt: {
+              sourceDocumentId: candidate.sourceDocumentId,
+              candidateLabel: tool.output.candidateLabel,
+              scheduledAt: tool.output.scheduledAt,
+              durationMinutes: tool.output.durationMinutes,
+              meetingMethod: tool.output.meetingMethod,
+              kind: tool.output.kind,
+              meetingLinkStoredLocally: localMeetingLink.status === 'resolved'
+            }
+          }
+        ], turnId), previousState, 'completed', 'candidate.interview.schedule.local', tool.actionRunId ?? null)
       }
 
       if (plannedAction.toolName === 'candidate.draft.read.local') {
         // Ordinals are resolved against the imports this conversation actually
         // made; the model never supplies a document id.
-        const importedDrafts = previousMessages
+        const importedBlocks = previousMessages
           .flatMap((message) => message.blocks ?? [])
           .filter((block): block is Extract<AiConversationBlock, { type: 'resume-import' }> => block.type === 'resume-import')
           .flatMap((block) => block.imported)
+        const registeredImports = (this.port.listConversationImports?.(input.conversationId) ?? []).map((item, index) => ({
+          documentId: item.sourceDocumentId,
+          label: item.anonymousLabel,
+          ordinal: index + 1
+        }))
+        const importedDrafts = [...importedBlocks, ...registeredImports]
+          .filter((item, index, all) => all.findIndex((other) => other.documentId === item.documentId) === index)
         const ordinal = plannedAction.arguments.draftOrdinal
         const target = ordinal === null
           ? (importedDrafts.length === 1 ? importedDrafts[0] : null)
@@ -953,7 +1092,10 @@ export class LocalAgentUseCase {
           `${target.label} の未確認下書きを読み取りました（記入済み ${known} 項目、プロジェクト ${tool.output.facts.projects.length} 件）。以下は機械抽出であり、担当者が各項目を確認するまで候補者プロフィールにはなりません。`,
           `已读取 ${target.label} 的未确认草稿（已填写 ${known} 个字段，项目经历 ${tool.output.facts.projects.length} 段）。以下内容由机器抽取，需你逐项确认后才会成为候选人档案。`
         )
-        return save(assistantMessage(content, [block], turnId), previousState, 'completed', 'candidate.draft.read.local', tool.actionRunId ?? null)
+        return save(assistantMessage(content, [
+          block,
+          { type: 'system-access', destination: 'candidate', sourceDocumentId: target.documentId, view: 'resume' }
+        ], turnId), previousState, 'completed', 'candidate.draft.read.local', tool.actionRunId ?? null)
       }
 
       if (plannedAction.toolName === 'resume.analyze.local') {
@@ -976,8 +1118,8 @@ export class LocalAgentUseCase {
         const content = imported.length > 0
           ? textFor(
               locale,
-              `${imported.length}件の履歴書を端末内に取り込みました（${imported.map((file) => file.name).join('、')}）。抽出した項目は下書きです。候補者ライブラリに載せる前に、担当者が各項目を確認してください。${failed.length > 0 ? `${failed.length}件は取り込めませんでした。` : ''}`,
-              `已在本机导入 ${imported.length} 份简历（${imported.map((file) => file.name).join('、')}）。抽取结果是草稿，进入候选人库前需要由你逐项确认。${failed.length > 0 ? `另有 ${failed.length} 份未能导入。` : ''}`
+              `${imported.length}件の履歴書（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}）を端末内に取り込み、抽出内容をこの会話に追加しました。このまま履歴書について質問できます。抽出項目は下書きのため、担当者が項目ごとに確認してください。${failed.length > 0 ? `${failed.length}件は取り込めませんでした。` : ''}`,
+              `已在本机导入 ${imported.length} 份简历（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}），并将抽取内容加入当前会话。现在可以直接针对这些简历继续提问。抽取结果仍是草稿，需要由你逐项确认。${failed.length > 0 ? `另有 ${failed.length} 份未能导入。` : ''}`
             )
           : textFor(locale, '添付された履歴書を取り込めませんでした。', '附件中的简历未能导入。')
         const importBlock: AiConversationBlock = {
@@ -989,7 +1131,15 @@ export class LocalAgentUseCase {
           })),
           failedCount: failed.length
         }
-        const assistant = assistantMessage(content, imported.length > 0 ? [importBlock] : [], turnId)
+        const draftBlocks: AiConversationBlock[] = imported.flatMap((file, index) => file.facts
+          ? [{
+              type: 'candidate-draft-facts' as const,
+              facts: { ...file.facts, label: `RESUME_${index + 1}` }
+            }]
+          : [])
+        const assistant = assistantMessage(content, imported.length > 0
+          ? [importBlock, ...draftBlocks, { type: 'system-access', destination: 'review-center' }]
+          : [], turnId)
         return save(assistant, previousState, imported.length > 0 ? 'completed' : 'failed', 'resume.analyze.local', tool.actionRunId ?? null)
       }
 
@@ -1011,7 +1161,17 @@ export class LocalAgentUseCase {
       const content = facts.candidate
         ? textFor(locale, `第${rank}位是${facts.candidate.anonymousLabel}。順位の根拠：${facts.matched.length > 0 ? `一致：${facts.matched.join('、')}` : '構造化条件'}；${facts.missing.length > 0 ? `不足：${facts.missing.join('、')}` : '記録された不足項目はありません'}。保存済み Match Run ${facts.runId.slice(0, 8)} を読み取り、マッチングは再実行していません。`, `第 ${rank} 名是 ${facts.candidate.anonymousLabel}。排名依据：${facts.matched.length > 0 ? `匹配 ${facts.matched.join('、')}` : '结构化条件'}；${facts.missing.length > 0 ? `不足 ${facts.missing.join('、')}` : '没有记录到不足项'}。这是已保存的 Match Run ${facts.runId.slice(0, 8)}，未重新运行匹配。`)
         : textFor(locale, `找不到第${rank}位的保存结果；该 Match Run 可能已删除或已过期。`, `找不到第 ${rank} 名的已保存结果；该 Match Run 可能已删除或过期。`)
-      const assistant = assistantMessage(content, [block], turnId)
+      const selectedJobCaseId = previousState.selectedJobCaseRef?.kind === 'job-case'
+        ? previousState.selectedJobCaseRef.objectId
+        : undefined
+      const assistant = assistantMessage(content, [
+        block,
+        {
+          type: 'system-access',
+          destination: 'matching',
+          ...(selectedJobCaseId ? { jobCaseId: selectedJobCaseId } : {})
+        }
+      ], turnId)
       return save(assistant, { ...previousState, lastMatchRunId: facts.runId }, 'completed', 'match-run.read.local', tool.actionRunId ?? null)
     } catch (error) {
       const block = errorBlock(error, locale)
@@ -1041,6 +1201,7 @@ export class LocalAgentUseCase {
     actionRunId: null
   } {
     const current = this.loadCurrentConversation(input)
+    const branchRootConversationId = this.resolveBranchRootConversationId(input, current)
     const normalizedContent = content.trim()
     if (!normalizedContent || normalizedContent.length > 20_000) {
       throw new AgentExecutionError('AGENT_ANSWER_INVALID', 'AI 返回的直接回答为空或超过本地上限。')
@@ -1058,6 +1219,7 @@ export class LocalAgentUseCase {
     }
     const conversation = this.port.saveConversation({
       conversationId: input.conversationId,
+      ...(branchRootConversationId ? { branchRootConversationId } : {}),
       context: current?.context ?? salesAgentContext(),
       messages: [...(current?.messages ?? []), inputMessage, assistant].slice(-200),
       salesAgentState: current?.salesAgentState ?? defaultState(),
@@ -1083,6 +1245,16 @@ export class LocalAgentUseCase {
       throw new AgentExecutionError('CONVERSATION_NOT_FOUND', '会话不存在，请重新加载历史。')
     }
     return current
+  }
+
+  private resolveBranchRootConversationId(
+    input: ExecuteAgentTurnInput,
+    current: AiConversationSnapshot | null
+  ): string | undefined {
+    if (current?.branchRootConversationId) return current.branchRootConversationId
+    if (!input.branchFrom) return undefined
+    const source = this.port.loadConversation(input.branchFrom.conversationId)
+    return source?.branchRootConversationId ?? source?.id ?? input.branchFrom.conversationId
   }
 
   private loadRecords(): AgentJobCaseRecord[] {

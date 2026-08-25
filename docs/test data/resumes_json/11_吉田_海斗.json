@@ -1,0 +1,15 @@
+{
+  "name": "吉田 海斗",
+  "title": "Go バックエンドエンジニア",
+  "skills": [
+    "Go",
+    "gRPC",
+    "Redis",
+    "MySQL",
+    "高負荷 API"
+  ],
+  "project_summary": "ゲーム課金基盤の API 改修、Redis キャッシュ、負荷試験を担当。",
+  "availability": "2026年11月開始可",
+  "location_preference": "秋葉原出社可",
+  "interview_notes": "担当範囲、成果、リスク対応を面接で確認してください。"
+}
