@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
-import { AgentExecutionError, type AgentToolExecutionMetadata } from '@agent'
+import { AgentExecutionError, resolveAgentChatModel, type AgentToolExecutionMetadata } from '@agent'
 import {
   cancelWorkTask,
   candidateSearchQueryFromInstruction,
@@ -19,7 +19,12 @@ import {
   ipcChannels
 } from '@shared'
 import { registerAgentIpcHandlers } from '../agent-ipc'
-import { effectiveApplicationPreferences } from '../app-defaults'
+import {
+  executeBusinessTextIntakeTurn,
+  importChatPastedJobCaseText,
+  importPastedCandidateText
+} from '../business-text-intake'
+import { effectiveApplicationPreferences, effectiveJobCaseFieldAliases } from '../app-defaults'
 import { assertWorkTaskAllowsExecution, createVerifiedPreview } from '../work-task-helpers'
 import { assertTrustedSender, type MainIpcContext } from './context'
 import { agentDraftFactsFromResumeAnalysis } from './resume-import'
@@ -29,7 +34,16 @@ export function registerCandidateMatchHandlers(
   context: MainIpcContext,
   runResumeAnalysisTask: (input: { fileToken: string; taskId: string }) => Promise<ResumeAnalysisTaskExecutionResult>
 ) {
-  const { conversationImports, previewedDrafts, repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates } = context
+  const { conversationImports, previewedDrafts, repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates, localNer, fileVault } = context
+  // Rollback switch for the intake gate: disabled means every message routes
+  // through the planner exactly as before the gate existed.
+  const businessTextIntakeEnabled = process.env.SES_BUSINESS_TEXT_INTAKE_ENABLED !== '0'
+  const businessTextCloudAssistEnabled = process.env.SES_BUSINESS_TEXT_CLOUD_ASSIST_ENABLED !== '0'
+  const registerConversationImport = (conversationId: string, sourceDocumentId: string) => {
+    const existing = conversationImports.get(conversationId) ?? []
+    if (existing.some((item) => item.sourceDocumentId === sourceDocumentId)) return
+    conversationImports.set(conversationId, [...existing, { label: `RESUME_${existing.length + 1}`, sourceDocumentId }])
+  }
   const runCandidateMatchTask = async (
     taskId: string,
     existingJobId: string | null = null,
@@ -265,11 +279,8 @@ export function registerCandidateMatchHandlers(
         facts: agentDraftFactsFromResumeAnalysis(execution.analysis, 'RESUME')
       }
     },
-    registerConversationImport: (conversationId, sourceDocumentId) => {
-      const existing = conversationImports.get(conversationId) ?? []
-      if (existing.some((item) => item.sourceDocumentId === sourceDocumentId)) return
-      conversationImports.set(conversationId, [...existing, { label: `RESUME_${existing.length + 1}`, sourceDocumentId }])
-    },
+    registerConversationImport,
+    jobCaseFieldAliases: () => effectiveJobCaseFieldAliases(repository).aliases,
     listConversationImports: (conversationId) => {
       const persisted = (repository.getAiConversation(conversationId)?.messages ?? [])
         .flatMap((message) => message.blocks ?? [])
@@ -307,7 +318,38 @@ export function registerCandidateMatchHandlers(
     },
     modelCatalog: agentChatModelCatalog,
     previewedDrafts,
-    narrativeStreamer: agentNarrativeStreamer
+    narrativeStreamer: agentNarrativeStreamer,
+    ...(businessTextIntakeEnabled ? {
+      executeBusinessTextIntake: (useCase, input, decision, turn) => executeBusinessTextIntakeTurn({
+        repository,
+        actionOrchestrator,
+        locale: () => effectiveApplicationPreferences(repository).locale,
+        operatorId: () => currentOperator().operatorId,
+        importJobCaseText: (text, fieldOverrides, intakeBatchId) =>
+          importChatPastedJobCaseText(
+            { repository, localNer, operator: currentOperator() }, text, new Date(), fieldOverrides, intakeBatchId ?? null,
+            effectiveJobCaseFieldAliases(repository).aliases
+          ),
+        importCandidateText: (text, fieldOverrides) =>
+          importPastedCandidateText({ repository, fileVault, localNer }, text, new Date(), fieldOverrides),
+        registerConversationImport,
+        // Redacted cloud segmentation and verbatim-verified field extraction
+        // for every intake route. Its own switch, so the lane can be pulled
+        // without touching the local gate.
+        extractRecordsViaCloud: businessTextCloudAssistEnabled && agentNarrativeStreamer
+          ? (text, hooks) => agentNarrativeStreamer.extractBusinessText({
+              conversationId: input.conversationId,
+              requestId: input.requestId,
+              text,
+              aliases: effectiveJobCaseFieldAliases(repository).aliases,
+              model: resolveAgentChatModel(agentChatModelCatalog, input.modelKey),
+              signal: hooks.signal,
+              onClientRequestId: hooks.onClientRequestId,
+              onRemoteSettled: hooks.onRemoteSettled
+            })
+          : null
+      }, useCase, input, decision, turn)
+    } : {})
   })
 
   return { runCandidateMatchTask, stop: agentIpcStop }

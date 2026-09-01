@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type {
+  SaveJobCaseFieldAliasesInput,
+  JobCaseFieldKey,
+  JobCaseFieldAliases,
+  JobCaseFieldAliasMap,
   ApplicationLocale,
   BootstrapPayload,
   LocalApplicationPreferences,
   SaveLocalApplicationPreferencesInput
 } from '@shared'
+import { jobCaseFieldCanonicalLabels, jobCaseFieldKeys } from '@shared'
+import { BroadcastSettingsSection, type BroadcastSettingsActions } from './BroadcastSettingsSection'
 import { Icon, type IconName } from './Icon'
 import { useRendererUiRefresh, useUiLocale, useUiText } from '../i18n'
 
-export type ApplicationSettingsSection = 'general' | 'integrations' | 'privacy'
+export type ApplicationSettingsSection = 'general' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
 
 interface ApplicationSettingsDialogProps {
   bootstrap: BootstrapPayload
@@ -24,6 +30,25 @@ interface ApplicationSettingsDialogProps {
   onOpenZoomTestMeeting?(): Promise<unknown>
   onSave(input: SaveLocalApplicationPreferencesInput): Promise<LocalApplicationPreferences>
   onSyncGoogleWorkspace(): Promise<void>
+  fieldAliases?: JobCaseFieldAliases
+  onSaveFieldAliases?(input: SaveJobCaseFieldAliasesInput): Promise<JobCaseFieldAliases>
+  /** Present once 案件配信 is reachable; the 配信 area is hidden without it. */
+  broadcastActions?: BroadcastSettingsActions
+}
+
+const aliasSeparatorPattern = /[、,，;；\r\n]+/u
+
+function aliasDraftsFrom(aliases: JobCaseFieldAliases | undefined): Record<JobCaseFieldKey, string> {
+  return Object.fromEntries(jobCaseFieldKeys.map((key) => [key, (aliases?.aliases[key] ?? []).join('、')])) as Record<JobCaseFieldKey, string>
+}
+
+function aliasMapFrom(drafts: Record<JobCaseFieldKey, string>): JobCaseFieldAliasMap {
+  const map: JobCaseFieldAliasMap = {}
+  for (const key of jobCaseFieldKeys) {
+    const values = [...new Set(drafts[key].split(aliasSeparatorPattern).map((value) => value.trim()).filter(Boolean))]
+    if (values.length > 0) map[key] = values
+  }
+  return map
 }
 
 const languageOptions: Array<{ locale: ApplicationLocale; name: string; nativeName: string; detail: string }> = [
@@ -33,6 +58,8 @@ const languageOptions: Array<{ locale: ApplicationLocale; name: string; nativeNa
 
 const sections: Array<{ id: ApplicationSettingsSection; label: string; detail: string; icon: IconName }> = [
   { id: 'general', label: '一般設定', detail: '言語と本機ユーザー', icon: 'settings' },
+  { id: 'fields', label: '案件項目', detail: '項目の別名', icon: 'briefcase' },
+  { id: 'broadcast', label: '配信', detail: '紹介文テンプレート', icon: 'mail' },
   { id: 'integrations', label: '外部システム', detail: '接続・権限・同期', icon: 'mail' },
   { id: 'privacy', label: 'データとプライバシー', detail: '脱敏・Local AI・暗号化', icon: 'shield' }
 ]
@@ -50,7 +77,10 @@ export function ApplicationSettingsDialog({
   onOpenOperatorProfile,
   onOpenZoomTestMeeting,
   onSave,
-  onSyncGoogleWorkspace
+  onSyncGoogleWorkspace,
+  fieldAliases,
+  onSaveFieldAliases,
+  broadcastActions
 }: ApplicationSettingsDialogProps) {
   useRendererUiRefresh()
   const t = useUiText()
@@ -60,6 +90,25 @@ export function ApplicationSettingsDialog({
   const [activeSection, setActiveSection] = useState<ApplicationSettingsSection>(initialSection)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [aliasDrafts, setAliasDrafts] = useState<Record<JobCaseFieldKey, string>>(() => aliasDraftsFrom(fieldAliases))
+  const [aliasError, setAliasError] = useState<string | null>(null)
+  const [aliasSaved, setAliasSaved] = useState(false)
+  const aliasDirty = JSON.stringify(aliasMapFrom(aliasDrafts)) !== JSON.stringify(fieldAliases?.aliases ?? {})
+  const saveAliases = async () => {
+    if (!onSaveFieldAliases || busy !== null) return
+    setBusy('aliases')
+    setAliasError(null)
+    setAliasSaved(false)
+    try {
+      const saved = await onSaveFieldAliases({ aliases: aliasMapFrom(aliasDrafts), expectedRevision: fieldAliases?.revision ?? null })
+      setAliasDrafts(aliasDraftsFrom(saved))
+      setAliasSaved(true)
+    } catch (cause) {
+      setAliasError(cause instanceof Error ? cause.message : '案件項目の別名を保存できませんでした。')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   useEffect(() => setActiveSection(initialSection), [initialSection])
 
@@ -148,7 +197,7 @@ export function ApplicationSettingsDialog({
 
         <div className="application-settings-layout">
           <nav aria-label="設定カテゴリ" className="application-settings-nav">
-            {sections.map((section, index) => (
+            {sections.filter((section) => section.id !== 'broadcast' || broadcastActions).map((section, index) => (
               <button
                 aria-current={activeSection === section.id ? 'page' : undefined}
                 className={activeSection === section.id ? 'is-active' : ''}
@@ -201,6 +250,54 @@ export function ApplicationSettingsDialog({
                 <div className="application-settings-policy">
                   <Icon name="lock" size={16} />
                   <span><strong>この端末だけに保存</strong>言語とユーザー設定は暗号化ローカルDBに保存され、外部システムへ送信されません。</span>
+                </div>
+              </section>
+            ) : null}
+
+            {activeSection === 'fields' ? (
+              <section aria-labelledby="field-settings-title" className="settings-section">
+                <div className="settings-section-heading">
+                  <span>CASE FIELDS</span>
+                  <h3 id="field-settings-title">案件項目の別名</h3>
+                  <p>取引先ごとに異なるラベル（単金、稼働開始など）を既定の案件項目に対応付けます。貼り付け時の分類、端末内の項目抽出、クラウド抽出への指示が同じ別名を使います。</p>
+                </div>
+                <div className="settings-alias-grid">
+                  {jobCaseFieldKeys.map((key) => (
+                    <label className="settings-alias-row" key={key}>
+                      <span><strong>{jobCaseFieldCanonicalLabels[key]}</strong><small>{key}</small></span>
+                      <input
+                        aria-label={`${jobCaseFieldCanonicalLabels[key]}の別名`}
+                        disabled={busy !== null || !onSaveFieldAliases}
+                        onChange={(event) => { setAliasSaved(false); setAliasDrafts({ ...aliasDrafts, [key]: event.target.value }) }}
+                        placeholder="別名を「、」で区切って入力"
+                        value={aliasDrafts[key]}
+                      />
+                    </label>
+                  ))}
+                </div>
+                {aliasError ? <p className="settings-inline-error" role="alert">{aliasError}</p> : null}
+                <div className="settings-alias-actions">
+                  <button className="is-primary" disabled={busy !== null || !aliasDirty || !onSaveFieldAliases} onClick={() => void saveAliases()} type="button">{busy === 'aliases' ? '保存中…' : '別名を保存'}</button>
+                  {aliasSaved ? <small>保存しました</small> : null}
+                </div>
+                <div className="application-settings-policy">
+                  <Icon name="lock" size={16} />
+                  <span><strong>この端末だけに保存</strong>別名は暗号化ローカルDBに保存されます。クラウドへは項目名の対応関係だけが指示として送られ、案件本文は送られません。</span>
+                </div>
+              </section>
+            ) : null}
+
+            {activeSection === 'broadcast' && broadcastActions ? (
+              <section aria-labelledby="broadcast-settings-title" className="settings-section">
+                <div className="settings-section-heading">
+                  <span>CASE BROADCAST</span>
+                  <h3 id="broadcast-settings-title">配信</h3>
+                  <p>紹介文の行テンプレートをここで整えます。テンプレートは案件の項目値だけを並べ、商流と支払条件は行に選べません。</p>
+                </div>
+                <BroadcastSettingsSection actions={broadcastActions} />
+                <div className="application-settings-policy">
+                  <Icon name="lock" size={16} />
+                  <span><strong>この端末だけに保存</strong>テンプレートは暗号化ローカルDBに保存され、外部システムへ送信されません。</span>
                 </div>
               </section>
             ) : null}

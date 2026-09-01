@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3-multiple-ciphers'
 import { createWorkTaskPreview, materializeWorkTask, recordCandidateMatchExecution } from '@application'
-import { EncryptedApplicationRepository } from '@persistence'
+import { currentSchemaVersion, EncryptedApplicationRepository } from '@persistence'
 import { createGmailJobCaseSource, createRedactedEmlJobCaseSource, createRedactedManualJobCaseSource, extractJobCaseDraft } from '@job-cases'
 import { redactTextForCloud } from '@privacy'
 import { evaluateSesCandidateBenchmark, extractCandidateDraft, searchConfirmedCandidateProfiles } from '@resume'
@@ -584,6 +584,20 @@ try {
     /国籍条件/,
     'a nationality restriction was accepted into a job case'
   )
+  // The same exclusion written as a preference - in Japanese or Chinese - is
+  // refused just as flatly as 外国籍不可.
+  for (const phrase of ['最好日本人', '日本人希望', '日本人優先']) {
+    assert.throws(
+      () => repository.confirmJobCaseReview({
+        ...jobCaseSubmission,
+        fields: jobCaseSubmission.fields.map((field) => field.key === 'notes'
+          ? { ...field, value: phrase, changeReason: '検証用変更' }
+          : field)
+      }, 'verification-user', '検証担当者'),
+      /国籍条件/,
+      `a nationality preference (${phrase}) was accepted into a job case`
+    )
+  }
   const confirmedJobCase = repository.confirmJobCaseReview(
     jobCaseSubmission,
     'verification-user',
@@ -614,12 +628,22 @@ try {
   assert.equal(manualReview?.redactedPreview.includes(manualCasePhoneSentinel), false)
   assert.equal(manualReview?.redactedPreview.includes('<PERSON_NAME_001>'), true)
   assert.equal(manualReview?.redactedPreview.includes('<PHONE_001>'), true)
-  repository.confirmJobCaseReview({
+  // An age limit is reviewed, never blocked: it is what the client stated and
+  // the operator has to see it on the case.
+  const confirmedManualCase = repository.confirmJobCaseReview({
     reviewId: manualDraft.reviewId,
     reviewRevision: manualReview?.reviewRevision ?? 0,
     privacyReviewed: true,
-    fields: manualDraft.fields.map((field) => ({ key: field.key, value: field.value, confirmed: true as const }))
+    fields: manualDraft.fields.map((field) => field.key === 'notes'
+      ? { key: field.key, value: '40代まで', confirmed: true as const, changeReason: '検証用変更' }
+      : { key: field.key, value: field.value, confirmed: true as const })
   }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:55.000Z'))
+  assert.equal(confirmedManualCase.status, 'completed', 'an age-limit condition blocked a job case confirmation')
+  assert.equal(
+    confirmedManualCase.fields.find((field) => field.key === 'notes')?.value,
+    '40代まで',
+    'the age-limit condition was not kept on the confirmed case'
+  )
   const emlSource = createRedactedEmlJobCaseSource({
     version: 'parsed-eml-v1',
     file: { name: 'verification-case.eml', size: 2048, sha256: 'd'.repeat(64) },
@@ -683,7 +707,7 @@ try {
     '山田 更新後',
     'PII mapping did not decrypt with the derived mapping key'
   )
-  assert.equal(reopened.getSchemaVersion(), 39, 'schema v39 migration did not apply')
+  assert.equal(reopened.getSchemaVersion(), currentSchemaVersion, `schema v${currentSchemaVersion} migration did not apply`)
   const actionRun = reopened.createActionRun({
     toolName: 'proposal.export', workTaskId: task.id, origin: 'system', scopeId: 'selected-case',
     scopeFingerprint: 'a'.repeat(64), inputHash: 'b'.repeat(64), contentRevision: '1:b'.repeat(1),
@@ -1609,6 +1633,72 @@ try {
     manuallyConfirmed: true
   }, 'e31285fe-2f0d-47c7-a53f-1d792daf72f0', '検証担当者', new Date('2026-07-18T00:00:00.000Z'))
   assert.deepEqual(repliedProposal.followUp.events.map((event) => event.stage), ['sent', 'replied'])
+  // 案件配信: the built-in template appears until the operator saves one, the
+  // copy log only ever grows, and it disappears with the case it belongs to.
+  const defaultTemplates = reopened.listBroadcastTemplates()
+  assert.equal(defaultTemplates.length, 1, 'the built-in broadcast template was not returned')
+  assert.equal(defaultTemplates[0].name, '標準')
+  assert.ok(
+    defaultTemplates[0].lines.every((line) => line.kind === 'text' || !['contract_chain', 'payment_terms'].includes(line.field)),
+    'the built-in broadcast template referenced a forbidden field'
+  )
+  const savedTemplates = reopened.createBroadcastTemplate({
+    name: '短文', ratePublic: 'negotiable',
+    headerJa: '【案件】{{title}}', headerZh: '【案件】{{title}}', footerJa: '', footerZh: '',
+    lines: [{ kind: 'field', field: 'required_skills', labelJa: '必須', labelZh: '必须', on: true }]
+  }, new Date('2026-07-17T00:02:59.700Z'))
+  assert.equal(savedTemplates.length, 2, 'adding a template dropped the built-in default')
+  const shortTemplate = savedTemplates.find((template) => template.name === '短文')!
+  assert.equal(
+    reopened.updateBroadcastTemplate({ id: shortTemplate.id, ...shortTemplate, name: '短文v2' },
+      new Date('2026-07-17T00:02:59.750Z')).find((template) => template.id === shortTemplate.id)?.revision,
+    2,
+    'editing a broadcast template did not bump its revision'
+  )
+  assert.throws(
+    () => reopened.createBroadcastTemplate({
+      name: '禁止', ratePublic: 'raw', headerJa: 'x', headerZh: 'x', footerJa: '', footerZh: '',
+      lines: [{ kind: 'field', field: 'contract_chain' as never, labelJa: '商流', labelZh: '商流', on: true }]
+    }),
+    /invalid|Invalid/,
+    'a template referencing the contract chain was accepted'
+  )
+  const activeBroadcastCase = reopened.getJobCaseReview(jobCaseReviewId)?.jobCase
+  assert.ok(activeBroadcastCase, 'the broadcast verification needs a confirmed job case')
+  const appendedCopy = reopened.appendCaseBroadcastCopy({
+    reviewId: jobCaseReviewId,
+    jobCaseId: activeBroadcastCase.id,
+    jobCaseVersion: activeBroadcastCase.version,
+    templateId: shortTemplate.id,
+    templateRevision: 2,
+    lang: 'zh',
+    kind: 'new',
+    text: '【案件】検証案件',
+    actorId: stableOperatorId
+  }, new Date('2026-07-17T00:02:59.900Z'))
+  assert.equal(appendedCopy.textSha256.length, 64)
+  reopened.close()
+  reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
+  const storedCopies = reopened.listCaseBroadcastCopies(jobCaseReviewId)
+  assert.equal(storedCopies.length, 1, 'the recorded copy did not survive a reopen')
+  assert.deepEqual(
+    [storedCopies[0].text, storedCopies[0].lang, storedCopies[0].jobCaseVersion, storedCopies[0].actorId],
+    ['【案件】検証案件', 'zh', activeBroadcastCase.version, stableOperatorId]
+  )
+  assert.equal(reopened.listAllCaseBroadcastCopies().length, 1)
+  // Sending is not a fact this device has, so nothing writes the v42 ledger.
+  assert.equal(reopened.listCaseBroadcasts(jobCaseReviewId).length, 0)
+  const broadcastCopyLogAppendOnly = !['updateCaseBroadcastCopy', 'deleteCaseBroadcastCopy', 'removeCaseBroadcastCopy',
+    'appendCaseBroadcasts', 'createSalesGroup', 'updateSalesGroup', 'setSalesGroupStatus', 'listSalesGroups']
+    .some((method) => method in reopened)
+  assert.ok(broadcastCopyLogAppendOnly, 'the broadcast copy log exposed a mutation or a sales-group method')
+  assert.throws(
+    () => reopened.deleteBroadcastTemplate({ id: shortTemplate.id }) &&
+      reopened.deleteBroadcastTemplate({ id: defaultTemplates[0].id }),
+    /最低1件/,
+    'the last remaining broadcast template was deletable'
+  )
+
   const jobCaseDeletionPreview = reopened.previewJobCaseDeletion(jobCaseReviewId)
   assert.equal(jobCaseDeletionPreview.counts.caseVersions, 2)
   assert.equal(jobCaseDeletionPreview.counts.gmailMessages, 1)
@@ -1622,6 +1712,20 @@ try {
     confirmationHash: jobCaseDeletionPreview.confirmationHash,
     confirmationText: '削除'
   }, new Date('2026-07-17T00:03:00.000Z'))
+  const pendingJobCaseDeletionPreview = reopened.previewJobCaseDeletion(emlDraft.reviewId)
+  assert.equal(pendingJobCaseDeletionPreview.counts.caseVersions, 0)
+  assert.equal(pendingJobCaseDeletionPreview.counts.reviewAudits, 0)
+  assert.equal(pendingJobCaseDeletionPreview.counts.sourceRecords, 1)
+  reopened.deleteJobCaseDatabaseData({
+    reviewId: emlDraft.reviewId,
+    confirmationHash: pendingJobCaseDeletionPreview.confirmationHash,
+    confirmationText: '削除'
+  }, new Date('2026-07-17T00:03:00.500Z'))
+  assert.equal(reopened.getJobCaseReview(emlDraft.reviewId), null, 'deleted pending job case review remained')
+  assert.equal(
+    reopened.listCaseBroadcastCopies(jobCaseReviewId).length, 0,
+    'broadcast copy rows survived the controlled deletion of their case'
+  )
   const jobCaseDeletionReportId = '3f15a899-b863-48ec-acb6-e033b3c04658'
   reopened.saveDataDeletionReport({
     id: jobCaseDeletionReportId,
@@ -1891,9 +1995,16 @@ try {
       jobCaseDraftRecovered: true,
       jobCaseDirectIdentifierBlocked: true,
       jobCaseNationalityRestrictionBlocked: true,
+      jobCaseNationalityPreferenceBlocked: true,
+      jobCaseAgeLimitConfirmable: true,
       jobCaseRevisionHistoryVerified: true,
       jobCaseArchiveRestoreVerified: true,
       jobCaseDeletionTombstoneVerified: true,
+      broadcastTemplateVerified: true,
+      broadcastCopyRoundTripVerified: true,
+      broadcastCopyLogAppendOnlyVerified: broadcastCopyLogAppendOnly,
+      broadcastCopyDeletionCascadeVerified: true,
+      pendingJobCaseDeletionVerified: true,
       proposalApprovalHashVerified: true,
       proposalExportStateVerified: true,
       proposalFollowUpLifecycleVerified: true,
@@ -1909,7 +2020,7 @@ try {
       agentFirstTurnActionRunAssociationVerified: true,
       agentCandidateMatchFirstTurnAssociationVerified: true,
       agentMatchRunReadFirstTurnAssociationVerified: true,
-      schemaVersion: 39,
+      schemaVersion: currentSchemaVersion,
       fileMode: '0600'
     })}\n`
   )

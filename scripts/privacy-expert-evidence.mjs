@@ -34,10 +34,12 @@ export const cloudEnforcementPaths = Object.freeze([
   'apps/desktop/src/main/privacy-gates.ts',
   'apps/desktop/src/main/index.ts',
   'apps/desktop/src/main/app-defaults.ts',
+  'apps/desktop/src/main/business-text-intake.ts',
   'apps/desktop/src/main/original-open-root.ts',
   'apps/desktop/src/main/recovery-verification.ts',
   'apps/desktop/src/main/work-task-helpers.ts',
   'apps/desktop/src/main/ipc/aicommerce.ts',
+  'apps/desktop/src/main/ipc/ats-import.ts',
   'apps/desktop/src/main/ipc/bootstrap.ts',
   'apps/desktop/src/main/ipc/candidate-evaluation.ts',
   'apps/desktop/src/main/ipc/candidate-match.ts',
@@ -86,6 +88,7 @@ async function computeSourceSetSha256(paths, root) {
 export const unboundMainProcessSources = Object.freeze([
   'apps/desktop/src/main/agent-cloud-narrative.ts',
   'apps/desktop/src/main/agent-ipc.ts',
+  'apps/desktop/src/main/ats-csv.ts',
   'apps/desktop/src/main/startup-smoke.ts',
   'apps/desktop/src/main/wechat-visible-reader.ts'
 ])

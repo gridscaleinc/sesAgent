@@ -162,9 +162,11 @@ export function matchingHomeFitSnapshot(
     termCoverage: match.retrieval.termCoverage,
     hardFilterUnknownCount: match.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length,
     missing: match.retrieval.hardFilters.filter((filter) => filter.outcome !== 'passed').map((filter) => filter.requested),
-    hardFilterStatus: match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
-      ? 'failed'
-      : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown') ? 'unknown' : 'passed',
+    hardFilterStatus: match.retrieval.hardFilters.length === 0
+      ? 'none'
+      : match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
+        ? 'failed'
+        : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown') ? 'unknown' : 'passed',
     evidence: match.evidence.map((field) => ({
       key: field.key,
       label: field.label,

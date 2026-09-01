@@ -1,10 +1,27 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { extractAllowedInterviewMeetingLinks, type AllowedInterviewMeetingLink } from '@shared'
+import { extractAllowedInterviewMeetingLinks, isUnassessableMatchCard, type AllowedInterviewMeetingLink } from '@shared'
+
+import type { PersistedUserContent } from './business-text'
+
+export {
+  brandPersistedUserContent,
+  routeBusinessText,
+  type BusinessTextIntakeKind,
+  type BusinessTextRouteDecision,
+  type BusinessTextRouteReason,
+  type LocalBusinessTextRoute,
+  type PersistedUserContent
+} from './business-text'
 import type {
   AgentCandidateDraftFacts,
+  AgentJobCaseBroadcastCard,
+  AgentJobCaseBroadcastCardsBlock,
+  AgentJobCaseDraftCard,
+  AgentJobCaseDraftFacts,
   AgentCandidateMatchCard,
   AgentCandidateMatchCardsBlock,
+  AgentCloudReviewOutcome,
   AgentCandidateInterviewFacts,
   AgentCandidateProfileFacts,
   AgentClarificationBlock,
@@ -20,7 +37,9 @@ import type {
   AiConversationSalesAgentState,
   AiConversationSnapshot,
   ApplicationLocale,
+  CandidateMatchAssessment,
   DomainToolName,
+  AgentSystemAccessBlock,
   ExecuteAgentTurnInput,
   SaveAiConversationInput,
   TypedAiConversationReference
@@ -115,9 +134,10 @@ export interface AgentCandidateMatchRecord {
   fitScore: number | null
   matched: string[]
   missing: string[]
-  hardFilterStatus: 'passed' | 'failed' | 'unknown'
+  hardFilterStatus: 'passed' | 'failed' | 'unknown' | 'none'
   projectEvidence: string | null
   status: AgentEntityStatus
+  assessment?: CandidateMatchAssessment | null
 }
 
 export interface AgentJobCaseSearchOutput {
@@ -133,6 +153,7 @@ export interface AgentCandidateMatchOutput {
   runId: string
   resultHash: string
   cards: AgentCandidateMatchRecord[]
+  cloudReview?: AgentCloudReviewOutcome | null
 }
 
 export interface AgentMatchRunReadOutput {
@@ -163,6 +184,24 @@ export interface AgentCandidateDraftReadOutput {
   facts: AgentCandidateDraftFacts
 }
 
+export interface AgentJobCaseDraftReadOutput {
+  facts: AgentJobCaseDraftFacts[]
+}
+
+/** One queue row as the agent may see it: no source text, no copy detail. */
+export interface AgentBroadcastQueueEntry {
+  reviewId: string
+  jobCaseId: string | null
+  title: string
+  status: 'new' | 'copied' | 'attention'
+  /** The case moved on since the last copy, so the copied text is out of date. */
+  hasUpdateSinceLastCopy: boolean
+}
+
+export interface AgentJobCaseBroadcastDraftOutput {
+  cards: AgentJobCaseBroadcastCard[]
+}
+
 export interface AgentInterviewScheduleOutput {
   candidateLabel: string
   scheduledAt: string
@@ -179,6 +218,8 @@ export type AgentToolResult =
   | { toolName: 'match-run.read.local'; output: AgentMatchRunReadOutput; actionRunId?: string | null }
   | { toolName: 'resume.analyze.local'; output: AgentResumeImportOutput; actionRunId?: string | null }
   | { toolName: 'candidate.draft.read.local'; output: AgentCandidateDraftReadOutput; actionRunId?: string | null }
+  | { toolName: 'job-case.draft.read.local'; output: AgentJobCaseDraftReadOutput; actionRunId?: string | null }
+  | { toolName: 'job-case.broadcast.draft.local'; output: AgentJobCaseBroadcastDraftOutput; actionRunId?: string | null }
   | { toolName: 'candidate.interview.schedule.local'; output: AgentInterviewScheduleOutput; actionRunId?: string | null }
 
 export interface AgentToolExecutionMetadata {
@@ -187,12 +228,25 @@ export interface AgentToolExecutionMetadata {
   requestId: string
 }
 
+/** Whether a confirmed case carries anything a fit score can be built from. */
+export interface AgentJobCaseMatchability {
+  scorableTermCount: number
+  hardFilterTermCount: number
+  reviewId: string | null
+}
+
 export interface LocalAgentPort {
   listActiveJobCases?(): AgentJobCaseRecord[]
+  /** Local lookup, not a tool call: what the matcher would have to work with for this case. */
+  describeJobCaseMatchability?(jobCaseId: string, jobCaseVersion: number | null): AgentJobCaseMatchability | null
+  /** Local lookup, not a tool call: the confirmed case the side workspace is showing right now, if any. */
+  workspaceJobCase?(access: AgentSystemAccessBlock | null): AgentJobCaseRecord | null
   /** Vault tokens attached to the turn being executed, in the order the operator added them. */
   listAttachmentFileTokens?(conversationId: string, requestId: string): string[]
   /** Local lookup, not a tool call: resolves a ranked candidate to the record an interview attaches to. */
   resolveInterviewCandidate?(runId: string, resultId: string | null, rank: number | null): { anonymousLabel: string; sourceDocumentId: string } | null
+  /** Local lookup, not a tool call: what 案件配信 currently has to send. */
+  listBroadcastQueue?(): AgentBroadcastQueueEntry[]
   /** Candidates that already have a review record and can therefore hold an interview. */
   listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
   /** Resumes imported during this conversation, by either the tool or the composer button. */
@@ -201,7 +255,7 @@ export interface LocalAgentPort {
   loadConversation(conversationId: string): AiConversationSnapshot | null
   saveConversation(input: SaveAiConversationInput): AiConversationSnapshot
   executeTool(
-    toolName: Extract<DomainToolName, 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'candidate.interview.schedule.local'>,
+    toolName: Extract<DomainToolName, 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'job-case.draft.read.local' | 'job-case.broadcast.draft.local' | 'candidate.interview.schedule.local'>,
     input: unknown,
     metadata: AgentToolExecutionMetadata
   ): Promise<AgentToolResult>
@@ -222,6 +276,11 @@ export type AgentPlannedToolAction =
   | { toolName: 'match-run.read.local'; arguments: { rank: number } }
   | { toolName: 'resume.analyze.local'; arguments: { attachmentOrdinal: number | null } }
   | { toolName: 'candidate.draft.read.local'; arguments: { draftOrdinal: number | null } }
+  | { toolName: 'job-case.draft.read.local'; arguments: { draftOrdinal: number | null } }
+  | {
+      toolName: 'job-case.broadcast.draft.local'
+      arguments: { target: 'new-cases' | 'uncopied-cases' | 'case'; ordinal: number | null }
+    }
   | {
       toolName: 'candidate.interview.schedule.local'
       arguments: {
@@ -255,6 +314,16 @@ const planningInterviewArgumentsSchema = z.object({
     .nullable().catch(null).optional().default(null),
   kind: z.enum(['recruiting', 'client']).nullable().catch(null).optional().default(null),
   note: z.string().trim().max(1_500).nullable().catch(null).optional().default(null)
+})
+
+/**
+ * Tolerant for the same reason the interview schema is: a model writes
+ * {"target":"new-cases"} and omits the rest. An unusable value becomes the
+ * safe default - the whole new-case queue - instead of failing the plan.
+ */
+const planningBroadcastDraftArgumentsSchema = z.object({
+  target: z.enum(['new-cases', 'uncopied-cases', 'case']).catch('new-cases').optional().default('new-cases'),
+  ordinal: z.coerce.number().int().min(1).max(20).nullable().catch(null).optional().default(null)
 })
 
 const interviewDatePattern = /^\d{4}-\d{2}-\d{2}$/u
@@ -318,6 +387,14 @@ const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
   z.object({
     toolName: z.literal('candidate.draft.read.local'),
     arguments: z.object({ draftOrdinal: nullableOrdinalSchema }).strict()
+  }).strict(),
+  z.object({
+    toolName: z.literal('job-case.draft.read.local'),
+    arguments: z.object({ draftOrdinal: nullableOrdinalSchema }).strict()
+  }).strict(),
+  z.object({
+    toolName: z.literal('job-case.broadcast.draft.local'),
+    arguments: planningBroadcastDraftArgumentsSchema
   }).strict(),
   z.object({
     toolName: z.literal('candidate.interview.schedule.local'),
@@ -409,11 +486,25 @@ export const agentPlanningToolCatalog: readonly AgentPlanningToolCatalogEntry[] 
     parse: (value) => ({ toolName: 'candidate.draft.read.local', arguments: planningDraftArgumentsSchema.parse(value) })
   },
   {
+    name: 'read_imported_case_drafts',
+    description: 'Read the machine-extracted drafts of job cases imported from business text pasted earlier in this conversation: title, skills, rate, location, start date, Japanese level, interview and the other case fields, which fields are missing, and whether the operator has confirmed each draft. Use it for "these cases", "第N条", which drafts lack a field, or comparisons between the drafts. draftOrdinal null reads every draft of the latest paste. Only usable when state.intakeDraftCount is above zero.',
+    argumentsShape: '{"draftOrdinal":number|null}',
+    effect: 'read', approval: 'none',
+    parse: (value) => ({ toolName: 'job-case.draft.read.local', arguments: planningDraftArgumentsSchema.parse(value) })
+  },
+  {
     name: 'schedule_interview',
     description: 'Schedule an interview for a candidate. Fill only what the operator actually stated and leave everything else null - the app asks them for the missing details rather than choosing on their behalf. Set rank only when they named a position in a match result; for "this person" or a single imported resume leave it null, because the app resolves who is meant. date is YYYY-MM-DD and time is HH:mm in JST.',
     argumentsShape: '{"rank":number|null,"date":string|null,"time":string|null,"method":"zoom"|"google-meet"|"phone"|"onsite"|null,"durationMinutes":integer(5..480)|null,"kind":"recruiting"|"client"|null,"note":string|null}',
     effect: 'write', approval: 'none',
     parse: (value) => ({ toolName: 'candidate.interview.schedule.local', arguments: planningInterviewArgumentsSchema.parse(value) })
+  },
+  {
+    name: 'draft_case_broadcasts',
+    description: 'Write the ready-to-paste message (紹介文) for confirmed job cases, in Japanese and Chinese, so the operator can copy it into WeChat themselves. target "new-cases" takes every case never copied yet - use it for 把今天的新案件整理成群消息 / 今日の新規案件を群メッセージにして; "uncopied-cases" adds the ones revised since they were last copied - use it for 今天还有哪些没发 / まだ出していない案件は; "case" is one case, with ordinal naming it among the drafted or listed cases, or null when a case is already selected. It only writes the text: this app never sends anything and never knows where a message went.',
+    argumentsShape: '{"target":"new-cases"|"uncopied-cases"|"case","ordinal":number|null}',
+    effect: 'read', approval: 'none',
+    parse: (value) => ({ toolName: 'job-case.broadcast.draft.local', arguments: planningBroadcastDraftArgumentsSchema.parse(value) })
   },
   {
     name: 'read_match_result',
@@ -477,7 +568,47 @@ function salesAgentContext(): AiConversationContext {
 }
 
 function defaultState(): AiConversationSalesAgentState {
-  return { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null }
+  return { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null, lastIntakeBatch: null }
+}
+
+interface IntakeBatchEntry {
+  reviewId: string
+  ordinal: number
+  label: string
+  outcome: AgentJobCaseDraftCard['outcome']
+}
+
+/**
+ * The drafts the latest business-text paste produced, resolved from the
+ * conversation state first and from the newest intake card block otherwise.
+ * Ordinals are paste order; a deleted draft keeps its slot so "第3条" still
+ * means the third pasted record.
+ */
+function latestIntakeBatch(
+  state: AiConversationSalesAgentState,
+  messages: AiConversationMessage[]
+): { intakeBatchId: string; entries: IntakeBatchEntry[] } | null {
+  const blocks = messages
+    .flatMap((message) => (message.blocks ?? []).map((block) => ({ messageId: message.id, block })))
+    .filter((item): item is { messageId: string; block: Extract<AiConversationBlock, { type: 'job-case-draft-cards' }> } =>
+      item.block.type === 'job-case-draft-cards')
+  const pointer = state.lastIntakeBatch
+  if (pointer) {
+    const source = blocks.find((item) => item.messageId === pointer.messageId)?.block
+    return {
+      intakeBatchId: pointer.intakeBatchId,
+      entries: pointer.reviewIds.map((reviewId, index) => {
+        const card = source?.cards.find((item) => item.reviewId === reviewId)
+        return { reviewId, ordinal: card?.ordinal ?? index + 1, label: card?.label ?? `DRAFT_${index + 1}`, outcome: card?.outcome ?? 'existing-review' }
+      })
+    }
+  }
+  const latest = blocks.at(-1)?.block
+  if (!latest) return null
+  return {
+    intakeBatchId: latest.intakeBatchId,
+    entries: latest.cards.map((card) => ({ reviewId: card.reviewId, ordinal: card.ordinal, label: card.label, outcome: card.outcome }))
+  }
 }
 
 function textFor(locale: ApplicationLocale, ja: string, zh: string): string {
@@ -530,7 +661,8 @@ function candidateCard(record: AgentCandidateMatchRecord, ordinal: number): Agen
     missing: record.missing,
     hardFilterStatus: record.hardFilterStatus,
     projectEvidence: record.projectEvidence,
-    status: record.status
+    status: record.status,
+    ...(record.assessment ? { assessment: record.assessment } : {})
   }
 }
 
@@ -559,6 +691,17 @@ function latestMatchReferences(messages: AiConversationMessage[]): TypedAiConver
   return block?.type === 'candidate-match-cards' ? block.cards.map((card) => card.reference) : []
 }
 
+/** How many cases one drafting turn may write messages for. */
+export const agentBroadcastDraftLimit = 8
+
+/** The group messages the latest drafting turn produced; the newest block wins. */
+function latestBroadcastCards(messages: AiConversationMessage[]): AgentJobCaseBroadcastCard[] {
+  const block = [...messages].reverse()
+    .flatMap((message) => message.blocks ?? [])
+    .find((item) => item.type === 'job-case-broadcast-cards')
+  return block?.type === 'job-case-broadcast-cards' ? block.cards : []
+}
+
 function canonicalJobCaseReference(reference: TypedAiConversationReference, records: AgentJobCaseRecord[]): TypedAiConversationReference | null {
   const record = records.find((item) => item.id === reference.objectId && item.version === reference.objectVersion && item.status === 'current')
   if (!record) return null
@@ -572,7 +715,8 @@ function resolveJobCaseReference(
   messages: AiConversationMessage[],
   selectedJobCaseRef: TypedAiConversationReference | null | undefined,
   ordinal: number | null,
-  locale: ApplicationLocale
+  locale: ApplicationLocale,
+  workspaceRecord: AgentJobCaseRecord | null = null
 ): { reference: TypedAiConversationReference } | { clarification: AgentClarificationBlock } {
   const explicit = selectedJobCaseRef ?? state.selectedJobCaseRef
   if (explicit) {
@@ -603,6 +747,12 @@ function resolveJobCaseReference(
       }
     }
   }
+  // Nothing selected in this conversation and no ordinal: 「当前案件」 is the case
+  // the operator has open in the side workspace, when one is showing.
+  if (workspaceRecord) {
+    const canonical = canonicalJobCaseReference(jobCaseCard(workspaceRecord, 1).reference, records)
+    if (canonical) return { reference: canonical }
+  }
   if (candidates.length === 1) {
     const canonical = canonicalJobCaseReference(candidates[0]!, records)
     if (canonical) return { reference: canonical }
@@ -614,6 +764,49 @@ function resolveJobCaseReference(
   return {
     clarification: {
       type: 'clarification', code: 'SELECT_JOB_CASE', prompt: textFor(locale, '操作する案件を先に選択してください。', '请先选择要操作的案件。'),
+      options: records.slice(0, 20).map((record, index) => jobCaseCard(record, index + 1).reference)
+    }
+  }
+}
+
+/**
+ * Which case a broadcast request means. Ordinals name the messages this
+ * conversation just drafted first, then the drafts a paste produced, and only
+ * then the case list a search produced - each is a stronger claim about "第2条"
+ * than the one below it. Whatever resolves must still be in the 配信 queue.
+ */
+function resolveBroadcastCase(
+  queue: AgentBroadcastQueueEntry[],
+  records: AgentJobCaseRecord[],
+  state: AiConversationSalesAgentState,
+  messages: AiConversationMessage[],
+  selectedJobCaseRef: TypedAiConversationReference | null | undefined,
+  ordinal: number | null,
+  locale: ApplicationLocale,
+  workspaceRecord: AgentJobCaseRecord | null = null
+): { entry: AgentBroadcastQueueEntry } | { clarification: AgentClarificationBlock } {
+  const byReviewId = (reviewId: string) => queue.find((item) => item.reviewId === reviewId) ?? null
+  if (ordinal !== null) {
+    const drafted = latestBroadcastCards(messages).find((card) => card.ordinal === ordinal)
+    const draftedEntry = drafted ? byReviewId(drafted.reviewId) : null
+    if (draftedEntry) return { entry: draftedEntry }
+    const intake = latestIntakeBatch(state, messages)?.entries.find((entry) => entry.ordinal === ordinal)
+    const intakeEntry = intake ? byReviewId(intake.reviewId) : null
+    if (intakeEntry) return { entry: intakeEntry }
+  }
+  const resolved = resolveJobCaseReference(records, state, messages, selectedJobCaseRef, ordinal, locale, workspaceRecord)
+  if ('clarification' in resolved) return resolved
+  const entry = queue.find((item) => item.jobCaseId === resolved.reference.objectId)
+  if (entry) return { entry }
+  return {
+    clarification: {
+      type: 'clarification',
+      code: 'SELECT_JOB_CASE',
+      prompt: textFor(
+        locale,
+        'この案件は配信キューにありません。配信する案件を選んでください。',
+        '这个案件不在配信队列里，请选择要配信的案件。'
+      ),
       options: records.slice(0, 20).map((record, index) => jobCaseCard(record, index + 1).reference)
     }
   }
@@ -834,7 +1027,7 @@ export class LocalAgentUseCase {
       }
 
       if (plannedAction.toolName === 'job-case.search.local' && plannedAction.arguments.operation === 'detail') {
-        const resolved = resolveJobCaseReference(this.loadRecords(), previousState, previousMessages, input.selectedJobCaseRef, plannedAction.arguments.ordinal, locale)
+        const resolved = resolveJobCaseReference(this.loadRecords(), previousState, previousMessages, input.selectedJobCaseRef, plannedAction.arguments.ordinal, locale, this.workspaceJobCase(input))
         if ('clarification' in resolved) {
           const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
           return save(assistant, previousState, 'clarifying', null, null)
@@ -860,20 +1053,45 @@ export class LocalAgentUseCase {
       }
 
       if (plannedAction.toolName === 'candidate.match.local') {
-        const resolved = resolveJobCaseReference(this.loadRecords(), previousState, previousMessages, input.selectedJobCaseRef, plannedAction.arguments.ordinal, locale)
+        const resolved = resolveJobCaseReference(this.loadRecords(), previousState, previousMessages, input.selectedJobCaseRef, plannedAction.arguments.ordinal, locale, this.workspaceJobCase(input))
         if ('clarification' in resolved) {
           const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
           return save(assistant, previousState, 'clarifying', null, null)
+        }
+        // A case with nothing to score - no skills, only hard-filter terms or
+        // none at all - would still "rank" whoever the hard filters cannot
+        // exclude. That is not a match result; ask for the missing
+        // requirements instead of producing a #1 with no evidence.
+        const matchability = this.port.describeJobCaseMatchability?.(resolved.reference.objectId, resolved.reference.objectVersion) ?? null
+        if (matchability && matchability.scorableTermCount === 0) {
+          const gateOnly = matchability.hardFilterTermCount > 0
+          const content = textFor(
+            locale,
+            `案件「${resolved.reference.label}」には評価できる条件がありません（必須スキルなどが未記入${gateOnly ? 'で、必須条件による絞り込みしかできず' : ''}、意味のある順位を出せません）。案件に必須スキルを補ってから再度マッチングしてください。`,
+            `案件「${resolved.reference.label}」目前没有可评估的条件（必須スキル等为空${gateOnly ? '，只能按硬条件筛选' : ''}），无法产生有意义的排序。请先在案件中补充必須スキル，再重新匹配。`
+          )
+          const access: AiConversationBlock = matchability.reviewId
+            ? { type: 'system-access', destination: 'case-review', reviewId: matchability.reviewId }
+            : { type: 'system-access', destination: 'matching', jobCaseId: resolved.reference.objectId }
+          return save(assistantMessage(content, [access], turnId), { ...previousState, selectedJobCaseRef: resolved.reference }, 'clarifying', null, null)
         }
         const tool = await this.port.executeTool('candidate.match.local', {
           jobCaseId: resolved.reference.objectId, jobCaseVersion: resolved.reference.objectVersion
         }, { conversationId: input.conversationId, turnId, requestId: input.requestId })
         if (tool.toolName !== 'candidate.match.local') throw new AgentExecutionError('TOOL_RESULT_INVALID', '候选人匹配结果无效。')
         const cards = tool.output.cards.slice(0, 5).map((record, index) => candidateCard(record, index + 1))
-        const block: AgentCandidateMatchCardsBlock = { type: 'candidate-match-cards', runId: tool.output.runId, resultHash: tool.output.resultHash, cards }
-        const content = cards.length > 0
-          ? textFor(locale, `現在の案件と確認済み人材プールでローカルマッチングを実行し、上位${cards.length}名を表示します。`, `已使用当前案件和确认人才池完成本地匹配，显示前 ${cards.length} 名。`)
-          : textFor(locale, '現在の確認済み人材プールからマッチ結果が返りませんでした。', '当前确认人才池没有返回匹配结果。')
+        const block: AgentCandidateMatchCardsBlock = {
+          type: 'candidate-match-cards', runId: tool.output.runId, resultHash: tool.output.resultHash, cards,
+          ...(tool.output.cloudReview ? { cloudReview: tool.output.cloudReview } : {})
+        }
+        // Rows that matched nothing are not results; say there is no candidate
+        // and let the cards explain why on request.
+        const noneAssessable = cards.length > 0 && cards.every(isUnassessableMatchCard)
+        const content = noneAssessable
+          ? textFor(locale, '現在の案件に確認できる候補者はいません。検索された人材はいずれも要件に一致しませんでした。', '当前案件暂无可确认的匹配候选人；检索到的人选均不满足案件要求。')
+          : cards.length > 0
+            ? textFor(locale, `現在の案件と確認済み人材プールでローカルマッチングを実行し、上位${cards.length}名を表示します。`, `已使用当前案件和确认人才池完成本地匹配，显示前 ${cards.length} 名。`)
+            : textFor(locale, '現在の確認済み人材プールからマッチ結果が返りませんでした。', '当前确认人才池没有返回匹配结果。')
         const assistant = assistantMessage(content, [
           block,
           { type: 'system-access', destination: 'matching', jobCaseId: resolved.reference.objectId }
@@ -1098,6 +1316,114 @@ export class LocalAgentUseCase {
         ], turnId), previousState, 'completed', 'candidate.draft.read.local', tool.actionRunId ?? null)
       }
 
+      if (plannedAction.toolName === 'job-case.draft.read.local') {
+        // Ordinals are paste order within the latest intake batch; the model
+        // never supplies a review id.
+        const batch = latestIntakeBatch(previousState, previousMessages)
+        if (!batch || batch.entries.length === 0) {
+          return save(assistantMessage(textFor(
+            locale,
+            'この会話ではまだ案件テキストを取り込んでいません。案件テキストを貼り付けてください。',
+            '这个会话还没有导入过案件文本。请先粘贴案件文本。'
+          ), [], turnId), previousState, 'clarifying', null, null)
+        }
+        const ordinal = plannedAction.arguments.draftOrdinal
+        const targets = ordinal === null ? batch.entries : batch.entries.filter((entry) => entry.ordinal === ordinal)
+        if (targets.length === 0) {
+          return save(assistantMessage(textFor(
+            locale,
+            `今回取り込んだ案件下書きは${batch.entries.length}件です。何件目か指定してください。`,
+            `本次导入的案件草稿共 ${batch.entries.length} 条，请指明是第几条。`
+          ), [], turnId), previousState, 'clarifying', null, null)
+        }
+        const tool = await this.port.executeTool('job-case.draft.read.local', {
+          reviewIds: targets.map((entry) => entry.reviewId),
+          labels: targets.map((entry) => entry.label)
+        }, { conversationId: input.conversationId, turnId, requestId: input.requestId })
+        if (tool.toolName !== 'job-case.draft.read.local') throw new AgentExecutionError('TOOL_RESULT_INVALID', '案件下書き読取結果が無効です。')
+        const cards: AgentJobCaseDraftCard[] = tool.output.facts.map((facts, index) => {
+          const entry = targets.find((item) => item.reviewId === facts.reviewId) ?? targets[index]!
+          return { ...facts, ordinal: entry.ordinal, outcome: entry.outcome }
+        })
+        const confirmed = cards.filter((card) => card.reviewStatus === 'completed').length
+        const missingByDraft = cards.map((card) => card.fields.filter((field) => !field.value).length)
+        const content = textFor(
+          locale,
+          `今回取り込んだ案件下書き${cards.length}件を読み取りました（確認済み${confirmed}件・確認待ち${cards.length - confirmed}件、未記入項目 合計${missingByDraft.reduce((sum, count) => sum + count, 0)}）。項目は端末内で匿名化した機械抽出であり、レビューセンターで確認するまで正式な案件ではありません。`,
+          `已读取本次导入的 ${cards.length} 条案件草稿（已确认 ${confirmed} 条、待审核 ${cards.length - confirmed} 条，缺失字段共 ${missingByDraft.reduce((sum, count) => sum + count, 0)} 项）。字段为本机脱敏后的机器抽取结果，经审核中心确认前不是正式案件。`
+        )
+        const reviewIds = cards.filter((card) => card.status !== 'deleted').map((card) => card.reviewId)
+        return save(assistantMessage(content, [
+          { type: 'job-case-draft-cards', intakeBatchId: batch.intakeBatchId, cards },
+          { type: 'system-access', destination: 'review-center', intakeBatchId: batch.intakeBatchId, reviewIds }
+        ], turnId), previousState, 'completed', 'job-case.draft.read.local', tool.actionRunId ?? null)
+      }
+
+      if (plannedAction.toolName === 'job-case.broadcast.draft.local') {
+        const queue = this.port.listBroadcastQueue?.() ?? []
+        const counts = {
+          new: queue.filter((item) => item.status === 'new').length,
+          copied: queue.filter((item) => item.status === 'copied').length,
+          attention: queue.filter((item) => item.status === 'attention').length
+        }
+        const args = plannedAction.arguments
+        let selected: AgentBroadcastQueueEntry[]
+        if (args.target === 'case') {
+          const resolved = resolveBroadcastCase(queue, this.loadRecords(), previousState, previousMessages, input.selectedJobCaseRef, args.ordinal, locale, this.workspaceJobCase(input))
+          if ('clarification' in resolved) {
+            const assistant = assistantMessage(resolved.clarification.prompt, [resolved.clarification], turnId)
+            return save(assistant, previousState, 'clarifying', null, null)
+          }
+          // A case nobody confirmed yet has no publishable field values; ask
+          // for the confirmation instead of drafting from an unreviewed draft.
+          if (resolved.entry.status === 'attention') {
+            const content = textFor(
+              locale,
+              `案件「${resolved.entry.title}」は確認待ちのため配信できません。先に案件を確定してください。`,
+              `案件「${resolved.entry.title}」还在待补充状态，确认后才能配信。`
+            )
+            return save(assistantMessage(content, [
+              { type: 'system-access', destination: 'case-review', reviewId: resolved.entry.reviewId }
+            ], turnId), previousState, 'clarifying', null, null)
+          }
+          selected = [resolved.entry]
+        } else {
+          // 新規 is what was never copied; 未コピー adds the cases whose text
+          // went stale because the case itself was revised after the copy.
+          selected = queue.filter((item) => item.status === 'new' ||
+            (args.target === 'uncopied-cases' && item.hasUpdateSinceLastCopy))
+        }
+        if (selected.length === 0) {
+          const content = textFor(
+            locale,
+            `いまコピーする案件はありません（新着${counts.new}件・コピー済み${counts.copied}件・要補完${counts.attention}件）。`,
+            `当前没有需要整理的案件（新增 ${counts.new} 条、已复制 ${counts.copied} 条、待补充 ${counts.attention} 条）。`
+          )
+          return save(assistantMessage(content, [
+            { type: 'system-access', destination: 'broadcast' }
+          ], turnId), previousState, 'completed', null, null)
+        }
+        const capped = selected.slice(0, agentBroadcastDraftLimit)
+        const tool = await this.port.executeTool('job-case.broadcast.draft.local', {
+          reviewIds: capped.map((entry) => entry.reviewId)
+        }, { conversationId: input.conversationId, turnId, requestId: input.requestId })
+        if (tool.toolName !== 'job-case.broadcast.draft.local') throw new AgentExecutionError('TOOL_RESULT_INVALID', '群メッセージ生成結果が無効です。')
+        const cards = tool.output.cards
+        const block: AgentJobCaseBroadcastCardsBlock = { type: 'job-case-broadcast-cards', cards, queue: counts }
+        const truncated = selected.length > cards.length
+        const content = cards.length > 0
+          ? textFor(
+              locale,
+              `群メッセージを${cards.length}件作成しました。コピーして微信に貼り付けてください。${truncated ? `対象${selected.length}件のうち先頭${cards.length}件です。` : ''}`,
+              `已生成 ${cards.length} 条群消息，复制后粘贴到微信即可。${truncated ? `本次共 ${selected.length} 条待整理案件，先给出前 ${cards.length} 条。` : ''}`
+            )
+          : textFor(locale, '群メッセージを作成できる案件がありませんでした。', '没有可以生成群消息的案件。')
+        return save(assistantMessage(content, [
+          block,
+          { type: 'system-access', destination: 'broadcast', ...(cards.length === 1 ? { reviewId: cards[0]!.reviewId } : {}) }
+        ], turnId), previousState, 'completed', 'job-case.broadcast.draft.local', tool.actionRunId ?? null)
+      }
+
       if (plannedAction.toolName === 'resume.analyze.local') {
         const attachments = this.port.listAttachmentFileTokens?.(input.conversationId, input.requestId) ?? []
         const ordinal = plannedAction.arguments.attachmentOrdinal
@@ -1187,6 +1513,60 @@ export class LocalAgentUseCase {
     }
   }
 
+  /**
+   * Persists one locally-handled business-text intake turn. The user message is
+   * the caller's safe summary - the branded parameter is the only accepted
+   * content, so the raw pasted text is not expressible on this path. No model
+   * fields are set: an intake turn never touches the cloud.
+   */
+  saveIntakeTurn(
+    input: ExecuteAgentTurnInput,
+    persistedUserContent: PersistedUserContent,
+    assistant: { content: string; blocks: AiConversationBlock[] },
+    outcome: 'completed' | 'failed' = 'completed',
+    intakeBatch: { intakeBatchId: string; reviewIds: string[] } | null = null
+  ): {
+    status: 'completed' | 'failed'
+    requestId: string
+    conversation: AiConversationSnapshot
+    assistantMessage: AiConversationMessage
+    toolName: null
+    actionRunId: null
+  } {
+    const current = this.loadCurrentConversation(input)
+    const branchRootConversationId = this.resolveBranchRootConversationId(input, current)
+    const summary = persistedUserContent.trim()
+    if (!summary || summary.length > 2_000) {
+      throw new AgentExecutionError('AGENT_INTAKE_SUMMARY_INVALID', '業務テキスト取込ターンの安全な要約が不正です。')
+    }
+    const turnId = randomUUID()
+    const user: AiConversationMessage = {
+      id: randomUUID(), role: 'user', content: summary, mode: 'local', turnId, createdAt: new Date().toISOString()
+    }
+    const reply = assistantMessage(assistant.content, assistant.blocks, turnId)
+    const conversation = this.port.saveConversation({
+      conversationId: input.conversationId,
+      ...(branchRootConversationId ? { branchRootConversationId } : {}),
+      context: current?.context ?? salesAgentContext(),
+      messages: [...(current?.messages ?? []), user, reply].slice(-200),
+      salesAgentState: {
+        ...(current?.salesAgentState ?? defaultState()),
+        // The batch pointer lets "第2条" resolve on later turns; it names the
+        // assistant message that carries the cards.
+        ...(intakeBatch && intakeBatch.reviewIds.length > 0
+          ? { lastIntakeBatch: { ...intakeBatch, messageId: reply.id } }
+          : {})
+      },
+      expectedRevision: input.expectedConversationRevision
+    })
+    const persisted = conversation.messages.find((message) => message.id === reply.id)
+    if (!persisted) throw new AgentExecutionError('AGENT_INTAKE_PERSISTENCE_FAILED', '業務テキスト取込ターンを保存できませんでした。')
+    return {
+      status: outcome, requestId: input.requestId, conversation,
+      assistantMessage: persisted, toolName: null, actionRunId: null
+    }
+  }
+
   saveDirectAnswer(
     input: ExecuteAgentTurnInput,
     content: string,
@@ -1255,6 +1635,11 @@ export class LocalAgentUseCase {
     if (!input.branchFrom) return undefined
     const source = this.port.loadConversation(input.branchFrom.conversationId)
     return source?.branchRootConversationId ?? source?.id ?? input.branchFrom.conversationId
+  }
+
+  /** The confirmed case the side workspace is showing - the fallback referent for 「当前案件」. */
+  private workspaceJobCase(input: ExecuteAgentTurnInput): AgentJobCaseRecord | null {
+    return this.port.workspaceJobCase?.(input.activeSystemAccess ?? null) ?? null
   }
 
   private loadRecords(): AgentJobCaseRecord[] {

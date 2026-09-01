@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { brandPersistedUserContent } from './business-text'
 import type {
   AiConversationSnapshot,
   SaveAiConversationInput,
@@ -43,7 +44,8 @@ function createHarness(
   schedulable: Array<{ anonymousLabel: string; sourceDocumentId: string }> = [],
   matchCandidate: { anonymousLabel: string; sourceDocumentId: string } | null =
     { anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
-  conversationImports: Array<{ anonymousLabel: string; sourceDocumentId: string }> = []
+  conversationImports: Array<{ anonymousLabel: string; sourceDocumentId: string }> = [],
+  matchability: { scorableTermCount: number; hardFilterTermCount: number; reviewId: string | null } | null = null
 ) {
   const conversations = new Map<string, AiConversationSnapshot>()
   const calls: Array<{ toolName: string; input: unknown }> = []
@@ -71,8 +73,24 @@ function createHarness(
     resolveInterviewCandidate: () => matchCandidate,
     listSchedulableCandidates: () => schedulable,
     listConversationImports: () => conversationImports,
-    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'candidate.interview.schedule.local', input: unknown): Promise<AgentToolResult> => {
+    describeJobCaseMatchability: () => matchability,
+    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'job-case.draft.read.local' | 'candidate.interview.schedule.local', input: unknown): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
+      if (toolName === 'job-case.draft.read.local') {
+        const value = input as { reviewIds: string[]; labels: string[] }
+        return {
+          toolName,
+          actionRunId: '66666666-6666-4666-8666-666666666666',
+          output: {
+            facts: value.reviewIds.map((reviewId, index) => ({
+              reviewId, label: value.labels[index]!, title: `案件 ${index + 1}`,
+              reviewStatus: 'awaiting-review' as const, lifecycle: 'active' as const, jobCase: null,
+              fields: [{ key: 'rate' as const, label: '単価', value: index === 0 ? '60万円' : null, status: index === 0 ? 'needs_review' as const : 'missing' as const }],
+              warningCodes: [], status: 'current' as const
+            }))
+          }
+        }
+      }
       if (toolName === 'candidate.interview.schedule.local') {
         const value = input as { candidateLabel: string; scheduledAt: string; durationMinutes: number; meetingMethod: 'zoom'; kind: 'recruiting' }
         return { toolName, actionRunId: 'aaaaaaaa-1111-4111-8111-111111111111', output: value }
@@ -243,6 +261,40 @@ describe('local conversational matching agent', () => {
     // Numeric strings and arbitrary valid business durations are understood.
     expect(parse({ durationMinutes: '60' }).durationMinutes).toBe(60)
     expect(parse({ durationMinutes: 120 }).durationMinutes).toBe(120)
+  })
+
+  it('reads a broadcast plan the way a model actually writes one', () => {
+    const draft = (args: unknown) => {
+      const action = parseAgentRequestedTool({ name: 'draft_case_broadcasts', arguments: args })
+      if (action.toolName !== 'job-case.broadcast.draft.local') throw new Error('unexpected tool')
+      return action.arguments
+    }
+    // The whole new-case queue is the safe reading of an omitted or unusable
+    // target: it drafts, it never sends.
+    expect(draft({})).toEqual({ target: 'new-cases', ordinal: null })
+    expect(draft({ target: 'uncopied-cases' })).toEqual({ target: 'uncopied-cases', ordinal: null })
+    expect(draft({ target: 'today' })).toEqual({ target: 'new-cases', ordinal: null })
+    // The pre-copy vocabulary is gone: a plan still asking for it falls back
+    // to the safe target rather than silently meaning something else.
+    expect(draft({ target: 'unsent-cases' })).toEqual({ target: 'new-cases', ordinal: null })
+    expect(draft({ target: 'case', ordinal: '2' })).toEqual({ target: 'case', ordinal: 2 })
+    expect(draft({ target: 'case', ordinal: 0 }).ordinal).toBeNull()
+    expect(draft({ target: 'case', ordinal: 'second' }).ordinal).toBeNull()
+    // Nothing else can be smuggled in through the arguments object.
+    expect(draft({ target: 'case', reviewId: 'aaaa' })).not.toHaveProperty('reviewId')
+
+    // Sending is not something this device can witness, so no tool claims it.
+    expect(() => parseAgentRequestedTool({ name: 'record_case_broadcast', arguments: {} }))
+      .toThrow(/未知 Tool/)
+    // A target nobody can act on is normalized to the safe one rather than
+    // failing the turn, but a plan that is not an argument object at all is
+    // still refused.
+    expect(parseAgentPlannedToolAction({
+      toolName: 'job-case.broadcast.draft.local', arguments: { target: 'everything', ordinal: null }
+    })).toEqual({ toolName: 'job-case.broadcast.draft.local', arguments: { target: 'new-cases', ordinal: null } })
+    expect(() => parseAgentPlannedToolAction({
+      toolName: 'job-case.broadcast.draft.local', arguments: 'send it'
+    })).toThrow(/受控 schema/)
   })
 
   it('accepts a plan that only states the date, which is what the model actually emits', () => {
@@ -669,6 +721,62 @@ describe('local conversational matching agent', () => {
     expect(block).toMatchObject({ type: 'candidate-draft-facts', facts: { confirmed: false, reviewStatus: 'awaiting-review' } })
   })
 
+  it('reads one or every draft of the latest paste by ordinal and asks when nothing was pasted', async () => {
+    const harness = createHarness()
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const intakeBatchId = '12121212-1212-4212-8212-121212121203'
+    const reviewIds = ['12121212-1212-4212-8212-121212121201', '12121212-1212-4212-8212-121212121202']
+    const baseInput = { conversationId, expectedConversationRevision: null as number | null, requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null }
+
+    const nothing = await harness.useCase.execute(
+      { ...baseInput, message: '第2条的单价是多少' },
+      { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: 2 } }
+    )
+    expect(nothing.status).toBe('clarifying')
+    expect(nothing.assistantMessage.content).toContain('还没有导入过案件文本')
+
+    const intake = harness.useCase.saveIntakeTurn(
+      { ...baseInput, message: '案件テキスト', expectedConversationRevision: nothing.conversation.revision },
+      brandPersistedUserContent('【已提交业务文本（多条记录）】内容摘要 abcdef12，原文未写入会话。'),
+      {
+        content: '已导入 2 条案件草稿。',
+        blocks: [{
+          type: 'job-case-draft-cards', intakeBatchId,
+          cards: reviewIds.map((reviewId, index) => ({
+            reviewId, label: `DRAFT_${index + 1}`, ordinal: index + 1, outcome: 'created' as const, title: `案件 ${index + 1}`,
+            reviewStatus: 'awaiting-review' as const, lifecycle: 'active' as const, jobCase: null, fields: [], warningCodes: [], status: 'current' as const
+          }))
+        }]
+      },
+      'completed',
+      { intakeBatchId, reviewIds }
+    )
+    expect(intake.conversation.salesAgentState?.lastIntakeBatch).toEqual({ intakeBatchId, messageId: intake.assistantMessage.id, reviewIds })
+
+    const second = await harness.useCase.execute(
+      { ...baseInput, message: '第2条的单价是多少', expectedConversationRevision: intake.conversation.revision, requestId: '55555555-5555-4555-8555-555555555555' },
+      { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: 2 } }
+    )
+    expect(harness.calls.at(-1)).toEqual({ toolName: 'job-case.draft.read.local', input: { reviewIds: [reviewIds[1]], labels: ['DRAFT_2'] } })
+    expect(second.assistantMessage.blocks?.[0]).toMatchObject({ type: 'job-case-draft-cards', intakeBatchId, cards: [{ ordinal: 2, label: 'DRAFT_2', outcome: 'created' }] })
+    expect(second.assistantMessage.blocks?.[1]).toMatchObject({ type: 'system-access', destination: 'review-center', intakeBatchId, reviewIds: [reviewIds[1]] })
+
+    // A partial read must not narrow the batch: every draft is still reachable.
+    const all = await harness.useCase.execute(
+      { ...baseInput, message: '这几条哪些缺单价', expectedConversationRevision: second.conversation.revision, requestId: '66666666-6666-4666-8666-666666666666' },
+      { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: null } }
+    )
+    expect(harness.calls.at(-1)).toEqual({ toolName: 'job-case.draft.read.local', input: { reviewIds, labels: ['DRAFT_1', 'DRAFT_2'] } })
+    expect(all.assistantMessage.content).toContain('2 条案件草稿')
+
+    const missing = await harness.useCase.execute(
+      { ...baseInput, message: '第9条', expectedConversationRevision: all.conversation.revision, requestId: '77777777-7777-4777-8777-777777777777' },
+      { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: 9 } }
+    )
+    expect(missing.status).toBe('clarifying')
+    expect(missing.assistantMessage.content).toContain('请指明是第几条')
+  })
+
   it('resolves a draft imported by the composer even before an Agent import block exists', async () => {
     const importedByComposer = {
       anonymousLabel: 'RESUME_1', sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
@@ -814,6 +922,29 @@ describe('local conversational matching agent', () => {
     expect(result.conversation.context).toMatchObject({ assistant: 'sales-agent', candidateDocumentId: null })
     expect(result.conversation.messages.at(-1)?.blocks?.[0]).toMatchObject({ type: 'job-case-cards', totalMatched: 2 })
     expect(result.conversation.messages.at(-1)?.references?.[0]).toMatchObject({ kind: 'job-case', objectVersion: 2, ordinal: 1 })
+  })
+
+  it('asks for requirements instead of ranking when the case has nothing to score', async () => {
+    const reviewId = '12121212-1212-4212-8212-121212121212'
+    const harness = createHarness([], [], null, [], { scorableTermCount: 0, hardFilterTermCount: 1, reviewId })
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333', message: '给当前案件匹配候选人',
+        expectedConversationRevision: null, requestId: '44444444-4444-4444-8444-444444444444',
+        // The case is already selected, as after "跑匹配" on an intake card.
+        selectedJobCaseRef: {
+          kind: 'job-case', objectId: cases[0]!.id, objectVersion: cases[0]!.version, resultHash: null, ordinal: 1,
+          label: cases[0]!.title, target: `job-case:${cases[0]!.id}`
+        }
+      },
+      { toolName: 'candidate.match.local', arguments: { ordinal: null } }
+    )
+    expect(harness.calls).toEqual([])
+    expect(result.status).toBe('clarifying')
+    expect(result.assistantMessage.content).toContain('没有可评估的条件')
+    expect(result.assistantMessage.content).toContain('只能按硬条件筛选')
+    expect(result.assistantMessage.blocks?.[0]).toEqual({ type: 'system-access', destination: 'case-review', reviewId })
+    expect(result.conversation.salesAgentState?.selectedJobCaseRef?.objectId).toBe(cases[0]!.id)
   })
 
   it('clarifies an ambiguous case without executing a matching tool', async () => {

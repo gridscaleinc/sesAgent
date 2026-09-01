@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3-multiple-ciphers'
-import { EncryptedApplicationRepository } from '@persistence'
+import { currentSchemaVersion, EncryptedApplicationRepository } from '@persistence'
 
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'ses-agent-schema-v37-upgrade-'))
 const databasePath = join(temporaryDirectory, 'v37-fixture.db')
@@ -186,14 +186,16 @@ try {
     DROP TABLE action_events_backup;
     DROP TABLE action_runs_backup;
     DROP TABLE ai_conversations_backup;
-    DELETE FROM schema_migrations WHERE version IN (38, 39);
+    DROP TABLE candidate_match_assessments;
+    DROP TABLE job_case_field_aliases;
+    DELETE FROM schema_migrations WHERE version IN (38, 39, 40, 41);
     COMMIT;
   `)
   downgrade.pragma('foreign_keys=ON')
   downgrade.close()
 
   const upgraded = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(upgraded.getSchemaVersion(), 39)
+  assert.equal(upgraded.getSchemaVersion(), currentSchemaVersion)
   assert.equal(upgraded.getAiConversation(candidateConversationId)?.context.assistant, 'candidate-profile')
   assert.equal(upgraded.getAiConversation(interviewConversationId)?.context.assistant, 'interview')
   assert.equal(upgraded.getActionRunStatus(oldActionRunId), 'queued')
@@ -230,7 +232,7 @@ try {
 
   process.stdout.write(JSON.stringify({
     fromSchema: 37,
-    toSchema: 39,
+    toSchema: currentSchemaVersion,
     legacyCandidateConversationPreserved: true,
     legacyInterviewConversationPreserved: true,
     legacyActionRunPreserved: true,

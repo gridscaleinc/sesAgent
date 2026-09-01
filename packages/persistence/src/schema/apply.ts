@@ -39,7 +39,11 @@ import {
   migrationV36,
   migrationV37,
   migrationV38,
-  migrationV39
+  migrationV39,
+  migrationV40,
+  migrationV41,
+  migrationV42,
+  migrationV43
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
@@ -388,4 +392,20 @@ export function applyMigrations(database: Database.Database): void {
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v39 foreign key verification failed.')
   }
+  const hasV40 = database
+    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 40')
+    .get()
+  if (!hasV40) database.exec(migrationV40)
+  const hasV41 = database
+    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 41')
+    .get()
+  if (!hasV41) database.exec(migrationV41)
+  const hasV42 = database
+    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 42')
+    .get()
+  if (!hasV42) database.exec(migrationV42)
+  const hasV43 = database
+    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 43')
+    .get()
+  if (!hasV43) database.exec(migrationV43)
 }

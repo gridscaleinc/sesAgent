@@ -13,6 +13,12 @@ const run = promisify(execFile)
 const args = process.argv.slice(2)
 const requireExpertReport = args.includes('--require-expert-report')
 const positional = args.filter((value) => value !== '--require-expert-report')
+const repositoryRoot = resolve(import.meta.dirname, '..')
+const persistenceSource = await readFile(join(repositoryRoot, 'packages', 'persistence', 'src', 'schema', 'migrations.ts'), 'utf8')
+const expectedSchemaVersion = Number(persistenceSource.match(/export const currentSchemaVersion = (\d+)/u)?.[1])
+if (!Number.isInteger(expectedSchemaVersion) || expectedSchemaVersion <= 0) {
+  throw new Error('Unable to read currentSchemaVersion for macOS package verification.')
+}
 const appPath = resolve(positional[0] ?? 'release/dev/mac-arm64/SES Agent Desktop.app')
 const resourcesPath = join(appPath, 'Contents', 'Resources')
 const executablePath = join(appPath, 'Contents', 'MacOS', 'SES Agent Desktop')
@@ -329,8 +335,8 @@ async function launchSmoke(featureMode = 'default', agentSmokeConversationId = n
         reject(new Error(`Packaged preload bridge was unavailable.\n${output}`))
         return
       }
-      if (!/schemaVersion:\s*39\b/u.test(output)) {
-        reject(new Error(`Packaged application did not initialize Schema v39.\n${output}`))
+      if (!new RegExp(`schemaVersion:\\s*${expectedSchemaVersion}\\b`, 'u').test(output)) {
+        reject(new Error(`Packaged application did not initialize Schema v${expectedSchemaVersion}.\n${output}`))
         return
       }
       resolveResult({ output, errors, agentSmoke: parseAgentSmoke(output) })
@@ -589,7 +595,7 @@ try {
     localNerExpectedNamesDetected: true,
     packagedEmlParser: eml.version,
     emlAttachmentPersisted: eml.attachmentPersisted,
-    schemaVersion: 39,
+    schemaVersion: expectedSchemaVersion,
     encryptedDatabase: true,
     rendererReady: defaultLaunch.output.includes('[renderer-ready]') && classicFallbackLaunch.output.includes('[renderer-ready]') && agentDeleteLaunch.output.includes('[renderer-ready]'),
     agentBridge: true,

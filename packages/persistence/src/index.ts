@@ -16,6 +16,7 @@ import { type DocumentIR } from '@parsers'
 import { type CandidateExtractionDraft, type CandidateProfile } from '@resume'
 import type {
   AgentCandidateDraftFacts,
+  AgentJobCaseDraftFacts,
   CandidateEvaluationReport,
   CandidateEvaluationState,
   CandidateEvaluationDraft,
@@ -40,10 +41,17 @@ import type {
   CandidateProfileVersionDetail,
   CandidateDeletionPreview,
   DataDeletionReport,
+  BroadcastTemplate,
+  CreateBroadcastTemplateInput,
+  UpdateBroadcastTemplateInput,
+  DeleteBroadcastTemplateInput,
+  CaseBroadcastCopy,
+  CaseBroadcastRecord,
   DeleteJobCaseDataInput,
   JobCaseDeletionPreview,
   JobCaseVersionDetail,
   JobCaseReviewSnapshot,
+  JobCaseSourceText,
   ApproveProposalDraftInput,
   CreateProposalDraftInput,
   ProposalDraftSnapshot,
@@ -63,7 +71,9 @@ import type {
   UpdateProposalDraftInput,
   GoogleWorkspaceAdminConfiguration,
   GoogleWorkspaceOnlineAcceptanceReport,
+  JobCaseFieldAliases,
   LocalApplicationPreferences,
+  SaveJobCaseFieldAliasesInput,
   LocalOperatorProfile,
   SaveGoogleWorkspaceAdminConfigurationInput,
   SaveLocalApplicationPreferencesInput,
@@ -75,6 +85,7 @@ import type {
   AgentCandidateInterviewFacts,
   AgentCandidateProfileFacts,
   AgentMatchRunFacts,
+  CandidateMatchAssessment,
   AiConversationContext,
   AiConversationSnapshot,
   SaveAiConversationInput,
@@ -101,9 +112,11 @@ import type {
 } from './rows'
 import { applyMigrations } from './schema/apply'
 import { createStoreRegistry } from './stores'
+import type { CaseBroadcastCopyAppend } from './stores/broadcast-store'
 import type { StoreRegistry } from './stores/registry'
 
 export { currentSchemaVersion } from './schema/migrations'
+export type { CaseBroadcastCopyAppend } from './stores/broadcast-store'
 export type {
   CandidateProfileEmbeddingInput,
   CandidateProfileEmbeddingRecord,
@@ -331,6 +344,14 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.candidateMatch.saveCandidateMatchRun(taskId, query, matches, now, runtimeIdentity)
   }
 
+  saveCandidateMatchAssessments(
+    runId: string,
+    entries: ReadonlyArray<{ matchResultId: string; assessment: CandidateMatchAssessment }>,
+    now = new Date()
+  ): number {
+    return this.stores.candidateMatch.saveCandidateMatchAssessments(runId, entries, now)
+  }
+
   getMatchingHomeProjection(
     runtimeIdentity: MatchRuntimeIdentity,
     now = new Date()
@@ -426,6 +447,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.candidates.listStagedFileRecords()
   }
 
+  findStagedTextSourceBySha256(sha256: string): StagedFileRecord | null {
+    return this.stores.candidates.findStagedTextSourceBySha256(sha256)
+  }
+
   rebindStagedFilePaths(vaultDirectory: string): number {
     return this.stores.candidates.rebindStagedFilePaths(vaultDirectory)
   }
@@ -453,6 +478,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   getAgentCandidateDraftFacts(sourceDocumentId: string, label: string): AgentCandidateDraftFacts | null {
     return this.stores.candidates.getAgentCandidateDraftFacts(sourceDocumentId, label)
+  }
+
+  getAgentJobCaseDraftFacts(reviewId: string, label: string): AgentJobCaseDraftFacts | null {
+    return this.stores.jobCases.getAgentJobCaseDraftFacts(reviewId, label)
   }
 
   getCandidateReview(documentId: string): CandidateReviewSnapshot | null {
@@ -616,6 +645,14 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.localSettings.getLocalApplicationPreferences()
   }
 
+  getJobCaseFieldAliases(): JobCaseFieldAliases | null {
+    return this.stores.localSettings.getJobCaseFieldAliases()
+  }
+
+  saveJobCaseFieldAliases(rawInput: SaveJobCaseFieldAliasesInput, now = new Date()): JobCaseFieldAliases {
+    return this.stores.localSettings.saveJobCaseFieldAliases(rawInput, now)
+  }
+
   saveLocalApplicationPreferences(
     rawInput: SaveLocalApplicationPreferencesInput,
     now = new Date()
@@ -724,6 +761,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.jobCases.getJobCaseReview(reviewId)
   }
 
+  getJobCaseSourceText(reviewId: string): JobCaseSourceText | null {
+    return this.stores.jobCases.getJobCaseSourceText(reviewId)
+  }
+
   listJobCaseReviews(): JobCaseReviewSnapshot[] {
     return this.stores.jobCases.listJobCaseReviews()
   }
@@ -734,6 +775,48 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   getJobCaseHistory(reviewId: string): JobCaseVersionDetail[] {
     return this.stores.jobCases.getJobCaseHistory(reviewId)
+  }
+
+  listBroadcastTemplates(): BroadcastTemplate[] {
+    return this.stores.broadcast.listBroadcastTemplates()
+  }
+
+  getBroadcastTemplate(id: string): BroadcastTemplate | null {
+    return this.stores.broadcast.getBroadcastTemplate(id)
+  }
+
+  createBroadcastTemplate(input: CreateBroadcastTemplateInput, now = new Date()): BroadcastTemplate[] {
+    return this.stores.broadcast.createBroadcastTemplate(input, now)
+  }
+
+  updateBroadcastTemplate(input: UpdateBroadcastTemplateInput, now = new Date()): BroadcastTemplate[] {
+    return this.stores.broadcast.updateBroadcastTemplate(input, now)
+  }
+
+  deleteBroadcastTemplate(input: DeleteBroadcastTemplateInput): BroadcastTemplate[] {
+    return this.stores.broadcast.deleteBroadcastTemplate(input)
+  }
+
+  /** Append-only: there is deliberately no update or delete counterpart. */
+  appendCaseBroadcastCopy(entry: CaseBroadcastCopyAppend, now = new Date()): CaseBroadcastCopy {
+    return this.stores.broadcast.appendCaseBroadcastCopy(entry, now)
+  }
+
+  listCaseBroadcastCopies(reviewId: string): CaseBroadcastCopy[] {
+    return this.stores.broadcast.listCaseBroadcastCopies(reviewId)
+  }
+
+  listAllCaseBroadcastCopies(): CaseBroadcastCopy[] {
+    return this.stores.broadcast.listAllCaseBroadcastCopies()
+  }
+
+  /** Pre-v43 send ledger, kept readable so an existing device keeps its history. */
+  listCaseBroadcasts(reviewId: string): CaseBroadcastRecord[] {
+    return this.stores.broadcast.listCaseBroadcasts(reviewId)
+  }
+
+  listAllCaseBroadcasts(): CaseBroadcastRecord[] {
+    return this.stores.broadcast.listAllCaseBroadcasts()
   }
 
   setJobCaseLifecycle(

@@ -3,12 +3,13 @@ import { lstat, open } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import {
-  createRedactedChatPasteJobCaseSource,
   createRedactedEmlJobCaseSource,
   createRedactedManualJobCaseSource,
   createRedactedWechatVisibleJobCaseSource,
   extractJobCaseDraft
 } from '@job-cases'
+import { effectiveJobCaseFieldAliases } from '../app-defaults'
+import { importChatPastedJobCaseText, autoConfirmJobCaseDraft } from '../business-text-intake'
 import { collectLocalPersonNameCandidates } from '@local-ai'
 import { maxEmlFileSizeBytes, maxEmlFilesPerImport } from '@mail'
 import {
@@ -18,6 +19,7 @@ import {
   type EmlImportErrorCode,
   type ExecuteWechatVisibleReadResult,
   type ImportEmlJobCaseDraftsResult,
+  type JobCaseSourceText,
   type PrepareWechatVisibleReadResult,
   type ReopenJobCaseReviewResult,
   type SetJobCaseLifecycleResult,
@@ -127,7 +129,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
       ...processed.source,
       warningCodes: [...new Set([...processed.source.warningCodes, 'BUSINESS_DUPLICATE'])]
     } : processed.source
-    const draft = extractJobCaseDraft(source, randomUUID(), now)
+    const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
     if (!repository.saveRedactedJobCaseSourceAndDraft(
       processed.redaction.session,
       processed.redaction.mappings,
@@ -138,7 +140,10 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     }
     const review = repository.getJobCaseReview(draft.reviewId)
     if (!review) throw new Error('作成した手動案件を再読み込みできませんでした。')
-    return { review }
+    // A hand-written case takes effect at once as well; what the store
+    // refuses stays a draft for the operator to complete in the workspace.
+    const confirmed = autoConfirmJobCaseDraft(repository, review, currentOperator(), now)
+    return { review: confirmed.review ?? review }
   })
 
   ipcMain.handle(
@@ -146,34 +151,12 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     async (event, rawInput): Promise<CreateChatPasteJobCaseDraftResult> => {
       assertTrustedSender(event)
       const input = createChatPasteJobCaseDraftInputSchema.parse(rawInput)
-      const sourceId = randomUUID()
-      let localNameDetection
-      try {
-        localNameDetection = await localNer?.detectNames(input.text)
-      } catch {
-        localNameDetection = undefined
-      }
-      const knownPersonNames = collectLocalPersonNameCandidates(input.text, localNameDetection)
-      const now = new Date()
-      const processed = createRedactedChatPasteJobCaseSource(input.text, sourceId, knownPersonNames, now)
-      const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
-        processed.source.redactedSubject,
-        processed.source.redactedBody
+      // Shared with the agent intake gate. Exact duplicates return the existing
+      // review per its lifecycle instead of stacking a second draft.
+      const imported = await importChatPastedJobCaseText(
+        { repository, localNer, operator: currentOperator() }, input.text, new Date(), {}, null, effectiveJobCaseFieldAliases(repository).aliases
       )
-      const source = duplicate ? {
-        ...processed.source,
-        warningCodes: [...new Set([...processed.source.warningCodes, 'BUSINESS_DUPLICATE'])]
-      } : processed.source
-      const draft = extractJobCaseDraft(source, randomUUID(), now)
-      if (!repository.saveRedactedJobCaseSourceAndDraft(
-        processed.redaction.session,
-        processed.redaction.mappings,
-        source,
-        draft
-      )) throw new Error('チャット貼り付け案件の草稿を作成できませんでした。')
-      const review = repository.getJobCaseReview(draft.reviewId)
-      if (!review) throw new Error('作成したチャット貼り付け案件を再読み込みできませんでした。')
-      return { review }
+      return { review: imported.review }
     }
   )
 
@@ -331,7 +314,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
           ...processed.source,
           warningCodes: [...new Set([...processed.source.warningCodes, 'BUSINESS_DUPLICATE'])]
         } : processed.source
-        const draft = extractJobCaseDraft(source, randomUUID(), now)
+        const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
         if (!repository.saveRedactedJobCaseSourceAndDraft(
           processed.redaction.session,
           processed.redaction.mappings,
@@ -429,7 +412,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
           const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
           const now = new Date()
           const processed = createRedactedEmlJobCaseSource(parsed, sourceId, knownPersonNames, now)
-          const draft = extractJobCaseDraft(processed.source, randomUUID(), now)
+          const draft = extractJobCaseDraft(processed.source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
           try {
             repository.saveRedactedJobCaseSourceAndDraft(
               processed.redaction.session,
@@ -479,6 +462,15 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     assertTrustedSender(event)
     const reviewId = jobCaseReviewIdSchema.parse(rawReviewId)
     return repository.getJobCaseHistory(reviewId)
+  })
+
+  ipcMain.handle(ipcChannels.getJobCaseSourceText, (event, rawReviewId): JobCaseSourceText => {
+    assertTrustedSender(event)
+    const reviewId = jobCaseReviewIdSchema.parse(rawReviewId)
+    // Only the stored REDACTED subject and body exist to return; the raw mail was never persisted.
+    const sourceText = repository.getJobCaseSourceText(reviewId)
+    if (!sourceText) throw new Error('案件の取込元本文が見つかりませんでした。')
+    return sourceText
   })
 
   ipcMain.handle(ipcChannels.setJobCaseLifecycle, (event, rawInput): SetJobCaseLifecycleResult => {

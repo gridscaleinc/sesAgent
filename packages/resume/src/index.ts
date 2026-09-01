@@ -157,7 +157,14 @@ export const candidateProfileSchema: z.ZodType<CandidateProfile> = z.object({
   containsDirectIdentifiers: z.boolean()
 })
 
-export function candidateSearchTerms(query: string): string[] {
+/**
+ * A nice-to-have requirement travels inside the query as a quoted
+ * `"尚可:..."` token, so the single query string the match job already
+ * carries needs no new payload, fingerprint, or storage field.
+ */
+export const preferredSearchTermPrefix = '尚可:'
+
+function queryTerms(query: string): string[] {
   const normalized = query
     .normalize('NFKC')
     .replace(/([A-Za-z0-9#+.]+)と(?=[A-Za-z0-9#+.]+)/gu, '$1 ')
@@ -165,6 +172,32 @@ export function candidateSearchTerms(query: string): string[] {
     .trim()
   const tokens = normalized.match(/"[^"]+"|'[^']+'|[^\s]+/gu) ?? []
   return [...new Set(tokens.map((term) => term.replace(/^['"]|['"]$/gu, '').trim()).filter((term) => term.length >= 2))]
+}
+
+/** The must-have terms: everything except the 尚可 tokens. */
+export function candidateSearchTerms(query: string): string[] {
+  return queryTerms(query).filter((term) => !term.startsWith(preferredSearchTermPrefix))
+}
+
+/**
+ * The nice-to-have terms. They add to the fit score and appear as evidence,
+ * but they never gate: no hard filter is built from them and a candidate
+ * matching only these terms is not ranked.
+ */
+export function candidatePreferredSearchTerms(query: string): string[] {
+  return [...new Set(queryTerms(query)
+    .filter((term) => term.startsWith(preferredSearchTermPrefix))
+    .map((term) => term.slice(preferredSearchTermPrefix.length).trim())
+    .filter((term) => term.length >= 2 && !isHardFilterTerm(term)))]
+}
+
+/**
+ * The query as BM25 should see it: 尚可 tokens keep their words but lose the
+ * prefix, so a candidate who has a nice-to-have skill ranks above one who
+ * does not, while hard filters and the must-have gate ignore those words.
+ */
+function bm25QueryText(query: string): string {
+  return query.replace(/"尚可:([^"]*)"/gu, ' $1 ')
 }
 
 const candidateFieldWeights: Record<CandidateFieldKey, number> = {
@@ -393,12 +426,50 @@ function remoteWorkMeets(actual: string, requested: string): boolean | null {
   return null
 }
 
+/**
+ * One ordinal scale for every way a Japanese level is written, JLPT grades
+ * and the words partners use instead: ネイティブ (0), N1 (1), N2 / 流暢 /
+ * ビジネスレベル (2), N3 / 日常会話 (3), N4 / 初級 (4), N5 / 挨拶程度 (5).
+ * Lower is stronger. Prose that names no level ranks null.
+ */
+function japaneseLevelRank(value: string): number | null {
+  const text = value.normalize('NFKC').toLocaleUpperCase('en-US')
+  if (/(?:ネイティブ|母語|母国語|NATIVE)/u.test(text)) return 0
+  const graded = text.match(/(?<![A-Z])N([1-5])(?![0-9])/u)?.[1]
+  if (graded) return Number(graded)
+  if (/(?:流暢|流畅|堪能|ビジネス|上級|BUSINESS|FLUENT)/u.test(text)) return 2
+  if (/(?:日常会話|会話レベル|中級|DAILY|CONVERSATIONAL)/u.test(text)) return 3
+  if (/(?:初級|BASIC)/u.test(text)) return 4
+  if (/(?:挨拶|簡単な会話|片言)/u.test(text)) return 5
+  return null
+}
+
+/**
+ * The Japanese requirement a query term states, or null when the term is
+ * not one. Accepts the JLPT grade (N2, N2以上, N3相当), the grade behind a
+ * 日本語 label (日本語N3可, 日本語:N2), and the level words with or without
+ * the label (日本語流暢, ビジネスレベル, ネイティブ, 日常会話レベル). A bare
+ * 日本語 states no level and is not a requirement.
+ */
+function japaneseLevelRequirement(normalized: string): string | null {
+  const labelled = /^(?:日本語|日语|JLPT|語学)\s*(?:レベル|能力|力)?\s*[:：]?\s*/u.test(normalized)
+  const core = normalized
+    .replace(/^(?:日本語|日语|JLPT|語学)\s*(?:レベル|能力|力)?\s*[:：]?\s*/u, '')
+    .replace(/\s*(?:可|以上|レベル|程度|相当|必須|歓迎|OK)+$/iu, '')
+    .trim()
+  if (!core) return null
+  if (/^N[1-5]$/iu.test(core)) return core.toLocaleUpperCase('en-US')
+  if (/^(?:ネイティブ|母語|母国語|流暢|流畅|堪能|日常会話)$/u.test(core)) return core
+  if (/^(?:ビジネス(?:会話)?)$/u.test(core)) return labelled || /レベル|会話/u.test(normalized) ? core : null
+  if (/^(?:上級|中級|初級|会話|挨拶程度|片言)$/u.test(core)) return labelled ? core : null
+  return null
+}
+
 function japaneseLevelMeets(actual: string, requested: string): boolean | null {
-  if (/(?:ネイティブ|母語)/u.test(actual.normalize('NFKC'))) return true
-  const actualLevel = actual.normalize('NFKC').toLocaleUpperCase('en-US').match(/N([1-5])/u)?.[1]
-  const requestedLevel = requested.normalize('NFKC').toLocaleUpperCase('en-US').match(/^N([1-5])(?:相当)?$/u)?.[1]
-  if (!actualLevel || !requestedLevel) return null
-  return Number(actualLevel) <= Number(requestedLevel)
+  const actualRank = japaneseLevelRank(actual)
+  const requestedRank = japaneseLevelRank(requested)
+  if (actualRank === null || requestedRank === null) return null
+  return actualRank <= requestedRank
 }
 
 interface CoarseLocationDescriptor {
@@ -520,13 +591,22 @@ function workAuthorizationMeets(actual: string, requested: string): boolean | nu
   return null
 }
 
+/**
+ * The query terms a fit score can be built from. Hard-filter terms (rate cap,
+ * years, month, work style, Japanese level, location, work authorization)
+ * only gate; a query made of them alone cannot rank anyone meaningfully.
+ */
+export function scorableCandidateSearchTerms(query: string): string[] {
+  return candidateSearchTerms(query).filter((term) => !isHardFilterTerm(term))
+}
+
 function isHardFilterTerm(term: string): boolean {
   const normalized = term.normalize('NFKC').trim()
   return /^(?:\d+(?:\.\d+)?)年以上$/u.test(normalized) ||
     requestedMaximumRate(normalized) !== null ||
     /^(?:(?:20\d{2})年)?(?:1[0-2]|0?[1-9])月$/u.test(normalized) ||
     /^(?:週\d日(?:リモート|在宅)|フルリモート|リモート可|常駐)$/u.test(normalized) ||
-    /^N[1-5](?:相当)?$/iu.test(normalized) ||
+    japaneseLevelRequirement(normalized) !== null ||
     locationRequirement(normalized) !== null ||
     workAuthorizationRequirement(normalized) !== null
 }
@@ -580,13 +660,14 @@ function hardFilterForTerm(profile: CandidateProfile, term: string): CandidateHa
       outcome: hardFilterOutcome(actual, (value) => remoteWorkMeets(value, normalized))
     }
   }
-  if (/^N[1-5](?:相当)?$/iu.test(normalized)) {
+  const japanese = japaneseLevelRequirement(normalized)
+  if (japanese) {
     const actual = candidateFieldValue(profile, 'japanese_level')
     return {
       type: 'japanese-level',
       requested: term,
       actual,
-      outcome: hardFilterOutcome(actual, (value) => japaneseLevelMeets(value, normalized))
+      outcome: hardFilterOutcome(actual, (value) => japaneseLevelMeets(value, japanese))
     }
   }
   const requestedLocation = locationRequirement(normalized)
@@ -681,7 +762,8 @@ export function searchConfirmedCandidateProfiles(
 ): CandidateProfileSearchResult[] {
   const terms = candidateSearchTerms(query)
   const documents = buildCandidateBm25Documents(profiles)
-  const bm25Scores = candidateBm25Scores(documents, query)
+  const bm25Scores = candidateBm25Scores(documents, bm25QueryText(query))
+  const preferredTerms = candidatePreferredSearchTerms(query)
   const candidates = documents
     .flatMap((document) => {
       const hardFilters = hardFilterEvidence(document.profile, terms)
@@ -714,6 +796,15 @@ export function searchConfirmedCandidateProfiles(
             return total + (best > 0 ? best : matchedTerms.includes(term) ? 0.6 : 0)
           }, 0) / terms.length
       const bm25Score = bm25Scores.get(document.profile.id) ?? 0
+      const preferredMatched = preferredTerms.filter((term) =>
+        document.profile.fields.some((field) => fieldMatchesTermLexically(document, field, term)) ||
+        document.profile.projectExperiences.some((project) => projectMatchesTermLexically(document, project, term))
+      )
+      // Nice-to-have coverage is worth up to 15 points on top of the must-have
+      // strength; it can lift a candidate but never make one from nothing.
+      const scoredStrength = matchStrength === null || preferredTerms.length === 0
+        ? matchStrength
+        : matchStrength * 0.85 + (preferredMatched.length / preferredTerms.length) * 0.15
       return [{
         id: document.profile.id,
         sourceDocumentId: document.profile.sourceDocumentId,
@@ -725,8 +816,8 @@ export function searchConfirmedCandidateProfiles(
         anonymousLabel: `候補者 ${document.profile.id.slice(0, 8).toLocaleUpperCase('en-US')}`,
         fields: document.profile.fields,
         projectExperiences: document.profile.projectExperiences,
-        matchScore: matchStrength === null ? null : Math.round(matchStrength * 100),
-        matchedTerms,
+        matchScore: scoredStrength === null ? null : Math.round(scoredStrength * 100),
+        matchedTerms: [...matchedTerms, ...preferredMatched.map((term) => `${preferredSearchTermPrefix}${term}`)],
         evidence,
         projectEvidence: lexicalProject ? {
           ...lexicalProject.project,
@@ -759,7 +850,7 @@ export function searchConfirmedCandidateProfiles(
   }
   const structuredOnlyQuery = terms.length > 0 && terms.every(isHardFilterTerm)
   const lexicalRanking = candidates
-    .filter((result) => result.matchedTerms.length > 0 || structuredOnlyQuery)
+    .filter((result) => result.matchedTerms.some((term) => !term.startsWith(preferredSearchTermPrefix)) || structuredOnlyQuery)
     .toSorted((a, b) =>
       a.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length -
         b.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length ||
@@ -1345,6 +1436,41 @@ function uniqueBlocks(blocks: DocumentBlock[]): DocumentBlock[] {
   return [...new Map(blocks.map((block) => [block.id, block])).values()]
 }
 
+/** Field values extracted outside the deterministic parser, keyed by field. */
+export type CandidateFieldOverrides = Partial<Record<CandidateFieldKey, string>>
+
+const overrideFragmentSeparator = /[\s、,，/／;；・|｜]+/u
+
+/**
+ * Applies externally extracted values - the redacted cloud lane - to a
+ * deterministic draft. A value is applied only where it, or every fragment of
+ * a 、-joined list, appears verbatim in the document, so a wrong or invented
+ * value can never displace local evidence; the blocks that carry it become the
+ * field's sources and the field still lands as `needs_review`.
+ */
+export function applyCandidateFieldOverrides(
+  draft: CandidateExtractionDraft,
+  document: DocumentIR,
+  overrides: CandidateFieldOverrides
+): CandidateExtractionDraft {
+  const fields = draft.fields.map((current) => {
+    const value = overrides[current.key]?.replace(/\s+/gu, ' ').trim()
+    if (!value) return current
+    const normalized = current.key === 'work_authorization' ? normalizeCandidateWorkAuthorization(value) : value
+    if (!normalized) return current
+    const fragments = document.blocks.some((block) => block.text.includes(value))
+      ? [value]
+      : value.split(overrideFragmentSeparator).filter((fragment) => fragment.length > 0)
+    if (fragments.length === 0) return current
+    const sources = document.blocks.filter((block) => fragments.some((fragment) => block.text.includes(fragment)))
+    if (sources.length === 0 || !fragments.every((fragment) => sources.some((block) => block.text.includes(fragment)))) {
+      return current
+    }
+    return { ...current, value: normalized, confidence: 0.8, status: 'needs_review' as const, sources: sources.slice(0, 5).map(toSource) }
+  })
+  return { ...draft, fields }
+}
+
 function toSource(block: DocumentBlock): CandidateFieldSource {
   return {
     blockId: block.id,
@@ -1539,8 +1665,15 @@ export function extractLocalCandidatePersonalDetails(document: DocumentIR): Loca
   const blocks = primaryResumeBlocks(document)
   const hasLetter = (value: string) => /[\p{L}]/u.test(value)
   const looksLikeYearOrDate = (value: string) => /(?:19|20)\d{2}|(?:昭和|平成|令和)\d{1,2}/u.test(value)
+  // Initials are the only name many pasted person texts carry. They become the
+  // awaiting-review display name; a legal name is never fabricated from them.
+  const initialsDisplayName = inlinePersonalValue(
+    blocks,
+    /(?:イニシャル|イニシアル|首字母)\s*[:：]\s*([A-Za-z](?:[.・・]?\s?[A-Za-z]){0,3}\.?)/u
+  )
   return localCandidatePersonalDetailsSchema.parse({
-    displayName: localPersonalValue(blocks, /^(?:氏名|名前)$/u, 'right', /(?:氏名|名前)\s*[:：]\s*([^\n|｜]{1,120})/u, (value) => value.length <= 120 && hasLetter(value) && !/@/u.test(value)),
+    displayName: localPersonalValue(blocks, /^(?:氏名|名前)$/u, 'right', /(?:氏名|名前)\s*[:：]\s*([^\n|｜]{1,120})/u, (value) => value.length <= 120 && hasLetter(value) && !/@/u.test(value))
+      ?? initialsDisplayName,
     gender: localPersonalValue(blocks, /^性別$/u, 'below', /性別\s*[:：]\s*([^\n|｜]{1,40})/u, (value) => /^(?:男|女|男性|女性|その他|非公開|未回答|M|F)$/iu.test(value)),
     birthDate: localPersonalValue(blocks, /^生年月(?:日)?(?:[（(]西暦[）)])?(?:\/年齢)?$/u, 'below', /生年月(?:日)?(?:[（(]西暦[）)])?\s*[:：]\s*([^\n|｜]{1,80})/u, looksLikeYearOrDate),
     nationality: localPersonalValue(blocks, /^国籍$/u, 'below', /国籍\s*[:：]\s*([^\n|｜]{1,80})/u, (value) => value.length <= 80 && hasLetter(value)),
@@ -1856,7 +1989,13 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
         blocks,
         /(?:経験|experience)?\s*[:：]?\s*(?<!\d)(\d{1,2}(?:\.\d)?)(?!\d)\s*(?:年(?:以上|程度)?|years?)/iu
       )
-  const availability = firstMatchingBlock(
+  // A labeled start date - 開始日：9/1 - wins over a date pattern found in
+  // running text somewhere else in the document.
+  const labeledAvailability = firstMatchingBlock(
+    blocks,
+    /(?:開始日|稼働開始日?|開始可能日|参画可能日|开始日)\s*[:：]\s*([^\n|｜]{1,40})/u
+  )
+  const availability = labeledAvailability ?? firstMatchingBlock(
     blocks,
     /((?:20\d{2}[年/.\-])?\d{1,2}月(?:から|より)?(?:稼働|参画|開始)(?:可能|可)?|即日(?:稼働|参画)?(?:可能|可)?)/u
   )
@@ -1867,8 +2006,18 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
   const structuredJapanese = extractStructuredJapaneseLevel(blocks)
   const japaneseLevel = structuredJapanese
     ? null
-    : firstMatchingBlock(blocks, /\b(N[1-5])\b|日本語\s*[:：]?\s*(ネイティブ|ビジネス|日常会話)/iu)
-  const workStyle = firstMatchingBlock(
+    : firstMatchingBlock(blocks, /\b(N[1-5])\b|日本語\s*[:：]?\s*(ネイティブ|ビジネス|日常会話|流暢)|(流暢|ネイティブレベル|ビジネスレベル|日常会話レベル)/iu)
+      // No graded level anywhere: a labeled 日本語 line still describes the
+      // ability - 顧客定例、設計レビューに対応可能 - and is worth reviewing.
+      ?? firstMatchingBlock(blocks, /(?:日本語|日語)(?:レベル|能力)?\s*[:：]\s*([^\n|｜]{2,80})/u)
+  // The explicit preference field decides the work style. 常駐 inside a project
+  // history line describes a past assignment, not what the person wants now,
+  // and must not override a stated remote preference.
+  const preferredWorkStyle = firstMatchingBlock(
+    blocks,
+    /(?:希望|勤務形態|稼働形態|勤務条件)\s*[:：][^\n|｜]*?(フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート(?:可|可能)?|ハイブリッド|常駐|出社)/u
+  )
+  const workStyle = preferredWorkStyle ?? firstMatchingBlock(
     blocks,
     /(フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート(?:可|可能)|常駐|出社)/u
   )
@@ -1885,7 +2034,12 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
       )
   const preferredLocation = firstMatchingBlock(
     blocks,
-    /(?:希望勤務地|勤務希望地|勤務地希望|通勤可能(?:エリア|範囲))\s*[:：]?\s*([^\n|｜]{2,80}?)(?=\s+(?:就労資格|在留資格|就労可否|ビザ)\s*[:：]|$)/u
+    /(?:希望勤務地|勤務希望地|勤務地希望|勤務地(?:条件|希望)?|通勤可能(?:エリア|範囲))\s*[:：]?\s*([^\n|｜]{2,80}?)(?=\s+(?:就労資格|在留資格|就労可否|ビザ)\s*[:：]|$)/u
+  ) ?? firstMatchingBlock(
+    // The nearest station is the commute anchor in pasted person texts; it
+    // fills the location field for review when no explicit preference exists.
+    blocks,
+    /(?:最寄り?駅|最近车站)\s*[:：]\s*([^\n|｜]{2,80})/u
   )
   const workAuthorization = firstMatchingBlock(
     blocks,
@@ -1917,7 +2071,7 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
       field(
         'japanese_level',
         '日本語レベル',
-        structuredJapanese?.value ?? (japaneseLevel ? japaneseLevel.match[1] ?? japaneseLevel.match[2] ?? null : null),
+        structuredJapanese?.value ?? (japaneseLevel ? japaneseLevel.match[1] ?? japaneseLevel.match[2] ?? japaneseLevel.match[3] ?? null : null),
         structuredJapanese ? 0.9 : 0.8,
         structuredJapanese?.sources ?? (japaneseLevel ? [japaneseLevel.block] : [])
       ),
@@ -1929,7 +2083,8 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
         structuredRole ? 0.9 : 0.72,
         structuredRole ? structuredRoleSources : role ? [role.block] : []
       ),
-      field('location', '希望勤務地・通勤範囲', preferredLocation?.match[1]?.trim() ?? null, 0.72, preferredLocation ? [preferredLocation.block] : []),
+      // 大森常駐可 names a place and a work style; the place is the location.
+      field('location', '希望勤務地・通勤範囲', preferredLocation?.match[1]?.trim().replace(/(?:常駐|リモート|在宅|出社|出勤|勤務)(?:可能|可|希望)?$/u, '').trim() || null, 0.72, preferredLocation ? [preferredLocation.block] : []),
       field(
         'work_authorization',
         '就労資格（国籍は保存しない）',

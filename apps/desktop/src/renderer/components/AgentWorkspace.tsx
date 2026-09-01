@@ -10,12 +10,23 @@ import {
   type ReactNode
 } from 'react'
 import type {
+  ImportAtsCsvCandidatesResult,
+  JobCaseDeletionPreview,
+  DeleteJobCaseDataResult,
+  DeleteJobCaseDataInput,
+  JobCaseReviewSnapshot,
+  AgentJobCaseDraftCard,
   AgentCandidateDraftFacts,
   StagedLocalFile,
   AgentChatModelOption,
   AgentCandidateMatchCard,
+  AgentCandidateMatchCardsBlock,
+  AgentCloudReviewSkipCode,
+  AgentTurnTimings,
+  AgentJobCaseBroadcastCard,
   AgentJobCaseCard,
   AgentSystemAccessBlock,
+  BroadcastLanguage,
   AiConversationBlock,
   AiConversationMessage,
   AiConversationReference,
@@ -23,17 +34,22 @@ import type {
   ExecuteAgentTurnInput,
   TypedAiConversationReference
 } from '@shared'
+import { isUnassessableMatchCard } from '@shared'
+import { copyTextToClipboard } from '../copy-text'
 import { useUiLocale } from '../i18n'
 import { Icon, type IconName } from './Icon'
 import { AiConversationHistoryPanel } from './AiConversationHistoryPanel'
 import { AgentMarkdown } from './AgentMarkdown'
+import { MatchAssessmentView } from './MatchAssessmentView'
 import { useAiConversationHistory } from './useAiConversationHistory'
 
 interface AgentWorkspaceProps {
   activeSystemAccess?: AgentSystemAccessBlock | null
+  composerDraft?: string
   contextPanel?: ReactNode
   contextPanelLabel?: string
   onCloseContextPanel?(): void
+  onComposerDraftChange?(value: string): void
   onOpenMatching(jobCaseId: string): void
   onOpenCandidate?(
     sourceDocumentId: string,
@@ -49,6 +65,9 @@ interface AgentWorkspaceProps {
   cloudConnected?: boolean
   onConnectCloud?(): void
   onImportResume?(conversationId: string): Promise<AiConversationSnapshot | null>
+  /** ATS CSV rows become candidate drafts through the same local text import as pasted person text. */
+  onImportAtsCsv?(): Promise<ImportAtsCsvCandidatesResult>
+  onOpenBroadcast?(): void
   onOpenCandidatePool?(): void
   onOpenCaseImport?(): void
   onOpenCases?(): void
@@ -71,6 +90,16 @@ interface AgentWorkspaceProps {
    * SQLCipher while the corresponding screens keep rendering stale data.
    */
   onLocalDataChanged?(): void | Promise<void>
+  /**
+   * Live job-case reviews from the bootstrap snapshot. Intake cards persisted
+   * in a conversation re-read their draft's current state from here, so a
+   * draft confirmed in the Review Center becomes a matchable case on the card
+   * without a new turn.
+   */
+  jobCaseReviews?: ReadonlyArray<JobCaseReviewSnapshot>
+  /** The governed deletion flow: impact preview first, typed confirmation second. */
+  onPreviewJobCaseDeletion?(reviewId: string): Promise<JobCaseDeletionPreview>
+  onDeleteJobCase?(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
 }
 
 export interface AgentWorkspaceStatus {
@@ -314,6 +343,58 @@ function JobCaseCardView({
   )
 }
 
+/** One line of where the last turn's time went; seconds, phases in order. */
+function turnTimingsText(timings: AgentTurnTimings, zh: boolean): string {
+  const seconds = (ms: number | null): string => ms === null ? '—' : `${(ms / 1000).toFixed(1)}s`
+  const parts = [
+    `${zh ? '规划' : '計画'} ${seconds(timings.planningMs)}`,
+    `${zh ? '本地工具' : 'ローカルTool'} ${seconds(timings.localToolMs)}`,
+    ...(timings.cloudReviewMs !== null ? [`${zh ? '云端评审' : 'クラウド評価'} ${seconds(timings.cloudReviewMs)}`] : []),
+    `${zh ? '生成首字' : '生成開始まで'} ${seconds(timings.narrativeFirstTokenMs)}`,
+    `${zh ? '生成' : '生成'} ${seconds(timings.narrativeMs)}`
+  ]
+  return `${zh ? '本轮耗时' : '今回の所要時間'} ${seconds(timings.totalMs)}：${parts.join(' · ')}（${zh ? '云端调用' : 'クラウド呼び出し'} ${timings.cloudCalls} ${zh ? '次' : '回'}）`
+}
+
+/**
+ * The match cards, or - when every row matched nothing - one line saying
+ * there is no candidate, with the reasons behind a toggle. Nobody needs a
+ * ranked list of what each non-candidate lacks up front.
+ */
+function CandidateMatchCardsView({ block, zh, currentCaseId, onOpenCandidate, onOpenMatching }: {
+  block: AgentCandidateMatchCardsBlock
+  zh: boolean
+  currentCaseId: string | null
+  onOpenCandidate?(sourceDocumentId: string): void
+  onOpenMatching(jobCaseId: string): void
+}) {
+  const [showReasons, setShowReasons] = useState(false)
+  const noneAssessable = block.cards.length > 0 && block.cards.every(isUnassessableMatchCard)
+  const note = block.cloudReview?.status === 'skipped'
+    ? <p className="agent-cloud-review-note"><Icon name="alert" size={12} />{zh ? '云端评审未完成：' : 'クラウド評価は未実施：'}{cloudReviewSkipLabel(block.cloudReview.code, zh)}{block.cloudReview.reason ? <small>{block.cloudReview.reason}</small> : null}</p>
+    : null
+  const cards = block.cards.map((card) => <CandidateCardView card={card} currentCaseId={currentCaseId} key={card.reference.objectId} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} zh={zh} />)
+  if (!noneAssessable) return <div className="agent-card-stack">{note}{cards}</div>
+  return (
+    <div className="agent-card-stack agent-no-match">
+      <p className="agent-no-match-summary"><Icon name="alert" size={13} />{zh ? '当前案件暂无可确认的匹配候选人。' : '現在の案件に確認できる候補者はいません。'}</p>
+      <button aria-expanded={showReasons} className="agent-no-match-toggle" onClick={() => setShowReasons((current) => !current)} type="button">
+        {showReasons ? (zh ? '收起原因' : '理由を閉じる') : (zh ? '查看为何没有匹配结果' : 'なぜ結果がないかを見る')}<Icon name="chevron-right" size={12} />
+      </button>
+      {showReasons ? <>{note}{cards}</> : null}
+    </div>
+  )
+}
+
+function cloudReviewSkipLabel(code: AgentCloudReviewSkipCode, zh: boolean): string {
+  if (code === 'cloud-unavailable') return zh ? '云端不可用' : 'クラウド未接続'
+  if (code === 'nothing-matched') return zh ? '本地未匹配到任何要求，未发起评审' : 'ローカルで一致した要件がなく未実施'
+  if (code === 'no-job-case') return zh ? '未找到案件当前版本' : '案件の現在版が見つかりません'
+  if (code === 'no-candidates') return zh ? '没有可评审的候选人' : '評価対象の候補者なし'
+  if (code === 'no-verdict') return zh ? '模型未返回可用结论' : 'モデルから有効な判定なし'
+  return zh ? '云端调用失败' : 'クラウド呼び出し失敗'
+}
+
 function CandidateCardView({ card, zh, onOpenCandidate, onOpenMatching, currentCaseId }: {
   card: AgentCandidateMatchCard
   zh: boolean
@@ -321,19 +402,32 @@ function CandidateCardView({ card, zh, onOpenCandidate, onOpenMatching, currentC
   onOpenMatching(jobCaseId: string): void
   currentCaseId: string | null
 }) {
+  // Nothing matched and the hard filter could not decide: the candidate was
+  // merely not excluded. Showing "#1 · Fit 0" would read as a recommendation.
+  const unassessable = isUnassessableMatchCard(card)
+  const hardFilterLabel = card.hardFilterStatus === 'passed'
+    ? (zh ? '通过' : '通過')
+    : card.hardFilterStatus === 'none'
+      ? (zh ? '案件未设定硬条件' : '案件に必須条件なし')
+    : card.hardFilterStatus === 'failed'
+      ? (zh ? '不满足' : '不適合')
+      : card.missing.length > 0
+        ? (zh ? `未知（候选人未登记：${card.missing.join('、')}）` : `不明（候補者に未登録：${card.missing.join('、')}）`)
+        : (zh ? '未知' : '不明')
   return (
-    <article className={`agent-candidate-card is-${card.status}`}>
+    <article className={`agent-candidate-card is-${card.status}${unassessable ? ' is-unassessable' : ''}`}>
       <header>
-        <span className="agent-rank">#{card.rank}</span>
-        <div><h3>{card.anonymousLabel}</h3><small>{card.fitScore === null ? (zh ? 'Fit 未提供' : 'Fit unavailable') : `Fit ${card.fitScore}`}</small></div>
+        <span className="agent-rank">{unassessable ? '—' : `#${card.rank}`}</span>
+        <div><h3>{card.anonymousLabel}</h3><small>{unassessable ? (zh ? '无匹配依据 · 无法评估' : '判定根拠なし・評価不能') : card.fitScore === null ? (zh ? 'Fit 未提供' : 'Fit unavailable') : `Fit ${card.fitScore}`}</small></div>
         <span className="agent-status-chip">{statusLabel(card.status, zh)}</span>
       </header>
       <div className="agent-candidate-facts">
         <span><strong>{zh ? '匹配' : 'Matched'}</strong>{card.matched.length > 0 ? card.matched.join(' · ') : '—'}</span>
         <span><strong>{zh ? '不足' : '不足'}</strong>{card.missing.length > 0 ? card.missing.join(' · ') : (zh ? '未记录不足项' : '不足項目なし')}</span>
-        <span><strong>{zh ? '硬条件' : '必須条件'}</strong>{card.hardFilterStatus}</span>
+        <span><strong>{zh ? '硬条件' : '必須条件'}</strong>{hardFilterLabel}</span>
         {card.projectEvidence ? <span><strong>{zh ? '项目证据' : 'プロジェクト根拠'}</strong>{card.projectEvidence}</span> : null}
       </div>
+      {card.assessment ? <MatchAssessmentView assessment={card.assessment} zh={zh} /> : null}
       <footer>
         {card.sourceDocumentId && onOpenCandidate ? <button disabled={card.status === 'deleted'} onClick={() => onOpenCandidate(card.sourceDocumentId!)} type="button"><Icon name="users" size={13} />{zh ? '打开候选人' : '候補者を開く'}</button> : null}
         <button disabled={card.status === 'deleted' || !currentCaseId} onClick={() => currentCaseId && onOpenMatching(currentCaseId)} type="button">{zh ? '查看完整匹配结果' : '詳細なマッチ結果を見る'}<Icon name="chevron-right" size={13} /></button>
@@ -465,6 +559,228 @@ function CandidateDraftFactsView({ facts, zh, onOpenCandidate, onOpenOriginalDoc
   </article>
 }
 
+
+/**
+ * Re-reads a persisted intake card from the live review it points at. A card
+ * whose review is absent from the snapshot keeps its persisted content: the
+ * snapshot may simply not have been refreshed yet, and deletion tombstones
+ * arrive through the persisted card itself.
+ */
+function liveDraftCard(card: AgentJobCaseDraftCard, reviews: ReadonlyArray<JobCaseReviewSnapshot>): AgentJobCaseDraftCard {
+  if (card.status === 'deleted') return card
+  const review = reviews.find((item) => item.reviewId === card.reviewId)
+  if (!review) return card
+  return {
+    ...card,
+    title: review.fields.find((field) => field.key === 'title')?.value ?? null,
+    reviewStatus: review.status,
+    lifecycle: review.lifecycle,
+    jobCase: review.jobCase ? { id: review.jobCase.id, version: review.jobCase.version } : null,
+    fields: review.fields.map((field) => ({ key: field.key, label: field.label, value: field.value, status: field.status })),
+    warningCodes: review.warningCodes
+  }
+}
+
+/** A case is valid or not; a draft the store refused is "needs completing". */
+function draftOutcomeLabel(card: AgentJobCaseDraftCard, zh: boolean): string {
+  if (card.status === 'deleted') return zh ? '已删除' : '削除済み'
+  if (card.lifecycle === 'archived') return zh ? '无效' : '無効'
+  if (card.reviewStatus === 'completed') return zh ? '有效' : '有効'
+  return zh ? '待补充' : '要補完'
+}
+
+function JobCaseDraftCardsView({ block, zh, reviews, onOpenSystemAccess, onRunMatching, onPreviewJobCaseDeletion, onDeleteJobCase }: {
+  block: Extract<AiConversationBlock, { type: 'job-case-draft-cards' }>
+  zh: boolean
+  reviews: ReadonlyArray<JobCaseReviewSnapshot>
+  onOpenSystemAccess?(access: AgentSystemAccessBlock): void
+  onRunMatching?(card: AgentJobCaseDraftCard): void
+  onPreviewJobCaseDeletion?(reviewId: string): Promise<JobCaseDeletionPreview>
+  onDeleteJobCase?(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
+}) {
+  const cards = block.cards.map((card) => liveDraftCard(card, reviews))
+  const live = cards.filter((card) => card.status !== 'deleted')
+  const valid = live.filter((card) => card.reviewStatus === 'completed' && card.lifecycle === 'active').length
+  const attention = live.filter((card) => card.reviewStatus !== 'completed').length
+  const reviewIds = cards.filter((card) => card.status !== 'deleted').map((card) => card.reviewId)
+  // Deletion is the same governed flow as the case inbox: an impact preview,
+  // then the operator types the confirmation word. One card at a time.
+  const [deletion, setDeletion] = useState<{
+    reviewId: string
+    preview: JobCaseDeletionPreview | null
+    confirmation: string
+    busy: boolean
+    error: string | null
+  } | null>(null)
+  const confirmationWord = zh ? '删除' : '削除'
+  const startDeletion = async (card: AgentJobCaseDraftCard) => {
+    if (!onPreviewJobCaseDeletion || deletion?.busy) return
+    setDeletion({ reviewId: card.reviewId, preview: null, confirmation: '', busy: true, error: null })
+    try {
+      const preview = await onPreviewJobCaseDeletion(card.reviewId)
+      setDeletion({ reviewId: card.reviewId, preview, confirmation: '', busy: false, error: null })
+    } catch (cause) {
+      setDeletion({ reviewId: card.reviewId, preview: null, confirmation: '', busy: false, error: cause instanceof Error ? cause.message : (zh ? '无法确认删除影响。' : '削除影響を確認できませんでした。') })
+    }
+  }
+  const confirmDeletion = async () => {
+    if (!deletion?.preview || !onDeleteJobCase || deletion.busy || deletion.confirmation !== confirmationWord) return
+    setDeletion({ ...deletion, busy: true, error: null })
+    try {
+      await onDeleteJobCase({ reviewId: deletion.reviewId, confirmationHash: deletion.preview.confirmationHash, confirmationText: '削除' })
+      setDeletion(null)
+    } catch (cause) {
+      setDeletion({ ...deletion, busy: false, error: cause instanceof Error ? cause.message : (zh ? '案件数据删除失败。' : '案件データを削除できませんでした。') })
+    }
+  }
+  return <article className="agent-import-card agent-draft-cards">
+    <header><span className="agent-import-icon"><Icon name="briefcase" size={16} /></span><div><strong>{zh ? `本次导入的案件草稿 ${cards.length} 条` : `今回取り込んだ案件下書き ${cards.length}件`}</strong><small>{zh ? `${valid} 条有效${attention > 0 ? `，${attention} 条待补充` : ''} · 可在右侧查看并直接修改` : `有効${valid}件${attention > 0 ? `・要補完${attention}件` : ''} · 右側で確認・直接編集できます`}</small></div></header>
+    <div className="agent-draft-card-list">{cards.map((card) => {
+      const deleted = card.status === 'deleted'
+      const pendingDeletion = deletion?.reviewId === card.reviewId ? deletion : null
+      return <section className={`agent-draft-card is-${deleted ? 'deleted' : 'current'}`} key={`${card.reviewId}-${card.ordinal}`}>
+        <header>
+          <div className="agent-draft-card-heading"><span className="agent-card-kicker">{card.label}</span><span className="agent-status-chip">{draftOutcomeLabel(card, zh)}</span></div>
+          <h3>{card.title ?? (deleted ? (zh ? '已删除的草稿' : '削除された下書き') : (zh ? '未命名案件' : '名称未設定案件'))}</h3>
+        </header>
+        {deleted ? null : <footer>
+          <div className="agent-draft-actions">
+            <button disabled={!onOpenSystemAccess} onClick={() => onOpenSystemAccess?.({ type: 'system-access', destination: 'case-review', reviewId: card.reviewId })} type="button">{card.reviewStatus === 'completed' ? (zh ? '查看 / 修改' : '表示・編集') : (zh ? '补充并生效' : '補完して有効化')}</button>
+            {card.jobCase && card.lifecycle === 'active' && onRunMatching ? <button className="is-primary" onClick={() => onRunMatching(card)} type="button"><Icon name="sparkles" size={12} />{zh ? '跑匹配' : '候補者を探す'}</button> : null}
+            {onPreviewJobCaseDeletion && onDeleteJobCase ? <button className="is-danger" disabled={Boolean(deletion?.busy) || Boolean(pendingDeletion)} onClick={() => void startDeletion(card)} type="button">{zh ? '删除' : '削除'}</button> : null}
+          </div>
+        </footer>}
+        {pendingDeletion ? <div className="agent-draft-delete" role="group" aria-label={zh ? '案件删除确认' : '案件削除確認'}>
+          {pendingDeletion.preview ? <>
+            <p>{zh
+              ? `将永久删除案件「${pendingDeletion.preview.title}」：案件版本 ${pendingDeletion.preview.counts.caseVersions}、审核记录 ${pendingDeletion.preview.counts.reviewAudits}、关联任务 ${pendingDeletion.preview.counts.taskRecords}、PII 映射 ${pendingDeletion.preview.counts.piiMappings}、会话引用 ${pendingDeletion.preview.counts.agentReferences.messages}。此操作不可恢复。`
+              : `案件「${pendingDeletion.preview.title}」を完全削除：案件版${pendingDeletion.preview.counts.caseVersions}件・審査記録${pendingDeletion.preview.counts.reviewAudits}件・関連タスク${pendingDeletion.preview.counts.taskRecords}件・PII対応表${pendingDeletion.preview.counts.piiMappings}件・会話参照${pendingDeletion.preview.counts.agentReferences.messages}件。元に戻せません。`}</p>
+            <div className="agent-draft-delete-controls">
+              <input aria-label={zh ? '案件删除确认输入' : '案件削除確認入力'} disabled={pendingDeletion.busy} onChange={(event) => setDeletion({ ...pendingDeletion, confirmation: event.target.value })} placeholder={zh ? `输入「${confirmationWord}」以继续` : `続行するには「${confirmationWord}」と入力`} value={pendingDeletion.confirmation} />
+              <button className="is-danger" disabled={pendingDeletion.busy || pendingDeletion.confirmation !== confirmationWord} onClick={() => void confirmDeletion()} type="button">{pendingDeletion.busy ? (zh ? '删除中…' : '削除中…') : (zh ? '确认删除' : '完全に削除')}</button>
+              <button disabled={pendingDeletion.busy} onClick={() => setDeletion(null)} type="button">{zh ? '取消' : 'キャンセル'}</button>
+            </div>
+          </> : <p>{pendingDeletion.busy ? (zh ? '正在确认删除影响…' : '削除影響を確認中…') : null}</p>}
+          {pendingDeletion.error ? <p className="agent-draft-delete-error" role="alert">{pendingDeletion.error}</p> : null}
+        </div> : null}
+      </section>
+    })}</div>
+    <AgentBlockActions>{onOpenSystemAccess && reviewIds.length > 0 ? <button onClick={() => onOpenSystemAccess({ type: 'system-access', destination: 'review-center', intakeBatchId: block.intakeBatchId, reviewIds })} type="button"><Icon name="shield" size={13} />{zh ? '在审核中心批量处理' : 'レビューセンターで一括処理'}</button> : null}</AgentBlockActions>
+  </article>
+}
+
+function broadcastStatusLabel(status: AgentJobCaseBroadcastCard['status'], zh: boolean): string {
+  if (status === 'new') return zh ? '新增' : '新着'
+  if (status === 'copied') return zh ? '已复制' : 'コピー済み'
+  return zh ? '待补充' : '要補完'
+}
+
+/**
+ * One drafted message. The text is a snapshot of what the tool wrote: it is
+ * copied and recorded exactly as generated, so the box is read-only and editing
+ * happens in the 案件配信 screen, where a redraw re-runs the checks. Copying is
+ * the whole action - where the operator pastes it is never asked or recorded.
+ */
+function BroadcastCardView({ card, zh, onOpenSystemAccess }: {
+  card: AgentJobCaseBroadcastCard
+  zh: boolean
+  onOpenSystemAccess?(access: AgentSystemAccessBlock): void
+}) {
+  const [lang, setLang] = useState<BroadcastLanguage>('ja')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const text = lang === 'zh' ? card.textZh : card.textJa
+  const forbidden = lang === 'zh' ? card.forbiddenZh : card.forbiddenJa
+
+  const copy = async () => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await copyTextToClipboard(text)
+      await window.sesAgent.recordCaseBroadcastCopy({
+        reviewId: card.reviewId,
+        templateId: card.templateId,
+        lang,
+        kind: 'new',
+        text
+      })
+      setNotice(zh ? '已复制，可以去微信粘贴了。' : 'コピーしました。微信に貼り付けてください。')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <section className="agent-draft-card agent-broadcast-card">
+    <header>
+      <div className="agent-draft-card-heading">
+        <span className="agent-card-kicker">{`#${card.ordinal}`}</span>
+        <span className="agent-status-chip">{broadcastStatusLabel(card.status, zh)}</span>
+      </div>
+      <h3>{card.title}</h3>
+    </header>
+    <div className="agent-broadcast-tabs" role="group" aria-label={zh ? '消息语言' : 'メッセージの言語'}>
+      <button aria-pressed={lang === 'ja'} className={lang === 'ja' ? 'is-selected' : ''} onClick={() => setLang('ja')} type="button">日本語</button>
+      <button aria-pressed={lang === 'zh'} className={lang === 'zh' ? 'is-selected' : ''} onClick={() => setLang('zh')} type="button">中文</button>
+    </div>
+    {forbidden.length > 0 ? <p className="agent-broadcast-forbidden" role="alert">
+      <Icon name="alert" size={13} />
+      <span>{zh
+        ? `正文里还有识别信息（${forbidden.join('、')}），请在配信页修改后再发。`
+        : `本文に識別子が残っています（${forbidden.join('、')}）。配信画面で修正してください。`}</span>
+    </p> : null}
+    <details className="agent-broadcast-text">
+      <summary>{zh ? '查看正文' : '本文を表示'}</summary>
+      <textarea aria-label={zh ? '群消息正文' : '群メッセージ本文'} readOnly rows={10} value={text} />
+    </details>
+    {notice ? <p className="agent-broadcast-notice" role="status">{notice}</p> : null}
+    {error ? <p className="agent-broadcast-error" role="alert">{error}</p> : null}
+    <div className="agent-draft-actions">
+      <button
+        className="is-primary"
+        disabled={busy || forbidden.length > 0}
+        onClick={() => void copy()}
+        type="button"
+      ><Icon name="copy" size={12} />{zh ? '复制' : 'コピーする'}</button>
+      <button
+        disabled={!onOpenSystemAccess}
+        onClick={() => onOpenSystemAccess?.({ type: 'system-access', destination: 'broadcast', reviewId: card.reviewId })}
+        type="button"
+      >{zh ? '在右侧打开' : '右側で開く'}</button>
+    </div>
+  </section>
+}
+
+function BroadcastCardsView({ block, zh, onOpenSystemAccess }: {
+  block: Extract<AiConversationBlock, { type: 'job-case-broadcast-cards' }>
+  zh: boolean
+  onOpenSystemAccess?(access: AgentSystemAccessBlock): void
+}) {
+  return <article className="agent-import-card agent-draft-cards">
+    <header>
+      <span className="agent-import-icon"><Icon name="mail" size={16} /></span>
+      <div>
+        <strong>{zh ? `已生成 ${block.cards.length} 条群消息` : `群メッセージ ${block.cards.length}件`}</strong>
+        <small>{zh
+          ? `队列：新增 ${block.queue.new} · 已复制 ${block.queue.copied} · 待补充 ${block.queue.attention}`
+          : `キュー：新着 ${block.queue.new} · コピー済み ${block.queue.copied} · 要補完 ${block.queue.attention}`}</small>
+      </div>
+    </header>
+    <div className="agent-draft-card-list">
+      {block.cards.map((card) => <BroadcastCardView card={card} key={`${card.reviewId}-${card.ordinal}`} onOpenSystemAccess={onOpenSystemAccess} zh={zh} />)}
+    </div>
+    <AgentBlockActions>
+      <button disabled={!onOpenSystemAccess} onClick={() => onOpenSystemAccess?.({ type: 'system-access', destination: 'broadcast' })} type="button">
+        <Icon name="mail" size={13} />{zh ? '打开案件配信' : '案件配信を開く'}
+      </button>
+    </AgentBlockActions>
+  </article>
+}
+
 function systemAccessContent(block: AgentSystemAccessBlock, zh: boolean): {
   icon: IconName
   title: string
@@ -523,11 +839,23 @@ function systemAccessContent(block: AgentSystemAccessBlock, zh: boolean): {
     description: zh ? '在右侧本机解密显示原始文件，对话只读取脱敏结构化投影。' : '右側で原始ファイルを端末内復号表示し、会話は脱敏済み構造化投影だけを参照します。',
     action: zh ? '查看原始简历' : '原始履歴書を見る'
   }
+  if (block.destination === 'review-center' && block.reviewIds && block.reviewIds.length > 0) return {
+    icon: 'shield',
+    title: zh ? '审核中心 · 本次导入' : 'レビューセンター · 今回の取込',
+    description: zh ? `逐条确认本次导入的 ${block.reviewIds.length} 条案件草稿，可按行快速确认。` : `今回取り込んだ${block.reviewIds.length}件の案件下書きを1件ずつ確認します。`,
+    action: zh ? '批量审核' : '一括レビュー'
+  }
   if (block.destination === 'review-center') return {
     icon: 'shield',
     title: zh ? '审核中心' : 'レビューセンター',
     description: zh ? '逐项确认机器抽取内容，再形成正式候选人档案。' : '機械抽出項目を確認して正式な候補者プロフィールにします。',
     action: zh ? '打开审核中心' : 'レビューセンターを開く'
+  }
+  if (block.destination === 'broadcast') return {
+    icon: 'mail',
+    title: zh ? '案件配信' : '案件配信',
+    description: zh ? '在右侧查看配信队列、群消息和复制历史。' : '右側で配信キュー、群メッセージ、コピー履歴を確認します。',
+    action: zh ? '打开案件配信' : '案件配信を開く'
   }
   if (block.destination === 'task') return {
     icon: 'tasks',
@@ -610,7 +938,7 @@ function SystemAccessView({ block, zh, onOpen, onOpenCandidate }: {
   </article>
 }
 
-function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMatching, onOpenOriginalDocument, onOpenReviews, onOpenSystemAccess, currentCaseId }: {
+function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMatching, onOpenOriginalDocument, onOpenReviews, onOpenSystemAccess, onRunMatching, jobCaseReviews, onPreviewJobCaseDeletion, onDeleteJobCase, currentCaseId }: {
   block: AiConversationBlock
   locale: string
   zh: boolean
@@ -620,11 +948,15 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
   onOpenOriginalDocument?(sourceDocumentId: string): void
   onOpenReviews?(): void
   onOpenSystemAccess?(access: AgentSystemAccessBlock): void
+  onRunMatching?(card: AgentJobCaseDraftCard): void
+  jobCaseReviews: ReadonlyArray<JobCaseReviewSnapshot>
+  onPreviewJobCaseDeletion?(reviewId: string): Promise<JobCaseDeletionPreview>
+  onDeleteJobCase?(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
   currentCaseId: string | null
 }) {
   if (block.type === 'text') return <p className="agent-block-text">{block.text}</p>
   if (block.type === 'job-case-cards') return <div className="agent-card-stack">{block.cards.map((card) => <JobCaseCardView card={card} key={card.reference.objectId} onOpenMatching={onOpenMatching} onSelect={onSelectCase} zh={zh} />)}</div>
-  if (block.type === 'candidate-match-cards') return <div className="agent-card-stack">{block.cards.map((card) => <CandidateCardView card={card} currentCaseId={currentCaseId} key={card.reference.objectId} onOpenCandidate={onOpenCandidate ? (sourceDocumentId) => onOpenCandidate(sourceDocumentId, 'overview') : undefined} onOpenMatching={onOpenMatching} zh={zh} />)}</div>
+  if (block.type === 'candidate-match-cards') return <CandidateMatchCardsView block={block} currentCaseId={currentCaseId} onOpenCandidate={onOpenCandidate ? (sourceDocumentId) => onOpenCandidate(sourceDocumentId, 'overview') : undefined} onOpenMatching={onOpenMatching} zh={zh} />
   if (block.type === 'candidate-profile-evidence') return <CandidateProfileEvidenceView block={block} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} zh={zh} />
   if (block.type === 'candidate-interview-evidence') return <CandidateInterviewEvidenceView block={block} locale={locale} onOpenCandidate={onOpenCandidate} zh={zh} />
   if (block.type === 'clarification') return <div className="agent-clarification"><strong>{block.prompt}</strong>{block.options.length > 0 ? <div>{block.options.map((option) => <button key={`${option.kind}-${option.objectId}`} onClick={() => onSelectCase(option)} type="button">{option.ordinal ? `${option.ordinal}. ` : ''}{option.label}</button>)}</div> : null}</div>
@@ -634,6 +966,8 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
   }
   if (block.type === 'resume-import') return <ResumeImportView block={block} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} onOpenReviews={onOpenReviews} zh={zh} />
   if (block.type === 'candidate-draft-facts') return <CandidateDraftFactsView facts={block.facts} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} onOpenReviews={onOpenReviews} zh={zh} />
+  if (block.type === 'job-case-draft-cards') return <JobCaseDraftCardsView block={block} onDeleteJobCase={onDeleteJobCase} onOpenSystemAccess={onOpenSystemAccess} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onRunMatching={onRunMatching} reviews={jobCaseReviews} zh={zh} />
+  if (block.type === 'job-case-broadcast-cards') return <BroadcastCardsView block={block} onOpenSystemAccess={onOpenSystemAccess} zh={zh} />
   if (block.type === 'system-access') return <SystemAccessView block={block} onOpen={onOpenSystemAccess} onOpenCandidate={onOpenCandidate} zh={zh} />
   return <div className="agent-error-block" role="alert"><Icon name="alert" size={15} /><span>{userFacingAgentError(block.message, zh)}</span></div>
 }
@@ -645,6 +979,9 @@ interface AgentEmptyStateProps {
   suggestions: string[]
   zh: boolean
   onImportResume?(): void
+  onImportAtsCsv?(): void
+  atsImportNotice?: string | null
+  onOpenBroadcast?(): void
   onOpenCaseImport?(): void
   onOpenReviews?(): void
   onSuggestion(suggestion: string): void
@@ -657,11 +994,14 @@ function AgentEmptyState({
   suggestions,
   zh,
   onImportResume,
+  onImportAtsCsv,
+  atsImportNotice,
+  onOpenBroadcast,
   onOpenCaseImport,
   onOpenReviews,
   onSuggestion
 }: AgentEmptyStateProps) {
-  const hasQuickActions = Boolean(onImportResume || onOpenCaseImport || onOpenReviews)
+  const hasQuickActions = Boolean(onImportResume || onImportAtsCsv || onOpenBroadcast || onOpenCaseImport || onOpenReviews)
   const title = !cloudConnected
     ? (zh ? '本地工作仍可继续' : 'ローカル業務は続けられます')
     : selectedCase
@@ -669,8 +1009,8 @@ function AgentEmptyState({
       : (zh ? '今天想推进什么工作？' : '今日は何を進めますか？')
   const description = !cloudConnected
     ? (zh
-        ? '连接受管账号后可以使用自然语言；简历导入、案件导入和人工审核仍可在本机安全完成。'
-        : '受管アカウント接続後は自然言語を利用できます。履歴書・案件の取込と人によるレビューは、この端末で安全に続けられます。')
+        ? '连接受管账号后可以使用自然语言；简历导入、案件导入、粘贴案件/人员文本的本地导入和人工审核仍可在本机安全完成。'
+        : '受管アカウント接続後は自然言語を利用できます。履歴書・案件の取込、案件・要員テキストの貼り付けによるローカル取込、人によるレビューは、この端末で安全に続けられます。')
     : selectedCase
       ? (zh
           ? '已绑定当前案件。可以匹配候选人、查看案件条件，或继续追问保存过的匹配依据。'
@@ -693,11 +1033,23 @@ function AgentEmptyState({
         label={zh ? '导入简历' : '履歴書を取り込む'}
         onClick={onImportResume}
       /> : null}
+      {onImportAtsCsv ? <AgentQuickAction
+        description={zh ? '每行一名候选人，逐行本地解析' : '1行1名を端末内で解析'}
+        icon="database"
+        label={zh ? '导入 ATS CSV' : 'ATS CSV を取り込む'}
+        onClick={onImportAtsCsv}
+      /> : null}
       {onOpenCaseImport ? <AgentQuickAction
         description={zh ? '粘贴、EML 或受管 Gmail' : '貼付・EML・受管 Gmail'}
         icon="briefcase"
         label={zh ? '导入案件' : '案件を取り込む'}
         onClick={onOpenCaseImport}
+      /> : null}
+      {onOpenBroadcast ? <AgentQuickAction
+        description={zh ? '生成文案并一键复制' : '紹介文の生成とワンクリックのコピー'}
+        icon="mail"
+        label={zh ? '案件配信' : '案件配信'}
+        onClick={onOpenBroadcast}
       /> : null}
       {onOpenReviews ? <AgentQuickAction
         description={pendingReviewCount > 0
@@ -708,14 +1060,17 @@ function AgentEmptyState({
         onClick={onOpenReviews}
       /> : null}
     </div> : null}
+    {atsImportNotice ? <p className="agent-empty-notice" role="status">{atsImportNotice}</p> : null}
   </div>
 }
 
 export function AgentWorkspace({
   activeSystemAccess = null,
+  composerDraft,
   contextPanel,
   contextPanelLabel,
   onCloseContextPanel,
+  onComposerDraftChange,
   onOpenMatching,
   onOpenCandidate,
   onOpenOriginalDocument,
@@ -725,6 +1080,8 @@ export function AgentWorkspace({
   cloudConnected = true,
   onConnectCloud,
   onImportResume,
+  onImportAtsCsv,
+  onOpenBroadcast,
   onOpenCaseImport,
   onOpenCases,
   onOpenSystemAccess,
@@ -733,7 +1090,10 @@ export function AgentWorkspace({
   onOpenSettings,
   onOpenOperatorProfile,
   operatorLabel = 'SES',
-  onLocalDataChanged
+  onLocalDataChanged,
+  jobCaseReviews = [],
+  onPreviewJobCaseDeletion,
+  onDeleteJobCase
 }: AgentWorkspaceProps) {
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
@@ -758,7 +1118,12 @@ export function AgentWorkspace({
   // refresh. Falling back based on a temporarily missing snapshot minted a new
   // draft id and could turn an ordinary follow-up into a new conversation.
   const currentConversationId = history.activeConversationId ?? draftConversationId
-  const [draft, setDraft] = useState('')
+  const [localComposerDraft, setLocalComposerDraft] = useState('')
+  const draft = composerDraft ?? localComposerDraft
+  const updateDraft = (value: string) => {
+    if (composerDraft === undefined) setLocalComposerDraft(value)
+    onComposerDraftChange?.(value)
+  }
   const [editingMessage, setEditingMessage] = useState<{ id: string; value: string } | null>(null)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
@@ -775,6 +1140,22 @@ export function AgentWorkspace({
     ? caseSelection.reference
     : persistedSelectedCase
   const [error, setError] = useState<string | null>(null)
+  const [lastTurnTimings, setLastTurnTimings] = useState<AgentTurnTimings | null>(null)
+  const [atsImportNotice, setAtsImportNotice] = useState<string | null>(null)
+  const importAtsCsv = async () => {
+    if (!onImportAtsCsv) return
+    setAtsImportNotice(null)
+    try {
+      const result = await onImportAtsCsv()
+      if (result.cancelled) return
+      setAtsImportNotice(zh
+        ? `${result.fileName ?? 'CSV'}：已导入 ${result.importedCount} 名候选人草稿（重复 ${result.duplicateCount}、跳过 ${result.skippedCount}、失败 ${result.failedCount}），请到审核中心逐项确认。`
+        : `${result.fileName ?? 'CSV'}：候補者下書きを${result.importedCount}件作成しました（重複${result.duplicateCount}件・スキップ${result.skippedCount}件・失敗${result.failedCount}件）。レビューセンターで確認してください。`)
+      await onLocalDataChanged?.()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : (zh ? 'ATS CSV 导入失败。' : 'ATS CSV を取り込めませんでした。'))
+    }
+  }
   const [historyOpen, setHistoryOpen] = useState(false)
   const [contextPanelWidth, setContextPanelWidth] = useState(() => {
     try {
@@ -897,6 +1278,7 @@ export function AgentWorkspace({
     setCaseSelection({ conversationId: currentConversationId, reference })
     if (!activeConversation) return
     void history.persistSalesAgentState({
+      ...activeConversation.salesAgentState,
       selectedJobCaseRef: reference,
       lastMatchRunId: activeConversation.salesAgentState?.lastMatchRunId ?? null,
       lastSearchMessageId: activeConversation.salesAgentState?.lastSearchMessageId ?? null
@@ -909,6 +1291,7 @@ export function AgentWorkspace({
     setCaseSelection({ conversationId: currentConversationId, reference: null })
     if (!activeConversation) return
     void history.persistSalesAgentState({
+      ...activeConversation.salesAgentState,
       selectedJobCaseRef: null,
       lastMatchRunId: activeConversation.salesAgentState?.lastMatchRunId ?? null,
       lastSearchMessageId: activeConversation.salesAgentState?.lastSearchMessageId ?? null
@@ -1043,6 +1426,32 @@ export function AgentWorkspace({
     }
   }
 
+  /**
+   * "跑匹配" on a confirmed intake card: select that case and send the same
+   * matching request the composer would. The turn itself persists the case
+   * selection, so no separate state save races the turn's revision check.
+   */
+  const runMatchingForCase = (card: AgentJobCaseDraftCard) => {
+    if (!card.jobCase) return
+    const reference: TypedAiConversationReference = {
+      kind: 'job-case',
+      objectId: card.jobCase.id,
+      objectVersion: card.jobCase.version,
+      resultHash: null,
+      ordinal: card.ordinal,
+      label: card.title ?? card.label,
+      target: `job-case:${card.jobCase.id}`
+    }
+    setCaseSelection({ conversationId: currentConversationId, reference })
+    void executeMessage(zh ? '给当前案件匹配候选人' : '現在の案件に合う候補者を探して', {
+      conversationId: currentConversationId,
+      expectedConversationRevision: activeConversation?.revision ?? null,
+      selectedJobCaseRef: reference,
+      attachmentFileTokens: [],
+      clearComposer: false
+    })
+  }
+
   const executeMessage = async (message: string, options: {
     conversationId: string
     expectedConversationRevision: number | null
@@ -1056,16 +1465,21 @@ export function AgentWorkspace({
     const currentRequestId = newId()
     const lockedModelKey = selectedModelKey
     setPendingMessage(message)
-    if (options.clearComposer) setDraft('')
+    if (options.clearComposer) updateDraft('')
     setRequestConversationId(conversationId)
     setRequestId(currentRequestId)
     activeRequestRef.current = { conversationId, requestId: currentRequestId, sequence: 0, stopRequested: false }
+    // Cosmetic only: multi-line label:value text is probably headed for the
+    // local intake gate, so start on the local phase instead of flashing an
+    // "AI is choosing a Tool" label. Main's own events correct this either way.
+    const looksLikeBusinessText = message.includes('\n') &&
+      (message.match(/^[^\n:：]{1,20}[:：]/gmu)?.length ?? 0) >= 2
     setStreamState({
       conversationId,
       requestId: currentRequestId,
       sequence: 0,
       content: '',
-      phase: 'planning',
+      phase: looksLikeBusinessText ? 'local-tool' : 'planning',
       modelDisplayName: availableModels.find((model) => model.key === lockedModelKey)?.displayName ?? lockedModelKey
     })
     setError(null)
@@ -1088,12 +1502,20 @@ export function AgentWorkspace({
         setAttachments([])
       }
       history.acceptConversation(result.conversation)
+      setLastTurnTimings(result.timings ?? null)
       setDraftConversationId(result.conversation.id)
       const nextSelected = typedReference(result.conversation.salesAgentState?.selectedJobCaseRef)
       setCaseSelection({ conversationId, reference: nextSelected })
+      // The intake gate never persists the pasted text; when it asks for a
+      // tagged re-send or fails, the original comes back from this component's
+      // own memory into the composer - nowhere else still has it.
+      if (result.intake?.restoreComposerText && options.clearComposer) {
+        updateDraft(message)
+      }
       if (
         result.toolName === 'resume.analyze.local' ||
-        result.toolName === 'candidate.interview.schedule.local'
+        result.toolName === 'candidate.interview.schedule.local' ||
+        (result.toolName === 'business-text.import.local' && result.status === 'completed')
       ) {
         try {
           await onLocalDataChanged?.()
@@ -1121,6 +1543,14 @@ export function AgentWorkspace({
     event?.preventDefault()
     const message = draft.trim()
     if (!message) return
+    // Never truncate silently: over-limit text stays in the composer and the
+    // operator decides what to trim or where else to import it.
+    if (message.length > 4_000) {
+      setError(zh
+        ? `超过 4,000 字（当前 ${message.length} 字）。一次只粘贴一条完整的案件或人员信息；较长案件可使用「导入案件」的专用粘贴入口。`
+        : `4,000文字を超えています（現在${message.length}文字）。1回の送信は案件または要員1件分だけにしてください。長い案件は「案件を取り込む」の専用貼り付けをご利用ください。`)
+      return
+    }
     await executeMessage(message, {
       conversationId: currentConversationId,
       expectedConversationRevision: activeConversation?.revision ?? null,
@@ -1132,8 +1562,7 @@ export function AgentWorkspace({
 
   const copyUserMessage = async (message: AiConversationMessage) => {
     try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
-      await navigator.clipboard.writeText(message.content)
+      await copyTextToClipboard(message.content)
       setCopiedMessageId(message.id)
       if (copyResetTimerRef.current !== null) window.clearTimeout(copyResetTimerRef.current)
       copyResetTimerRef.current = window.setTimeout(() => {
@@ -1338,11 +1767,14 @@ export function AgentWorkspace({
       </nav> : null}
       <div className="agent-message-scroll" aria-live="polite" ref={messageScrollRef}>
         {messages.length === 0 ? <AgentEmptyState
+          atsImportNotice={atsImportNotice}
           cloudConnected={cloudConnected}
+          onImportAtsCsv={onImportAtsCsv ? () => void importAtsCsv() : undefined}
           onImportResume={onImportResume ? () => void importResumeFromCard() : undefined}
+          onOpenBroadcast={onOpenBroadcast}
           onOpenCaseImport={onOpenCaseImport}
           onOpenReviews={onOpenReviews}
-          onSuggestion={setDraft}
+          onSuggestion={updateDraft}
           pendingReviewCount={status?.pendingReviewCount ?? 0}
           selectedCase={selectedCase}
           suggestions={emptyStateSuggestions}
@@ -1365,7 +1797,7 @@ export function AgentWorkspace({
                     value={editingMessage.value}
                     zh={zh}
                   />
-                : <>{structuredErrorRepeatsContent ? null : <MessageText message={message} />}{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} locale={locale} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} onOpenOriginalDocument={onOpenOriginalDocument ? openOriginalFile : undefined} onOpenReviews={onOpenReviews} onOpenSystemAccess={onOpenSystemAccess} onSelectCase={selectCase} zh={zh} />)}</>}
+                : <>{structuredErrorRepeatsContent ? null : <MessageText message={message} />}{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} locale={locale} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} onOpenOriginalDocument={onOpenOriginalDocument ? openOriginalFile : undefined} onOpenReviews={onOpenReviews} onOpenSystemAccess={onOpenSystemAccess} onRunMatching={runMatchingForCase} jobCaseReviews={jobCaseReviews} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onDeleteJobCase={onDeleteJobCase} onSelectCase={selectCase} zh={zh} />)}</>}
             </div>
             {hasUserActions && !isEditing ? <div aria-label={zh ? '输入消息操作' : '入力メッセージ操作'} className="agent-message-actions" role="group">
               <time dateTime={message.createdAt}>{messageTimeFormatter.format(new Date(message.createdAt))}</time>
@@ -1375,7 +1807,8 @@ export function AgentWorkspace({
           </article>
         })}
         {pendingMessage && streamState?.content ? <article className="agent-message is-assistant is-streaming" data-testid="agent-streaming-message"><div className="agent-message-role"><Icon name="sparkles" size={13} /><strong>SES Agent</strong>{streamState.modelDisplayName ? <small>{streamState.modelDisplayName}</small> : null}</div><div className="agent-message-body"><AgentMarkdown content={streamState.content} /></div></article> : null}
-        {pendingMessage ? <div className="agent-running-state" data-phase={streamState?.phase ?? 'planning'}><span className="agent-running-dot" />{streamState?.phase === 'planning' ? (zh ? '正在理解问题并选择 Tool…' : '質問を理解して Tool を選択中…') : streamState?.phase === 'connecting-model' ? (zh ? '正在整理 Tool 结果…' : 'Tool の結果を整理中…') : streamState?.phase === 'streaming' ? (zh ? '正在生成回答…' : '回答を生成中…') : streamState?.phase === 'stopping' ? (zh ? '正在停止本地读取并请求远端取消…' : 'ローカル読取を停止し、リモート取消を要求中…') : (zh ? '正在执行 AI 选择的受控本地 Tool…' : 'AI が選択した制御済みローカル Tool を実行中…')}</div> : null}
+        {pendingMessage ? <div className="agent-running-state" data-phase={streamState?.phase ?? 'planning'}><span className="agent-running-dot" />{streamState?.phase === 'planning' ? (zh ? '正在理解问题并选择 Tool…' : '質問を理解して Tool を選択中…') : streamState?.phase === 'connecting-model' ? (zh ? '正在整理 Tool 结果…' : 'Tool の結果を整理中…') : streamState?.phase === 'streaming' ? (zh ? '正在生成回答…' : '回答を生成中…') : streamState?.phase === 'stopping' ? (zh ? '正在停止本地读取并请求远端取消…' : 'ローカル読取を停止し、リモート取消を要求中…') : (zh ? '正在本机执行受控本地 Tool…' : '端末内で制御済みローカル Tool を実行中…')}</div> : null}
+        {!pendingMessage && lastTurnTimings ? <p className="agent-turn-timings" data-testid="agent-turn-timings">{turnTimingsText(lastTurnTimings, zh)}</p> : null}
       </div>
       {error ? <p className="agent-workspace-error" role="alert"><Icon name="alert" size={14} />{error}</p> : null}
       {importSummary ? <p className="agent-attachment-progress">
@@ -1385,7 +1818,14 @@ export function AgentWorkspace({
         {onOpenReviews ? <button onClick={() => onOpenReviews()} type="button">{zh ? '打开审核中心' : 'レビューセンターを開く'}</button> : null}
       </p> : null}
       {attaching ? <p className="agent-attachment-progress">{zh ? '正在安全暂存附件…' : '添付ファイルを安全に保存しています…'}</p> : null}
-      {cloudConnected ? <div className="agent-composer-shell">
+      <div className="agent-composer-shell">
+        {!cloudConnected ? <div className="agent-connect-bar">
+          <Icon name="lock" size={14} />
+          <span>{zh
+            ? '未连接 Cloud AI：当前仅支持粘贴案件/人员文本的本地导入等本地操作，自然语言问答不可用。'
+            : 'Cloud AI 未接続：現在は案件・要員テキストのローカル取込などのローカル操作のみ利用できます。自然言語での質問はできません。'}</span>
+          <button onClick={() => onConnectCloud?.()} type="button">{zh ? '连接受管账号' : '受管アカウントに接続'}</button>
+        </div> : null}
         <div className="agent-composer-context">{zh ? '发送到：' : '送信先：'}<strong>{threadTitle}</strong>{activeSystemAccess ? <em><Icon name="sparkles" size={11} />{zh ? '读取右侧工作区' : '右ワークスペースを参照'}</em> : null}<span>⌄</span></div>
         <form aria-label={zh ? 'SES Agent 输入区' : 'SES Agent 入力欄'} className="agent-composer" onSubmit={send}>
         <input
@@ -1413,33 +1853,38 @@ export function AgentWorkspace({
         <textarea
           aria-label={zh ? '输入 SES Agent 指令' : 'SES Agent への指示'}
           disabled={workspaceBusy}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => updateDraft(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={zh ? '继续询问当前案件、候选人或面试…' : '現在の案件、候補者、面談について続けて質問…'}
+          placeholder={cloudConnected
+            ? (zh ? '继续询问当前案件、候选人或面试…' : '現在の案件、候補者、面談について続けて質問…')
+            : (zh ? '粘贴一条案件或人员信息进行本地导入…' : '案件または要員の情報を1件貼り付けてローカル取込…')}
           rows={2}
           value={draft}
         />
+        {draft.length > 4_000 ? <p className="agent-workspace-error" role="alert"><Icon name="alert" size={14} />{zh
+          ? `已超过 4,000 字（${draft.length}/4000）。一次只粘贴一条完整的案件或人员信息；较长案件可使用「导入案件」的专用粘贴入口。`
+          : `4,000文字を超えています（${draft.length}/4000）。1回の送信は案件または要員1件分だけにしてください。長い案件は「案件を取り込む」の専用貼り付けをご利用ください。`}</p> : null}
         <footer>
           <div className="agent-composer-tools">
             <button
               aria-label={zh ? '附加简历' : '履歴書を添付'}
               className="agent-attachment-button"
-              disabled={workspaceBusy}
+              disabled={workspaceBusy || !cloudConnected}
               onClick={() => attachmentInputRef.current?.click()}
               type="button"
             ><Icon name="upload" size={15} /></button>
             {attachments.length > 0 ? <button className="agent-attachment-import" disabled={workspaceBusy} onClick={() => void importAttachmentsDirectly()} type="button">{importing ? (zh ? '导入中…' : '取込中…') : (zh ? '直接导入' : 'そのまま取込')}</button> : null}
-            <div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={workspaceBusy} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div>
-            <small>{pendingMessage ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。') : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small>
+            {cloudConnected ? <div className="agent-model-control"><label htmlFor="agent-chat-model">{zh ? '回答模型' : '回答モデル'}</label><select aria-label={zh ? '选择回答模型' : '回答モデルを選択'} disabled={workspaceBusy} id="agent-chat-model" onChange={(event) => setSelectedModelKey(event.target.value)} value={selectedModelKey}>{availableModels.map((model) => <option key={model.key} value={model.key}>{model.displayName}</option>)}</select></div> : null}
+            <small>{pendingMessage
+              ? (zh ? '停止是止损操作，不保证免费或退款。' : '停止は損失抑制であり、無料・返金を保証しません。')
+              : draft.length >= 3_600
+                ? `${draft.length}/4000`
+                : `Enter ${zh ? '发送 · Shift+Enter 换行' : '送信 · Shift+Enter で改行'}`}</small>
           </div>
-          {pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim() || workspaceBusy} type="submit"><Icon name="arrow-up" size={16} /></button>}
+          {pendingMessage ? <button aria-label="停止" className="agent-stop" onClick={(event) => { event.preventDefault(); void stop() }} type="button"><Icon name="alert" size={14} />{zh ? '停止' : '停止'}</button> : <button aria-label={zh ? '发送' : '送信'} className="agent-send" disabled={!draft.trim() || draft.trim().length > 4_000 || workspaceBusy} type="submit"><Icon name="arrow-up" size={16} /></button>}
         </footer>
         </form>
-      </div> : <div className="agent-connect-bar">
-        <Icon name="lock" size={14} />
-        <span>{zh ? '连接受管账号后即可开始对话。' : '受管アカウントに接続すると会話を開始できます。'}</span>
-        <button onClick={() => onConnectCloud?.()} type="button">{zh ? '连接受管账号' : '受管アカウントに接続'}</button>
-      </div>}
+      </div>
     </section>
     {contextPanel ? <aside aria-label={contextPanelLabel} className="agent-context-workspace">
       <div

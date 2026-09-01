@@ -34,8 +34,11 @@ import { TaskList } from './components/TaskList'
 import { TaskWorkspace } from './components/TaskWorkspace'
 import { MatchingHomeDashboard } from './components/MatchingHomeDashboard'
 import { AgentWorkspace } from './components/AgentWorkspace'
+import { pushContextAccess } from './context-trail'
 import { AgentInterviewSchedulePanel } from './components/AgentInterviewSchedulePanel'
 import { AgentBusinessWorkspacePanel } from './components/AgentBusinessWorkspacePanel'
+import type { BroadcastPanelActions } from './components/BroadcastWorkspaceView'
+import type { BroadcastSettingsActions } from './components/BroadcastSettingsSection'
 import { AgentSystemRail } from './components/AgentSystemRail'
 import { StartupRecoveryScreen } from './components/StartupRecoveryScreen'
 import { localizedWorkDate, UiLocaleProvider, useLegacyRendererLocalization } from './i18n'
@@ -67,7 +70,11 @@ export function App() {
   const [manualCaseRequestId, setManualCaseRequestId] = useState<number | null>(null)
   const [matchingJobCaseId, setMatchingJobCaseId] = useState<string | null>(null)
   const [agentHistoryReloadToken, setAgentHistoryReloadToken] = useState(0)
-  const [agentContextAccess, setAgentContextAccess] = useState<AgentSystemAccessBlock | null>(null)
+  // The right-hand workspace keeps a trail of the screens it opened, so a
+  // sub-page can step back to where it came from instead of only closing.
+  const [agentContextTrail, setAgentContextTrail] = useState<AgentSystemAccessBlock[]>([])
+  const agentContextAccess = agentContextTrail[agentContextTrail.length - 1] ?? null
+  const [agentComposerDraft, setAgentComposerDraft] = useState('')
   const [requestedJobCaseReviewId, setRequestedJobCaseReviewId] = useState<string | null>(null)
   const [candidateMatch, setCandidateMatch] = useState<{
     taskId: string | null
@@ -176,8 +183,23 @@ export function App() {
     setAiCommerceCallbackError(update.error)
   }), [])
 
+  useEffect(() => window.sesAgent.onGmailSyncCompleted((completion) => {
+    // A scheduled sync in Main imported mail: pick up the new cases and show
+    // the same notice as the manual button, from the refreshed checkpoint.
+    void window.sesAgent.getBootstrap().then((refreshed) => {
+      setBootstrap((current) => current ? refreshed : current)
+      if (completion.imported > 0 && refreshed.gmailSync.lastRun && refreshed.gmailSync.lastSyncedAt) {
+        setGmailImportNotice({
+          syncedAt: refreshed.gmailSync.lastSyncedAt,
+          storedMessages: refreshed.gmailSync.storedMessages,
+          ...refreshed.gmailSync.lastRun
+        })
+      }
+    }).catch(() => { /* The startup/bootstrap error path remains authoritative. */ })
+  }), [])
+
   useEffect(() => {
-    if (activeView !== 'agent') setAgentContextAccess(null)
+    if (activeView !== 'agent') setAgentContextTrail([])
   }, [activeView])
 
   useEffect(() => {
@@ -270,6 +292,22 @@ export function App() {
       window.clearInterval(interval)
     }
   }, [hasActiveProcessingJobs, selectedTaskId])
+
+  /**
+   * The single place 案件配信 reaches the main process. It is stable across
+   * renders so the broadcast screen does not reload its queue on every keystroke
+   * elsewhere in the app.
+   */
+  const broadcastActions = useMemo<BroadcastPanelActions & BroadcastSettingsActions>(() => ({
+    loadWorkspace: () => window.sesAgent.listBroadcastWorkspace(),
+    draftBroadcast: (input) => window.sesAgent.draftCaseBroadcast(input),
+    draftUpdateNotice: (input) => window.sesAgent.draftCaseUpdateNotice(input),
+    recordCopy: (input) => window.sesAgent.recordCaseBroadcastCopy(input),
+    listBroadcasts: (reviewId) => window.sesAgent.listCaseBroadcasts(reviewId),
+    createTemplate: (input) => window.sesAgent.createBroadcastTemplate(input),
+    updateTemplate: (input) => window.sesAgent.updateBroadcastTemplate(input),
+    deleteTemplate: (input) => window.sesAgent.deleteBroadcastTemplate(input)
+  }), [])
 
   if (loadError) {
     return <main className="fatal-state"><Icon name="alert" size={24} /><h1>起動に失敗しました</h1><p>{loadError}</p></main>
@@ -551,6 +589,12 @@ export function App() {
     return result
   }
 
+  const saveJobCaseFieldAliases = async (input: Parameters<typeof window.sesAgent.saveJobCaseFieldAliases>[0]) => {
+    const saved = await window.sesAgent.saveJobCaseFieldAliases(input)
+    setBootstrap((current) => current ? { ...current, jobCaseFieldAliases: saved } : current)
+    return saved
+  }
+
   const createManualJobCaseDraft = async (input: Parameters<typeof window.sesAgent.createManualJobCaseDraft>[0]) => {
     const result = await window.sesAgent.createManualJobCaseDraft(input)
     setBootstrap((current) => {
@@ -584,6 +628,15 @@ export function App() {
       const remaining = current.jobCaseReviews.filter((review) => review.reviewId !== result.review.reviewId)
       return { ...current, jobCaseReviews: [result.review, ...remaining] }
     })
+    return result
+  }
+
+  const importAtsCsvCandidates = async () => {
+    const result = await window.sesAgent.importAtsCsvCandidates()
+    if (!result.cancelled && result.rowCount > 0) {
+      const refreshed = await window.sesAgent.getBootstrap()
+      setBootstrap(refreshed)
+    }
     return result
   }
 
@@ -798,6 +851,13 @@ export function App() {
     setActiveView('case-import')
   }
 
+  const openCases = () => {
+    setGovernanceOpen(false)
+    setSelectedTask(null)
+    setRequestedJobCaseReviewId(null)
+    setActiveView('cases')
+  }
+
   const openMatching = () => {
     setGovernanceOpen(false)
     setSelectedTask(null)
@@ -815,8 +875,11 @@ export function App() {
   const openAgentSystemAccess = (access: AgentSystemAccessBlock) => {
     setGovernanceOpen(false)
     setSelectedTask(null)
-    setAgentContextAccess(access)
+    setAgentContextTrail((trail) => pushContextAccess(trail, access))
   }
+  const agentContextBack = agentContextTrail.length > 1
+    ? () => setAgentContextTrail((trail) => trail.slice(0, -1))
+    : undefined
 
   const openAgentCandidateAccess = (
     sourceDocumentId: string,
@@ -1104,6 +1167,7 @@ export function App() {
     initialInterviewId={detail.interviewId ?? null}
     interviewKind={detail.interviewKind ?? (detail.scope === 'client' ? 'client' : 'recruiting')}
     interviews={bootstrap.candidateInterviews}
+    matchingHome={bootstrap.matchingHome}
     tasks={bootstrap.tasks}
     onBackToQueue={showBackToQueue ? () => setCandidateWorkspaceDetail(null) : undefined}
     onConfirmCandidateProfile={submitCandidateReview}
@@ -1172,11 +1236,14 @@ export function App() {
     <UiLocaleProvider locale={locale}>
       <div className={agentPrimary ? 'app-shell is-agent-primary' : 'app-shell'}>
       {agentPrimary ? <AgentSystemRail
-        onAgent={() => setActiveView('agent')}
-        onCandidates={() => openAgentSystemAccess({ type: 'system-access', destination: 'candidate-management' })}
-        onCases={() => openAgentSystemAccess({ type: 'system-access', destination: 'job-cases' })}
-        onInterviews={() => openAgentSystemAccess({ type: 'system-access', destination: 'interview-schedule' })}
-        onReviews={() => openAgentSystemAccess({ type: 'system-access', destination: 'review-center' })}
+        onAgent={() => {
+          setAgentContextTrail([])
+          setActiveView('agent')
+        }}
+        onCandidates={openCandidateManagement}
+        onCases={openCases}
+        onInterviews={openInterviewSchedule}
+        onReviews={openReviewCenter}
         onSettings={() => openApplicationSettings('general')}
       /> : <Sidebar
         active={activeView}
@@ -1205,11 +1272,7 @@ export function App() {
         onEntryPrep={openEntryPrep}
         onInterviewSchedule={openInterviewSchedule}
         onInterviewWorkbench={openInterviewWorkbench}
-        onCases={() => {
-          setGovernanceOpen(false)
-          setSelectedTask(null)
-          setActiveView('cases')
-        }}
+        onCases={openCases}
         onCaseImport={openCaseImport}
         onGovernance={() => {
           setSelectedTask(null)
@@ -1316,6 +1379,8 @@ export function App() {
         />
       ) : activeView === 'case-import' ? (
         <JobCaseInbox
+          fieldAliases={bootstrap.jobCaseFieldAliases}
+          onSaveFieldAliases={saveJobCaseFieldAliases}
           gmailConnected={bootstrap.gmail.status === 'readonly'}
           gmailImportNotice={gmailImportNotice}
           gmailSetupRequired={bootstrap.gmail.configuration === 'required' || bootstrap.gmailSync.configuration === 'required'}
@@ -1331,6 +1396,7 @@ export function App() {
           onImportEml={importEmlJobCaseDrafts}
           onImportGmail={importGmailFromComposer}
           onLoadHistory={(reviewId) => window.sesAgent.getJobCaseHistory(reviewId)}
+          onLoadSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
           onOpenExternalSettings={() => openApplicationSettings('integrations')}
           onOpenLibrary={(reviewId) => {
             setRequestedJobCaseReviewId(reviewId ?? null)
@@ -1346,6 +1412,8 @@ export function App() {
         />
       ) : activeView === 'cases' ? (
         <JobCaseInbox
+          fieldAliases={bootstrap.jobCaseFieldAliases}
+          onSaveFieldAliases={saveJobCaseFieldAliases}
           gmailImportNotice={gmailImportNotice}
           manualCreateRequestId={manualCaseRequestId}
           onDelete={deleteJobCaseData}
@@ -1361,6 +1429,7 @@ export function App() {
             setActiveView('cases')
           }}
           onLoadHistory={(reviewId) => window.sesAgent.getJobCaseHistory(reviewId)}
+          onLoadSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
           onPreviewDeletion={(reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId)}
           onReopen={reopenJobCaseReview}
           onSetLifecycle={setJobCaseLifecycle}
@@ -1373,39 +1442,53 @@ export function App() {
         <AgentWorkspace
           activeSystemAccess={agentContextAccess}
           cloudConnected={bootstrap.aiCommerce.connection === 'connected'}
+          composerDraft={agentComposerDraft}
           contextPanel={agentContextAccess
             ? agentContextAccess.destination === 'interview-schedule'
               ? <AgentInterviewSchedulePanel
                   access={agentContextAccess}
                   interviews={bootstrap.candidateInterviews}
-                  onClose={() => setAgentContextAccess(null)}
+                  onBack={agentContextBack}
+                  onClose={() => setAgentContextTrail([])}
                   onSave={saveCandidateInterviewSchedule}
                   reviews={bootstrap.candidateReviews}
                 />
               : <AgentBusinessWorkspacePanel
                   access={agentContextAccess}
+                  broadcastActions={broadcastActions}
                   candidateReviews={bootstrap.candidateReviews}
                   interviews={bootstrap.candidateInterviews}
                   jobCaseReviews={bootstrap.jobCaseReviews}
                   matchingHome={bootstrap.matchingHome}
-                  onClose={() => setAgentContextAccess(null)}
+                  onBack={agentContextBack}
+                  onClose={() => setAgentContextTrail([])}
                   onCreateManualCase={createManualJobCaseDraft}
+                  onLoadJobCaseSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
                   onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
                   onOpenAccess={openAgentSystemAccess}
                   onResolveActionApproval={resolveActionApproval}
+                  onReopenJobCaseReview={reopenJobCaseReview}
+                  onSetJobCaseLifecycle={setJobCaseLifecycle}
+                  onSubmitJobCaseReview={submitJobCaseReview}
                   reviewQueue={reviewQueue}
                   tasks={bootstrap.tasks}
                 />
             : null}
           contextPanelLabel={locale === 'zh-CN' ? '业务工作区' : '業務ワークスペース'}
           defaultModelKey={bootstrap.defaultAgentChatModelKey}
+          jobCaseReviews={bootstrap.jobCaseReviews}
           models={bootstrap.agentChatModels}
+          onComposerDraftChange={setAgentComposerDraft}
+          onDeleteJobCase={deleteJobCaseData}
+          onPreviewJobCaseDeletion={(reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId)}
           onConnectCloud={() => setAiCommerceOpen(true)}
-          onCloseContextPanel={() => setAgentContextAccess(null)}
+          onCloseContextPanel={() => setAgentContextTrail([])}
+          onImportAtsCsv={importAtsCsvCandidates}
           onImportResume={(conversationId) => startResumeImport(conversationId)}
           onOpenCandidate={openAgentCandidateAccess}
           onOpenCandidatePool={() => openAgentSystemAccess({ type: 'system-access', destination: 'candidate-management' })}
           onOpenCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
+          onOpenBroadcast={() => openAgentSystemAccess({ type: 'system-access', destination: 'broadcast' })}
           onOpenCases={() => openAgentSystemAccess({ type: 'system-access', destination: 'job-cases' })}
           onOpenGovernance={() => setGovernanceOpen(true)}
           onOpenMatching={(jobCaseId) => openAgentSystemAccess({ type: 'system-access', destination: 'matching', jobCaseId })}
@@ -1643,7 +1726,10 @@ export function App() {
       {applicationSettingsOpen ? (
         <ApplicationSettingsDialog
           bootstrap={bootstrap}
+          broadcastActions={broadcastActions}
           initialSection={applicationSettingsSection}
+          fieldAliases={bootstrap.jobCaseFieldAliases}
+          onSaveFieldAliases={saveJobCaseFieldAliases}
           onConnectGoogleWorkspace={connectGoogleWorkspace}
           onClose={() => setApplicationSettingsOpen(false)}
           onDisconnectGoogleWorkspace={disconnectGoogleWorkspace}

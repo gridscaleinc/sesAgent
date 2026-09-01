@@ -60,6 +60,22 @@ describe('local redaction and DLP', () => {
     expect(result.payload?.content).not.toContain('taro＠example．com')
   })
 
+  it('keeps digit ranges out of the residual postal-code check while a bare postal code still fails closed', () => {
+    const passed = redactTextForCloud(
+      '単価：5500-65000円/h\n案件番号：20250-8251\n精算：140-180h',
+      { sourceVersion: 'case:sha256:digit-ranges', personNameReviewCompleted: true }
+    )
+    expect(passed.session.status).toBe('passed')
+    expect(passed.blockedReasons).toEqual([])
+
+    const blocked = redactTextForCloud(
+      '勤務地：150-0001 東京都渋谷区',
+      { sourceVersion: 'case:sha256:bare-postal', personNameReviewCompleted: true }
+    )
+    expect(blocked.session.status).toBe('failed')
+    expect(blocked.blockedReasons).toContain('residual:postal_address')
+  })
+
   it('removes nationality, residence status and work authorization before any cloud payload', () => {
     const result = redactTextForCloud(
       '国籍: 日本\n在留資格: 技術・人文知識・国際業務\n就労資格: 就労制限なし\nスキル: Java',

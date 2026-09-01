@@ -27,6 +27,8 @@ const quickActions = [
 ]
 
 const initialInstruction = 'Java経験5年以上、AWS、8月稼働、週3日リモート可の候補者を探したい'
+/** The instruction this composer writes for a chosen case; only such text is rewritten when the case changes. */
+const generatedMatchingInstructionPattern = /^案件「.*」に合う候補者を根拠付きで比較したい$/u
 const initialInstructionZh = translateUiText('zh-CN', initialInstruction)
 
 export function TaskComposer({
@@ -70,6 +72,24 @@ export function TaskComposer({
         : current
     )
   }, [defaultInstruction, mode, t])
+
+  // The page stays mounted while the operator opens matching for another
+  // case, so the case it asks for arrives as a prop change, not a mount.
+  // Follow it: select that case, and rewrite the instruction only while it
+  // is still the generated one, never text the operator typed.
+  useEffect(() => {
+    if (mode !== 'matching' || !initialJobCaseId) return
+    const next = jobCases.find((jobCase) => jobCase.id === initialJobCaseId)
+    if (!next) return
+    setSelectedJobCaseId((current) => {
+      if (current === next.id) return current
+      setInstruction((text) => generatedMatchingInstructionPattern.test(text) || text.trim() === ''
+        ? `案件「${next.title}」に合う候補者を根拠付きで比較したい`
+        : text)
+      setPreview(null)
+      return next.id
+    })
+  }, [initialJobCaseId, jobCases, mode])
 
   const fileTokens: string[] = []
   const selectedJobCase = jobCases.find((jobCase) => jobCase.id === selectedJobCaseId) ?? null

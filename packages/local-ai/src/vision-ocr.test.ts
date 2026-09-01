@@ -111,6 +111,37 @@ describe('collectLocalPersonNameCandidates', () => {
     )
 
     expect(candidates).toEqual(expect.arrayContaining(['Tim Cook', 'Yamada Taro', '山田 太郎', '佐藤', '鈴木一郎']))
+    // A labeled name followed by a list is still the name alone.
+    expect(collectLocalPersonNameCandidates('担当：高橋健、Java 経験者（東京）')).toEqual(['高橋健'])
+  })
+
+  it('does not let the tagger turn a technology into a person', () => {
+    const line = '案件2️⃣：COBOL／Java｜AWS（Aurora）、Shell、JCL、常駐、日本語流暢\nPerl／Ruby、Jenkins 経験\n担当：Tim Cook'
+    const appleResult = nameDetectionResultSchema.parse({
+      version: 'apple-nl-ner-v1',
+      engine: 'apple-natural-language',
+      networkAccess: false,
+      requiresHumanConfirmation: true,
+      entities: [
+        { text: 'Aurora', startUtf16: 20, endUtf16: 26, tag: 'personalName' },
+        { text: 'Ruby', startUtf16: 48, endUtf16: 52, tag: 'personalName' },
+        { text: 'Jenkins', startUtf16: 54, endUtf16: 61, tag: 'personalName' },
+        // A single Latin word written like a technology - Shell／Bash - but unknown to the list.
+        { text: 'Zorp', startUtf16: 0, endUtf16: 4, tag: 'personalName' },
+        { text: 'Tim Cook', startUtf16: 70, endUtf16: 78, tag: 'personalName' }
+      ]
+    })
+    expect(collectLocalPersonNameCandidates(`${line}\nZorp／Bash`, appleResult)).toEqual(['Tim Cook'])
+    // Listed between other technologies - the Spark-next-to-Scala shape - even when unknown to the list.
+    expect(collectLocalPersonNameCandidates('③ 9月〜長期、SE 2名、英語、日本語、Zorp，Spark，現場常駐。', nameDetectionResultSchema.parse({
+      version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false, requiresHumanConfirmation: true,
+      entities: [{ text: 'Zorp', startUtf16: 18, endUtf16: 22, tag: 'personalName' }]
+    }))).toEqual([])
+    // The same single word stays a name when nothing marks it as a technology.
+    expect(collectLocalPersonNameCandidates('担当は Zorp です', nameDetectionResultSchema.parse({
+      version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false, requiresHumanConfirmation: true,
+      entities: [{ text: 'Zorp', startUtf16: 4, endUtf16: 8, tag: 'personalName' }]
+    }))).toEqual(['Zorp'])
   })
 
   it('does not treat common two-column SES headings or role descriptions as person names', () => {

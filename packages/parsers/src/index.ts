@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { stagedLocalFileSchema } from '@shared'
-import type { StagedLocalFile, SupportedResumeFormat } from '@shared/contracts'
+import type { CandidateSourceFormat, StagedLocalFile } from '@shared/contracts'
 import type { EmlFileManifest, ParsedEmlMessage, EmlParserError } from '@mail'
 
 export const documentIrVersion = 'document-ir-v1' as const
@@ -47,7 +47,7 @@ export interface DocumentIR {
   documentId: string
   source: {
     name: string
-    format: SupportedResumeFormat
+    format: CandidateSourceFormat
     sha256: string
     size: number
   }
@@ -90,7 +90,7 @@ export const documentIrSchema: z.ZodType<DocumentIR> = z.object({
   documentId: z.string().uuid(),
   source: z.object({
     name: z.string().min(1).max(180),
-    format: z.enum(['pdf', 'docx', 'xlsx', 'xls', 'xlsb']),
+    format: z.enum(['pdf', 'docx', 'xlsx', 'xls', 'xlsb', 'txt']),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
     size: z.number().int().positive().max(25 * 1024 * 1024)
   }),

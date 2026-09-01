@@ -3,6 +3,8 @@ import { app } from 'electron'
 import { gmailSyncConfigurationSchema, type GmailSyncConfiguration } from '@mail'
 import { EncryptedApplicationRepository } from '@persistence'
 import {
+  type JobCaseFieldAliases,
+  jobCaseFieldAliasesSchema,
   googleWorkspaceAdminConfigurationSchema,
   localApplicationPreferencesSchema,
   localOperatorProfileSchema,
@@ -51,6 +53,19 @@ const unconfiguredApplicationPreferences = localApplicationPreferencesSchema.par
 
 export function effectiveApplicationPreferences(repository: EncryptedApplicationRepository): LocalApplicationPreferences {
   return repository.getLocalApplicationPreferences() ?? unconfiguredApplicationPreferences
+}
+
+const unconfiguredJobCaseFieldAliases: JobCaseFieldAliases = jobCaseFieldAliasesSchema.parse({
+  version: 'job-case-field-aliases-v1',
+  aliases: {},
+  configured: false,
+  revision: null,
+  updatedAt: null
+})
+
+/** The operator's job-case field aliases, or the empty default before any were saved. */
+export function effectiveJobCaseFieldAliases(repository: EncryptedApplicationRepository): JobCaseFieldAliases {
+  return repository.getJobCaseFieldAliases() ?? unconfiguredJobCaseFieldAliases
 }
 
 export function unconfiguredAiCommerceState(): AiCommerceMembershipState {

@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type {
+  SaveJobCaseFieldAliasesInput,
+  JobCaseFieldAliases,
   CreateChatPasteJobCaseDraftInput,
   CreateChatPasteJobCaseDraftResult,
   CreateManualJobCaseDraftInput,
@@ -9,6 +11,7 @@ import type {
   JobCaseFieldKey,
   JobCaseDeletionPreview,
   JobCaseReviewSnapshot,
+  JobCaseSourceText,
   JobCaseVersionDetail,
   ImportEmlJobCaseDraftsResult,
   ExecuteWechatVisibleReadResult,
@@ -20,7 +23,9 @@ import type {
   SubmitJobCaseReviewResult,
   WechatVisibleMessageFeasibility
 } from '@shared'
+import { jobCaseFieldCanonicalLabels, normalizeJobCaseFieldLabel } from '@shared'
 import { Icon } from './Icon'
+import { JobCaseSourceTextSection } from './JobCaseSourceTextSection'
 import { useRendererUiRefresh, useUiLocale } from '../i18n'
 
 interface JobCaseInboxProps {
@@ -39,6 +44,7 @@ interface JobCaseInboxProps {
   onOpenExternalSettings?(): void
   onOpenLibrary?(reviewId?: string): void
   onLoadHistory(reviewId: string): Promise<JobCaseVersionDetail[]>
+  onLoadSourceText?(reviewId: string): Promise<JobCaseSourceText>
   onSetLifecycle(input: SetJobCaseLifecycleInput): Promise<SetJobCaseLifecycleResult>
   onReopen(input: ReopenJobCaseReviewInput): Promise<ReopenJobCaseReviewResult>
   onPreviewDeletion(reviewId: string): Promise<JobCaseDeletionPreview>
@@ -48,6 +54,54 @@ interface JobCaseInboxProps {
   onSelectedReviewRequestHandled?(): void
   onSubmit(input: SubmitJobCaseReviewInput): Promise<SubmitJobCaseReviewResult>
   wechatVisibleMessage?: WechatVisibleMessageFeasibility
+  /** Operator aliases; a confirmed value written under an unknown label can become one. */
+  fieldAliases?: JobCaseFieldAliases
+  onSaveFieldAliases?(input: SaveJobCaseFieldAliasesInput): Promise<JobCaseFieldAliases>
+}
+
+interface AliasSuggestion {
+  key: JobCaseFieldKey
+  label: string
+}
+
+const aliasCandidateLinePattern = /^[\s　■●▼▲★◆◇□○◎・*【[（(]*([^:：\n]{1,24}?)[\s　】\]）)]*[:：]\s*(.+?)\s*$/u
+
+function comparableValue(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/gu, ' ').trim()
+}
+
+/**
+ * Learns aliases from what the operator just did: when a confirmed value was
+ * typed in by hand and the redacted source carries that exact value under a
+ * label the extractor did not recognise, that label is a candidate alias for
+ * the field. Nothing is saved without the operator accepting it.
+ */
+function aliasSuggestionsFrom(
+  review: JobCaseReviewSnapshot,
+  values: Record<JobCaseFieldKey, string>,
+  changedKeys: ReadonlySet<JobCaseFieldKey>,
+  aliases: JobCaseFieldAliases | undefined
+): AliasSuggestion[] {
+  const lines = review.redactedPreview.split(/\r?\n/u)
+  const knownLabels = new Set(Object.values(jobCaseFieldCanonicalLabels).map(normalizeJobCaseFieldLabel))
+  const suggestions: AliasSuggestion[] = []
+  for (const key of changedKeys) {
+    const typed = comparableValue(values[key] ?? '')
+    if (!typed) continue
+    for (const line of lines) {
+      const match = aliasCandidateLinePattern.exec(line)
+      if (!match || comparableValue(match[2]!) !== typed) continue
+      const label = match[1]!.trim()
+      const normalized = normalizeJobCaseFieldLabel(label)
+      if (!normalized || knownLabels.has(normalized)) continue
+      if ((aliases?.aliases[key] ?? []).some((alias) => normalizeJobCaseFieldLabel(alias) === normalized)) continue
+      if (!suggestions.some((item) => item.key === key && normalizeJobCaseFieldLabel(item.label) === normalized)) {
+        suggestions.push({ key, label })
+      }
+      break
+    }
+  }
+  return suggestions
 }
 
 export interface GmailImportNotice {
@@ -76,6 +130,7 @@ function warningLabel(code: string): string {
   if (code === 'SOURCE_CONTAINS_PII_PLACEHOLDERS') return 'PII置換済み'
   if (code === 'ATTACHMENTS_NOT_DOWNLOADED') return '添付未取得'
   if (code === 'REQUIRED_SKILLS_MISSING') return '必須スキル未抽出'
+  if (code === 'AGE_LIMIT_REQUIRES_REVIEW') return '年齢条件は要確認'
   if (code === 'DETERMINISTIC_EXTRACTION_REQUIRES_REVIEW') return '人の確認必須'
   if (code === 'MANUAL_SOURCE_LOCAL_REDACTION') return '手動入力・ローカル脱敏'
   if (code === 'EML_SOURCE_LOCAL_PARSE') return 'EML・隔離解析済み'
@@ -130,11 +185,17 @@ function emlErrorLabel(code: NonNullable<ImportEmlJobCaseDraftsResult['items'][n
 function JobCaseReviewEditor({
   onManage,
   review,
-  onSubmit
+  onSubmit,
+  fieldAliases,
+  onAliasSuggestions,
+  onLoadSourceText
 }: {
   review: JobCaseReviewSnapshot
   onManage(): void
   onSubmit(input: SubmitJobCaseReviewInput): Promise<SubmitJobCaseReviewResult>
+  fieldAliases?: JobCaseFieldAliases
+  onAliasSuggestions?(suggestions: AliasSuggestion[]): void
+  onLoadSourceText?(reviewId: string): Promise<JobCaseSourceText>
 }) {
   const locale = useUiLocale()
   const [values, setValues] = useState<Record<JobCaseFieldKey, string>>(() =>
@@ -169,6 +230,7 @@ function JobCaseReviewEditor({
             </div>
           ))}
         </div>
+        {onLoadSourceText ? <JobCaseSourceTextSection onLoad={onLoadSourceText} review={review} /> : null}
       </section>
     )
   }
@@ -197,6 +259,8 @@ function JobCaseReviewEditor({
           ...(changedKeys.has(field.key) ? { changeReason: reasons[field.key]?.trim() } : {})
         }))
       })
+      const suggestions = aliasSuggestionsFrom(review, values, changedKeys, fieldAliases)
+      if (suggestions.length > 0) onAliasSuggestions?.(suggestions)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '案件を確定できませんでした。')
     } finally {
@@ -219,7 +283,10 @@ function JobCaseReviewEditor({
           <h2>{review.redactedSubject}</h2>
           <p>{sourceOrigin(review)} · {displayDate(review.messageDate, locale)}</p>
         </div>
-        <button className="job-case-confirm-high" onClick={confirmHighConfidence} type="button">高信頼を確認</button>
+        <div className="job-case-detail-actions">
+          <button className="job-case-confirm-high" onClick={confirmHighConfidence} type="button">高信頼を確認</button>
+          <button onClick={onManage} type="button">履歴・管理</button>
+        </div>
       </header>
 
       <div className="job-case-privacy-banner">
@@ -436,19 +503,21 @@ function JobCaseManagement({
           ))}
         </section>
 
-        <section className="job-case-management-actions">
-          <div className="job-case-management-section-title"><h3>ライフサイクルと改訂</h3><span>{review.lifecycle === 'archived' ? 'ARCHIVED' : 'ACTIVE'}</span></div>
-          <p>{review.lifecycle === 'archived' ? '復元すると案件を再び利用でき、改訂も開始できます。' : '改訂は現在値を引き継ぎ、再度13項目とプライバシー確認を要求します。'}</p>
-          <input aria-label="案件管理の理由" maxLength={300} onChange={(event) => setReason(event.target.value)} placeholder="状態変更・改訂の理由（必須）" value={reason} />
-          <div>
-            <button disabled={reason.trim().length < 3 || action !== 'idle'} onClick={() => void changeLifecycle()} type="button">
-              {action === 'lifecycle' ? '更新中…' : review.lifecycle === 'archived' ? '案件を復元' : '案件をアーカイブ'}
-            </button>
-            {review.lifecycle === 'active' ? (
-              <button disabled={reason.trim().length < 3 || action !== 'idle'} onClick={() => void reopen()} type="button">{action === 'reopen' ? '準備中…' : '改訂レビューを開始'}</button>
-            ) : null}
-          </div>
-        </section>
+        {review.status === 'completed' ? (
+          <section className="job-case-management-actions">
+            <div className="job-case-management-section-title"><h3>ライフサイクルと改訂</h3><span>{review.lifecycle === 'archived' ? 'ARCHIVED' : 'ACTIVE'}</span></div>
+            <p>{review.lifecycle === 'archived' ? '復元すると案件を再び利用でき、改訂も開始できます。' : '改訂は現在値を引き継ぎ、再度13項目とプライバシー確認を要求します。'}</p>
+            <input aria-label="案件管理の理由" maxLength={300} onChange={(event) => setReason(event.target.value)} placeholder="状態変更・改訂の理由（必須）" value={reason} />
+            <div>
+              <button disabled={reason.trim().length < 3 || action !== 'idle'} onClick={() => void changeLifecycle()} type="button">
+                {action === 'lifecycle' ? '更新中…' : review.lifecycle === 'archived' ? '案件を復元' : '案件をアーカイブ'}
+              </button>
+              {review.lifecycle === 'active' ? (
+                <button disabled={reason.trim().length < 3 || action !== 'idle'} onClick={() => void reopen()} type="button">{action === 'reopen' ? '準備中…' : '改訂レビューを開始'}</button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
 
         <section className="job-case-management-delete">
           <h3>案件データを永久削除</h3>
@@ -475,6 +544,130 @@ function JobCaseManagement({
             </div>
           )}
           {actionError ? <p className="job-case-management-error" role="alert">{actionError}</p> : null}
+        </section>
+      </aside>
+    </div>
+  )
+}
+
+interface BulkDeletionSummary {
+  deleted: number
+  failures: Array<{ title: string; message: string }>
+  backupsExpiredPending: boolean
+}
+
+/**
+ * Deletes every case the way one case is deleted: the same impact preview,
+ * the same typed confirmation, the same governed deletion per case. The
+ * previews shown are an aggregate; each case is previewed again right before
+ * its own deletion so the confirmation hash is current.
+ */
+function BulkJobCaseDeletion({
+  reviews,
+  onClose,
+  onPreviewDeletion,
+  onDelete,
+  onFinished
+}: {
+  reviews: JobCaseReviewSnapshot[]
+  onClose(): void
+  onPreviewDeletion(reviewId: string): Promise<JobCaseDeletionPreview>
+  onDelete(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
+  onFinished(summary: BulkDeletionSummary): void
+}) {
+  const locale = useUiLocale()
+  // The list shrinks as cases go; the targets are fixed when the dialog opens.
+  const [targets] = useState(() => reviews)
+  const [previews, setPreviews] = useState<JobCaseDeletionPreview[] | null>(null)
+  const [previewErrors, setPreviewErrors] = useState<string[]>([])
+  const [confirmation, setConfirmation] = useState('')
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void Promise.allSettled(targets.map((review) => onPreviewDeletion(review.reviewId))).then((results) => {
+      if (!active) return
+      setPreviews(results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []))
+      setPreviewErrors(results.flatMap((result) => result.status === 'rejected'
+        ? [result.reason instanceof Error ? result.reason.message : '削除影響を確認できませんでした。']
+        : []))
+    })
+    return () => { active = false }
+  }, [onPreviewDeletion, targets])
+
+  const totals = previews?.reduce((sum, preview) => ({
+    caseVersions: sum.caseVersions + preview.counts.caseVersions,
+    reviewAudits: sum.reviewAudits + preview.counts.reviewAudits,
+    taskRecords: sum.taskRecords + preview.counts.taskRecords,
+    proposalDrafts: sum.proposalDrafts + preview.counts.proposalDrafts,
+    evaluationDraftCases: sum.evaluationDraftCases + preview.counts.evaluationDraftCases,
+    piiMappings: sum.piiMappings + preview.counts.piiMappings,
+    sourceRecords: sum.sourceRecords + preview.counts.sourceRecords,
+    gmailMessages: sum.gmailMessages + preview.counts.gmailMessages,
+    conversations: sum.conversations + (preview.counts.agentReferences?.conversations ?? 0),
+    messages: sum.messages + (preview.counts.agentReferences?.messages ?? 0)
+  }), { caseVersions: 0, reviewAudits: 0, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 0, sourceRecords: 0, gmailMessages: 0, conversations: 0, messages: 0 }) ?? null
+  const confirmed = confirmation === (locale === 'zh-CN' ? '删除' : '削除')
+
+  const deleteAll = async () => {
+    if (!previews || previews.length === 0 || !confirmed || progress) return
+    setProgress({ done: 0, total: previews.length })
+    let deleted = 0
+    let backupsExpiredPending = false
+    const failures: BulkDeletionSummary['failures'] = []
+    for (const [index, shown] of previews.entries()) {
+      try {
+        const fresh = await onPreviewDeletion(shown.reviewId)
+        const result = await onDelete({ reviewId: fresh.reviewId, confirmationHash: fresh.confirmationHash, confirmationText: '削除' })
+        deleted += 1
+        if (result.report.components.backups === 'expired_pending') backupsExpiredPending = true
+      } catch (cause) {
+        failures.push({ title: shown.title, message: cause instanceof Error ? cause.message : '案件データを削除できませんでした。' })
+      }
+      setProgress({ done: index + 1, total: previews.length })
+    }
+    onFinished({ deleted, failures, backupsExpiredPending })
+  }
+
+  return (
+    <div className="job-case-management-backdrop">
+      <aside aria-label="すべての案件データを永久削除" aria-modal="true" className="job-case-management is-bulk-delete" role="dialog">
+        <header>
+          <div>
+            <span className="eyebrow">JOB CASE GOVERNANCE</span>
+            <h2>すべての案件データを永久削除</h2>
+            <p>{targets.length}件の案件 · 直接識別子なし</p>
+          </div>
+          <button aria-label="全案件削除を閉じる" disabled={progress !== null} onClick={onClose} type="button">×</button>
+        </header>
+        <section className="job-case-management-delete">
+          <p>各案件の全バージョン、脱敏済みソース、監査記録、PII対応表と直接関連するタスクを、1件ずつ同じ削除手順で削除します。Gmailソースは再同期防止の墓碑だけを残します。この操作は取り消せません。</p>
+          {!previews ? <div className="job-case-management-state"><span className="matching-spinner" />削除影響を集計中…</div> : (
+            <div className="job-case-deletion-preview">
+              <ul className="job-case-bulk-targets">
+                {previews.map((preview) => <li key={preview.reviewId}>{preview.title}</li>)}
+              </ul>
+              {totals ? (
+                <ul>
+                  <li>JobCase {totals.caseVersions}バージョン</li>
+                  <li>監査記録 {totals.reviewAudits}件</li>
+                  <li>関連タスク {totals.taskRecords}件</li>
+                  <li>提案草稿 {totals.proposalDrafts}件</li>
+                  <li>品質評価草稿 {totals.evaluationDraftCases}件</li>
+                  <li>PII対応表 {totals.piiMappings}件</li>
+                  <li>脱敏済みソース {totals.sourceRecords}件</li>
+                  <li>Gmailローカルコピー {totals.gmailMessages}件</li>
+                  <li>Agent履歴参照 {totals.conversations}会話 / {totals.messages}メッセージ</li>
+                </ul>
+              ) : null}
+              {previewErrors.map((message, index) => <p className="job-case-management-error" key={`${index}-${message}`} role="alert">{message}</p>)}
+              <p>続行するには「削除」と入力してください。</p>
+              <input aria-label="全案件削除確認" disabled={progress !== null} onChange={(event) => setConfirmation(event.target.value)} value={confirmation} />
+              <button disabled={!confirmed || previews.length === 0 || progress !== null} onClick={() => void deleteAll()} type="button">
+                {progress ? `削除中… ${progress.done} / ${progress.total}` : '完全に削除'}
+              </button>
+            </div>
+          )}
         </section>
       </aside>
     </div>
@@ -600,6 +793,7 @@ export function JobCaseInbox({
   onManualCreateRequestHandled,
   onSelectedReviewRequestHandled,
   onLoadHistory,
+  onLoadSourceText,
   onImportEml,
   onImportGmail,
   onOpenExternalSettings,
@@ -615,11 +809,36 @@ export function JobCaseInbox({
     userFeatureAvailable: false, accessibilityTrusted: false, screenCaptureTrusted: false,
     rawTextNetworkIsolationVerified: false, evidenceVerified: false, targetVersion: null,
     failureCodes: ['EVIDENCE_UNAVAILABLE']
-  }
+  },
+  fieldAliases,
+  onSaveFieldAliases
 }: JobCaseInboxProps) {
   useRendererUiRefresh()
   const locale = useUiLocale()
   const [filter, setFilter] = useState<'all' | 'awaiting-review' | 'completed'>('all')
+  const [aliasSuggestions, setAliasSuggestions] = useState<AliasSuggestion[]>([])
+  const [aliasBusy, setAliasBusy] = useState(false)
+  const [aliasError, setAliasError] = useState<string | null>(null)
+  const dismissAliasSuggestion = (suggestion: AliasSuggestion) => {
+    setAliasSuggestions((current) => current.filter((item) => item !== suggestion))
+  }
+  const acceptAliasSuggestion = async (suggestion: AliasSuggestion) => {
+    if (!onSaveFieldAliases || aliasBusy) return
+    setAliasBusy(true)
+    setAliasError(null)
+    try {
+      const current = fieldAliases?.aliases ?? {}
+      await onSaveFieldAliases({
+        aliases: { ...current, [suggestion.key]: [...(current[suggestion.key] ?? []), suggestion.label] },
+        expectedRevision: fieldAliases?.revision ?? null
+      })
+      dismissAliasSuggestion(suggestion)
+    } catch (cause) {
+      setAliasError(cause instanceof Error ? cause.message : '別名を保存できませんでした。')
+    } finally {
+      setAliasBusy(false)
+    }
+  }
   const [lifecycleView, setLifecycleView] = useState<'active' | 'archived'>('active')
   const [manualOpen, setManualOpen] = useState(false)
   const [chatPasteOpen, setChatPasteOpen] = useState(false)
@@ -633,6 +852,8 @@ export function JobCaseInbox({
   const [wechatEvidence, setWechatEvidence] = useState<ExecuteWechatVisibleReadResult['evidence'] | null>(null)
   const [managingReviewId, setManagingReviewId] = useState<string | null>(null)
   const [deletionReport, setDeletionReport] = useState<DeleteJobCaseDataResult['report'] | null>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeletionSummary, setBulkDeletionSummary] = useState<BulkDeletionSummary | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     reviews.find((review) => review.lifecycle === 'active' && review.status === 'awaiting-review')?.reviewId
       ?? reviews.find((review) => review.lifecycle === 'active')?.reviewId
@@ -748,6 +969,7 @@ export function JobCaseInbox({
           {mode === 'library' ? <div className="job-case-source-actions">
             <button disabled={emlImporting} onClick={() => void importEml()} type="button"><Icon name="mail" size={14} />{emlImporting ? 'ローカル解析中…' : 'EMLを取り込む'}</button>
             <button onClick={() => setManualOpen(true)} type="button"><Icon name="plus" size={14} />案件を手動追加</button>
+            <button className="is-danger" disabled={reviews.length === 0} onClick={() => setBulkDeleteOpen(true)} type="button"><Icon name="alert" size={14} />全案件を削除</button>
           </div> : null}
           <div className="job-case-page-stats">
             <div><strong>{awaitingCount}</strong><span>確認待ち</span></div>
@@ -902,9 +1124,28 @@ export function JobCaseInbox({
             </div>
           </aside>
           <section className="job-case-editor-panel">
+            {aliasSuggestions.length > 0 && onSaveFieldAliases ? (
+              <div className="job-case-alias-suggestions" role="status">
+                <strong>確定した値のラベルを別名として登録できます</strong>
+                <p>登録すると、次回からこのラベルは端末内の分類・項目抽出とクラウド抽出指示で既定項目として扱われます。</p>
+                <ul>
+                  {aliasSuggestions.map((suggestion) => (
+                    <li key={`${suggestion.key}-${suggestion.label}`}>
+                      <span>「{suggestion.label}」→ {selected?.fields.find((field) => field.key === suggestion.key)?.label ?? jobCaseFieldCanonicalLabels[suggestion.key]}</span>
+                      <button disabled={aliasBusy} onClick={() => void acceptAliasSuggestion(suggestion)} type="button">別名として保存</button>
+                      <button disabled={aliasBusy} onClick={() => dismissAliasSuggestion(suggestion)} type="button">無視</button>
+                    </li>
+                  ))}
+                </ul>
+                {aliasError ? <p role="alert">{aliasError}</p> : null}
+              </div>
+            ) : null}
             {selected ? (
               <JobCaseReviewEditor
+                fieldAliases={fieldAliases}
                 key={`${selected.reviewId}-${selected.reviewRevision}-${selected.status}`}
+                onAliasSuggestions={setAliasSuggestions}
+                onLoadSourceText={onLoadSourceText}
                 onManage={() => setManagingReviewId(selected.reviewId)}
                 onSubmit={onSubmit}
                 review={selected}
@@ -957,6 +1198,33 @@ export function JobCaseInbox({
           onSetLifecycle={onSetLifecycle}
           review={managingReview}
         />
+      ) : null}
+      {bulkDeleteOpen ? (
+        <BulkJobCaseDeletion
+          onClose={() => setBulkDeleteOpen(false)}
+          onDelete={onDelete}
+          onFinished={(summary) => {
+            setBulkDeletionSummary(summary)
+            setBulkDeleteOpen(false)
+            setManagingReviewId(null)
+            setSelectedId(null)
+          }}
+          onPreviewDeletion={onPreviewDeletion}
+          reviews={reviews}
+        />
+      ) : null}
+      {bulkDeletionSummary ? (
+        <section className="job-case-deletion-report" aria-label="全案件削除レポート">
+          <div><Icon name={bulkDeletionSummary.failures.length === 0 ? 'check' : 'alert'} size={18} /><strong>全案件削除レポート</strong></div>
+          <p>{`${bulkDeletionSummary.deleted}件の案件データを削除しました。`}{bulkDeletionSummary.failures.length > 0 ? `${bulkDeletionSummary.failures.length}件は削除できませんでした。` : ''}</p>
+          {bulkDeletionSummary.failures.length > 0 ? (
+            <ul>{bulkDeletionSummary.failures.map((failure) => <li key={`${failure.title}-${failure.message}`}>{failure.title}：{failure.message}</li>)}</ul>
+          ) : null}
+          {bulkDeletionSummary.backupsExpiredPending ? (
+            <p>以前の復元パッケージには削除前データが残る可能性があります。新しいバックアップを作成し、旧パッケージを安全に廃棄してください。</p>
+          ) : null}
+          <button aria-label="全案件削除レポートを閉じる" onClick={() => setBulkDeletionSummary(null)} type="button">×</button>
+        </section>
       ) : null}
       {deletionReport ? (
         <section className="job-case-deletion-report" aria-label="案件削除レポート">

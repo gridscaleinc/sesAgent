@@ -10,6 +10,7 @@ import {
   resolveActionApprovalInputSchema
 } from '@shared'
 import {
+  effectiveJobCaseFieldAliases,
   cloudPrivacyGateLoadOptions,
   effectiveApplicationPreferences,
   gmailSyncState,
@@ -51,6 +52,7 @@ export function registerBootstrapHandlers(context: MainIpcContext) {
       environmentLabel: '開発ビルド・暗号化ローカルDB・サンプルデータ',
       operatorProfile: currentOperator(),
       preferences: effectiveApplicationPreferences(repository),
+      jobCaseFieldAliases: effectiveJobCaseFieldAliases(repository),
       featureFlags: { conversationalMatchingEnabled },
       agentChatModels: agentChatModelCatalog.map(({ key, displayName }) => ({ key, displayName })),
       defaultAgentChatModelKey,

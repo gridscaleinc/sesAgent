@@ -13,6 +13,7 @@ import {
   extractCandidateDraft,
   LocalHybridCandidateRetrieval,
   searchConfirmedCandidateProfiles,
+  scorableCandidateSearchTerms,
   type CandidateProfile
 } from './index'
 import type { SesCandidateBenchmark, StagedLocalFile } from '@shared'
@@ -219,6 +220,50 @@ describe('extractCandidateDraft', () => {
     expect(draft.fields.find((item) => item.key === 'availability')?.value).toBe('8月から参画可能')
   })
 
+  it('reads an anonymous chat profile whose labels are padded brackets', () => {
+    // The shape a WeChat broadcast uses for a person with no name: a gender and
+    // age header, then 【…】 labels padded for alignment. The rate is masked in
+    // the broadcast itself (6X), so it stays missing rather than guessed.
+    const profileDocument = (rateLine: string): DocumentIR => {
+      const lines = [
+        '◆️男　37歳／中国籍',
+        '【IT経験】15年',
+        '【日本語】N1流畅 表格3-4',
+        rateLine,
+        '【スキル】Java、Python、C、SQL、AWSなど',
+        '【対応工程】要件定義～',
+        '【アピール】',
+        '・2013年に日本へ転職してからは12年間にわたり、主に銀行系システムにおけるJava開発プロジェクトに携わってまいりました。'
+      ]
+      return {
+        version: 'document-ir-v1',
+        documentId: '0a0b3d0e-4d0f-4a3a-9d5f-2b6f5c9a1e77',
+        source: { name: 'agent-paste-1a2b3c4d.txt', format: 'txt', sha256: 'e'.repeat(64), size: 512 },
+        blocks: lines.map((text, index) => ({
+          id: `L${index + 1}`, kind: 'text' as const, text, source: { paragraph: index + 1 }
+        })),
+        warnings: [],
+        requiresLocalOcr: false,
+        statistics: { pages: 0, sheets: 0, blocks: lines.length, characters: lines.join('\n').length },
+        security: { externalContentLoaded: false, macrosExecuted: false, rawFileCloudEligible: false }
+      }
+    }
+
+    const masked = extractCandidateDraft(profileDocument('【单    金】6X＋税'), new Date('2026-08-26T00:00:00.000Z'))
+    const maskedByKey = new Map(masked.fields.map((field) => [field.key, field.value]))
+    expect(maskedByKey.get('skills')).toContain('Java')
+    expect(maskedByKey.get('skills')).toContain('Python')
+    expect(maskedByKey.get('skills')).toContain('SQL')
+    expect(maskedByKey.get('skills')).toContain('AWS')
+    expect(maskedByKey.get('experience_years')).toBe('15年')
+    expect(maskedByKey.get('japanese_level')).toBe('N1')
+    expect(maskedByKey.get('rate')).toBeNull()
+
+    // The padded 【单    金】 label itself is no obstacle: a stated rate is read.
+    const stated = extractCandidateDraft(profileDocument('【单    金】65万＋税'), new Date('2026-08-26T00:00:00.000Z'))
+    expect(stated.fields.find((field) => field.key === 'rate')?.value).toBe('65万')
+  })
+
   it('extracts spreadsheet project rows with exact source evidence for HR review', () => {
     const document: DocumentIR = {
       version: 'document-ir-v1',
@@ -364,6 +409,30 @@ describe('searchConfirmedCandidateProfiles', () => {
     expect(results[0]?.evidence.map((field) => field.key)).toEqual(['skills', 'availability'])
   })
 
+  it('lets 尚可 terms lift the fit score without gating or ranking on their own', () => {
+    const withoutAws: CandidateProfile = {
+      ...baseProfile,
+      id: '8055be48-a08f-499d-9d82-c95a36018ad9',
+      sourceDocumentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
+      fields: baseProfile.fields.map((field) => field.key === 'skills' ? { ...field, value: 'Java, Spring Boot' } : field)
+    }
+    const results = searchConfirmedCandidateProfiles([withoutAws, baseProfile], 'Java "尚可:AWS" "尚可:Docker"')
+    expect(results.map((result) => result.id)).toEqual([baseProfile.id, withoutAws.id])
+    expect(results[0]).toMatchObject({ matchedTerms: ['Java', '尚可:AWS'] })
+    expect(results[1]).toMatchObject({ matchedTerms: ['Java'] })
+    expect(results[0]!.matchScore!).toBeGreaterThan(results[1]!.matchScore!)
+    // Must-have coverage is unaffected by the plus terms.
+    expect(results[0]?.retrieval.termCoverage).toBe(100)
+    expect(results[0]?.retrieval.hardFilters).toEqual([])
+    // A candidate matching only the nice-to-have term is not a result.
+    const awsOnly: CandidateProfile = {
+      ...baseProfile,
+      id: '9055be48-a08f-499d-9d82-c95a36018ad9',
+      fields: baseProfile.fields.map((field) => field.key === 'skills' ? { ...field, value: 'AWS' } : field)
+    }
+    expect(searchConfirmedCandidateProfiles([awsOnly], 'Python "尚可:AWS"')).toEqual([])
+  })
+
   it('does not confuse Java with JavaScript and supports browsing with an empty query', () => {
     const javascriptProfile: CandidateProfile = {
       ...baseProfile,
@@ -441,6 +510,26 @@ describe('searchConfirmedCandidateProfiles', () => {
     expect(searchConfirmedCandidateProfiles([baseProfile], '7月')).toEqual([])
     expect(searchConfirmedCandidateProfiles([baseProfile], '週4日リモート')).toEqual([])
     expect(searchConfirmedCandidateProfiles([baseProfile], 'N1')).toEqual([])
+  })
+
+  it('treats the words partners use for a Japanese level as the same hard filter as a JLPT grade', () => {
+    // baseProfile holds N2: fluent / business is N2-equivalent, native and N1 are above it.
+    const filterFor = (query: string) => searchConfirmedCandidateProfiles([baseProfile], `Java ${query}`)[0]?.retrieval.hardFilters
+      .find((filter) => filter.type === 'japanese-level') ?? null
+    expect(filterFor('日本語流暢')).toEqual({ type: 'japanese-level', requested: '日本語流暢', actual: 'N2', outcome: 'passed' })
+    expect(filterFor('ビジネスレベル')).toMatchObject({ outcome: 'passed' })
+    expect(filterFor('日本語N3可')).toMatchObject({ requested: '日本語N3可', outcome: 'passed' })
+    expect(filterFor('日常会話レベル')).toMatchObject({ outcome: 'passed' })
+    // Above N2: excluded outright, like N1.
+    expect(searchConfirmedCandidateProfiles([baseProfile], 'Java 日本語ネイティブ')).toEqual([])
+    expect(searchConfirmedCandidateProfiles([baseProfile], 'Java N1以上')).toEqual([])
+    // A bare 日本語 states no level and gates nothing.
+    expect(filterFor('日本語')).toBeNull()
+    // A candidate whose level is only prose is unknown, never passed.
+    const prose = { ...baseProfile, fields: baseProfile.fields.map((field) => field.key === 'japanese_level' ? { ...field, value: '日本語での業務経験あり' } : field) }
+    expect(searchConfirmedCandidateProfiles([prose], 'Java 日本語流暢')[0]?.retrieval.hardFilters.find((filter) => filter.type === 'japanese-level'))
+      .toMatchObject({ outcome: 'unknown' })
+    expect(scorableCandidateSearchTerms('Java 日本語流暢 常駐')).toEqual(['Java'])
   })
 
   it('marks an overlapping desired-rate range unknown so an HR can decide negotiation fit', () => {

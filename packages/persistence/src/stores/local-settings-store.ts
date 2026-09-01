@@ -1,17 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import {
+  jobCaseFieldAliasesSchema,
   localApplicationPreferencesSchema,
   localOperatorProfileSchema,
+  saveJobCaseFieldAliasesInputSchema,
   saveLocalApplicationPreferencesInputSchema,
   saveLocalOperatorProfileInputSchema
 } from '@shared'
 import {
+  type JobCaseFieldAliases,
   type LocalApplicationPreferences,
   type LocalOperatorProfile,
+  type SaveJobCaseFieldAliasesInput,
   type SaveLocalApplicationPreferencesInput,
   type SaveLocalOperatorProfileInput
 } from '@shared/contracts'
-import { type LocalApplicationPreferencesRow, type LocalOperatorProfileRow } from '../rows'
+import { type JobCaseFieldAliasesRow, type LocalApplicationPreferencesRow, type LocalOperatorProfileRow } from '../rows'
 import { DomainStore } from './base'
 
 export class LocalSettingsStore extends DomainStore {
@@ -106,6 +110,49 @@ export class LocalSettingsStore extends DomainStore {
       .run(input.locale, nextRevision, timestamp, timestamp)
     const saved = this.getLocalApplicationPreferences()
     if (!saved) throw new Error('表示設定を再読み込みできませんでした。')
+    return saved
+  }
+
+  getJobCaseFieldAliases(): JobCaseFieldAliases | null {
+    const row = this.database
+      .prepare<[], JobCaseFieldAliasesRow>(
+        'SELECT aliases_json, revision, updated_at FROM job_case_field_aliases WHERE singleton = 1'
+      )
+      .get()
+    if (!row) return null
+    return jobCaseFieldAliasesSchema.parse({
+      version: 'job-case-field-aliases-v1',
+      aliases: JSON.parse(row.aliases_json),
+      configured: true,
+      revision: row.revision,
+      updatedAt: row.updated_at
+    })
+  }
+
+  saveJobCaseFieldAliases(rawInput: SaveJobCaseFieldAliasesInput, now = new Date()): JobCaseFieldAliases {
+    const input = saveJobCaseFieldAliasesInputSchema.parse(rawInput)
+    const current = this.getJobCaseFieldAliases()
+    if ((current && current.revision !== input.expectedRevision) || (!current && input.expectedRevision !== null)) {
+      throw new Error('案件項目の別名が更新されました。再読み込みしてください。')
+    }
+    const timestamp = now.toISOString()
+    const nextRevision = (current?.revision ?? 0) + 1
+    // Empty alias lists are dropped so the stored map only carries real entries.
+    const aliases = Object.fromEntries(
+      Object.entries(input.aliases).filter(([, values]) => Array.isArray(values) && values.length > 0)
+    )
+    this.database
+      .prepare(
+        `INSERT INTO job_case_field_aliases(singleton, aliases_json, revision, created_at, updated_at)
+         VALUES (1, ?, ?, ?, ?)
+         ON CONFLICT(singleton) DO UPDATE SET
+           aliases_json = excluded.aliases_json,
+           revision = excluded.revision,
+           updated_at = excluded.updated_at`
+      )
+      .run(JSON.stringify(aliases), nextRevision, timestamp, timestamp)
+    const saved = this.getJobCaseFieldAliases()
+    if (!saved) throw new Error('案件項目の別名を再読み込みできませんでした。')
     return saved
   }
 }

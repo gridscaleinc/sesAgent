@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkTask } from '@domain'
 import type {
+  MatchingHomeProjection,
   PrepareAiCommerceCloudPromptInput,
   AiCommerceCloudPromptResult,
   AiCommerceMembershipState,
@@ -16,6 +17,7 @@ import type {
 } from '@shared'
 import { Icon } from './Icon'
 import { useRendererUiRefresh, useUiLocale } from '../i18n'
+import { copyTextToClipboard } from '../copy-text'
 import { extractInterviewQuestions } from '../interview-question-parser'
 import { InterviewAiAssistant, type InterviewAssistantSource } from './InterviewAiAssistant'
 import { CandidateReviewPanel } from './CandidateReviewPanel'
@@ -61,6 +63,8 @@ interface CandidatePipelineProps {
   initialInterviewId?: string | null
   interviewKind?: CandidateInterviewSnapshot['kind']
   aiCommerce?: AiCommerceMembershipState
+  /** The latest saved match: its gaps for this candidate become interview follow-ups. */
+  matchingHome?: MatchingHomeProjection
   onViewChange(view: PipelineView): void
   onBackToQueue?(): void
   onImportResume(): void
@@ -247,7 +251,23 @@ function uniqueQuestionSuggestions(
   }).slice(0, 10)
 }
 
-function defaultQuestions(review: CandidateReviewSnapshot, inherited: string[], zh: boolean, kind: CandidateInterviewSnapshot['kind']): CandidateInterviewQuestion[] {
+/**
+ * What the latest saved match could not confirm for this candidate: unmatched
+ * case requirements and unknown hard filters. Each one is worth a question.
+ */
+function matchGapsFor(review: CandidateReviewSnapshot, matchingHome: MatchingHomeProjection | undefined): string[] {
+  const profileId = review.profile?.id
+  if (!profileId || !matchingHome?.currentRun) return []
+  const result = matchingHome.currentRun.results.find((item) => item.candidateProfileId === profileId)
+  if (!result) return []
+  // Local gaps first, then what the cloud review left open: both are things
+  // an interviewer should ask about.
+  const localGaps = (result.fit.missing ?? []).map((item) => item.replace(/^尚可:/u, '').trim())
+  const cloudGaps = [...(result.assessment?.gaps ?? []), ...(result.assessment?.confirm ?? [])].map((item) => item.trim())
+  return [...new Set([...localGaps, ...cloudGaps].filter(Boolean))].slice(0, 6)
+}
+
+function defaultQuestions(review: CandidateReviewSnapshot, inherited: string[], zh: boolean, kind: CandidateInterviewSnapshot['kind'], matchGaps: string[] = []): CandidateInterviewQuestion[] {
   const recruitingQuestions = zh ? [
     '请做一个简短的自我介绍，并说明为什么选择当前岗位？',
     '请介绍一次你主导或深度参与的项目，以及承担的职责。',
@@ -281,17 +301,24 @@ function defaultQuestions(review: CandidateReviewSnapshot, inherited: string[], 
   const inheritedQuestions = inherited.slice(0, 6).map((text, index): CandidateInterviewQuestion => ({
     id: `inherited-${index + 1}`, text, source: 'inherited', sourceLabel: zh ? '继承自上轮面试' : '前回面談から継承', selected: true
   }))
-  return [...inheritedQuestions, ...standard, ...resume]
+  const matchQuestions = matchGaps.map((gap, index): CandidateInterviewQuestion => ({
+    id: `match-${index + 1}`,
+    text: zh ? `请确认候选人是否满足案件条件「${gap}」，并请其用具体经历说明。` : `案件条件「${gap}」を満たすか、具体的な経験で確認してください。`,
+    source: 'match', sourceLabel: zh ? '来自匹配缺口' : 'マッチング未確認項目', selected: true,
+    scoringGuide: zh ? '有具体项目、时期和担当范围为满足；仅泛泛提及为待确认。' : '具体的な案件・時期・担当範囲があれば充足、一般論のみなら未確認。'
+  }))
+  return [...inheritedQuestions, ...matchQuestions, ...standard, ...resume]
 }
 
 function mergedQuestionPlan(
   review: CandidateReviewSnapshot,
   interview: CandidateInterviewSnapshot | null,
   zh: boolean,
-  kind: CandidateInterviewSnapshot['kind']
+  kind: CandidateInterviewSnapshot['kind'],
+  matchGaps: string[] = []
 ): CandidateInterviewQuestion[] {
   const persisted = interview?.questionPlan ?? []
-  const defaults = defaultQuestions(review, interview?.unresolvedItems ?? [], zh, kind)
+  const defaults = defaultQuestions(review, interview?.unresolvedItems ?? [], zh, kind, matchGaps)
   const seen = new Set<string>()
   return [...persisted, ...defaults].flatMap((question) => {
     const key = normalizeQuestion(question.text)
@@ -325,6 +352,7 @@ export function CandidatePipeline({
   onRecordDecision,
   onSaveNotes,
   onSavePreparation,
+  matchingHome,
   onSaveSchedule,
   onSendCloudPrompt,
   onSetTaskLifecycle,
@@ -416,7 +444,7 @@ export function CandidatePipeline({
       interviewer: selectedInterview?.interviewer ?? '',
       note: selectedInterview?.contactNote ?? ''
     })
-    if (selected) setQuestions(mergedQuestionPlan(selected, selectedInterview, zh, activeInterviewKind))
+    if (selected) setQuestions(mergedQuestionPlan(selected, selectedInterview, zh, activeInterviewKind, matchGapsFor(selected, matchingHome)))
     setGoal(selectedInterview?.interviewGoal ?? (activeInterviewKind === 'client'
       ? (zh ? '确认候选人与案件要求的匹配度、客户沟通能力和入场条件。' : '案件要件との適合、顧客対応力、参画条件を確認します。')
       : (zh ? '确认候选人的技术基础、项目职责与求职动机。' : '技術基礎、案件での役割、応募動機を確認します。')))
@@ -501,6 +529,35 @@ export function CandidatePipeline({
       setError(cause instanceof Error ? cause.message : (zh ? '无法保存面试预约。' : '面談予約を保存できませんでした。'))
     } finally {
       setSaving(null)
+    }
+  }
+
+  const [sheetCopied, setSheetCopied] = useState(false)
+  /**
+   * The preparation sheet as plain text for the interviewer's own notes: goal,
+   * the selected questions with their scoring notes, and open items. Copied to
+   * the clipboard on request only; nothing is written to disk or sent anywhere.
+   */
+  const copyPreparationSheet = async () => {
+    if (!selected) return
+    const selectedQuestions = questions.filter((question) => question.selected)
+    const lines = [
+      `${zh ? '面试准备表' : '面談準備表'} · ${selected.localIdentity?.displayName ?? candidateName(selected)} · ${selectedInterview ? interviewLabel(selectedInterview, zh) : (zh ? '未预约' : '未予約')}`,
+      goal.trim() ? `${zh ? '目标' : '目標'}: ${goal.trim()}` : null,
+      '',
+      ...selectedQuestions.flatMap((question, index) => [
+        `${index + 1}. ${question.text}${question.sourceLabel ? `　[${question.sourceLabel}]` : ''}`,
+        question.scoringGuide?.trim() ? `   ${zh ? '评分观点' : '評価観点'}: ${question.scoringGuide.trim()}` : null,
+        `   ${zh ? '评分' : '評価'}: ☐ ${zh ? '满足' : '充足'}  ☐ ${zh ? '部分' : '一部'}  ☐ ${zh ? '未确认' : '未確認'}   ${zh ? '备注' : 'メモ'}: `
+      ]),
+      ...(unresolvedInput.trim() ? ['', `${zh ? '待确认事项' : '確認事項'}:`, ...unresolvedInput.split('\n').map((item) => item.trim()).filter(Boolean).map((item) => `- ${item}`)] : [])
+    ].filter((line): line is string => line !== null)
+    try {
+      await copyTextToClipboard(lines.join('\n'))
+      setSheetCopied(true)
+      setTimeout(() => setSheetCopied(false), 2_000)
+    } catch {
+      setError(zh ? '无法写入剪贴板。' : 'クリップボードに書き込めませんでした。')
     }
   }
 
@@ -836,12 +893,12 @@ export function CandidatePipeline({
         {aiSuggestionMode ? <small className="recruiting-ai-suggestion-mode">{aiSuggestionMode === 'cloud' ? (zh ? 'Cloud AI 建议 · 已脱敏 · 需人工确认' : 'Cloud AI提案・匿名化済み・人の確認が必要') : aiSuggestionMode === 'local-fallback' ? (zh ? 'Cloud AI 不可用 · 已改用本机结构化建议' : 'Cloud AI利用不可・端末内構造化提案へ切替') : (zh ? '本机结构化建议 · 未调用云端模型' : '端末内構造化提案・Cloudモデル未使用')}</small> : null}
         {aiSuggestions.length ? <><div className="recruiting-ai-suggestion-select"><button onClick={() => setAiSuggestions((current) => current.map((item) => ({ ...item, selected: true })))} type="button">{zh ? '全选' : 'すべて選択'}</button><button onClick={() => setAiSuggestions((current) => current.map((item) => ({ ...item, selected: false })))} type="button">{zh ? '取消全选' : '選択解除'}</button><button className="is-primary" disabled={!aiSuggestions.some((item) => item.selected)} onClick={addSelectedAiSuggestions} type="button">{zh ? `加入已选问题（${aiSuggestions.filter((item) => item.selected).length}）` : `選択質問を追加（${aiSuggestions.filter((item) => item.selected).length}）`}</button></div><div className="recruiting-ai-suggestion-list">{aiSuggestions.map((item) => <label className={item.selected ? 'is-selected' : ''} key={item.id}><input checked={item.selected} onChange={(event) => setAiSuggestions((current) => current.map((suggestion) => suggestion.id === item.id ? { ...suggestion, selected: event.target.checked } : suggestion))} type="checkbox" /><span><strong>{item.text}</strong><small>{item.category} · {item.reason}</small><em>{item.source}</em></span></label>)}</div></> : null}
       </section>
-      {(['inherited', 'standard', 'resume', 'custom'] as CandidateInterviewQuestion['source'][]).map((source) => {
+      {(['inherited', 'match', 'standard', 'resume', 'custom'] as CandidateInterviewQuestion['source'][]).map((source) => {
         const items = questions.filter((question) => question.source === source)
         if (items.length === 0 && source !== 'custom') return null
-        const labels = { inherited: zh ? '上轮待确认项' : '前回の確認事項', standard: isClientInterview ? (zh ? '客户面试固定问题' : '顧客面談の固定質問') : (zh ? '公司固定问题' : '会社固定質問'), resume: zh ? '基于简历的追问' : '履歴書からの追加質問', custom: zh ? '自定义问题' : '自由質問' }
-        return <section className="recruiting-question-group" key={source}><header><h3>{labels[source]}</h3></header>{items.map((question) => <label className={question.selected ? 'is-selected' : ''} key={question.id}><input checked={question.selected} onChange={(event) => setQuestions((current) => current.map((item) => item.id === question.id ? { ...item, selected: event.target.checked } : item))} type="checkbox" /><span><strong>{question.text}</strong>{question.sourceLabel ? <small>{question.sourceLabel}</small> : null}</span></label>)}{source === 'custom' ? <div className="recruiting-add-question"><input onChange={(event) => setCustomQuestion(event.target.value)} placeholder={zh ? '输入本次需要补充的问题' : '追加する質問を入力'} value={customQuestion} /><button disabled={customQuestion.trim().length < 2} onClick={() => { setQuestions((current) => [...current, { id: `custom-${Date.now()}`, text: customQuestion.trim(), source: 'custom', sourceLabel: null, selected: true }]); setCustomQuestion('') }} type="button"><Icon name="plus" size={14} />{zh ? '添加' : '追加'}</button></div> : null}</section>
-      })}<footer><span><Icon name="check" size={15} />{zh ? '问题清单保存在本机，可继续修改' : '質問リストは端末内に保存'}</span><button className="is-primary" disabled={saving !== null || activeQuestionCount === 0} onClick={() => void savePreparation()} type="button">{saving === 'prepare' ? (zh ? '正在保存…' : '保存中…') : (zh ? '保存问题清单并进入面试' : '質問リストを保存して面談へ')}</button></footer></div>
+        const labels = { inherited: zh ? '上轮待确认项' : '前回の確認事項', match: zh ? '匹配未确认条件' : 'マッチング未確認項目', standard: isClientInterview ? (zh ? '客户面试固定问题' : '顧客面談の固定質問') : (zh ? '公司固定问题' : '会社固定質問'), resume: zh ? '基于简历的追问' : '履歴書からの追加質問', custom: zh ? '自定义问题' : '自由質問' }
+        return <section className="recruiting-question-group" key={source}><header><h3>{labels[source]}</h3></header>{items.map((question) => <div className={question.selected ? 'recruiting-question is-selected' : 'recruiting-question'} key={question.id}><label className={question.selected ? 'is-selected' : ''}><input checked={question.selected} onChange={(event) => setQuestions((current) => current.map((item) => item.id === question.id ? { ...item, selected: event.target.checked } : item))} type="checkbox" /><span><strong>{question.text}</strong>{question.sourceLabel ? <small>{question.sourceLabel}</small> : null}</span></label>{question.selected ? <input aria-label={`${question.text}${zh ? '的评分观点' : 'の評価観点'}`} className="recruiting-question-guide" maxLength={300} onChange={(event) => setQuestions((current) => current.map((item) => item.id === question.id ? { ...item, scoringGuide: event.target.value } : item))} placeholder={zh ? '评分观点（可选）：什么样的回答算满足' : '評価観点（任意）：どんな回答なら充足か'} value={question.scoringGuide ?? ''} /> : null}</div>)}{source === 'custom' ? <div className="recruiting-add-question"><input onChange={(event) => setCustomQuestion(event.target.value)} placeholder={zh ? '输入本次需要补充的问题' : '追加する質問を入力'} value={customQuestion} /><button disabled={customQuestion.trim().length < 2} onClick={() => { setQuestions((current) => [...current, { id: `custom-${Date.now()}`, text: customQuestion.trim(), source: 'custom', sourceLabel: null, selected: true }]); setCustomQuestion('') }} type="button"><Icon name="plus" size={14} />{zh ? '添加' : '追加'}</button></div> : null}</section>
+      })}<footer><span><Icon name="check" size={15} />{zh ? '问题清单保存在本机，可继续修改' : '質問リストは端末内に保存'}</span><button disabled={activeQuestionCount === 0} onClick={() => void copyPreparationSheet()} type="button"><Icon name="copy" size={14} />{sheetCopied ? (zh ? '已复制' : 'コピーしました') : (zh ? '复制面试准备表' : '面談準備表をコピー')}</button><button className="is-primary" disabled={saving !== null || activeQuestionCount === 0} onClick={() => void savePreparation()} type="button">{saving === 'prepare' ? (zh ? '正在保存…' : '保存中…') : (zh ? '保存问题清单并进入面试' : '質問リストを保存して面談へ')}</button></footer></div>
     <aside><section><h3>{zh ? '准备进度' : '準備状況'}</h3><div className="recruiting-progress-meter"><i style={{ width: `${Math.min(100, (activeQuestionCount > 0 ? 65 : 30) + (goal.trim() ? 20 : 0))}%` }} /></div><ul><li className="is-done">{zh ? '已确认面试时间' : '日時確認済み'}</li><li className="is-done">{zh ? '已确认面试官' : '面談者確認済み'}</li><li className={activeQuestionCount ? 'is-done' : ''}>{zh ? '已选择面试问题' : '質問選択済み'}</li><li className={goal.trim() ? 'is-done' : ''}>{zh ? '已填写面试目标' : '目標入力済み'}</li></ul></section><section><h3>{zh ? '简历重点' : '履歴書の要点'}</h3><ul>{candidateSkills(selected).slice(0, 3).map((skill) => <li key={skill}>{skill}</li>)}</ul><button onClick={() => setCandidateTab('resume')} type="button">{zh ? '查看完整简历' : '履歴書を見る'}</button></section></aside>
     </section>
   }

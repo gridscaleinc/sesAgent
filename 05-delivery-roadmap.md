@@ -1,6 +1,6 @@
 # 开发周期与交付计划
 
-<!-- ses-current-state package=0.1.0 schema=39 -->
+<!-- ses-current-state package=0.1.0 schema=43 -->
 
 > 版本：v0.7
 > 基准计划：8 周完成脱敏数据垂直演示，16 周完成可处理受控真实数据的 macOS Electron MVP

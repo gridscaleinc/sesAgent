@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
+  agentJobCaseDraftFacts,
+  statesNationalityRestriction,
   type ConfirmedJobCase,
   type JobCaseExtractionDraft,
   type JobCaseExtractionDraftV2,
@@ -10,6 +12,7 @@ import {
 } from '@job-cases'
 import { type LocalPiiMapping, type RedactionSessionEvidence, detectDirectIdentifiers } from '@privacy'
 import {
+  type AgentJobCaseDraftFacts,
   deleteJobCaseDataInputSchema,
   jobCaseDeletionPreviewSchema,
   jobCaseReviewSnapshotSchema,
@@ -21,6 +24,7 @@ import {
   type DeleteJobCaseDataInput,
   type JobCaseDeletionPreview,
   type JobCaseReviewSnapshot,
+  type JobCaseSourceText,
   type JobCaseVersionDetail,
   type ReopenJobCaseReviewInput,
   type SetJobCaseLifecycleInput,
@@ -305,8 +309,15 @@ export class JobCaseStore extends DomainStore {
           }
         : null,
       lifecycle: lifecycle?.state ?? 'active',
+      intakeBatchId: draft.version === 'job-case-extraction-v2' ? draft.intakeBatchId ?? null : null,
       cloudEligible: false
     })
+  }
+
+  /** De-identified draft facts for the agent; null when the review is gone. */
+  getAgentJobCaseDraftFacts(reviewId: string, label: string): AgentJobCaseDraftFacts | null {
+    const review = this.getJobCaseReview(reviewId)
+    return review ? agentJobCaseDraftFacts(review, label) : null
   }
 
   listJobCaseReviews(): JobCaseReviewSnapshot[] {
@@ -365,6 +376,26 @@ export class JobCaseStore extends DomainStore {
           containsDirectIdentifiers: jobCase.containsDirectIdentifiers
         }
       })
+  }
+
+  /** The stored redacted original behind a review; null when the review is gone. */
+  getJobCaseSourceText(reviewId: string): JobCaseSourceText | null {
+    const row = this.database
+      .prepare<[string], JobCaseSourceRow>(
+        `SELECT source.* FROM job_case_sources source
+         JOIN job_case_extractions extraction ON extraction.source_id = source.id
+         WHERE extraction.review_id = ?`
+      )
+      .get(reviewId)
+    if (!row) return null
+    const source = jobCaseSourceFromRow(row)
+    return {
+      sourceType: source.sourceType,
+      redactedSubject: source.redactedSubject,
+      redactedBody: source.redactedBody,
+      messageDate: source.messageDate,
+      fromDomain: source.fromDomain
+    }
   }
 
   setJobCaseLifecycle(
@@ -475,7 +506,6 @@ export class JobCaseStore extends DomainStore {
     if (!sourceRow) throw new Error('Job case source was not found.')
     const source = jobCaseSourceFromRow(sourceRow)
     const history = this.getJobCaseHistory(reviewId)
-    if (history.length === 0) throw new Error('Confirmed job case was not found.')
     const relatedIds = new Set([reviewId, source.id, ...history.map((version) => version.id)])
     const taskRecords = this.stores.workTasks.listWorkTasks().filter((task) =>
       task.contextBindings.some((binding) => binding.objectType === 'job-case' && relatedIds.has(binding.objectId))
@@ -518,6 +548,7 @@ export class JobCaseStore extends DomainStore {
     const agentReferences = this.stores.agentConversations.countSalesAgentReferences({
       candidateDocumentIds: new Set(),
       jobCaseIds: caseIdSet,
+      jobCaseReviewIds: new Set([reviewId]),
       matchRunIds: agentRunIds,
       matchResultIds: new Set(agentResultRows.map((row) => row.id))
     })
@@ -585,6 +616,7 @@ export class JobCaseStore extends DomainStore {
     const agentTargets: AgentReferenceTargets = {
       candidateDocumentIds: new Set(),
       jobCaseIds: new Set(caseIds),
+      jobCaseReviewIds: new Set([input.reviewId]),
       matchRunIds: agentRunIds,
       matchResultIds: new Set(agentResultRows.map((row) => row.id))
     }
@@ -689,14 +721,17 @@ export class JobCaseStore extends DomainStore {
     }
     if (!submissionByKey.get('title')?.value) throw new Error('案件名は必須です。')
     const confirmedBusinessFields = validated.fields.map((field) => field.value ?? '').join('\n')
-    if (/(?:外国籍不可|日本国籍(?:のみ|限定)|日本人(?:のみ|限定))/u.test(confirmedBusinessFields)) {
+    if (statesNationalityRestriction(confirmedBusinessFields)) {
       throw new Error('国籍条件は保存できません。合法的な就労資格要件だけを使用してください。')
     }
-    const residualIdentifiers = detectDirectIdentifiers(
-      confirmedBusinessFields
-    )
+    const residualIdentifiers = validated.fields.flatMap((field) => {
+      const found = detectDirectIdentifiers(field.value ?? '')
+      if (found.length === 0) return []
+      const label = draft.fields.find((item) => item.key === field.key)?.label ?? field.key
+      return [`${label}（${found.join(', ')}）`]
+    })
     if (residualIdentifiers.length > 0) {
-      throw new Error(`案件フィールドに直接識別子を保存できません: ${residualIdentifiers.join(', ')}`)
+      throw new Error(`案件フィールドに直接識別子を保存できません: ${residualIdentifiers.join('、')}`)
     }
 
     const reviewedAt = now.toISOString()

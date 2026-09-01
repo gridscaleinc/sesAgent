@@ -145,6 +145,29 @@ export class CandidateStore extends DomainStore {
     })
   }
 
+  /**
+   * Exact-duplicate lookup for business-text intake: the same normalized text
+   * always stages the same bytes. Only Main-created 'txt' sources participate;
+   * uploaded files never collide with pasted text.
+   */
+  findStagedTextSourceBySha256(sha256: string): StagedFileRecord | null {
+    const row = this.database
+      .prepare<[string], StagedFileRow>("SELECT * FROM staged_files WHERE sha256 = ? AND format = 'txt' ORDER BY created_at LIMIT 1")
+      .get(sha256)
+    return row
+      ? {
+          token: row.token,
+          name: row.name,
+          format: row.format,
+          size: row.size,
+          sha256: row.sha256,
+          encryptedPath: row.encrypted_path,
+          privacyStatus: row.privacy_status,
+          createdAt: row.created_at
+        }
+      : null
+  }
+
   listStagedFileRecords(): StagedFileRecord[] {
     const rows = this.database
       .prepare<[], StagedFileRow>('SELECT * FROM staged_files ORDER BY token')

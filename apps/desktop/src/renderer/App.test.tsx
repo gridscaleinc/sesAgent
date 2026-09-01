@@ -135,13 +135,18 @@ describe('App workbench', () => {
       previewHash: 'a'.repeat(64)
     }
     const api: DesktopApi = {
-      getStartupStatus: vi.fn().mockResolvedValue({ mode: 'normal' }),
+      copyTextToClipboard: vi.fn().mockResolvedValue(undefined),
+    getStartupStatus: vi.fn().mockResolvedValue({ mode: 'normal' }),
       getBootstrap: vi.fn().mockResolvedValue(bootstrap),
       resolveActionApproval: vi.fn(),
       saveLocalOperatorProfile: vi.fn().mockImplementation(async (input) => ({
         version: 'local-operator-profile-v1', operatorId: '11111111-1111-4111-8111-111111111111',
         displayName: input.displayName, roleLabel: input.roleLabel, configured: true,
         revision: 1, updatedAt: '2026-07-20T00:00:00.000Z', cloudEligible: false
+      })),
+      importAtsCsvCandidates: vi.fn().mockResolvedValue({ cancelled: true, fileName: null, rowCount: 0, importedCount: 0, duplicateCount: 0, skippedCount: 0, failedCount: 0, items: [] }),
+      saveJobCaseFieldAliases: vi.fn().mockImplementation(async (input) => ({
+        version: 'job-case-field-aliases-v1', aliases: input.aliases, configured: true, revision: 1, updatedAt: '2026-08-26T00:00:00.000Z'
       })),
       saveLocalApplicationPreferences: vi.fn().mockImplementation(async (input) => ({
         version: 'local-application-preferences-v1', locale: input.locale, configured: true,
@@ -182,10 +187,19 @@ describe('App workbench', () => {
       importEmlJobCaseDrafts: vi.fn(),
       submitJobCaseReview: vi.fn(),
       getJobCaseHistory: vi.fn().mockResolvedValue([]),
+      getJobCaseSourceText: vi.fn(),
       setJobCaseLifecycle: vi.fn(),
       reopenJobCaseReview: vi.fn(),
       previewJobCaseDeletion: vi.fn(),
       deleteJobCaseData: vi.fn(),
+      listBroadcastWorkspace: vi.fn().mockResolvedValue({ queue: [], templates: [] }),
+      draftCaseBroadcast: vi.fn().mockResolvedValue({ textJa: '', textZh: '', forbiddenJa: [], forbiddenZh: [] }),
+      draftCaseUpdateNotice: vi.fn().mockResolvedValue({ status: 'no-sent-baseline' }),
+      recordCaseBroadcastCopy: vi.fn().mockResolvedValue({ copy: {} }),
+      listCaseBroadcasts: vi.fn().mockResolvedValue([]),
+      createBroadcastTemplate: vi.fn().mockResolvedValue([]),
+      updateBroadcastTemplate: vi.fn().mockResolvedValue([]),
+      deleteBroadcastTemplate: vi.fn().mockResolvedValue([]),
       getProposalWorkspace: vi.fn().mockResolvedValue({ options: { jobCases: [], candidates: [] }, drafts: [], evidence: [] }),
       createProposalDraft: vi.fn(),
       updateProposalDraft: vi.fn(),
@@ -218,6 +232,7 @@ describe('App workbench', () => {
       saveGoogleWorkspaceAdminConfiguration: vi.fn(),
       disconnectGoogleWorkspace: vi.fn(),
       syncGoogleWorkspace: vi.fn(),
+      onGmailSyncCompleted: vi.fn().mockReturnValue(() => undefined),
       getRecoveryState: vi.fn().mockResolvedValue(bootstrap.recovery),
       createRecoveryPackage: vi.fn(),
       snoozeRecoveryReminder: vi.fn().mockResolvedValue(bootstrap.recovery),
@@ -521,6 +536,54 @@ describe('App workbench', () => {
     expect(window.sesAgent.syncGoogleWorkspace).toHaveBeenCalledTimes(1)
   })
 
+  it('surfaces a scheduled background Gmail sync as the existing import notice', async () => {
+    await screen.findByRole('heading', { name: '業務ワークベンチ' })
+    cleanup()
+    const synced = {
+      ...bootstrap,
+      gmailSync: {
+        ...bootstrap.gmailSync,
+        configuration: 'ready' as const,
+        status: 'idle' as const,
+        storedMessages: 3,
+        lastSyncedAt: '2026-08-30T01:00:00.000Z',
+        lastRun: {
+          mode: 'incremental' as const,
+          discovered: 3,
+          imported: 2,
+          duplicates: 1,
+          filtered: 0,
+          failed: 0
+        }
+      }
+    }
+    let scheduledCompletion: ((completion: { imported: number; duplicates: number; filtered: number; failed: number }) => void) | null = null
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: {
+        ...window.sesAgent,
+        onGmailSyncCompleted: vi.fn().mockImplementation(
+          (listener: (completion: { imported: number; duplicates: number; filtered: number; failed: number }) => void) => {
+            scheduledCompletion = listener
+            return () => undefined
+          }
+        )
+      }
+    })
+    vi.mocked(window.sesAgent.getBootstrap).mockReset()
+      .mockResolvedValueOnce(bootstrap)
+      .mockResolvedValue(synced)
+    render(<App />)
+    await screen.findByRole('heading', { name: '業務ワークベンチ' })
+
+    act(() => { scheduledCompletion!({ imported: 2, duplicates: 1, filtered: 0, failed: 0 }) })
+    await waitFor(() => expect(window.sesAgent.getBootstrap).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: '案件管理' }))
+    fireEvent.click(screen.getByRole('button', { name: '案件取込' }))
+    expect(await screen.findByRole('region', { name: 'Gmail同期結果' })).toHaveTextContent('2件取込')
+  })
+
   it('opens data governance from the data policy navigation item', async () => {
     await screen.findByRole('heading', { name: '業務ワークベンチ' })
 
@@ -558,6 +621,56 @@ describe('App workbench', () => {
     expect(screen.queryByRole('button', { name: '業務概要' })).not.toBeInTheDocument()
   })
 
+  it('uses the Agent system rail as global navigation and preserves an unsent draft on return', async () => {
+    cleanup()
+    const connected = {
+      ...bootstrap,
+      featureFlags: { conversationalMatchingEnabled: true },
+      aiCommerce: { ...bootstrap.aiCommerce, configuration: 'ready' as const, connection: 'connected' as const }
+    }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
+    render(<App />)
+
+    const composer = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
+    fireEvent.change(composer, { target: { value: '未送信の案件メモ' } })
+    fireEvent.click(screen.getByRole('button', { name: '候補者' }))
+
+    expect(await screen.findByRole('heading', { name: '候補者' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'メインナビゲーション' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'SES Agent' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'SES Agent' }))
+    expect(await screen.findByRole('textbox', { name: 'SES Agent への指示' })).toHaveValue('未送信の案件メモ')
+  })
+
+  it('opens interviews, cases, and reviews as classic full-page destinations from the Agent rail', async () => {
+    cleanup()
+    const connected = {
+      ...bootstrap,
+      featureFlags: { conversationalMatchingEnabled: true },
+      aiCommerce: { ...bootstrap.aiCommerce, configuration: 'ready' as const, connection: 'connected' as const }
+    }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
+    render(<App />)
+    await screen.findByRole('heading', { name: 'SES Agent' })
+
+    const destinations = [
+      { rail: '面談', heading: '面談日程' },
+      { rail: '案件', heading: '案件データベース' },
+      { rail: '確認', heading: 'レビューセンター' }
+    ] as const
+
+    for (const destination of destinations) {
+      fireEvent.click(screen.getByRole('button', { name: destination.rail }))
+      expect(await screen.findByRole('heading', { name: destination.heading })).toBeInTheDocument()
+      expect(screen.getByRole('navigation', { name: 'メインナビゲーション' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'SES Agent' })).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'SES Agent' }))
+      await screen.findByRole('heading', { name: 'SES Agent' })
+    }
+  })
+
   it('keeps Agent open and shows the review center in the right business workspace', async () => {
     cleanup()
     const connected = {
@@ -576,6 +689,9 @@ describe('App workbench', () => {
     expect(screen.getByText('会話コンテキストに接続')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'レビューセンター' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agent' }))
+    expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
   })
 
   it('keeps the classic dashboard on cold start when conversational matching is disabled', async () => {
@@ -587,7 +703,7 @@ describe('App workbench', () => {
     expect(screen.queryByRole('heading', { name: 'SES Agent' })).not.toBeInTheDocument()
   })
 
-  it('lands an unconnected operator in AgentWorkspace but withholds the composer until the managed account is connected', async () => {
+  it('lands an unconnected operator in AgentWorkspace with a local-intake-only composer', async () => {
     cleanup()
     const unconnected = {
       ...bootstrap,
@@ -600,8 +716,33 @@ describe('App workbench', () => {
     expect(screen.getByRole('button', { name: '受管アカウントに接続' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /履歴書を取り込む/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /案件を取り込む/ })).toBeInTheDocument()
-    // Cloud chat is withheld, while deterministic local work stays available.
-    expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
+    // The composer stays for deterministic local intake; the offline banner
+    // says natural-language chat needs the managed connection, and the cloud
+    // model picker is withheld.
+    const composer = screen.getByRole('textbox', { name: 'SES Agent への指示' })
+    expect(composer).toHaveAttribute('placeholder', '案件または要員の情報を1件貼り付けてローカル取込…')
+    expect(screen.getByText(/ローカル操作のみ利用できます/)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: '回答モデルを選択' })).not.toBeInTheDocument()
+  })
+
+  it('refuses to send text over 4,000 characters without truncating it', async () => {
+    cleanup()
+    const agentEnabled = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: true } }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(agentEnabled)
+    render(<App />)
+    const composer = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
+
+    const overlong = `案件名：テスト\n${'あ'.repeat(4_100)}`
+    fireEvent.change(composer, { target: { value: overlong } })
+    expect(await screen.findByText(/4,000文字を超えています/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '送信' })).toBeDisabled()
+    // Nothing was truncated: the composer still holds every character.
+    expect((composer as HTMLTextAreaElement).value).toHaveLength(overlong.length)
+    expect(window.sesAgent.executeAgentTurn).not.toHaveBeenCalled()
+
+    fireEvent.change(composer, { target: { value: '案件名：テスト' } })
+    expect(screen.queryByText(/4,000文字を超えています/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '送信' })).toBeEnabled()
   })
 
   it('uses a standalone Agent shell and keeps an explicit classic fallback', async () => {

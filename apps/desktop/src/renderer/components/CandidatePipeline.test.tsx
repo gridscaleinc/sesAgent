@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { createWorkTaskPreview, materializeWorkTask } from '@application'
-import type { CandidateInterviewSnapshot, CandidateReviewSnapshot, OriginalDocumentPreview, ResumeAnalysisSummary } from '@shared'
+import type { CandidateInterviewSnapshot, CandidateReviewSnapshot, MatchingHomeProjection, OriginalDocumentPreview, ResumeAnalysisSummary } from '@shared'
 import { UiLocaleProvider } from '../i18n'
 import { CandidatePipeline } from './CandidatePipeline'
 
@@ -302,6 +302,97 @@ describe('CandidatePipeline recruiting workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'AI 面试助手' }))
     expect(screen.getByText('本轮已允许发送脱敏上下文')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '允许本轮使用 Cloud AI' })).not.toBeInTheDocument()
+  })
+
+  it('turns the latest match gaps into follow-up questions with a scoring note and copies the preparation sheet', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const matchingHome = {
+      state: 'current-results', eligibleCandidateCount: 1, selectedJobCaseId: '44444444-4444-4444-8444-444444444444', jobCases: [],
+      currentRun: {
+        validity: 'current',
+        results: [{ candidateProfileId: review.profile!.id, fit: { rank: 1, matchScore: 60, matchedTerms: ['Java'], hardFilterUnknownCount: 1, missing: ['勤務地:常駐', '尚可:Docker'], evidence: [] } }]
+      }
+    } as unknown as MatchingHomeProjection
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          initialCandidateId={documentId}
+          interviewKind="recruiting"
+          interviews={[{ ...interview, stage: 'scheduled' }]}
+          matchingHome={matchingHome}
+          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="prepare"
+        />
+      </UiLocaleProvider>
+    )
+
+    expect(await screen.findByText('请确认候选人是否满足案件条件「勤務地:常駐」，并请其用具体经历说明。')).toBeInTheDocument()
+    // A 尚可 gap loses its prefix; the interviewer sees the plain requirement.
+    expect(screen.getByText('请确认候选人是否满足案件条件「Docker」，并请其用具体经历说明。')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '复制面试准备表' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const sheet = writeText.mock.calls[0]?.[0] as string
+    expect(sheet).toContain('面试准备表')
+    expect(sheet).toContain('评分观点: 有具体项目、时期和担当范围为满足；仅泛泛提及为待确认。')
+    expect(sheet).toContain('☐ 满足')
+  })
+
+  it('asks about what the cloud review left open, after the local gaps', async () => {
+    const matchingHome = {
+      state: 'current-results', eligibleCandidateCount: 1, selectedJobCaseId: '44444444-4444-4444-8444-444444444444', jobCases: [],
+      currentRun: {
+        validity: 'current',
+        results: [{
+          candidateProfileId: review.profile!.id,
+          fit: { rank: 1, matchScore: 60, matchedTerms: ['Java'], hardFilterUnknownCount: 0, missing: ['尚可:Docker'], evidence: [] },
+          assessment: {
+            version: 'match-assessment-v1', fit: 'possible', met: [], gaps: ['AWS 経験'], confirm: ['日本語での顧客折衝', 'Docker'],
+            reason: '', modelKey: 'gpt-5', assessedAt: '2026-08-26T00:00:00.000Z'
+          }
+        }]
+      }
+    } as unknown as MatchingHomeProjection
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          initialCandidateId={documentId}
+          interviewKind="recruiting"
+          interviews={[{ ...interview, stage: 'scheduled' }]}
+          matchingHome={matchingHome}
+          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="prepare"
+        />
+      </UiLocaleProvider>
+    )
+
+    expect(await screen.findByText('请确认候选人是否满足案件条件「Docker」，并请其用具体经历说明。')).toBeInTheDocument()
+    expect(screen.getByText('请确认候选人是否满足案件条件「AWS 経験」，并请其用具体经历说明。')).toBeInTheDocument()
+    expect(screen.getByText('请确认候选人是否满足案件条件「日本語での顧客折衝」，并请其用具体经历说明。')).toBeInTheDocument()
+    // Docker came from both sides and is asked once.
+    expect(screen.getAllByText(/「Docker」/u)).toHaveLength(1)
   })
 
   it('accepts Cloud AI preparation questions when numbered items are joined onto one line', async () => {

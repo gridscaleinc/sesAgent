@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3-multiple-ciphers'
 import { ActionRuntimeStore } from './action-runtime-store'
 import { AgentConversationStore } from './agent-conversation-store'
 import type { StoreContext } from './base'
+import { BroadcastStore } from './broadcast-store'
 import { CandidateEvaluationStore } from './candidate-evaluation-store'
 import { CandidateInterviewStore } from './candidate-interview-store'
 import { CandidateMatchStore } from './candidate-match-store'
@@ -40,6 +41,7 @@ export function createStoreRegistry(options: {
   const stores: StoreRegistry = {
     actionRuntime: new ActionRuntimeStore(context),
     agentConversations: new AgentConversationStore(context),
+    broadcast: new BroadcastStore(context),
     candidateEvaluation: new CandidateEvaluationStore(context),
     candidateInterviews: new CandidateInterviewStore(context),
     candidateMatch: new CandidateMatchStore(context),

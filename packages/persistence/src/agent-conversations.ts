@@ -47,8 +47,42 @@ export function aiConversationFromRow(row: AiConversationRow): AiConversationSna
 export interface AgentReferenceTargets {
   candidateDocumentIds: ReadonlySet<string>
   jobCaseIds: ReadonlySet<string>
+  /** Job-case review (draft) ids being deleted; unconfirmed drafts have no case id. */
+  jobCaseReviewIds?: ReadonlySet<string>
   matchRunIds: ReadonlySet<string>
   matchResultIds: ReadonlySet<string>
+}
+
+function jobCaseDraftIsTargeted(card: { reviewId: string; jobCase: { id: string } | null }, targets: AgentReferenceTargets): boolean {
+  return Boolean(targets.jobCaseReviewIds?.has(card.reviewId)) || Boolean(card.jobCase && targets.jobCaseIds.has(card.jobCase.id))
+}
+
+function broadcastCardIsTargeted(
+  card: { reviewId: string; jobCaseId: string },
+  targets: AgentReferenceTargets
+): boolean {
+  return Boolean(targets.jobCaseReviewIds?.has(card.reviewId)) || targets.jobCaseIds.has(card.jobCaseId)
+}
+
+/**
+ * True when a persisted intake or broadcast card points at a case being
+ * deleted. Neither card kind carries a message reference, so the reference
+ * sweep alone would leave them behind.
+ */
+export function agentMessageHasIntakeDraftTarget(message: AiConversationMessage, targets: AgentReferenceTargets): boolean {
+  return (message.blocks ?? []).some((block) =>
+    (block.type === 'job-case-draft-cards' && block.cards.some((card) => jobCaseDraftIsTargeted(card, targets))) ||
+    (block.type === 'job-case-broadcast-cards' && block.cards.some((card) => broadcastCardIsTargeted(card, targets))))
+}
+
+/** Drops deleted drafts from the conversation's intake batch pointer. */
+export function sanitizeIntakeBatch(
+  batch: { intakeBatchId: string; messageId: string; reviewIds: string[] } | null | undefined,
+  targets: AgentReferenceTargets
+): { intakeBatchId: string; messageId: string; reviewIds: string[] } | null {
+  if (!batch) return null
+  const reviewIds = batch.reviewIds.filter((reviewId) => !targets.jobCaseReviewIds?.has(reviewId))
+  return reviewIds.length > 0 ? { ...batch, reviewIds } : null
 }
 
 export interface AgentReferenceImpact {
@@ -119,6 +153,29 @@ export function sanitizeAgentBlock(block: AiConversationBlock, targets: AgentRef
     return targets.candidateDocumentIds.has(block.facts.documentId)
       ? { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联候选人已删除，历史草稿和文件入口已移除。' }], affected: true }
       : { blocks: [block], affected: false }
+  }
+  if (block.type === 'job-case-draft-cards') {
+    // A deleted draft keeps its slot as a tombstone - no title, no fields, no
+    // route - so the remaining ordinals still mean what they meant.
+    let affected = false
+    const cards = block.cards.map((card) => {
+      if (!jobCaseDraftIsTargeted(card, targets) || card.status === 'deleted') return card
+      affected = true
+      return { ...card, title: null, fields: [], warningCodes: [], jobCase: null, status: 'deleted' as const }
+    })
+    if (!affected) return { blocks: [block], affected: false }
+    return cards.every((card) => card.status === 'deleted')
+      ? { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联案件草稿已删除，历史导入卡片已移除。' }], affected: true }
+      : { blocks: [{ ...block, cards }], affected: true }
+  }
+  if (block.type === 'job-case-broadcast-cards') {
+    // A drafted message is only meaningful next to the case it announces, and
+    // it holds that case's own text: a deleted case takes its card with it.
+    const cards = block.cards.filter((card) => !broadcastCardIsTargeted(card, targets))
+    if (cards.length === block.cards.length) return { blocks: [block], affected: false }
+    return cards.length > 0
+      ? { blocks: [{ ...block, cards }], affected: true }
+      : { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联案件已删除，历史群消息卡片已移除。' }], affected: true }
   }
   if (block.type === 'resume-import') {
     const imported = block.imported.filter((item) => !targets.candidateDocumentIds.has(item.documentId))

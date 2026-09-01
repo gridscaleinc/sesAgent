@@ -1,6 +1,6 @@
 # SES Agent Desktop 文档总览
 
-<!-- ses-current-state package=0.1.0 schema=39 -->
+<!-- ses-current-state package=0.1.0 schema=43 -->
 
 > 文档版本：v0.41
 > 更新日期：2026-08-20
@@ -115,7 +115,7 @@ SES Agent Desktop 是面向日本 SES 公司的桌面业务助手，服务对象
 8. 本地确定性 PII 引擎生成稳定占位符，独立 DLP 复检后才产生带品牌的 `RedactedPayload`；Cloud Gateway 还会检查持久化会话、策略、来源版本、哈希、有效期和 HTTPS Endpoint Allowlist。
 9. PDF.js、SheetJS、Mammoth 和 PostalMime 在一次一进程的 Parser Worker 中处理不可信文件；简历生成 `DocumentIR v1`，EML 只返回受限正文、哈希身份和非身份域名。
 10. Parser Worker 不继承应用密钥或 Provider 环境变量，并安装 Node 网络拒绝守卫；宏、公式和外部链接不执行、不加载。
-11. 解析结果、PII 映射、候选人/案件字段草稿、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话和备份修订状态持久化到当前 Schema v39；应用重启后仍能恢复。
+11. 解析结果、PII 映射、候选人/案件字段草稿、案件字段别名、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Assessment、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话、紹介文模板/案件配信复制记录和备份修订状态持久化到当前 Schema v43；应用重启后仍能恢复。
 12. macOS 原生 Helper 使用 Apple Vision 在本地处理扫描 PDF，输出文字、置信度、坐标、人脸和条码候选区域；进程由系统沙箱禁止联网，原 PDF 不进入云端。
 13. Apple Natural Language 处理其可靠覆盖的英文姓名；日文姓名采用保守标签/形式规则生成候选，所有姓名候选都必须人工确认，不把当前实现包装成已经达到发布质量的日文 NER。
 14. 技能、经验年数、稼动时间、单价、日语等级、工作方式和角色由确定性本地提取器生成草稿；每个字段显示置信度和页码/Sheet/Cell 来源，缺失项保持 `null`。

@@ -20,7 +20,9 @@ import {
   aiConversationContextKey,
   aiConversationFromRow,
   aiConversationTitle,
-  sanitizeAgentBlock
+  agentMessageHasIntakeDraftTarget,
+  sanitizeAgentBlock,
+  sanitizeIntakeBatch
 } from '../agent-conversations'
 import { type AiConversationRow } from '../rows'
 import { DomainStore } from './base'
@@ -104,10 +106,12 @@ export class AgentConversationStore extends DomainStore {
       const stateAffected = Boolean(
         state && (
           (state.selectedJobCaseRef && agentReferenceIsTargeted(state.selectedJobCaseRef, targets)) ||
-          (state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId))
+          (state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId)) ||
+          (state.lastIntakeBatch && sanitizeIntakeBatch(state.lastIntakeBatch, targets)?.reviewIds.length !== state.lastIntakeBatch.reviewIds.length)
         )
       )
-      const conversationHasTarget = snapshot.messages.some((message) => agentMessageHasTarget(message, targets))
+      const conversationHasTarget = snapshot.messages.some((message) =>
+        agentMessageHasTarget(message, targets) || agentMessageHasIntakeDraftTarget(message, targets))
       if (!conversationHasTarget && !stateAffected) continue
 
       let conversationAffected = false
@@ -142,7 +146,8 @@ export class AgentConversationStore extends DomainStore {
               : state.selectedJobCaseRef,
             lastMatchRunId: state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId)
               ? null
-              : state.lastMatchRunId
+              : state.lastMatchRunId,
+            lastIntakeBatch: sanitizeIntakeBatch(state.lastIntakeBatch, targets)
           }
         : state
       const nextSnapshot = aiConversationSnapshotSchema.parse({
@@ -249,6 +254,20 @@ export class AgentConversationStore extends DomainStore {
             return status === card.status ? card : { ...card, status }
           })
           return cards === block.cards ? block : { ...block, cards }
+        }
+        if (block.type === 'job-case-draft-cards') {
+          // Drafts move on after the paste - confirmed, archived, deleted - so
+          // the persisted card is re-read from the review it points at.
+          const cards = block.cards.map((card) => {
+            if (card.status === 'deleted') return card
+            const facts = this.stores.jobCases.getAgentJobCaseDraftFacts(card.reviewId, card.label)
+            const next = facts
+              ? { ...card, ...facts, ordinal: card.ordinal, outcome: card.outcome }
+              : { ...card, title: null, fields: [], warningCodes: [], jobCase: null, status: 'deleted' as const }
+            if (JSON.stringify(next) !== JSON.stringify(card)) messageChanged = true
+            return next
+          })
+          return messageChanged ? { ...block, cards } : block
         }
         if (block.type === 'candidate-match-cards') {
           const cards = block.cards.map((card) => {

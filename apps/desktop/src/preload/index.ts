@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { ipcChannels, type AgentTurnEvent, type DesktopApi } from '@shared/contracts'
+import { ipcChannels, type AgentTurnEvent, type DesktopApi, type GmailScheduledSyncCompletion } from '@shared/contracts'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const modelKeyPattern = /^[a-z0-9][a-z0-9._-]{2,119}$/u
@@ -46,12 +46,20 @@ function parseAgentTurnEvent(value: unknown): AgentTurnEvent | null {
   return null
 }
 
+function parseGmailSyncCompletion(value: unknown): GmailScheduledSyncCompletion | null {
+  if (!isStrictObject(value, ['imported', 'duplicates', 'filtered', 'failed'])) return null
+  const counts = [value.imported, value.duplicates, value.filtered, value.failed]
+  if (!counts.every((count) => typeof count === 'number' && Number.isInteger(count) && count >= 0)) return null
+  return value as unknown as GmailScheduledSyncCompletion
+}
+
 const api: DesktopApi = {
   getStartupStatus: () => ipcRenderer.invoke(ipcChannels.getStartupStatus),
   getBootstrap: () => ipcRenderer.invoke(ipcChannels.getBootstrap),
   resolveActionApproval: (input) => ipcRenderer.invoke(ipcChannels.resolveActionApproval, input),
   saveLocalOperatorProfile: (input) => ipcRenderer.invoke(ipcChannels.saveLocalOperatorProfile, input),
   saveLocalApplicationPreferences: (input) => ipcRenderer.invoke(ipcChannels.saveLocalApplicationPreferences, input),
+  saveJobCaseFieldAliases: (input) => ipcRenderer.invoke(ipcChannels.saveJobCaseFieldAliases, input),
   connectAiCommerce: () => ipcRenderer.invoke(ipcChannels.connectAiCommerce),
   getAiCommerceDashboard: () => ipcRenderer.invoke(ipcChannels.getAiCommerceDashboard),
   disconnectAiCommerce: () => ipcRenderer.invoke(ipcChannels.disconnectAiCommerce),
@@ -96,12 +104,23 @@ const api: DesktopApi = {
   prepareWechatVisibleRead: () => ipcRenderer.invoke(ipcChannels.prepareWechatVisibleRead),
   executeWechatVisibleRead: (input) => ipcRenderer.invoke(ipcChannels.executeWechatVisibleRead, input),
   importEmlJobCaseDrafts: () => ipcRenderer.invoke(ipcChannels.importEmlJobCaseDrafts),
+  importAtsCsvCandidates: () => ipcRenderer.invoke(ipcChannels.importAtsCsvCandidates),
   submitJobCaseReview: (input) => ipcRenderer.invoke(ipcChannels.submitJobCaseReview, input),
   getJobCaseHistory: (reviewId) => ipcRenderer.invoke(ipcChannels.getJobCaseHistory, reviewId),
+  getJobCaseSourceText: (reviewId) => ipcRenderer.invoke(ipcChannels.getJobCaseSourceText, reviewId),
   setJobCaseLifecycle: (input) => ipcRenderer.invoke(ipcChannels.setJobCaseLifecycle, input),
   reopenJobCaseReview: (input) => ipcRenderer.invoke(ipcChannels.reopenJobCaseReview, input),
   previewJobCaseDeletion: (reviewId) => ipcRenderer.invoke(ipcChannels.previewJobCaseDeletion, reviewId),
   deleteJobCaseData: (input) => ipcRenderer.invoke(ipcChannels.deleteJobCaseData, input),
+  listBroadcastWorkspace: () => ipcRenderer.invoke(ipcChannels.listBroadcastWorkspace),
+  draftCaseBroadcast: (input) => ipcRenderer.invoke(ipcChannels.draftCaseBroadcast, input),
+  draftCaseUpdateNotice: (input) => ipcRenderer.invoke(ipcChannels.draftCaseUpdateNotice, input),
+  recordCaseBroadcastCopy: (input) => ipcRenderer.invoke(ipcChannels.recordCaseBroadcastCopy, input),
+  copyTextToClipboard: (text) => ipcRenderer.invoke(ipcChannels.copyTextToClipboard, text),
+  listCaseBroadcasts: (reviewId) => ipcRenderer.invoke(ipcChannels.listCaseBroadcasts, reviewId),
+  createBroadcastTemplate: (input) => ipcRenderer.invoke(ipcChannels.createBroadcastTemplate, input),
+  updateBroadcastTemplate: (input) => ipcRenderer.invoke(ipcChannels.updateBroadcastTemplate, input),
+  deleteBroadcastTemplate: (input) => ipcRenderer.invoke(ipcChannels.deleteBroadcastTemplate, input),
   getProposalWorkspace: (taskId) => ipcRenderer.invoke(ipcChannels.getProposalWorkspace, taskId),
   createProposalDraft: (input) => ipcRenderer.invoke(ipcChannels.createProposalDraft, input),
   updateProposalDraft: (input) => ipcRenderer.invoke(ipcChannels.updateProposalDraft, input),
@@ -131,6 +150,14 @@ const api: DesktopApi = {
   saveGoogleWorkspaceAdminConfiguration: (input) => ipcRenderer.invoke(ipcChannels.saveGoogleWorkspaceAdminConfiguration, input),
   disconnectGoogleWorkspace: () => ipcRenderer.invoke(ipcChannels.disconnectGoogleWorkspace),
   syncGoogleWorkspace: () => ipcRenderer.invoke(ipcChannels.syncGoogleWorkspace),
+  onGmailSyncCompleted: (listener) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => {
+      const parsed = parseGmailSyncCompletion(payload)
+      if (parsed) listener(parsed)
+    }
+    ipcRenderer.on(ipcChannels.gmailSyncCompleted, handler)
+    return () => ipcRenderer.removeListener(ipcChannels.gmailSyncCompleted, handler)
+  },
   getRecoveryState: () => ipcRenderer.invoke(ipcChannels.getRecoveryState),
   createRecoveryPackage: (input) => ipcRenderer.invoke(ipcChannels.createRecoveryPackage, input),
   snoozeRecoveryReminder: (input) => ipcRenderer.invoke(ipcChannels.snoozeRecoveryReminder, input),

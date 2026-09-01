@@ -79,10 +79,13 @@ import { clearOriginalOpenRoot, prepareOriginalOpenRoot } from './original-open-
 import { verifyStagedRecovery } from './recovery-verification'
 import { registerAiCommerceHandlers } from './ipc/aicommerce'
 import { registerBootstrapHandlers } from './ipc/bootstrap'
+import { registerBroadcastHandlers } from './ipc/broadcast'
 import { registerCandidateEvaluationHandlers } from './ipc/candidate-evaluation'
 import { registerCandidateMatchHandlers } from './ipc/candidate-match'
 import { registerCandidateHandlers } from './ipc/candidates'
+import { registerAtsImportHandlers } from './ipc/ats-import'
 import { registerGoogleWorkspaceHandlers } from './ipc/google-workspace'
+import { createGmailSyncScheduler, resolveGmailSyncIntervalMinutes } from './gmail-sync-scheduler'
 import { registerInterviewHandlers } from './ipc/interviews'
 import { registerJobCaseHandlers } from './ipc/job-cases'
 import { registerProposalHandlers } from './ipc/proposals'
@@ -460,11 +463,17 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   registerBootstrapHandlers(context)
   registerSettingsHandlers(context)
   registerAiCommerceHandlers(context)
-  registerGoogleWorkspaceHandlers(context)
+  const googleWorkspaceSync = registerGoogleWorkspaceHandlers(context)
   registerRecoveryHandlers(context)
   registerCandidateHandlers(context)
+  registerAtsImportHandlers(context)
   registerCandidateEvaluationHandlers(context)
   registerJobCaseHandlers(context)
+  registerBroadcastHandlers({
+    repository: context.repository,
+    currentOperator: context.currentOperator,
+    assertTrustedSender
+  })
   registerProposalHandlers(context)
   registerInterviewHandlers(context)
   registerWorkTaskHandlers(context)
@@ -528,7 +537,32 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   })
   context.attachDispatcher(safeLocalDispatcher)
   safeLocalDispatcher.start()
+
+  // Scheduled Gmail sync: the same guarded sync as the manual button, on a
+  // fixed cadence while the app runs. The first run waits one interval, an
+  // in-flight sync is never doubled, and failures back off exponentially.
+  const gmailSyncScheduler = createGmailSyncScheduler({
+    intervalMinutes: resolveGmailSyncIntervalMinutes(process.env.SES_GMAIL_SYNC_INTERVAL_MINUTES),
+    isSyncRunning: googleWorkspaceSync.isGmailSyncRunning,
+    isReadonlyConnected: async () => {
+      if (!context.googleWorkspace || !context.gmailSyncConfig) return false
+      return (await context.googleWorkspace.getState()).status === 'readonly'
+    },
+    runSync: () => googleWorkspaceSync.startGmailSync(),
+    onImported: (counts) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(ipcChannels.gmailSyncCompleted, counts)
+      }
+    },
+    setTimer: (callback, delayMs) => setTimeout(callback, delayMs),
+    clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+    log: (event, details) => {
+      if (!app.isPackaged || releaseSmokeMode) console.info(`[gmail-sync-scheduler] ${event}`, details)
+    }
+  })
+  if (context.googleWorkspaceConfiguration && context.gmailSyncConfig) gmailSyncScheduler.start()
   return () => {
+    gmailSyncScheduler.stop()
     wechatScopeTokens.clear()
     stopAgentIpc()
     context.stopDispatcher()

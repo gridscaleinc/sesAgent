@@ -246,6 +246,26 @@ export function createDefaultDomainToolRegistry(): DomainToolRegistry {
       idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
     })
     .register({
+      name: 'job-case.draft.read.local', version: 1,
+      inputSchema: z.object({ reviewIds: z.array(z.string().uuid()).min(1).max(10) }).strict(),
+      allowedOrigins: ['user-command'],
+      allowedScopeIds: ['conversation-intake-drafts'],
+      effects: { localRead: true, localWrite: false, externalRead: false, externalWrite: false, fileWrite: false, cloudInvocation: false, cloudPayload: 'none' },
+      idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
+    })
+    .register({
+      // Drafts the message for confirmed cases. Local read only: the text is
+      // generated from stored case fields and never leaves the device. There
+      // is no companion write tool - a copy is recorded by the screen that
+      // performed it, and nothing here can claim a message was sent.
+      name: 'job-case.broadcast.draft.local', version: 1,
+      inputSchema: z.object({ reviewIds: z.array(z.string().uuid()).min(1).max(8) }).strict(),
+      allowedOrigins: ['user-command'],
+      allowedScopeIds: ['broadcast-queue'],
+      effects: { localRead: true, localWrite: false, externalRead: false, externalWrite: false, fileWrite: false, cloudInvocation: false, cloudPayload: 'none' },
+      idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
+    })
+    .register({
       name: 'candidate.profile.read.local', version: 1,
       inputSchema: agentCandidateProfileReadSchema,
       allowedOrigins: ['user-command'],
@@ -267,6 +287,20 @@ export function createDefaultDomainToolRegistry(): DomainToolRegistry {
       allowedOrigins: ['user-command'],
       allowedScopeIds: ['selected-match-run'],
       effects: { localRead: true, localWrite: false, externalRead: false, externalWrite: false, fileWrite: false, cloudInvocation: false, cloudPayload: 'none' },
+      idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
+    })
+    .register({
+      // The planner never sees this tool: the Main intake gate dispatches it
+      // deterministically from the current user message, before any cloud call.
+      // Input carries a digest only - never the pasted text itself.
+      name: 'business-text.import.local', version: 1,
+      inputSchema: z.object({
+        contentDigest: hashSchema,
+        kind: z.enum(['job-case', 'candidate'])
+      }).strict(),
+      allowedOrigins: ['user-command'],
+      allowedScopeIds: ['current-agent-message'],
+      effects: { localRead: true, localWrite: true, externalRead: false, externalWrite: false, fileWrite: true, cloudInvocation: false, cloudPayload: 'none' },
       idempotencyMode: 'content-idempotent', replayPolicy: 'safe-local', approval: 'none'
     })
     .register({

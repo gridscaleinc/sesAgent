@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3-multiple-ciphers'
 import { createSampleTasks, createWorkTaskPreview, materializeWorkTask } from '@application'
 import { createRedactedManualJobCaseSource, extractJobCaseDraft } from '@job-cases'
-import { EncryptedApplicationRepository } from '@persistence'
+import { currentSchemaVersion, EncryptedApplicationRepository } from '@persistence'
 
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'ses-agent-schema-v13-upgrade-'))
 const databasePath = join(temporaryDirectory, 'upgrade.db')
@@ -149,12 +149,18 @@ try {
     DROP TABLE candidate_evaluation_reports;
     DROP TABLE candidate_evaluation_datasets;
     DROP TABLE business_priority_projections;
+    DROP TABLE candidate_match_assessments;
     DROP TABLE candidate_match_results;
     DROP TABLE candidate_match_runs;
     DROP TABLE candidate_project_embeddings;
     DROP TABLE candidate_project_review_audits;
     DROP TABLE candidate_profile_embeddings;
     DROP TABLE recovery_reminder_preferences;
+    DROP TABLE case_broadcast_copies;
+    DROP TABLE case_broadcasts;
+    DROP TABLE sales_groups;
+    DROP TABLE broadcast_templates;
+    DROP TABLE job_case_field_aliases;
     DROP TABLE local_data_revision;
     ALTER TABLE recovery_events DROP COLUMN data_revision;
     ALTER TABLE cloud_call_audits DROP COLUMN quality_gate_report_hash;
@@ -162,20 +168,20 @@ try {
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_hash;
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_status;
     ALTER TABLE cloud_call_audits DROP COLUMN gate_policy_version;
-    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39);
+    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43);
     COMMIT;
   `)
   assert.equal(legacy.prepare<{ version: number }>('SELECT max(version) AS version FROM schema_migrations').get()?.version, 13)
   legacy.close()
 
   const upgraded = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(upgraded.getSchemaVersion(), 39)
+  assert.equal(upgraded.getSchemaVersion(), currentSchemaVersion)
   assert.equal(upgraded.getJobCaseReview(reviewId)?.redactedSubject, 'Java 案件')
   assert.equal(upgraded.getLocalDataRevision().revision, 1, 'existing managed data was not conservatively marked changed')
   assert.equal(upgraded.getRecoveryState().reminder.reason, 'data-changed', 'legacy backup was incorrectly treated as revision-aware')
   const revisionBeforeMutation = upgraded.getLocalDataRevision().revision
   const upgradeTask = materializeWorkTask(
-    createWorkTaskPreview('Schema v39 trigger verification'),
+    createWorkTaskPreview(`Schema v${currentSchemaVersion} trigger verification`),
     'schema-v35-trigger-verification',
     '2026-07-19T00:02:00.000Z'
   )
@@ -269,7 +275,7 @@ try {
     .get()?.count ?? 0
   const violations = inspected.pragma('foreign_key_check') as unknown[]
   inspected.close()
-  assert.equal(triggerCount, 139)
+  assert.equal(triggerCount, 157)
   assert.equal(recoveryColumns.some((column) => column.name === 'data_revision'), true)
   assert.equal(embeddingColumns.some((column) => column.name === 'vector_blob'), true)
   assert.equal(projectEmbeddingColumns.some((column) => column.name === 'project_id'), true)
@@ -323,7 +329,7 @@ try {
 
   process.stdout.write(`${JSON.stringify({
     fromSchema: 13,
-    toSchema: 39,
+    toSchema: currentSchemaVersion,
     existingReviewPreserved: true,
     sampleTasksIgnored: true,
     legacyBackupConservativelyStale: true,

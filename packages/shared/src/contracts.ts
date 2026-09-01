@@ -28,12 +28,15 @@ export type ProcessingJobStatus = 'queued' | 'running' | 'succeeded' | 'retry_wa
 export type DomainToolName =
   | 'resume.analyze.local'
   | 'candidate.draft.read.local'
+  | 'job-case.draft.read.local'
+  | 'job-case.broadcast.draft.local'
   | 'candidate.interview.schedule.local'
   | 'job-case.search.local'
   | 'candidate.match.local'
   | 'candidate.profile.read.local'
   | 'candidate.interview.read.local'
   | 'match-run.read.local'
+  | 'business-text.import.local'
   | 'gmail.sync.read'
   | 'wechat.visible.read'
   | 'proposal.export'
@@ -79,7 +82,14 @@ export interface ProcessingJobSummary {
   updatedAt: string
 }
 
+/** Formats an operator can upload. File pickers and drop targets accept only these. */
 export type SupportedResumeFormat = 'pdf' | 'docx' | 'xlsx' | 'xls' | 'xlsb'
+
+/**
+ * Formats a candidate source may carry once staged. 'txt' is Main-created only
+ * (business-text intake staging); it never widens what a user can upload.
+ */
+export type CandidateSourceFormat = SupportedResumeFormat | 'txt'
 
 export const candidateFieldKeys = [
   'skills',
@@ -170,7 +180,9 @@ export interface CandidateProjectMatchEvidence extends CandidateProjectExperienc
 export const jobCaseFieldKeys = [
   'title',
   'role',
+  'industry',
   'required_skills',
+  'preferred_skills',
   'rate',
   'settlement',
   'location',
@@ -179,18 +191,21 @@ export const jobCaseFieldKeys = [
   'working_hours',
   'japanese_level',
   'interview',
+  'headcount',
   'contract_chain',
   'payment_terms',
-  'work_authorization'
+  'work_authorization',
+  'notes'
 ] as const
 
 export type JobCaseFieldKey = (typeof jobCaseFieldKeys)[number]
-export type JobCaseSourceType = 'gmail' | 'manual' | 'eml' | 'chat-paste' | 'wechat-visible'
+export const jobCaseSourceTypes = ['gmail', 'manual', 'eml', 'chat-paste', 'wechat-visible'] as const
+export type JobCaseSourceType = (typeof jobCaseSourceTypes)[number]
 
 export interface StagedLocalFile {
   token: string
   name: string
-  format: SupportedResumeFormat
+  format: CandidateSourceFormat
   size: number
   sha256: string
   createdAt: string
@@ -334,7 +349,7 @@ export interface OriginalDocumentPreview {
   version: 'original-document-preview-v1'
   documentId: string
   fileName: string
-  format: SupportedResumeFormat
+  format: CandidateSourceFormat
   size: number
   sha256: string
   viewMode: 'pdf' | 'spreadsheet' | 'document'
@@ -484,6 +499,29 @@ export interface BusinessPriorityProjection {
   } | null
 }
 
+/**
+ * The cloud second opinion on one shortlisted match. The local run decides
+ * who is shortlisted and how they rank; this reading sits next to the local
+ * fit as advice and never changes ranking or hard filters.
+ */
+export const candidateMatchAssessmentFits = ['strong', 'possible', 'weak', 'insufficient-info'] as const
+
+export type CandidateMatchAssessmentFit = (typeof candidateMatchAssessmentFits)[number]
+
+export interface CandidateMatchAssessment {
+  version: 'match-assessment-v1'
+  fit: CandidateMatchAssessmentFit
+  /** Requirements the model found evidence for; both halves are verbatim copies of the projected facts. */
+  met: Array<{ requirement: string; evidence: string }>
+  /** Requirements the projected facts do not satisfy. */
+  gaps: string[]
+  /** Points the facts leave open; interview preparation picks these up. */
+  confirm: string[]
+  reason: string
+  modelKey: string
+  assessedAt: string
+}
+
 export interface MatchingHomeResult {
   matchResultId: string
   matchResultHash: string
@@ -497,7 +535,7 @@ export interface MatchingHomeResult {
     termCoverage: number | null
     hardFilterUnknownCount: number
     missing?: string[]
-    hardFilterStatus?: 'passed' | 'failed' | 'unknown'
+    hardFilterStatus?: 'passed' | 'failed' | 'unknown' | 'none'
     evidence: Array<{
       key: CandidateFieldKey
       label: string
@@ -515,6 +553,8 @@ export interface MatchingHomeResult {
   }
   feedback: CandidateMatchFeedbackSnapshot | null
   businessPriority: BusinessPriorityProjection
+  /** Present once the cloud review ran for this result; absent for local-only runs. */
+  assessment?: CandidateMatchAssessment | null
 }
 
 export interface MatchingHomeProjection {
@@ -914,7 +954,7 @@ export type CandidateInterviewDecision = (typeof candidateInterviewDecisions)[nu
 export const candidateInterviewKinds = ['recruiting', 'client'] as const
 export type CandidateInterviewKind = (typeof candidateInterviewKinds)[number]
 
-export const candidateInterviewQuestionSources = ['standard', 'resume', 'inherited', 'custom'] as const
+export const candidateInterviewQuestionSources = ['standard', 'resume', 'inherited', 'match', 'custom'] as const
 export type CandidateInterviewQuestionSource = (typeof candidateInterviewQuestionSources)[number]
 
 export interface CandidateInterviewQuestion {
@@ -923,6 +963,8 @@ export interface CandidateInterviewQuestion {
   source: CandidateInterviewQuestionSource
   sourceLabel: string | null
   selected: boolean
+  /** What a good answer looks like; the interviewer's scoring note for this question. */
+  scoringGuide?: string | null
 }
 
 /**
@@ -1081,6 +1123,8 @@ export interface JobCaseReviewSnapshot {
   reviewerDisplayName: string | null
   jobCase: JobCaseSummary | null
   lifecycle: 'active' | 'archived'
+  /** The business-text paste that created this draft, when one did. */
+  intakeBatchId?: string | null
   cloudEligible: false
 }
 
@@ -1101,6 +1145,18 @@ export interface JobCaseVersionDetail {
   confirmedAt: string
   confirmedBy: string
   containsDirectIdentifiers: false
+}
+
+/**
+ * The stored redacted original behind one job-case review. Only the redacted
+ * subject and body ever leave the store - raw mail content is never persisted.
+ */
+export interface JobCaseSourceText {
+  sourceType: JobCaseSourceType
+  redactedSubject: string
+  redactedBody: string
+  messageDate: string
+  fromDomain: string | null
 }
 
 export interface SetJobCaseLifecycleInput {
@@ -1255,6 +1311,24 @@ export interface ImportEmlJobCaseDraftsResult {
   skippedCount: number
   failedCount: number
   items: EmlImportItemResult[]
+}
+
+/** One ATS CSV row after it went through the pasted-candidate import path. */
+export interface AtsCsvImportItemResult {
+  row: number
+  outcome: 'created' | 'existing-review' | 'already-imported' | 'archived' | 'failed'
+  documentId: string | null
+}
+
+export interface ImportAtsCsvCandidatesResult {
+  cancelled: boolean
+  fileName: string | null
+  rowCount: number
+  importedCount: number
+  duplicateCount: number
+  skippedCount: number
+  failedCount: number
+  items: AtsCsvImportItemResult[]
 }
 
 export type ProposalDraftStatus =
@@ -1590,6 +1664,28 @@ export interface LocalApplicationPreferences {
   cloudEligible: false
 }
 
+/** Extra labels the operator's partners use for a built-in job-case field. */
+export type JobCaseFieldAliasMap = Partial<Record<JobCaseFieldKey, string[]>>
+
+/**
+ * Operator-defined aliases for the built-in job-case fields - 単金 for 単価,
+ * 稼働 for 開始時期. The local router, the local extractor and the cloud
+ * extraction instructions all read the same map, so a partner's wording is
+ * recognised everywhere or nowhere. Stored on this device only.
+ */
+export interface JobCaseFieldAliases {
+  version: 'job-case-field-aliases-v1'
+  aliases: JobCaseFieldAliasMap
+  configured: boolean
+  revision: number | null
+  updatedAt: string | null
+}
+
+export interface SaveJobCaseFieldAliasesInput {
+  aliases: JobCaseFieldAliasMap
+  expectedRevision: number | null
+}
+
 export interface AiCommerceWalletSnapshot {
   balanceCredits: number
   reservedCredits: number
@@ -1699,9 +1795,12 @@ export interface AgentCandidateMatchCard {
   fitScore: number | null
   matched: string[]
   missing: string[]
-  hardFilterStatus: 'passed' | 'failed' | 'unknown'
+  /** none: the case stated no hard condition, so nothing was gated. */
+  hardFilterStatus: 'passed' | 'failed' | 'unknown' | 'none'
   projectEvidence: string | null
   status: AgentEntityStatus
+  /** The cloud second opinion, when the review ran; never affects rank or hard filters. */
+  assessment?: CandidateMatchAssessment | null
 }
 
 export interface AgentMatchRunFacts {
@@ -1715,7 +1814,8 @@ export interface AgentMatchRunFacts {
   candidate: AgentCandidateMatchCard | null
   matched: string[]
   missing: string[]
-  hardFilterStatus: 'passed' | 'failed' | 'unknown'
+  /** none: the case stated no hard condition, so nothing was gated. */
+  hardFilterStatus: 'passed' | 'failed' | 'unknown' | 'none'
   projectEvidence: string | null
 }
 
@@ -1799,11 +1899,20 @@ export interface AgentJobCaseCardsBlock {
   cards: AgentJobCaseCard[]
 }
 
+export type AgentCloudReviewSkipCode = 'cloud-unavailable' | 'no-job-case' | 'no-candidates' | 'nothing-matched' | 'no-verdict' | 'cloud-error'
+
+/** Whether the cloud review ran for a match run, and why not when it did not. */
+export type AgentCloudReviewOutcome =
+  | { status: 'reviewed'; reviewedCount: number }
+  | { status: 'skipped'; code: AgentCloudReviewSkipCode; reason: string | null }
+
 export interface AgentCandidateMatchCardsBlock {
   type: 'candidate-match-cards'
   runId: string
   resultHash: string
   cards: AgentCandidateMatchCard[]
+  /** Absent on runs from before the cloud review existed. */
+  cloudReview?: AgentCloudReviewOutcome | null
 }
 
 export interface AgentClarificationBlock {
@@ -1879,6 +1988,76 @@ export interface AgentResumeImportBlock {
 }
 
 /**
+ * One chat-pasted job-case draft as the agent and the conversation may see it:
+ * field values from the locally redacted draft (placeholders already stripped),
+ * its review state, and - once the operator confirmed it - the confirmed case
+ * for matching. The review id is local route metadata that is never projected
+ * to Cloud; the redacted subject, sender, thread and preview are deliberately
+ * absent.
+ */
+export interface AgentJobCaseDraftFacts {
+  reviewId: string
+  label: string
+  title: string | null
+  reviewStatus: 'awaiting-review' | 'completed'
+  lifecycle: 'active' | 'archived'
+  jobCase: { id: string; version: number } | null
+  fields: Array<{
+    key: JobCaseFieldKey
+    label: string
+    value: string | null
+    status: 'needs_review' | 'missing' | 'confirmed'
+  }>
+  warningCodes: string[]
+  status: AgentEntityStatus
+}
+
+export interface AgentJobCaseDraftCard extends AgentJobCaseDraftFacts {
+  ordinal: number
+  outcome: 'created' | 'existing-review' | 'already-imported' | 'archived'
+}
+
+/** The drafts one business-text paste produced, in paste order. */
+export interface AgentJobCaseDraftCardsBlock {
+  type: 'job-case-draft-cards'
+  intakeBatchId: string
+  cards: AgentJobCaseDraftCard[]
+}
+
+/**
+ * One message the agent drafted for a confirmed case, in both languages,
+ * exactly as 案件配信 would have produced it. The card names no destination:
+ * where the operator pastes it is their own business and this device does not
+ * record it. `templateId`/`templateRevision` travel with the card so the copy
+ * it produces names the exact shape the text was written from.
+ *
+ * The message texts are local authority. They are shown, copied and recorded
+ * verbatim, and they are never projected to Cloud.
+ */
+export interface AgentJobCaseBroadcastCard {
+  reviewId: string
+  jobCaseId: string
+  jobCaseVersion: number
+  ordinal: number
+  title: string
+  status: BroadcastQueueStatus
+  templateId: string
+  templateRevision: number
+  textJa: string
+  textZh: string
+  /** Identifier types the local detector still found, per language. */
+  forbiddenJa: string[]
+  forbiddenZh: string[]
+}
+
+/** The drafted messages of one turn, plus the queue they came from. */
+export interface AgentJobCaseBroadcastCardsBlock {
+  type: 'job-case-broadcast-cards'
+  cards: AgentJobCaseBroadcastCard[]
+  queue: { new: number; copied: number; attention: number }
+}
+
+/**
  * A local, allowlisted route back into a structured SES business workspace.
  * It deliberately cannot carry a URL. Entity IDs are route metadata for the
  * Renderer and must not be included in Cloud narrative projections.
@@ -1891,6 +2070,12 @@ export type AgentSystemAccessBlock =
   | { type: 'system-access'; destination: 'candidate-management' }
   | {
       type: 'system-access'
+      destination: 'broadcast'
+      /** Opens the queue with one case already selected; the queue itself is unfiltered. */
+      reviewId?: string
+    }
+  | {
+      type: 'system-access'
       destination: 'candidate'
       sourceDocumentId: string
       view: 'overview' | 'resume' | 'schedule' | 'prepare' | 'workbench' | 'decision' | 'client' | 'records' | 'entry'
@@ -1898,7 +2083,13 @@ export type AgentSystemAccessBlock =
       interviewKind?: 'recruiting' | 'client'
     }
   | { type: 'system-access'; destination: 'original-document'; sourceDocumentId: string }
-  | { type: 'system-access'; destination: 'review-center' }
+  | {
+      type: 'system-access'
+      destination: 'review-center'
+      /** Narrows the review center to the drafts one paste produced. */
+      intakeBatchId?: string
+      reviewIds?: string[]
+    }
   | { type: 'system-access'; destination: 'task'; taskId: string }
   | {
       type: 'system-access'
@@ -1929,6 +2120,8 @@ export type AiConversationBlock =
   | AgentMatchRunExplanationBlock
   | AgentCandidateDraftBlock
   | AgentResumeImportBlock
+  | AgentJobCaseDraftCardsBlock
+  | AgentJobCaseBroadcastCardsBlock
   | AgentSystemAccessBlock
   | AgentErrorBlock
 
@@ -1936,6 +2129,12 @@ export interface AiConversationSalesAgentState {
   selectedJobCaseRef: TypedAiConversationReference | null
   lastMatchRunId: string | null
   lastSearchMessageId: string | null
+  /**
+   * The job-case drafts the latest business-text paste produced in this
+   * conversation, in paste order, so "第2条" resolves without the operator
+   * restating it. Optional: older conversations do not carry it.
+   */
+  lastIntakeBatch?: { intakeBatchId: string; messageId: string; reviewIds: string[] } | null
 }
 
 export interface AiConversationMessage {
@@ -2056,6 +2255,32 @@ export type AgentTurnEvent =
 
 export type AgentTurnStatus = 'clarifying' | 'completed' | 'failed' | 'cancelled'
 
+/**
+ * Metadata for a locally-handled business-text intake turn. Carries no message
+ * content: the renderer keeps the pasted text in memory and uses
+ * restoreComposerText to put it back into the composer for a tagged re-send.
+ */
+export interface AgentIntakeTurnFacts {
+  route: 'job-case' | 'candidate' | 'ambiguous-sensitive' | 'multiple'
+  reason: string
+  restoreComposerText: boolean
+}
+
+/** Wall-clock breakdown of one turn in milliseconds, so the operator can see where the time went. */
+export interface AgentTurnTimings {
+  totalMs: number
+  /** The cloud planning call; null when no plan was needed. */
+  planningMs: number | null
+  /** The local tool, excluding the cloud review it may have waited for. */
+  localToolMs: number | null
+  /** The cloud second opinion on a match shortlist. */
+  cloudReviewMs: number | null
+  /** Time to the first streamed character of the answer. */
+  narrativeFirstTokenMs: number | null
+  narrativeMs: number | null
+  cloudCalls: number
+}
+
 export interface ExecuteAgentTurnResult {
   status: AgentTurnStatus
   conversation: AiConversationSnapshot
@@ -2063,6 +2288,9 @@ export interface ExecuteAgentTurnResult {
   toolName: DomainToolName | null
   actionRunId: string | null
   requestId: string
+  /** Present only when the local intake gate handled this turn. */
+  intake?: AgentIntakeTurnFacts
+  timings?: AgentTurnTimings
 }
 
 export interface CancelAgentTurnInput {
@@ -2139,6 +2367,17 @@ export interface GmailSyncState {
     failed: number
   } | null
   lastError: string | null
+}
+
+/**
+ * Counts-only push sent after a scheduled Gmail sync imported messages;
+ * never subjects, bodies, or addresses.
+ */
+export interface GmailScheduledSyncCompletion {
+  imported: number
+  duplicates: number
+  filtered: number
+  failed: number
 }
 
 export interface RecoveryPackageSummary {
@@ -2222,11 +2461,199 @@ export interface ConfirmRecoveryResult {
   restartRequired: true
 }
 
+/* ── 案件配信 (case broadcast) ─────────────────────────────────────────── */
+
+export const broadcastRatePolicies = ['raw', 'cap', 'negotiable'] as const
+export type BroadcastRatePolicy = (typeof broadcastRatePolicies)[number]
+
+/**
+ * Never allowed in a broadcast line: the contract chain and the payment terms
+ * are what a partner must not read in a group message. The exclusion is part
+ * of the template contract, so no template can be saved that references them.
+ */
+export const broadcastForbiddenFieldKeys = ['contract_chain', 'payment_terms'] as const
+export type BroadcastForbiddenFieldKey = (typeof broadcastForbiddenFieldKeys)[number]
+export type BroadcastTemplateFieldKey = Exclude<JobCaseFieldKey, BroadcastForbiddenFieldKey>
+export const broadcastTemplateFieldKeys: readonly BroadcastTemplateFieldKey[] = jobCaseFieldKeys
+  .filter((key): key is BroadcastTemplateFieldKey =>
+    !(broadcastForbiddenFieldKeys as readonly string[]).includes(key))
+
+export type BroadcastTemplateLine =
+  | { kind: 'field'; field: BroadcastTemplateFieldKey; labelJa: string; labelZh: string; on: boolean }
+  | { kind: 'text'; textJa: string; textZh: string; on: boolean }
+
+/** One operator-owned message shape. Editing it bumps `revision`, which the ledger records. */
+export interface BroadcastTemplate {
+  id: string
+  name: string
+  ratePublic: BroadcastRatePolicy
+  headerJa: string
+  headerZh: string
+  footerJa: string
+  footerZh: string
+  lines: BroadcastTemplateLine[]
+  revision: number
+  createdAt: string
+  updatedAt: string
+}
+
+export const broadcastLanguages = ['ja', 'zh'] as const
+export type BroadcastLanguage = (typeof broadcastLanguages)[number]
+
+export const caseBroadcastKinds = ['new', 'update'] as const
+export type CaseBroadcastKind = (typeof caseBroadcastKinds)[number]
+/** Only the pre-v43 ledger rows carry one; nothing writes a new action. */
+export type CaseBroadcastAction = 'copied' | 'marked_sent'
+
+/**
+ * One row of the pre-v43 配信 ledger, which also claimed to know what had been
+ * posted to which sales group. Whether a message actually reached a group is
+ * the operator's own business and is no longer tracked, so nothing writes this
+ * shape any more; it stays readable so an existing device keeps its history.
+ */
+export interface CaseBroadcastRecord {
+  id: string
+  reviewId: string
+  jobCaseId: string
+  jobCaseVersion: number
+  groupId: string
+  groupName: string
+  templateId: string
+  templateRevision: number
+  lang: BroadcastLanguage
+  kind: CaseBroadcastKind
+  action: CaseBroadcastAction
+  text: string
+  textSha256: string
+  actorId: string
+  createdAt: string
+}
+
+/**
+ * One copy the operator actually made: a system fact this device observed,
+ * unlike a send, which happens in WeChat and is never claimed here. Rows are
+ * append-only and disappear only with the case they belong to.
+ */
+export interface CaseBroadcastCopy {
+  id: string
+  reviewId: string
+  jobCaseId: string
+  jobCaseVersion: number
+  templateId: string
+  templateRevision: number
+  lang: BroadcastLanguage
+  kind: CaseBroadcastKind
+  text: string
+  textSha256: string
+  actorId: string
+  createdAt: string
+}
+
+/**
+ * One row of the copy history the 案件配信 screen shows. It deliberately carries
+ * no message text: the history answers "when, in which language, from which
+ * template, for which case version", and the current text is one draft away.
+ * `source` separates a copy this device recorded from a pre-v43 ledger row.
+ */
+export interface CaseBroadcastHistoryEntry {
+  id: string
+  source: 'copy' | 'legacy'
+  jobCaseVersion: number
+  templateId: string
+  templateRevision: number
+  lang: BroadcastLanguage
+  kind: CaseBroadcastKind
+  createdAt: string
+}
+
+/** `copied` is the only completion this device can honestly claim. */
+export type BroadcastQueueStatus = 'new' | 'copied' | 'attention'
+
+export interface BroadcastQueueItem {
+  reviewId: string
+  jobCaseId: string | null
+  jobCaseVersion: number | null
+  title: string
+  sourceType: JobCaseSourceType
+  status: BroadcastQueueStatus
+  lastCopy: { at: string; lang: BroadcastLanguage; jobCaseVersion: number } | null
+  /** The active case version is newer than the newest version ever copied. */
+  hasUpdateSinceLastCopy: boolean
+}
+
+export interface BroadcastWorkspace {
+  queue: BroadcastQueueItem[]
+  templates: BroadcastTemplate[]
+}
+
+export interface DraftCaseBroadcastInput {
+  reviewId: string
+  templateId?: string
+}
+
+/**
+ * Both language versions plus what the local identifier detector found in each.
+ * Detection results are returned rather than silently blocking, so the operator
+ * sees which identifier types still have to come out of the text.
+ */
+export interface DraftCaseBroadcastResult {
+  textJa: string
+  textZh: string
+  forbiddenJa: string[]
+  forbiddenZh: string[]
+}
+
+export interface DraftCaseUpdateNoticeInput {
+  reviewId: string
+}
+
+export interface BroadcastFieldChange {
+  label: string
+  before: string
+  after: string
+}
+
+export type DraftCaseUpdateNoticeResult =
+  | { status: 'ready'; textJa: string; textZh: string; changes: BroadcastFieldChange[] }
+  | { status: 'no-copy-baseline' }
+  | { status: 'no-changes' }
+
+export interface RecordCaseBroadcastCopyInput {
+  reviewId: string
+  templateId: string
+  lang: BroadcastLanguage
+  kind: CaseBroadcastKind
+  text: string
+}
+
+export interface RecordCaseBroadcastCopyResult {
+  copy: CaseBroadcastCopy
+}
+
+export interface BroadcastTemplateDraft {
+  name: string
+  ratePublic: BroadcastRatePolicy
+  headerJa: string
+  headerZh: string
+  footerJa: string
+  footerZh: string
+  lines: BroadcastTemplateLine[]
+}
+
+export type CreateBroadcastTemplateInput = BroadcastTemplateDraft
+export interface UpdateBroadcastTemplateInput extends BroadcastTemplateDraft {
+  id: string
+}
+export interface DeleteBroadcastTemplateInput {
+  id: string
+}
+
 export interface BootstrapPayload {
   appVersion: string
   environmentLabel: string
   operatorProfile: LocalOperatorProfile
   preferences: LocalApplicationPreferences
+  jobCaseFieldAliases?: JobCaseFieldAliases
   featureFlags?: {
     conversationalMatchingEnabled: boolean
   }
@@ -2302,6 +2729,7 @@ export interface DesktopApi {
   resolveActionApproval(input: ResolveActionApprovalInput): Promise<ActionApprovalSummary>
   saveLocalOperatorProfile(input: SaveLocalOperatorProfileInput): Promise<LocalOperatorProfile>
   saveLocalApplicationPreferences(input: SaveLocalApplicationPreferencesInput): Promise<LocalApplicationPreferences>
+  saveJobCaseFieldAliases(input: SaveJobCaseFieldAliasesInput): Promise<JobCaseFieldAliases>
   connectAiCommerce(): Promise<AiCommerceMembershipState>
   getAiCommerceDashboard(): Promise<AiCommerceMembershipState>
   disconnectAiCommerce(): Promise<AiCommerceMembershipState>
@@ -2335,12 +2763,24 @@ export interface DesktopApi {
   prepareWechatVisibleRead(): Promise<PrepareWechatVisibleReadResult>
   executeWechatVisibleRead(input: ExecuteWechatVisibleReadInput): Promise<ExecuteWechatVisibleReadResult>
   importEmlJobCaseDrafts(): Promise<ImportEmlJobCaseDraftsResult>
+  importAtsCsvCandidates(): Promise<ImportAtsCsvCandidatesResult>
   submitJobCaseReview(input: SubmitJobCaseReviewInput): Promise<SubmitJobCaseReviewResult>
   getJobCaseHistory(reviewId: string): Promise<JobCaseVersionDetail[]>
+  getJobCaseSourceText(reviewId: string): Promise<JobCaseSourceText>
   setJobCaseLifecycle(input: SetJobCaseLifecycleInput): Promise<SetJobCaseLifecycleResult>
   reopenJobCaseReview(input: ReopenJobCaseReviewInput): Promise<ReopenJobCaseReviewResult>
   previewJobCaseDeletion(reviewId: string): Promise<JobCaseDeletionPreview>
   deleteJobCaseData(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
+  listBroadcastWorkspace(): Promise<BroadcastWorkspace>
+  draftCaseBroadcast(input: DraftCaseBroadcastInput): Promise<DraftCaseBroadcastResult>
+  draftCaseUpdateNotice(input: DraftCaseUpdateNoticeInput): Promise<DraftCaseUpdateNoticeResult>
+  recordCaseBroadcastCopy(input: RecordCaseBroadcastCopyInput): Promise<RecordCaseBroadcastCopyResult>
+  /** Copies via Main's clipboard: the sandboxed renderer's permission set denies navigator.clipboard. */
+  copyTextToClipboard(text: string): Promise<void>
+  listCaseBroadcasts(reviewId: string): Promise<CaseBroadcastHistoryEntry[]>
+  createBroadcastTemplate(input: CreateBroadcastTemplateInput): Promise<BroadcastTemplate[]>
+  updateBroadcastTemplate(input: UpdateBroadcastTemplateInput): Promise<BroadcastTemplate[]>
+  deleteBroadcastTemplate(input: DeleteBroadcastTemplateInput): Promise<BroadcastTemplate[]>
   getProposalWorkspace(taskId: string): Promise<ProposalWorkspaceSnapshot>
   createProposalDraft(input: CreateProposalDraftInput): Promise<ProposalMutationResult>
   updateProposalDraft(input: UpdateProposalDraftInput): Promise<ProposalMutationResult>
@@ -2370,6 +2810,7 @@ export interface DesktopApi {
   saveGoogleWorkspaceAdminConfiguration(input: SaveGoogleWorkspaceAdminConfigurationInput): Promise<SaveGoogleWorkspaceAdminConfigurationResult>
   disconnectGoogleWorkspace(): Promise<GoogleWorkspaceState>
   syncGoogleWorkspace(): Promise<GmailSyncState>
+  onGmailSyncCompleted(listener: (completion: GmailScheduledSyncCompletion) => void): () => void
   getRecoveryState(): Promise<RecoveryState>
   createRecoveryPackage(input: CreateRecoveryPackageInput): Promise<CreateRecoveryPackageResult>
   snoozeRecoveryReminder(input: SnoozeRecoveryReminderInput): Promise<RecoveryState>
@@ -2387,6 +2828,7 @@ export const ipcChannels = {
   resolveActionApproval: 'action-approval:resolve',
   saveLocalOperatorProfile: 'operator-profile:save',
   saveLocalApplicationPreferences: 'application-preferences:save',
+  saveJobCaseFieldAliases: 'job-case-field-aliases:save',
   connectAiCommerce: 'aicommerce:connect',
   getAiCommerceDashboard: 'aicommerce:get-dashboard',
   disconnectAiCommerce: 'aicommerce:disconnect',
@@ -2420,12 +2862,23 @@ export const ipcChannels = {
   prepareWechatVisibleRead: 'wechat-visible-read:prepare',
   executeWechatVisibleRead: 'wechat-visible-read:execute',
   importEmlJobCaseDrafts: 'job-case-draft:import-eml',
+  importAtsCsvCandidates: 'candidate-import:ats-csv',
   submitJobCaseReview: 'job-case-review:submit',
   getJobCaseHistory: 'job-case:history',
+  getJobCaseSourceText: 'job-case:source-text',
   setJobCaseLifecycle: 'job-case:lifecycle',
   reopenJobCaseReview: 'job-case:reopen-review',
   previewJobCaseDeletion: 'job-case:delete-preview',
   deleteJobCaseData: 'job-case:delete',
+  listBroadcastWorkspace: 'broadcast:workspace',
+  draftCaseBroadcast: 'broadcast:draft',
+  draftCaseUpdateNotice: 'broadcast:draft-update-notice',
+  recordCaseBroadcastCopy: 'broadcast:record-copy',
+  copyTextToClipboard: 'clipboard:write-text',
+  listCaseBroadcasts: 'broadcast:list-records',
+  createBroadcastTemplate: 'broadcast:template-create',
+  updateBroadcastTemplate: 'broadcast:template-update',
+  deleteBroadcastTemplate: 'broadcast:template-delete',
   getProposalWorkspace: 'proposal:workspace',
   createProposalDraft: 'proposal:create',
   updateProposalDraft: 'proposal:update',
@@ -2455,6 +2908,7 @@ export const ipcChannels = {
   saveGoogleWorkspaceAdminConfiguration: 'google-workspace:save-admin-configuration',
   disconnectGoogleWorkspace: 'google-workspace:disconnect',
   syncGoogleWorkspace: 'google-workspace:sync',
+  gmailSyncCompleted: 'google-workspace:sync-completed',
   getRecoveryState: 'recovery:get-state',
   createRecoveryPackage: 'recovery:create-package',
   snoozeRecoveryReminder: 'recovery:snooze-reminder',

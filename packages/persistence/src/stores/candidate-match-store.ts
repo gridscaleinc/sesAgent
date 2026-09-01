@@ -8,6 +8,7 @@ import {
 } from '@matching'
 import { candidateProfileSchema } from '@resume'
 import {
+  candidateMatchAssessmentSchema,
   candidateMatchRunSummarySchema,
   setBusinessPriorityOverrideInputSchema,
   submitCandidateMatchFeedbackInputSchema
@@ -18,6 +19,7 @@ import {
   type AgentEntityStatus,
   type AgentMatchRunFacts,
   type BusinessPriorityProjection,
+  type CandidateMatchAssessment,
   type CandidateMatchFeedbackSnapshot,
   type CandidateMatchResult,
   type CandidateMatchRunSummary,
@@ -55,6 +57,51 @@ export class CandidateMatchStore extends DomainStore {
          ORDER BY result_rank ASC`
       )
       .all(runId)
+  }
+
+  private listCandidateMatchAssessments(runId: string): Map<string, CandidateMatchAssessment> {
+    const rows = this.database
+      .prepare<[string], { match_result_id: string; assessment_json: string }>(
+        'SELECT match_result_id, assessment_json FROM candidate_match_assessments WHERE run_id = ?'
+      )
+      .all(runId)
+    const assessments = new Map<string, CandidateMatchAssessment>()
+    for (const row of rows) {
+      // A row an older or newer build cannot read is left out rather than
+      // failing the whole projection.
+      const parsed = candidateMatchAssessmentSchema.safeParse(JSON.parse(row.assessment_json))
+      if (parsed.success) assessments.set(row.match_result_id, parsed.data)
+    }
+    return assessments
+  }
+
+  /**
+   * Stores the cloud second opinion for results of one run. Entries naming a
+   * result outside the run are ignored, so a stale review can never attach
+   * itself to another run's rows. Returns how many were written.
+   */
+  saveCandidateMatchAssessments(
+    runId: string,
+    entries: ReadonlyArray<{ matchResultId: string; assessment: CandidateMatchAssessment }>,
+    now = new Date()
+  ): number {
+    const resultIds = new Set(this.listCandidateMatchResultRows(runId).map((row) => row.id))
+    const timestamp = now.toISOString()
+    const upsert = this.database.prepare(
+      `INSERT INTO candidate_match_assessments (match_result_id, run_id, assessment_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(match_result_id) DO UPDATE SET assessment_json = excluded.assessment_json, updated_at = excluded.updated_at`
+    )
+    let saved = 0
+    this.database.transaction(() => {
+      for (const entry of entries) {
+        if (!resultIds.has(entry.matchResultId)) continue
+        const assessment = candidateMatchAssessmentSchema.parse(entry.assessment)
+        upsert.run(entry.matchResultId, runId, JSON.stringify(assessment), timestamp, timestamp)
+        saved += 1
+      }
+    })()
+    return saved
   }
 
   getCandidateMatchRunSummary(runId: string): CandidateMatchRunSummary {
@@ -151,7 +198,8 @@ export class CandidateMatchStore extends DomainStore {
           missing,
           hardFilterStatus,
           projectEvidence: snapshot.projectEvidence?.summary ?? null,
-          status: validity
+          status: validity,
+          assessment: this.listCandidateMatchAssessments(runId).get(row.id) ?? null
         }
       : null
     return {
@@ -575,6 +623,7 @@ export class CandidateMatchStore extends DomainStore {
     if (current?.run) {
       const activeRun = current.run
       const rows = this.listCandidateMatchResultRows(activeRun.id)
+      const assessments = this.listCandidateMatchAssessments(activeRun.id)
       const results = rows.flatMap((row): MatchingHomeResult[] => {
         if (!row.result_snapshot_json) return []
         const snapshot = JSON.parse(row.result_snapshot_json) as MatchingHomeResult['fit'] & { anonymousLabel: string }
@@ -594,7 +643,8 @@ export class CandidateMatchStore extends DomainStore {
             projectEvidence: snapshot.projectEvidence
           },
           feedback: candidateMatchFeedbackFromRow(row),
-          businessPriority: this.getPersistedBusinessPriorityProjection(row, current.jobCase, now)
+          businessPriority: this.getPersistedBusinessPriorityProjection(row, current.jobCase, now),
+          assessment: assessments.get(row.id) ?? null
         }]
       })
       currentRun = { run: activeRun, validity: 'current', results }

@@ -7,10 +7,11 @@ import {
   type CandidateMatchFeedbackSnapshot,
   type CandidateMatchRunSummary,
   type DomainToolName,
+  type JobCaseSourceType,
   type ProcessingJobSummary,
   type ProposalDraftSnapshot,
   type ProposalFollowUpEvent,
-  type SupportedResumeFormat
+  type CandidateSourceFormat
 } from '@shared/contracts'
 
 export interface WorkTaskRow {
@@ -210,6 +211,12 @@ export interface LocalApplicationPreferencesRow {
   updated_at: string
 }
 
+export interface JobCaseFieldAliasesRow {
+  aliases_json: string
+  revision: number
+  updated_at: string
+}
+
 export interface RedactionSessionRow {
   id: string
   source_version: string
@@ -230,7 +237,7 @@ export interface MappingRow {
 export interface StagedFileRow {
   token: string
   name: string
-  format: SupportedResumeFormat
+  format: CandidateSourceFormat
   size: number
   sha256: string
   encrypted_path: string
@@ -440,7 +447,7 @@ export interface JobCaseReviewStateRow {
 export interface JobCaseReviewJoinRow extends JobCaseReviewStateRow {
   draft_json: string
   source_id: string
-  source_type: 'gmail' | 'manual' | 'eml'
+  source_type: JobCaseSourceType
   provider_message_id: string | null
   thread_id: string
   message_date: string
@@ -451,7 +458,7 @@ export interface JobCaseReviewJoinRow extends JobCaseReviewStateRow {
 
 export interface JobCaseSourceRow {
   id: string
-  source_type: 'gmail' | 'manual' | 'eml'
+  source_type: JobCaseSourceType
   provider_account: string | null
   provider_message_id: string | null
   thread_id: string
@@ -529,4 +536,52 @@ export interface StoredGmailMessageInput {
   warningCodes: string[]
   attachmentCount: number
   importedAt: string
+}
+
+export interface BroadcastTemplateRow {
+  id: string
+  name: string
+  rate_public: string
+  header_ja: string
+  header_zh: string
+  footer_ja: string
+  footer_zh: string
+  lines_json: string
+  revision: number
+  created_at: string
+  updated_at: string
+}
+
+/** Pre-v43 send ledger: still read, never written. */
+export interface CaseBroadcastRow {
+  id: string
+  review_id: string
+  job_case_id: string
+  job_case_version: number
+  group_id: string
+  group_name: string
+  template_id: string
+  template_revision: number
+  lang: string
+  kind: string
+  action: string
+  text: string
+  text_sha256: string
+  actor_id: string
+  created_at: string
+}
+
+export interface CaseBroadcastCopyRow {
+  id: string
+  review_id: string
+  job_case_id: string
+  job_case_version: number
+  template_id: string
+  template_revision: number
+  lang: string
+  kind: string
+  text: string
+  text_sha256: string
+  actor_id: string
+  created_at: string
 }

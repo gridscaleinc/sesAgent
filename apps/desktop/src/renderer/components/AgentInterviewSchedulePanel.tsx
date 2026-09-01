@@ -14,6 +14,8 @@ interface AgentInterviewSchedulePanelProps {
   access: InterviewScheduleAccess
   interviews: CandidateInterviewSnapshot[]
   reviews: CandidateReviewSnapshot[]
+  /** Present when a previous screen exists to step back to. */
+  onBack?(): void
   onClose(): void
   onSave(input: SaveCandidateInterviewScheduleInput): Promise<CandidateInterviewSnapshot>
 }
@@ -114,6 +116,7 @@ export function AgentInterviewSchedulePanel({
   access,
   interviews,
   reviews,
+  onBack,
   onClose,
   onSave
 }: AgentInterviewSchedulePanelProps) {
@@ -202,7 +205,7 @@ export function AgentInterviewSchedulePanel({
 
   return <section aria-label={zh ? '面试日程工作区' : '面談日程ワークスペース'} className="agent-interview-panel">
     <header className="agent-context-panel-header">
-      <div><Icon name="clock" size={19} /><strong>{zh ? '面试日程' : '面談日程'}</strong><span className="agent-context-connected"><Icon name="sparkles" size={11} />{zh ? '已接入对话上下文' : '会話コンテキストに接続'}</span></div>
+      <div>{onBack ? <button aria-label={zh ? '返回上一级' : '前の画面に戻る'} className="agent-context-panel-back" onClick={onBack} type="button">←<span>{zh ? '返回' : '戻る'}</span></button> : null}<Icon name="clock" size={19} /><strong>{zh ? '面试日程' : '面談日程'}</strong><span className="agent-context-connected"><Icon name="sparkles" size={11} />{zh ? '已接入对话上下文' : '会話コンテキストに接続'}</span></div>
       <button aria-label={zh ? '关闭右侧工作区' : '右ワークスペースを閉じる'} className="agent-context-panel-close" onClick={onClose} type="button">×</button>
     </header>
     <div className="agent-business-context-note"><Icon name="shield" size={13} /><span>{zh ? '下一条消息会读取此日程的最新本机记录；会议链接和本机标识符不会发送给 AI。' : '次のメッセージではこの日程の最新ローカル記録を読み取ります。会議リンクと端末内IDはAIへ送信しません。'}</span></div>

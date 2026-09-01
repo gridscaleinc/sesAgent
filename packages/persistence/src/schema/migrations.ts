@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 39
+export const currentSchemaVersion = 43
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -1857,6 +1857,188 @@ BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strft
 
 INSERT INTO schema_migrations(version, applied_at)
 VALUES (39, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+COMMIT;
+`
+
+export const migrationV40 = `
+BEGIN IMMEDIATE;
+
+CREATE TABLE job_case_field_aliases (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  aliases_json TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TRIGGER backup_revision_job_case_field_aliases_insert AFTER INSERT ON job_case_field_aliases
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_job_case_field_aliases_update AFTER UPDATE ON job_case_field_aliases
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_job_case_field_aliases_delete AFTER DELETE ON job_case_field_aliases
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+INSERT INTO schema_migrations(version, applied_at)
+VALUES (40, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+COMMIT;
+`
+
+/**
+ * v41: the cloud second opinion on shortlisted matches. One row per match
+ * result; it disappears with the result or the run, and never feeds ranking.
+ */
+export const migrationV41 = `
+BEGIN IMMEDIATE;
+
+CREATE TABLE candidate_match_assessments (
+  match_result_id TEXT PRIMARY KEY REFERENCES candidate_match_results(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL REFERENCES candidate_match_runs(id) ON DELETE CASCADE,
+  assessment_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_candidate_match_assessments_run ON candidate_match_assessments(run_id);
+
+CREATE TRIGGER backup_revision_candidate_match_assessments_insert AFTER INSERT ON candidate_match_assessments
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_match_assessments_update AFTER UPDATE ON candidate_match_assessments
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_match_assessments_delete AFTER DELETE ON candidate_match_assessments
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+INSERT INTO schema_migrations(version, applied_at)
+VALUES (41, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+COMMIT;
+`
+
+/**
+ * v42: 案件配信. Two operator-owned collections (message templates, sales
+ * groups) and one append-only ledger of what text was copied or marked sent.
+ * The ledger hangs off the review root, so a controlled case deletion takes
+ * its broadcast history with it; the group name is denormalized because a
+ * later rename must not rewrite what history says was posted where.
+ */
+export const migrationV42 = `
+BEGIN IMMEDIATE;
+
+CREATE TABLE broadcast_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  rate_public TEXT NOT NULL CHECK (rate_public IN ('raw', 'cap', 'negotiable')),
+  header_ja TEXT NOT NULL,
+  header_zh TEXT NOT NULL,
+  footer_ja TEXT NOT NULL,
+  footer_zh TEXT NOT NULL,
+  lines_json TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_broadcast_templates_created ON broadcast_templates(created_at);
+
+CREATE TABLE sales_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('wechat', 'email')),
+  lang TEXT NOT NULL CHECK (lang IN ('ja', 'zh')),
+  tags_json TEXT NOT NULL,
+  regions_json TEXT NOT NULL,
+  rate_limit TEXT NOT NULL,
+  partners_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_sales_groups_status ON sales_groups(status, created_at);
+
+CREATE TABLE case_broadcasts (
+  id TEXT PRIMARY KEY,
+  review_id TEXT NOT NULL REFERENCES job_case_extractions(review_id) ON DELETE CASCADE,
+  job_case_id TEXT NOT NULL,
+  job_case_version INTEGER NOT NULL CHECK (job_case_version > 0),
+  group_id TEXT NOT NULL,
+  group_name TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  template_revision INTEGER NOT NULL CHECK (template_revision > 0),
+  lang TEXT NOT NULL CHECK (lang IN ('ja', 'zh')),
+  kind TEXT NOT NULL CHECK (kind IN ('new', 'update')),
+  action TEXT NOT NULL CHECK (action IN ('copied', 'marked_sent')),
+  text TEXT NOT NULL,
+  text_sha256 TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_case_broadcasts_review ON case_broadcasts(review_id, created_at DESC);
+CREATE INDEX idx_case_broadcasts_group ON case_broadcasts(group_id, created_at DESC);
+
+CREATE TRIGGER backup_revision_broadcast_templates_insert AFTER INSERT ON broadcast_templates
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_broadcast_templates_update AFTER UPDATE ON broadcast_templates
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_broadcast_templates_delete AFTER DELETE ON broadcast_templates
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+CREATE TRIGGER backup_revision_sales_groups_insert AFTER INSERT ON sales_groups
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_sales_groups_update AFTER UPDATE ON sales_groups
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_sales_groups_delete AFTER DELETE ON sales_groups
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+CREATE TRIGGER backup_revision_case_broadcasts_insert AFTER INSERT ON case_broadcasts
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_case_broadcasts_update AFTER UPDATE ON case_broadcasts
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_case_broadcasts_delete AFTER DELETE ON case_broadcasts
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+INSERT INTO schema_migrations(version, applied_at)
+VALUES (42, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+COMMIT;
+`
+
+/**
+ * v43: 案件配信 records only what this device can observe. Whether a message
+ * reached a WeChat group happens outside the app and is the operator's own
+ * business, so the send ledger is replaced by an append-only log of the copies
+ * the app itself performed. It hangs off the review root like the ledger did,
+ * so a controlled case deletion still takes its history with it. The v42
+ * tables stay in place: `case_broadcasts` keeps existing history readable and
+ * `sales_groups` simply goes dormant - no destructive migration.
+ */
+export const migrationV43 = `
+BEGIN IMMEDIATE;
+
+CREATE TABLE case_broadcast_copies (
+  id TEXT PRIMARY KEY,
+  review_id TEXT NOT NULL REFERENCES job_case_extractions(review_id) ON DELETE CASCADE,
+  job_case_id TEXT NOT NULL,
+  job_case_version INTEGER NOT NULL CHECK (job_case_version > 0),
+  template_id TEXT NOT NULL,
+  template_revision INTEGER NOT NULL CHECK (template_revision > 0),
+  lang TEXT NOT NULL CHECK (lang IN ('ja', 'zh')),
+  kind TEXT NOT NULL CHECK (kind IN ('new', 'update')),
+  text TEXT NOT NULL,
+  text_sha256 TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_case_broadcast_copies_review ON case_broadcast_copies(review_id, created_at DESC);
+
+CREATE TRIGGER backup_revision_case_broadcast_copies_insert AFTER INSERT ON case_broadcast_copies
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_case_broadcast_copies_update AFTER UPDATE ON case_broadcast_copies
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_case_broadcast_copies_delete AFTER DELETE ON case_broadcast_copies
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+INSERT INTO schema_migrations(version, applied_at)
+VALUES (43, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 
 COMMIT;
 `

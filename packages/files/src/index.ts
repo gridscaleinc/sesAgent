@@ -94,10 +94,37 @@ export class EncryptedFileVault {
       throw new Error(`File content does not match the .${extension} extension.`)
     }
 
+    return this.encryptAndPersist(name, extension, raw, now)
+  }
+
+  /**
+   * Stages text this process itself produced - a business-text intake turn.
+   * The extension/magic checks are deliberately bypassed: a 'txt' source can
+   * only be created here, never from a user-supplied file, and the renderer
+   * still only ever receives the token. The generated name must not contain
+   * personal information; callers pass a content-digest name.
+   */
+  async stageTrustedText(generatedName: string, text: string, now = new Date()): Promise<StagedFileRecord> {
+    const raw = Buffer.from(text, 'utf8')
+    if (raw.length <= 0) throw new Error('Empty trusted text cannot be staged.')
+    if (raw.length > this.maxFileBytes) throw new Error('The trusted text exceeds the 25 MB import limit.')
+    const name = safeDisplayName(generatedName)
+    if (extname(name).toLocaleLowerCase('en-US') !== '.txt') {
+      throw new Error('Trusted text staging only produces .txt sources.')
+    }
+    return this.encryptAndPersist(name, 'txt', raw, now)
+  }
+
+  private async encryptAndPersist(
+    name: string,
+    format: StagedLocalFile['format'],
+    raw: Buffer,
+    now: Date
+  ): Promise<StagedFileRecord> {
     const metadata: StagedLocalFile = {
       token: randomUUID(),
       name,
-      format: extension,
+      format,
       size: raw.length,
       sha256: createHash('sha256').update(raw).digest('hex'),
       createdAt: now.toISOString(),

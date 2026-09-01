@@ -1,10 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 import {
   jobCaseFieldKeys,
   type JobCaseDataDeletionReport,
   type JobCaseReviewSnapshot,
-  type JobCaseVersionDetail
+  type JobCaseVersionDetail,
+  type DeleteJobCaseDataInput
 } from '@shared'
 import { JobCaseInbox } from './JobCaseInbox'
 
@@ -22,7 +23,11 @@ const labels = {
   interview: '面談',
   contract_chain: '契約・商流',
   payment_terms: '支払条件',
-  work_authorization: '就労資格'
+  work_authorization: '就労資格',
+  industry: '業界',
+  preferred_skills: '尚可スキル',
+  headcount: '募集人数',
+  notes: '備考'
 } as const
 
 const values = {
@@ -39,7 +44,11 @@ const values = {
   interview: '2回',
   contract_chain: 'エンド→元請→当社',
   payment_terms: '40日',
-  work_authorization: '日本で就労可能'
+  work_authorization: '日本で就労可能',
+  industry: '金融',
+  preferred_skills: 'Kubernetes',
+  headcount: '1名',
+  notes: '面談は2回想定'
 } as const
 
 const review: JobCaseReviewSnapshot = {
@@ -282,6 +291,30 @@ describe('JobCaseInbox', () => {
     }))
   })
 
+  it('offers the source label of a hand-typed value as a field alias after confirmation', async () => {
+    const unlabeled: JobCaseReviewSnapshot = {
+      ...review,
+      redactedPreview: 'Java 決済基盤案件\n\n作業期間: 8月\n必須スキル: Java / Spring Boot / AWS',
+      fields: review.fields.map((field) => field.key === 'start_date' ? { ...field, originalValue: null, value: null, status: 'missing' } : field)
+    }
+    const onSubmit = vi.fn().mockResolvedValue({ review: { ...unlabeled, status: 'completed' } })
+    const onSaveFieldAliases = vi.fn().mockResolvedValue({
+      version: 'job-case-field-aliases-v1', aliases: { start_date: ['作業期間'] }, configured: true, revision: 1, updatedAt: '2026-08-26T00:00:00.000Z'
+    })
+    render(<JobCaseInbox {...governanceProps} onCreateManual={vi.fn()} onSaveFieldAliases={onSaveFieldAliases} onSubmit={onSubmit} reviews={[unlabeled]} />)
+
+    fireEvent.change(screen.getByLabelText('開始時期'), { target: { value: '8月' } })
+    fireEvent.change(screen.getByLabelText('開始時期の変更理由'), { target: { value: 'JDの作業期間から転記' } })
+    for (const checkbox of screen.getAllByLabelText('この値を確認')) fireEvent.click(checkbox)
+    fireEvent.click(screen.getByLabelText(/案件項目に直接識別子がない/))
+    fireEvent.click(screen.getByRole('button', { name: '案件を確定' }))
+
+    expect(await screen.findByText('「作業期間」→ 開始時期')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '別名として保存' }))
+    await waitFor(() => expect(onSaveFieldAliases).toHaveBeenCalledWith({ aliases: { start_date: ['作業期間'] }, expectedRevision: null }))
+    await waitFor(() => expect(screen.queryByText('「作業期間」→ 開始時期')).not.toBeInTheDocument())
+  })
+
   it('opens the exact active review requested by the unified review center', async () => {
     const requestedReview: JobCaseReviewSnapshot = {
       ...review,
@@ -314,6 +347,36 @@ describe('JobCaseInbox', () => {
     expect(screen.getByRole('heading', { name: 'Java 決済基盤案件' })).toBeInTheDocument()
     expect(screen.getByText('個人識別子なし')).toBeInTheDocument()
     expect(screen.queryByText(/yamada@|090-/)).not.toBeInTheDocument()
+  })
+
+  it('opens deletion impact for an awaiting-review draft without confirming it first', async () => {
+    const onPreviewDeletion = vi.fn().mockResolvedValue({
+      reviewId: review.reviewId,
+      sourceId: review.sourceId,
+      title: review.redactedSubject,
+      sourceType: review.sourceType,
+      counts: { caseVersions: 0, reviewAudits: 0, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 2, sourceRecords: 1, gmailMessages: 1, agentReferences: { conversations: 1, messages: 1 } },
+      confirmationHash: 'c'.repeat(64),
+      warningCodes: ['GMAIL_SOURCE_TOMBSTONED_TO_PREVENT_REIMPORT']
+    })
+    render(
+      <JobCaseInbox
+        {...governanceProps}
+        onCreateManual={vi.fn()}
+        onPreviewDeletion={onPreviewDeletion}
+        onSubmit={vi.fn()}
+        reviews={[review]}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '履歴・管理' }))
+    expect(await screen.findByRole('dialog', { name: '案件の履歴と管理' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '案件をアーカイブ' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '削除前の影響を確認' }))
+
+    expect(onPreviewDeletion).toHaveBeenCalledWith(review.reviewId)
+    expect(await screen.findByText('JobCase 0バージョン')).toBeInTheDocument()
+    expect(screen.getByText('Agent履歴参照 1会話 / 1メッセージ')).toBeInTheDocument()
   })
 
   it('opens version history and requires a reason before archiving a confirmed case', async () => {
@@ -400,4 +463,48 @@ describe('JobCaseInbox', () => {
     })
     expect(await screen.findByLabelText('案件削除レポート')).toBeInTheDocument()
   })
+  it('deletes every case through the same governed preview and typed confirmation', async () => {
+    const second: JobCaseReviewSnapshot = { ...completedReview, reviewId: 'f0e1d2c3-b4a5-4968-8778-695a4b3c2d1e', redactedSubject: 'PHP 案件' }
+    const counts = { caseVersions: 1, reviewAudits: 2, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 1, sourceRecords: 1, gmailMessages: 0, agentReferences: { conversations: 0, messages: 0 } }
+    const onPreviewDeletion = vi.fn(async (reviewId: string) => ({
+      reviewId, sourceId: `source-${reviewId}`, title: reviewId === review.reviewId ? 'Java 案件' : 'PHP 案件', sourceType: 'chat-paste' as const,
+      counts, confirmationHash: (reviewId === review.reviewId ? 'a' : 'b').repeat(64), warningCodes: []
+    }))
+    const onDelete = vi.fn(async (input: DeleteJobCaseDataInput) => ({
+      report: {
+        id: `report-${input.reviewId}`, entityType: 'job_case' as const, entityIdHash: 'c'.repeat(64), requestedBy: 'HR',
+        startedAt: '2026-08-26T01:00:00.000Z', completedAt: '2026-08-26T01:00:01.000Z', outcome: 'completed' as const,
+        components: { database: 'deleted' as const, fileVault: 'not_present' as const, searchIndex: 'not_present' as const, cache: 'not_present' as const, temporaryFiles: 'not_present' as const, backups: 'not_present' as const },
+        deletedCounts: counts, warningCodes: []
+      }
+    }))
+    render(
+      <JobCaseInbox
+        {...governanceProps}
+        onCreateManual={vi.fn()}
+        onDelete={onDelete}
+        onPreviewDeletion={onPreviewDeletion}
+        onSubmit={vi.fn()}
+        reviews={[review, second]}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '全案件を削除' }))
+    expect(await screen.findByRole('dialog', { name: 'すべての案件データを永久削除' })).toBeInTheDocument()
+    // The aggregate of both previews, and both titles, before anything is deleted.
+    expect(await screen.findByText('JobCase 2バージョン')).toBeInTheDocument()
+    expect(screen.getByText('PHP 案件')).toBeInTheDocument()
+    expect(onDelete).not.toHaveBeenCalled()
+    const deleteButton = screen.getByRole('button', { name: '完全に削除' })
+    expect(deleteButton).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: '全案件削除確認' }), { target: { value: '削除' } })
+    fireEvent.click(deleteButton)
+
+    await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(2))
+    expect(onDelete).toHaveBeenNthCalledWith(1, { reviewId: review.reviewId, confirmationHash: 'a'.repeat(64), confirmationText: '削除' })
+    expect(onDelete).toHaveBeenNthCalledWith(2, { reviewId: second.reviewId, confirmationHash: 'b'.repeat(64), confirmationText: '削除' })
+    expect(await screen.findByText('2件の案件データを削除しました。')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'すべての案件データを永久削除' })).not.toBeInTheDocument()
+  })
+
 })

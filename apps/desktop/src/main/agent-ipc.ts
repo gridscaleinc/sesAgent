@@ -5,13 +5,18 @@ import {
   loadAgentChatModelCatalog,
   LocalAgentUseCase,
   resolveAgentChatModel,
+  routeBusinessText,
   type AgentChatModelDefinition,
   type AgentCandidateMatchRecord,
   type AgentJobCaseRecord,
   type AgentResumeImportOutput,
   type AgentToolExecutionMetadata,
+  type BusinessTextRouteDecision,
   type LocalAgentPort
 } from '@agent'
+import { candidateBenchmarkQueryFromJobCase } from '@job-cases'
+import type { JobCaseFieldAliasMap } from '@shared/contracts'
+import { candidateSearchTerms, scorableCandidateSearchTerms } from '@resume'
 import { hashActionInput, type ActionContext, type ActionOrchestrator } from '@action-runtime'
 import type { MatchRuntimeIdentity } from '@matching'
 import type { EncryptedApplicationRepository } from '@persistence'
@@ -30,12 +35,27 @@ import {
   type CandidateMatchTaskExecutionResult,
   type ExecuteAgentTurnResult
 } from '@shared'
-import type { AgentCandidateDraftFacts } from '@shared'
-import type { AgentActiveWorkspaceEvidence, AgentNarrativeStreamer } from './agent-cloud-narrative'
+import { isUnassessableMatchCard } from '@shared'
+import type { AgentCandidateDraftFacts, AgentCloudReviewOutcome, AgentCloudReviewSkipCode, AgentJobCaseBroadcastCard, AgentTurnTimings, CandidateMatchAssessment } from '@shared'
+import { matchAssessmentShortlistSize, type AgentActiveWorkspaceEvidence, type AgentNarrativeStreamer } from './agent-cloud-narrative'
+import { deriveBroadcastQueue } from './broadcast-workspace'
+import {
+  activeCaseTitle,
+  draftCaseBroadcastForReview,
+  requireSendableReview,
+  resolveBroadcastTemplate
+} from './broadcast-service'
+import type { BusinessTextIntakeTurnHooks } from './business-text-intake'
 
 interface AgentMatchTaskResult extends CandidateMatchTaskExecutionResult {
   actionRunId?: string | null
 }
+
+/** The job-case fields the cloud review judges against; commercial chain and payment terms say nothing about fit. */
+const cloudMatchAssessmentRequirementKeys = new Set([
+  'title', 'role', 'industry', 'required_skills', 'preferred_skills', 'rate', 'location', 'remote',
+  'start_date', 'working_hours', 'japanese_level', 'headcount', 'work_authorization', 'notes'
+])
 
 export interface AgentIpcDependencies {
   repository: EncryptedApplicationRepository
@@ -59,6 +79,8 @@ export interface AgentIpcDependencies {
   listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
   /** Records an import against the conversation it happened in. */
   registerConversationImport?(conversationId: string, sourceDocumentId: string): void
+  /** Operator aliases for job-case field labels; the local router honours them. */
+  jobCaseFieldAliases?(): JobCaseFieldAliasMap
   /** Resumes imported during this conversation, by either route. */
   listConversationImports?(conversationId: string): Array<{ anonymousLabel: string; sourceDocumentId: string }>
   scheduleCandidateInterview(input: {
@@ -74,11 +96,59 @@ export interface AgentIpcDependencies {
   narrativeStreamer?: AgentNarrativeStreamer | null
   /** Locally derived preview facts, keyed by staged file token. */
   previewedDrafts?: ReadonlyMap<string, AgentCandidateDraftFacts>
+  /**
+   * The local business-text intake executor. When present, the gate classifies
+   * every message BEFORE any cloud call and hands non-'not-intake' routes to
+   * this executor, which owns its whole error path - nothing may fall through
+   * to the planner flow, whose failure handlers persist the raw user message.
+   * Absent = the intake feature is switched off and every turn behaves as
+   * before the gate existed.
+   */
+  executeBusinessTextIntake?(
+    useCase: LocalAgentUseCase,
+    input: ReturnType<typeof executeAgentTurnInputSchema.parse>,
+    decision: BusinessTextRouteDecision,
+    turn: BusinessTextIntakeTurnHooks
+  ): Promise<ExecuteAgentTurnResult>
+}
+
+/** Wall-clock marks of one turn; durations only, never content. */
+interface ActiveTurnTimings {
+  startedAt: number
+  planningMs: number | null
+  localToolMs: number | null
+  cloudReviewMs: number | null
+  narrativeStartedAt: number | null
+  narrativeFirstTokenMs: number | null
+  narrativeMs: number | null
+  cloudCalls: number
+}
+
+function newTurnTimings(): ActiveTurnTimings {
+  return {
+    startedAt: performance.now(), planningMs: null, localToolMs: null, cloudReviewMs: null,
+    narrativeStartedAt: null, narrativeFirstTokenMs: null, narrativeMs: null, cloudCalls: 0
+  }
+}
+
+function turnTimings(state: ActiveAgentTurn): AgentTurnTimings {
+  const timings: AgentTurnTimings = {
+    totalMs: Math.round(performance.now() - state.timings.startedAt),
+    planningMs: state.timings.planningMs,
+    localToolMs: state.timings.localToolMs,
+    cloudReviewMs: state.timings.cloudReviewMs,
+    narrativeFirstTokenMs: state.timings.narrativeFirstTokenMs,
+    narrativeMs: state.timings.narrativeMs,
+    cloudCalls: state.timings.cloudCalls
+  }
+  console.info('[agent-turn-timing]', { requestId: state.requestId, model: state.model.key, ...timings })
+  return timings
 }
 
 interface ActiveAgentTurn {
   requestId: string
   taskId: string | null
+  timings: ActiveTurnTimings
   cancelled: boolean
   abortController: AbortController
   clientRequestId: string | null
@@ -121,6 +191,12 @@ function safeJobCaseRecord(jobCase: ReturnType<EncryptedApplicationRepository['l
 function boundedWorkspaceText(value: string | null | undefined, maximum = 600): string | null {
   if (!value) return null
   return value.length <= maximum ? value : `${value.slice(0, Math.max(1, maximum - 1))}…`
+}
+
+/** Keeps a drafted message inside what the conversation block schema accepts. */
+function boundedBroadcastText(value: string, maximum: number): string {
+  const trimmed = value.trim()
+  return trimmed.length <= maximum ? trimmed : `${trimmed.slice(0, Math.max(1, maximum - 1))}…`
 }
 
 function buildActiveWorkspaceEvidence(
@@ -201,25 +277,26 @@ function buildActiveWorkspaceEvidence(
     }
   }
 
+  const jobCaseReviewProjection = (reviewId: string): Record<string, unknown> => {
+    const review = deps.repository.listJobCaseReviews().find((item) => item.reviewId === reviewId)
+    return review ? {
+      status: review.status,
+      lifecycle: review.lifecycle,
+      sourceType: review.sourceType,
+      title: boundedWorkspaceText(review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject, 240),
+      preview: boundedWorkspaceText(review.redactedPreview, 800),
+      fields: review.fields.slice(0, 14).map((field) => ({
+        key: field.key,
+        label: boundedWorkspaceText(field.label, 80),
+        value: boundedWorkspaceText(field.value, 500),
+        status: field.status
+      })),
+      warnings: review.warningCodes.slice(0, 12)
+    } : { unavailable: true }
+  }
+
   if (access.destination === 'case-review') {
-    const review = deps.repository.listJobCaseReviews().find((item) => item.reviewId === access.reviewId)
-    return {
-      destination: access.destination,
-      data: review ? {
-        status: review.status,
-        lifecycle: review.lifecycle,
-        sourceType: review.sourceType,
-        title: boundedWorkspaceText(review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject, 240),
-        preview: boundedWorkspaceText(review.redactedPreview, 800),
-        fields: review.fields.slice(0, 14).map((field) => ({
-          key: field.key,
-          label: boundedWorkspaceText(field.label, 80),
-          value: boundedWorkspaceText(field.value, 500),
-          status: field.status
-        })),
-        warnings: review.warningCodes.slice(0, 12)
-      } : { unavailable: true }
-    }
+    return { destination: access.destination, data: jobCaseReviewProjection(access.reviewId) }
   }
 
   if (access.destination === 'matching') {
@@ -320,6 +397,29 @@ function buildActiveWorkspaceEvidence(
     }
   }
 
+  if (access.destination === 'broadcast') {
+    // Counts only. What a broadcast says is written on this device and never
+    // becomes part of a cloud narrative projection. Where a copied message was
+    // pasted is not recorded at all, so no count can imply it.
+    const queue = deriveBroadcastQueue({
+      reviews: deps.repository.listJobCaseReviews(),
+      ledger: deps.repository.listAllCaseBroadcasts(),
+      copies: deps.repository.listAllCaseBroadcastCopies()
+    })
+    return {
+      destination: access.destination,
+      data: {
+        newCount: queue.filter((item) => item.status === 'new').length,
+        copiedCount: queue.filter((item) => item.status === 'copied').length,
+        attentionCount: queue.filter((item) => item.status === 'attention').length,
+        updatableCount: queue.filter((item) => item.hasUpdateSinceLastCopy).length,
+        // The queue opened focused on one case: that case is 「当前案件」 for the
+        // conversation beside it - the same redacted fields case-review projects.
+        ...(access.reviewId ? { focusedCase: jobCaseReviewProjection(access.reviewId) } : {})
+      }
+    }
+  }
+
   if (access.destination === 'review-center') {
     const candidates = candidateReviews()
     const cases = deps.repository.listJobCaseReviews()
@@ -387,6 +487,7 @@ function branchedSalesAgentState(messages: readonly AiConversationMessage[]): Ai
   let selectedJobCaseRef: AiConversationSalesAgentState['selectedJobCaseRef'] = null
   let lastMatchRunId: string | null = null
   let lastSearchMessageId: string | null = null
+  let lastIntakeBatch = null as AiConversationSalesAgentState['lastIntakeBatch']
   for (const message of messages) for (const block of message.blocks ?? []) {
     if (block.type === 'job-case-cards') {
       lastSearchMessageId = message.id
@@ -396,8 +497,17 @@ function branchedSalesAgentState(messages: readonly AiConversationMessage[]): Ai
     }
     if (block.type === 'candidate-match-cards') lastMatchRunId = block.runId
     if (block.type === 'match-run-explanation') lastMatchRunId = block.facts.runId
+    // The first card block of a batch is the paste itself; later blocks of the
+    // same batch are partial reads and must not narrow the pointer.
+    if (block.type === 'job-case-draft-cards' && lastIntakeBatch?.intakeBatchId !== block.intakeBatchId) {
+      lastIntakeBatch = {
+        intakeBatchId: block.intakeBatchId,
+        messageId: message.id,
+        reviewIds: block.cards.filter((card) => card.status !== 'deleted').map((card) => card.reviewId)
+      }
+    }
   }
-  return { selectedJobCaseRef, lastMatchRunId, lastSearchMessageId }
+  return { selectedJobCaseRef, lastMatchRunId, lastSearchMessageId, lastIntakeBatch }
 }
 
 function actionContext(
@@ -552,8 +662,147 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     }
   }
 
+  /**
+   * The cloud second opinion on the shortlist. The local run has already
+   * decided who is shortlisted and how they rank; this reading is attached
+   * next to the local fit and never changes either. Without cloud access, or
+   * when the model fails, the cards go out without it.
+   */
+  const attachCloudMatchAssessments = async (
+    input: { jobCaseId: string; jobCaseVersion: number },
+    execution: AgentMatchTaskResult,
+    cards: AgentCandidateMatchRecord[],
+    active: ActiveAgentTurn | undefined,
+    metadata: AgentToolExecutionMetadata
+  ): Promise<AgentCloudReviewOutcome> => {
+    const skipped = (code: AgentCloudReviewSkipCode, reason: string | null = null): AgentCloudReviewOutcome => {
+      // Ids and codes only, never the projected text.
+      console.warn('[candidate-match-assessment-skipped]', { runId: execution.run.id, code, reason })
+      return { status: 'skipped', code, reason }
+    }
+    const assess = deps.narrativeStreamer?.assessMatchCandidates?.bind(deps.narrativeStreamer)
+    if (!assess || !active || active.requestId !== metadata.requestId) return skipped('cloud-unavailable')
+    if (cards.length === 0) return skipped('no-candidates')
+    const turn = active
+    const jobCase = deps.repository.listActiveJobCases()
+      .find((item) => item.id === input.jobCaseId && item.version === input.jobCaseVersion)
+    if (!jobCase) return skipped('no-job-case')
+    // A row that matched nothing locally has nothing for a reviewer to weigh;
+    // reviewing it would only produce the list of everything it lacks.
+    const shortlist = cards.filter((card) => !isUnassessableMatchCard(card))
+      .toSorted((left, right) => left.rank - right.rank)
+      .slice(0, matchAssessmentShortlistSize)
+    if (shortlist.length === 0) return skipped('nothing-matched')
+    const candidates = shortlist.flatMap((card) => {
+      const match = execution.matches.find((item) => item.matchResultId === card.resultId)
+      if (!match) return []
+      return [{
+        label: `CANDIDATE_${card.rank}`,
+        hardFilters: match.retrieval.hardFilters.map((filter) => ({
+          requirement: filter.requested, actual: filter.actual, outcome: filter.outcome
+        })),
+        facts: match.fields.flatMap((field) => field.value ? [{ label: field.label, value: field.value }] : []),
+        projects: match.projectExperiences.map((project) => ({
+          title: project.title, period: project.period, role: project.role, technologies: project.technologies, summary: project.summary
+        }))
+      }]
+    })
+    if (candidates.length === 0) return skipped('no-candidates')
+    const reviewStartedAt = performance.now()
+    turn.timings.cloudCalls += 1
+    try {
+      const assessed = await assess({
+        conversationId: metadata.conversationId,
+        requestId: metadata.requestId,
+        locale: deps.locale(),
+        jobCase: {
+          title: jobCase.fields.find((field) => field.key === 'title')?.value ?? null,
+          requirements: jobCase.fields.flatMap((field) =>
+            field.value && cloudMatchAssessmentRequirementKeys.has(field.key)
+              ? [{ key: field.key, label: field.label, value: field.value }]
+              : [])
+        },
+        candidates,
+        model: turn.model,
+        signal: turn.abortController.signal,
+        onClientRequestId: (clientRequestId) => markRemoteRequestStarted(turn, clientRequestId),
+        onRemoteSettled: () => markRemoteRequestSettled(turn)
+      })
+      const assessedAt = new Date().toISOString()
+      const entries: Array<{ matchResultId: string; assessment: CandidateMatchAssessment }> = []
+      for (const verdict of assessed.assessments) {
+        const card = shortlist.find((item) => `CANDIDATE_${item.rank}` === verdict.candidate)
+        if (!card) continue
+        const assessment: CandidateMatchAssessment = {
+          version: 'match-assessment-v1',
+          fit: verdict.fit,
+          met: verdict.met,
+          gaps: verdict.gaps,
+          confirm: verdict.confirm,
+          reason: verdict.reason,
+          modelKey: turn.model.key,
+          assessedAt
+        }
+        card.assessment = assessment
+        entries.push({ matchResultId: card.resultId, assessment })
+      }
+      if (entries.length === 0) return skipped('no-verdict')
+      deps.repository.saveCandidateMatchAssessments(execution.run.id, entries)
+      return { status: 'reviewed', reviewedCount: entries.length }
+    } catch (error) {
+      if (turn.cancelled) throw new AgentExecutionError('TURN_CANCELLED', '当前案件匹配操作已取消。')
+      // Advice on top of a finished local run: losing it must not lose the run.
+      return skipped('cloud-error', (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 300))
+    } finally {
+      turn.timings.cloudReviewMs = Math.round(performance.now() - reviewStartedAt)
+    }
+  }
+
+  /** The 配信 queue, derived the same way the 案件配信 screen derives it. */
+  const broadcastQueue = () => deriveBroadcastQueue({
+    reviews: deps.repository.listJobCaseReviews(),
+    ledger: deps.repository.listAllCaseBroadcasts(),
+    copies: deps.repository.listAllCaseBroadcastCopies()
+  })
+
   const port: LocalAgentPort = {
     listActiveJobCases: () => deps.repository.listActiveJobCases().map(safeJobCaseRecord),
+    workspaceJobCase: (access) => {
+      if (!access) return null
+      const activeById = (jobCaseId: string) =>
+        deps.repository.listActiveJobCases().find((record) => record.id === jobCaseId) ?? null
+      if (access.destination === 'case-review' || access.destination === 'broadcast') {
+        if (!access.reviewId) return null
+        const linkedCaseId = deps.repository.getJobCaseReview(access.reviewId)?.jobCase?.id
+        const record = linkedCaseId ? activeById(linkedCaseId) : null
+        return record ? safeJobCaseRecord(record) : null
+      }
+      if (access.destination === 'matching' && access.jobCaseId) {
+        const record = activeById(access.jobCaseId)
+        return record ? safeJobCaseRecord(record) : null
+      }
+      return null
+    },
+    listBroadcastQueue: () => broadcastQueue().map((item) => ({
+      reviewId: item.reviewId,
+      jobCaseId: item.jobCaseId,
+      title: item.title,
+      status: item.status,
+      hasUpdateSinceLastCopy: item.hasUpdateSinceLastCopy
+    })),
+    describeJobCaseMatchability: (jobCaseId, jobCaseVersion) => {
+      const jobCase = deps.repository.listActiveJobCases()
+        .find((item) => item.id === jobCaseId && (jobCaseVersion === null || item.version === jobCaseVersion))
+      if (!jobCase) return null
+      // The same query the match task builds, so the check and the run agree.
+      const query = candidateBenchmarkQueryFromJobCase(jobCase)
+      const scorable = scorableCandidateSearchTerms(query)
+      return {
+        scorableTermCount: scorable.length,
+        hardFilterTermCount: candidateSearchTerms(query).length - scorable.length,
+        reviewId: jobCase.sourceReviewId ?? null
+      }
+    },
     loadConversation: (conversationId) => deps.repository.getAiConversation(conversationId),
     saveConversation: (input) => deps.repository.saveAiConversation(input),
     locale: () => deps.locale(),
@@ -586,6 +835,8 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         : toolName === 'match-run.read.local' ? 'selected-match-run'
         : toolName === 'candidate.interview.schedule.local' ? 'selected-candidate-profile'
         : toolName === 'resume.analyze.local' || toolName === 'candidate.draft.read.local' ? 'selected-files'
+        : toolName === 'job-case.draft.read.local' ? 'conversation-intake-drafts'
+        : toolName === 'job-case.broadcast.draft.local' ? 'broadcast-queue'
           : 'confirmed-candidate-pool'
       const scopeFingerprint = hashActionInput(rawInput)
       const actorId = deps.currentOperator().operatorId
@@ -625,15 +876,18 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           fitScore: match.matchScore,
           matched: match.matchedTerms,
           missing: match.retrieval.hardFilters.filter((filter) => filter.outcome !== 'passed').map((filter) => filter.requested),
-          hardFilterStatus: match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
-            ? 'failed'
-            : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown') ? 'unknown' : 'passed',
+          hardFilterStatus: match.retrieval.hardFilters.length === 0
+            ? 'none'
+            : match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
+              ? 'failed'
+              : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown') ? 'unknown' : 'passed',
           projectEvidence: match.projectEvidence?.summary ?? null,
           status: 'current'
         }))
+        const cloudReview = await attachCloudMatchAssessments(input, execution, cards, active, metadata)
         return {
           toolName,
-          output: { runId: execution.run.id, resultHash: execution.run.resultSetHash, cards },
+          output: { runId: execution.run.id, resultHash: execution.run.resultSetHash, cards, cloudReview },
           actionRunId: execution.actionRunId ?? null
         }
       }
@@ -708,6 +962,88 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           throw new AgentExecutionError('AGENT_DRAFT_NOT_FOUND', '取込済みの下書きが見つかりません。')
         }
         const output = { facts }
+        deps.repository.updateActionRun(preflight.actionRunId, 'succeeded', { resultHash: hashActionInput(output) })
+        return { toolName, output, actionRunId: preflight.actionRunId }
+      }
+
+      if (toolName === 'job-case.draft.read.local') {
+        const input = rawInput as { reviewIds: string[]; labels: string[] }
+        const preflight = deps.actionOrchestrator.preflight(
+          toolName, context, { reviewIds: input.reviewIds },
+          '取込済み案件の未確認下書きを端末内で読み取ります。',
+          actionIdempotencyKey(toolName, metadata.conversationId, metadata.requestId)
+        )
+        if (preflight.decision.outcome === 'deny') throw new Error(preflight.decision.reason)
+        if (preflight.decision.outcome === 'require-approval') {
+          throw new Error('この操作はレビューセンターでの承認待ちです。')
+        }
+        deps.repository.updateActionRun(preflight.actionRunId, 'running')
+        const facts = input.reviewIds.map((reviewId, index) => {
+          const label = input.labels[index] ?? `DRAFT_${index + 1}`
+          // A deleted draft keeps its slot as a tombstone so the other
+          // ordinals still mean what they meant in the paste.
+          return deps.repository.getAgentJobCaseDraftFacts(reviewId, label) ?? {
+            reviewId, label, title: null, reviewStatus: 'awaiting-review' as const, lifecycle: 'active' as const,
+            jobCase: null, fields: [], warningCodes: [], status: 'deleted' as const
+          }
+        })
+        if (facts.every((item) => item.status === 'deleted')) {
+          deps.repository.updateActionRun(preflight.actionRunId, 'failed', { errorCode: 'DRAFT_NOT_FOUND' })
+          throw new AgentExecutionError('AGENT_DRAFT_NOT_FOUND', '取込済みの案件下書きが見つかりません。')
+        }
+        const output = { facts }
+        deps.repository.updateActionRun(preflight.actionRunId, 'succeeded', { resultHash: hashActionInput(output) })
+        return { toolName, output, actionRunId: preflight.actionRunId }
+      }
+
+      if (toolName === 'job-case.broadcast.draft.local') {
+        const input = rawInput as { reviewIds: string[] }
+        const preflight = deps.actionOrchestrator.preflight(
+          toolName, context, { reviewIds: input.reviewIds },
+          '確定済み案件の紹介文を端末内で作成します。',
+          actionIdempotencyKey(toolName, metadata.conversationId, metadata.requestId)
+        )
+        if (preflight.decision.outcome === 'deny') throw new Error(preflight.decision.reason)
+        if (preflight.decision.outcome === 'require-approval') {
+          throw new Error('この操作はレビューセンターでの承認待ちです。')
+        }
+        deps.repository.updateActionRun(preflight.actionRunId, 'running')
+        const queue = broadcastQueue()
+        const template = resolveBroadcastTemplate(deps.repository)
+        const cards: AgentJobCaseBroadcastCard[] = []
+        for (const reviewId of input.reviewIds) {
+          const item = queue.find((entry) => entry.reviewId === reviewId)
+          // A case that stopped being sendable between the queue read and here
+          // is skipped rather than failing the whole turn.
+          let review: ReturnType<typeof requireSendableReview>
+          try {
+            review = requireSendableReview(deps.repository, reviewId)
+          } catch {
+            continue
+          }
+          const drafted = draftCaseBroadcastForReview(review, template)
+          cards.push({
+            reviewId,
+            jobCaseId: review.jobCase.id,
+            jobCaseVersion: review.jobCase.version,
+            ordinal: cards.length + 1,
+            title: boundedBroadcastText(activeCaseTitle(review), 200) || `案件 ${review.jobCase.id.slice(0, 8)}`,
+            status: item?.status ?? 'new',
+            templateId: template.id,
+            templateRevision: template.revision,
+            textJa: boundedBroadcastText(drafted.textJa, 2_000),
+            textZh: boundedBroadcastText(drafted.textZh, 2_000),
+            forbiddenJa: drafted.forbiddenJa.slice(0, 20),
+            forbiddenZh: drafted.forbiddenZh.slice(0, 20)
+          })
+        }
+        if (cards.length === 0) {
+          deps.repository.updateActionRun(preflight.actionRunId, 'failed', { errorCode: 'BROADCAST_CASE_NOT_SENDABLE' })
+          throw new AgentExecutionError('AGENT_BROADCAST_CASE_NOT_SENDABLE', '配信できる確定済み案件が見つかりません。')
+        }
+        const output = { cards }
+        // Counts and ids only - the message text never reaches a log line.
+        console.info('[agent-case-broadcast-drafted]', { requestId: metadata.requestId, cardCount: cards.length })
         deps.repository.updateActionRun(preflight.actionRunId, 'succeeded', { resultHash: hashActionInput(output) })
         return { toolName, output, actionRunId: preflight.actionRunId }
       }
@@ -871,6 +1207,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     const state: ActiveAgentTurn = active ?? {
       requestId: input.requestId,
       taskId: null,
+      timings: newTurnTimings(),
       cancelled: false,
       abortController: new AbortController(),
       clientRequestId: null,
@@ -982,6 +1319,34 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           attachmentFileTokens: []
         }
       }
+      // The local intake gate runs BEFORE any cloud dependency: pasted business
+      // text must never enter the planning projection or its DLP gate, and a
+      // local import must keep working when the cloud is unavailable.
+      if (deps.executeBusinessTextIntake) {
+        const intakeDecision = routeBusinessText(input.message, { aliases: deps.jobCaseFieldAliases?.() ?? {} })
+        if (intakeDecision.route !== 'not-intake') {
+          emit(state, { type: 'started', phase: 'local-tool' })
+          const result = await deps.executeBusinessTextIntake(useCase, input, intakeDecision, {
+            signal: state.abortController.signal,
+            onCloudLaneStarted: () => emit(state, { type: 'started', phase: 'connecting-model' }),
+            onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
+            onRemoteSettled: () => markRemoteRequestSettled(state)
+          })
+          // The intake binds its own ActionRuns to the saved turn: a cloud-
+          // segmented paste owns one run per record, more than the single
+          // actionRunId this result can carry.
+          if (result.status === 'failed') {
+            emit(state, {
+              type: 'failed', code: 'AGENT_INTAKE_FAILED',
+              message: '本地业务文本导入失败，原文未写入会话。', localFallbackPreserved: true
+            })
+          } else {
+            emit(state, { type: 'completed' })
+          }
+          return result
+        }
+      }
+
       if (!deps.narrativeStreamer) {
         const message = 'Cloud AI 当前不可用，无法理解自然语言或选择 Tool。'
         emit(state, {
@@ -999,6 +1364,9 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         if (state.cancelled) return
         if (!state.streamingStarted) {
           state.streamingStarted = true
+          if (state.timings.narrativeStartedAt !== null) {
+            state.timings.narrativeFirstTokenMs = Math.round(performance.now() - state.timings.narrativeStartedAt)
+          }
           emit(state, { type: 'started', phase: 'streaming' })
         }
         for (let offset = 0; offset < delta.length; offset += 2_000) {
@@ -1012,6 +1380,8 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
       }
 
       emit(state, { type: 'started', phase: 'planning' })
+      const planningStartedAt = performance.now()
+      state.timings.cloudCalls += 1
       let plan: Awaited<ReturnType<AgentNarrativeStreamer['plan']>>
       try {
         plan = await deps.narrativeStreamer.plan({
@@ -1064,6 +1434,18 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         )
       }
 
+      state.timings.planningMs = Math.round(performance.now() - planningStartedAt)
+      // PII-free plan visibility: which workspace was open and what the cloud chose.
+      console.info('[agent-plan-debug]', {
+        requestId: input.requestId,
+        accessDestination: input.activeSystemAccess?.destination ?? null,
+        workspaceEvidenceBuilt: Boolean(activeWorkspaceEvidence),
+        selectedJobCase: Boolean(input.selectedJobCaseRef ?? planningConversation?.salesAgentState?.selectedJobCaseRef),
+        branched: Boolean(input.branchFrom),
+        planned: plan.kind === 'answer' ? 'answer' : plan.action.toolName,
+        operation: plan.kind === 'tool' && 'operation' in plan.action.arguments ? plan.action.arguments.operation : null,
+        ordinal: plan.kind === 'tool' && 'ordinal' in plan.action.arguments ? plan.action.arguments.ordinal : null
+      })
       if (state.cancelled) {
         const cancelStatus = await requestRemoteCancel(state)
         const message = remoteCancelMessage(state, cancelStatus)
@@ -1074,6 +1456,8 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         state.streamingStarted = false
         state.totalDeltaCharacters = 0
         emit(state, { type: 'started', phase: 'connecting-model' })
+        state.timings.narrativeStartedAt = performance.now()
+        state.timings.cloudCalls += 1
         try {
           const streamed = await deps.narrativeStreamer.streamAnswer({
             conversationId: input.conversationId,
@@ -1095,13 +1479,14 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             emit(state, { type: 'cancelled', cancelStatus, message: remoteCancelMessage(state, cancelStatus) })
             return useCase.saveDirectAnswer(input, '当前案件 Agent 操作已取消。', undefined, 'cancelled')
           }
+          state.timings.narrativeMs = Math.round(performance.now() - state.timings.narrativeStartedAt)
           const direct = useCase.saveDirectAnswer(
             input,
             streamed.content,
             { key: model.key, displayName: model.displayName }
           )
           emit(state, { type: 'completed' })
-          return direct
+          return { ...direct, timings: turnTimings(state) }
         } catch (error) {
           if (state.cancelled || (error instanceof AgentExecutionError && error.code === 'TURN_CANCELLED')) {
             const cancelStatus = await requestRemoteCancel(state)
@@ -1124,7 +1509,9 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
       state.streamingStarted = false
       state.totalDeltaCharacters = 0
       emit(state, { type: 'started', phase: 'local-tool' })
+      const toolStartedAt = performance.now()
       const result = await useCase.execute(input, plan.action)
+      state.timings.localToolMs = Math.round(performance.now() - toolStartedAt) - (state.timings.cloudReviewMs ?? 0)
       if (result.actionRunId) {
         const turnId = result.assistantMessage.turnId
         if (!turnId) throw new Error('Agent ActionRun の turn_id を会話履歴から確認できません。')
@@ -1138,7 +1525,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         } else {
           emit(state, { type: 'completed' })
         }
-        return result
+        return result.status === 'completed' ? { ...result, timings: turnTimings(state) } : result
       }
 
       // These write Tools already persist a complete, localized, authoritative
@@ -1152,10 +1539,12 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         result.toolName === 'resume.analyze.local'
       ) {
         emit(state, { type: 'completed' })
-        return result
+        return { ...result, timings: turnTimings(state) }
       }
 
       emit(state, { type: 'started', phase: 'connecting-model' })
+      state.timings.narrativeStartedAt = performance.now()
+      state.timings.cloudCalls += 1
       try {
         const streamed = await deps.narrativeStreamer.stream({
           conversationId: input.conversationId,
@@ -1176,6 +1565,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           emit(state, { type: 'cancelled', cancelStatus, message: remoteCancelMessage(state, cancelStatus) })
           return cancelled
         }
+        state.timings.narrativeMs = Math.round(performance.now() - state.timings.narrativeStartedAt)
         const saved = saveNarrativeState(result, {
           content: streamed.content,
           mode: 'cloud',
@@ -1184,7 +1574,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           narrativeStatus: 'completed'
         })
         emit(state, { type: 'completed' })
-        return { ...result, status: 'completed' as const, ...saved }
+        return { ...result, status: 'completed' as const, ...saved, timings: turnTimings(state) }
       } catch (error) {
         if (state.cancelled || (error instanceof AgentExecutionError && error.code === 'TURN_CANCELLED')) {
           const cancelStatus = await requestRemoteCancel(state)

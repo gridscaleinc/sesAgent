@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createRedactedEmlJobCaseSource, extractJobCaseDraft } from '@job-cases'
 import { ParserWorkerClient } from '@parsers/worker-client'
-import { EncryptedApplicationRepository } from '@persistence'
+import { currentSchemaVersion, EncryptedApplicationRepository } from '@persistence'
 
 const personSentinel = '山田取込検証'
 const phoneSentinel = '090-8642-1357'
@@ -84,7 +84,7 @@ try {
   }
 
   const reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(reopened.getSchemaVersion(), 39)
+  assert.equal(reopened.getSchemaVersion(), currentSchemaVersion)
   assert.equal(reopened.getEmlJobCaseReview(parsed.sourceMessageKey)?.reviewId, review.reviewId)
   reopened.close()
   bytes.fill(0)
@@ -97,7 +97,7 @@ try {
     attachmentPersisted: parsed.security.attachmentsPersisted,
     rawFileCloudEligible: parsed.security.rawFileCloudEligible,
     encryptedDatabase: true,
-    schemaVersion: 39
+    schemaVersion: currentSchemaVersion
   })}\n`)
 } finally {
   bytes.fill(0)

@@ -13,9 +13,15 @@ import {
   updateCandidateProfileInputSchema,
   aiConversationContextSchema,
   aiConversationSnapshotSchema,
+  candidateMatchAssessmentSchema,
   saveAiConversationInputSchema,
   executeAgentTurnInputSchema,
-  agentTurnEventSchema
+  agentTurnEventSchema,
+  jobCaseDeletionPreviewSchema,
+  jobCaseReviewSnapshotSchema,
+  jobCaseSourceTypeSchema,
+  jobCaseFieldAliasMapSchema,
+  saveJobCaseFieldAliasesInputSchema
 } from './schemas'
 
 const validInput = {
@@ -177,6 +183,19 @@ describe('candidate profile compatibility schemas', () => {
   })
 })
 
+describe('job case source compatibility schemas', () => {
+  it('accepts every persisted job-case source type used by the current schema', () => {
+    const sourceTypes = ['gmail', 'manual', 'eml', 'chat-paste', 'wechat-visible']
+    expect(sourceTypes.map((sourceType) => jobCaseSourceTypeSchema.parse(sourceType))).toEqual(sourceTypes)
+    expect(sourceTypes.map((sourceType) => jobCaseReviewSnapshotSchema.shape.sourceType.parse(sourceType))).toEqual(sourceTypes)
+    expect(sourceTypes.map((sourceType) => jobCaseDeletionPreviewSchema.shape.sourceType.parse(sourceType))).toEqual(sourceTypes)
+  })
+
+  it('rejects unknown job-case source types', () => {
+    expect(jobCaseSourceTypeSchema.safeParse('agent-generated').success).toBe(false)
+  })
+})
+
 describe('Schema v38 local Agent conversation schemas', () => {
   it('keeps sales-agent context immutable and candidate/interview compatibility strict', () => {
     expect(aiConversationContextSchema.parse({
@@ -240,6 +259,128 @@ describe('Schema v38 local Agent conversation schemas', () => {
     expect(agentTurnEventSchema.parse(event)).toEqual(event)
     expect(agentTurnEventSchema.safeParse({ ...event, text: 'x'.repeat(2_001) }).success).toBe(false)
     expect(agentTurnEventSchema.safeParse({ ...event, sequence: 0 }).success).toBe(false)
+  })
+
+  it('accepts job-case field aliases that name exactly one field and rejects colons and cross-field duplicates', () => {
+    expect(jobCaseFieldAliasMapSchema.parse({ rate: ['単金', '金額'], start_date: ['稼働'] })).toEqual({ rate: ['単金', '金額'], start_date: ['稼働'] })
+    expect(jobCaseFieldAliasMapSchema.parse({})).toEqual({})
+    expect(jobCaseFieldAliasMapSchema.safeParse({ rate: ['単金：'] }).success).toBe(false)
+    // 単金 cannot mean both the rate and the settlement, even written with different spacing.
+    expect(jobCaseFieldAliasMapSchema.safeParse({ rate: ['単金'], settlement: ['単 金'] }).success).toBe(false)
+    expect(saveJobCaseFieldAliasesInputSchema.safeParse({ aliases: { rate: ['単金'] }, expectedRevision: null, extra: true }).success).toBe(false)
+  })
+
+  it('keeps the intake batch pointer optional so older Sales Agent conversations still parse', () => {
+    const context = { assistant: 'sales-agent' as const, candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null }
+    const message = { id: 'm1', role: 'user' as const, content: '案件', mode: 'local' as const, createdAt: '2026-08-18T00:00:00.000Z' }
+    const base = { id: '22222222-2222-4222-8222-222222222222', context, title: '案件', messages: [message], revision: 1, createdAt: '2026-08-18T00:00:00.000Z', updatedAt: '2026-08-18T00:00:00.000Z' }
+    const legacy = aiConversationSnapshotSchema.parse({ ...base, salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null } })
+    expect(legacy.salesAgentState?.lastIntakeBatch).toBeUndefined()
+    const batch = { intakeBatchId: '33333333-3333-4333-8333-333333333333', messageId: 'assistant-1', reviewIds: ['44444444-4444-4444-8444-444444444444'] }
+    const current = aiConversationSnapshotSchema.parse({
+      ...base, salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null, lastIntakeBatch: batch }
+    })
+    expect(current.salesAgentState?.lastIntakeBatch).toEqual(batch)
+  })
+
+  it('stores the cloud review on a match card only in its protocol shape', () => {
+    const assessment = {
+      version: 'match-assessment-v1' as const, fit: 'possible' as const,
+      met: [{ requirement: 'Java', evidence: 'Java 5年' }], gaps: ['AWS'], confirm: [],
+      reason: '主要スキルは一致。', modelKey: 'gpt-5', assessedAt: '2026-08-26T00:00:00.000Z'
+    }
+    expect(candidateMatchAssessmentSchema.parse(assessment)).toEqual(assessment)
+    expect(candidateMatchAssessmentSchema.safeParse({ ...assessment, fit: 'excellent' }).success).toBe(false)
+    expect(candidateMatchAssessmentSchema.safeParse({ ...assessment, met: Array.from({ length: 9 }, () => ({ requirement: 'a', evidence: 'b' })) }).success).toBe(false)
+
+    const context = { assistant: 'sales-agent' as const, candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null }
+    const card = {
+      reference: { kind: 'match-result' as const, objectId: '99999999-9999-4999-8999-999999999999', objectVersion: null, resultHash: 'a'.repeat(64), ordinal: 1, label: 'CANDIDATE_1', target: 'match-result:99999999-9999-4999-8999-999999999999' },
+      candidateProfileId: '77777777-7777-4777-8777-777777777777', runId: '88888888-8888-4888-8888-888888888888', rank: 1,
+      anonymousLabel: 'CANDIDATE_1', fitScore: 72, matched: ['Java'], missing: [], hardFilterStatus: 'passed' as const, projectEvidence: null, status: 'current' as const
+    }
+    const block = { type: 'candidate-match-cards' as const, runId: '88888888-8888-4888-8888-888888888888', resultHash: 'a'.repeat(64), cards: [{ ...card, assessment }] }
+    const message = { id: 'assistant-1', role: 'assistant' as const, content: '匹配结果。', mode: 'local' as const, createdAt: '2026-08-26T00:00:01.000Z', blocks: [block] }
+    const base = {
+      id: '22222222-2222-4222-8222-222222222222', context, title: '匹配', revision: 1,
+      createdAt: '2026-08-26T00:00:00.000Z', updatedAt: '2026-08-26T00:00:01.000Z',
+      salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null }
+    }
+    expect(aiConversationSnapshotSchema.parse({ ...base, messages: [message] }).messages[0]?.blocks?.[0]).toMatchObject({ cards: [{ assessment }] })
+    // A local-only run has no review at all; older conversations keep parsing.
+    const localOnly = aiConversationSnapshotSchema.parse({ ...base, messages: [{ ...message, blocks: [{ ...block, cards: [card] }] }] })
+    expect(localOnly.messages[0]?.blocks?.[0]).not.toHaveProperty('cards.0.assessment')
+    expect(aiConversationSnapshotSchema.safeParse({ ...base, messages: [{ ...message, blocks: [{ ...block, cards: [{ ...card, assessment: { ...assessment, fit: 'excellent' } }] }] }] }).success).toBe(false)
+  })
+
+  it('bounds a drafted message block and keeps pre-sales-group cards readable', () => {
+    const context = { assistant: 'sales-agent' as const, candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null }
+    const card = (ordinal: number) => ({
+      reviewId: '44444444-4444-4444-8444-444444444444',
+      jobCaseId: '55555555-5555-4555-8555-555555555555',
+      jobCaseVersion: 1,
+      ordinal,
+      title: 'Java 案件',
+      status: 'new' as const,
+      templateId: '66666666-6666-4666-8666-666666666666',
+      templateRevision: 1,
+      textJa: '【案件】Java 案件',
+      textZh: '【案件】Java 案件',
+      forbiddenJa: [],
+      forbiddenZh: []
+    })
+    const block = {
+      type: 'job-case-broadcast-cards' as const,
+      cards: [card(1)],
+      queue: { new: 1, copied: 0, attention: 0 }
+    }
+    const message = { id: 'assistant-1', role: 'assistant' as const, content: '群メッセージ', mode: 'local' as const, createdAt: '2026-08-25T00:00:01.000Z', blocks: [block] }
+    const base = {
+      id: '22222222-2222-4222-8222-222222222222', context, title: '案件配信', revision: 1,
+      createdAt: '2026-08-25T00:00:00.000Z', updatedAt: '2026-08-25T00:00:01.000Z',
+      salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null }
+    }
+    expect(aiConversationSnapshotSchema.parse({ ...base, messages: [message] }).messages[0]?.blocks?.[0]).toMatchObject(block)
+    // One turn can never inflate a stored conversation: eight cards, and the
+    // message text stays inside a group message's size.
+    expect(aiConversationSnapshotSchema.safeParse({
+      ...base, messages: [{ ...message, blocks: [{ ...block, cards: Array.from({ length: 9 }, (_unused, index) => card(index + 1)) }] }]
+    }).success).toBe(false)
+    expect(aiConversationSnapshotSchema.safeParse({
+      ...base, messages: [{ ...message, blocks: [{ ...block, cards: [{ ...card(1), textZh: 'x'.repeat(2_001) }] }] }]
+    }).success).toBe(false)
+    expect(aiConversationSnapshotSchema.safeParse({
+      ...base, messages: [{ ...message, blocks: [{ ...block, cards: [{ ...card(1), title: 'x'.repeat(201) }] }] }]
+    }).success).toBe(false)
+    expect(aiConversationSnapshotSchema.safeParse({
+      ...base, messages: [{ ...message, blocks: [{ ...block, queue: { copied: 0 } }] }]
+    }).success).toBe(false)
+    // A card stored while 案件配信 still tracked sales groups keeps parsing:
+    // its group fields are unknown keys and are dropped, and its send-shaped
+    // status reads as the copy it always really was.
+    const beforeGroupsLeft = {
+      ...message,
+      id: 'assistant-legacy-groups',
+      blocks: [{
+        ...block,
+        queue: { new: 1, pending: 2, sent: 3, attention: 0 },
+        cards: [{
+          ...card(1),
+          status: 'sent',
+          recommendedGroups: [{ id: '77777777-7777-4777-8777-777777777777', name: '関西Javaグループ', lang: 'zh' }]
+        }]
+      }]
+    }
+    const migrated = aiConversationSnapshotSchema.parse({ ...base, messages: [beforeGroupsLeft] }).messages[0]?.blocks?.[0]
+    expect(migrated).toMatchObject({
+      queue: { new: 1, copied: 5, attention: 0 },
+      cards: [{ ordinal: 1, status: 'copied' }]
+    })
+    expect(JSON.stringify(migrated)).not.toContain('関西Javaグループ')
+    // The block is one member of the union, so a conversation recorded before
+    // it existed still parses unchanged.
+    const legacy = { ...message, id: 'assistant-legacy', blocks: [{ type: 'system-access' as const, destination: 'broadcast' as const }] }
+    expect(aiConversationSnapshotSchema.parse({ ...base, messages: [legacy] }).messages[0]?.blocks?.[0]).toEqual({ type: 'system-access', destination: 'broadcast' })
   })
 
   it('does not allow Sales Agent mutable state on legacy candidate or interview conversations', () => {

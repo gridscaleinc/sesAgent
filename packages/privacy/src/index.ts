@@ -254,7 +254,9 @@ const detectionRules: CaptureRule[] = [
 const dlpRules: Array<{ label: string; pattern: RegExp }> = [
   { label: 'private_email', pattern: /[\p{L}\p{N}.．!#$%&'*+/=?^_`{|}~-]+[@＠][\p{L}\p{N}-]+(?:[.．][\p{L}\p{N}-]+)+/iu },
   { label: 'phone', pattern: /(?<![0-9０-９])(?:[+＋](?:81|８１)[-ー－\s]?(?:[0０])?|[0０])(?:[0-9０-９][-ー－\s]?){8,10}[0-9０-９](?![0-9０-９])/u },
-  { label: 'postal_address', pattern: /(?:〒\s*)?[0-9０-９]{3}[-ー－][0-9０-９]{4}/u },
+  // Digit boundaries keep rate ranges and reference numbers (5500-65000,
+  // 20250-8251) from reading as a postal code; a bare 150-0001 still fails closed.
+  { label: 'postal_address', pattern: /(?<![0-9０-９])(?:〒\s*)?[0-9０-９]{3}[-ー－][0-9０-９]{4}(?![0-9０-９])/u },
   { label: 'birth_date', pattern: /(?:生年月日|誕生日|DOB)\s*[:：]?\s*(?:19|20|１９|２０)[0-9０-９]{2}(?:年|[/.．\-ー－])[0-9０-９]{1,2}/iu },
   { label: 'government_id', pattern: /(?:マイナンバー|個人番号|旅券番号|パスポート番号|在留カード番号)\s*[:：]?\s*[A-Z0-9０-９-]{6,}/iu },
   { label: 'nationality', pattern: /(?:国籍|Nationality)\s*[:：](?!\s*<(?:NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION)_\d{3}>)\s*[^\n\r\t|｜,，;；]{1,80}/iu },

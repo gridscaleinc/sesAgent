@@ -25,7 +25,33 @@ describe('action runtime policy', () => {
     expect(registry.get('candidate.profile.read.local')).toMatchObject({ name: 'candidate.profile.read.local', effects: { localRead: true, localWrite: false } })
     expect(registry.get('candidate.interview.read.local')).toMatchObject({ name: 'candidate.interview.read.local', effects: { localRead: true, localWrite: false } })
     expect(registry.get('match-run.read.local')).toMatchObject({ name: 'match-run.read.local', effects: { localRead: true, localWrite: false } })
+    expect(registry.get('job-case.draft.read.local')).toMatchObject({
+      name: 'job-case.draft.read.local', allowedScopeIds: ['conversation-intake-drafts'], effects: { localRead: true, localWrite: false, cloudInvocation: false }
+    })
     expect(registry.get('proposal.export')).toBeDefined()
+  })
+
+  it('drafts a case broadcast read-only and registers no tool that could send one', () => {
+    const registry = createDefaultDomainToolRegistry()
+    expect(registry.get('job-case.broadcast.draft.local')).toMatchObject({
+      name: 'job-case.broadcast.draft.local', allowedScopeIds: ['broadcast-queue'],
+      effects: { localRead: true, localWrite: false, externalWrite: false, cloudInvocation: false }
+    })
+    // Whether a message reached a group is not a fact this device has, so the
+    // ledger-writing tool is gone rather than merely unused.
+    expect(() => registry.get('job-case.broadcast.record.local' as never)).toThrow(/Unregistered domain tool/)
+    const context = {
+      origin: 'user-command' as const, workTaskId: null, scopeId: 'broadcast-queue',
+      scopeFingerprint: hash, actorId: 'operator-1', contentRevision: null
+    }
+    const reviewIds = ['11111111-1111-4111-8111-111111111111']
+    expect(evaluateActionPolicy(registry, 'job-case.broadcast.draft.local', context, { reviewIds }).decision.outcome).toBe('allow')
+    expect(evaluateActionPolicy(registry, 'job-case.broadcast.draft.local', { ...context, scopeId: 'active-job-cases' }, { reviewIds }).decision)
+      .toMatchObject({ outcome: 'deny', code: 'SCOPE_DENIED' })
+    // One drafting turn can never ask for more cases than a card block holds.
+    expect(evaluateActionPolicy(registry, 'job-case.broadcast.draft.local', context, {
+      reviewIds: Array.from({ length: 9 }, () => '11111111-1111-4111-8111-111111111111')
+    }).decision).toMatchObject({ outcome: 'deny', code: 'INVALID_INPUT' })
   })
 
   it('keeps user proposal export behind native confirmation but routes system requests to Inbox approval', () => {

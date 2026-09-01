@@ -1,16 +1,20 @@
-import { ipcMain } from 'electron'
+import { clipboard, ipcMain } from 'electron'
+import { z } from 'zod'
 import {
   type AiConversationContext,
   type AiConversationSnapshot,
   type DeleteAiConversationsResult,
+  type JobCaseFieldAliases,
   type LocalApplicationPreferences,
   type LocalOperatorProfile,
+  type SaveJobCaseFieldAliasesInput,
   type SaveLocalApplicationPreferencesInput,
   type SaveLocalOperatorProfileInput,
   aiConversationContextSchema,
   deleteAiConversationsInputSchema,
   ipcChannels,
   saveAiConversationInputSchema,
+  saveJobCaseFieldAliasesInputSchema,
   saveLocalApplicationPreferencesInputSchema,
   saveLocalOperatorProfileInputSchema
 } from '@shared'
@@ -20,6 +24,13 @@ import { hydrateConversationResumeFacts } from './resume-import'
 
 /** Local operator profile, application preferences and AI conversation history. */
 export function registerSettingsHandlers(context: MainIpcContext) {
+  ipcMain.handle(ipcChannels.copyTextToClipboard, (event, rawText): void => {
+    assertTrustedSender(event)
+    // Main-side clipboard: the renderer runs sandboxed behind a deny-all
+    // permission handler, so navigator.clipboard is not available there.
+    clipboard.writeText(z.string().min(1).max(20_000).parse(rawText))
+  })
+
   const { repository } = context
   ipcMain.handle(
     ipcChannels.saveLocalOperatorProfile,
@@ -36,6 +47,15 @@ export function registerSettingsHandlers(context: MainIpcContext) {
       assertTrustedSender(event)
       const input: SaveLocalApplicationPreferencesInput = saveLocalApplicationPreferencesInputSchema.parse(rawInput)
       return repository.saveLocalApplicationPreferences(input)
+    }
+  )
+
+  ipcMain.handle(
+    ipcChannels.saveJobCaseFieldAliases,
+    (event, rawInput): JobCaseFieldAliases => {
+      assertTrustedSender(event)
+      const input: SaveJobCaseFieldAliasesInput = saveJobCaseFieldAliasesInputSchema.parse(rawInput)
+      return repository.saveJobCaseFieldAliases(input)
     }
   )
 

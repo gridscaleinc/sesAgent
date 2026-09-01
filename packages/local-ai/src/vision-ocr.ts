@@ -512,16 +512,66 @@ function looksLikeStructuredPersonName(value: string): boolean {
   return /^[一-龯々]{2,8}$/u.test(value)
 }
 
+/**
+ * Product and tool names Apple's tagger reads as personal names in SES text -
+ * AWS（Aurora）, Jenkins, Maven, Ruby. Whole ASCII words, compared lower-case.
+ */
+const technologyNamesMistakenForPeople = new Set([
+  'aurora', 'jenkins', 'maven', 'gradle', 'django', 'flask', 'angular', 'jasmine', 'mocha', 'ruby', 'rails', 'swift',
+  'kotlin', 'julia', 'rust', 'oracle', 'salesforce', 'snowflake', 'tableau', 'kafka', 'redis', 'cassandra', 'hadoop',
+  'spark', 'airflow', 'ansible', 'terraform', 'puppet', 'chef', 'vagrant', 'docker', 'kubernetes', 'jira', 'confluence',
+  'slack', 'zoom', 'sinatra', 'laravel', 'symfony', 'lumen', 'lambda', 'athena', 'kinesis', 'glue', 'redshift', 'fargate',
+  'cognito', 'amplify', 'vue', 'react', 'nuxt', 'next', 'svelte', 'ember', 'backbone', 'electron', 'ionic', 'flutter',
+  'dart', 'unity', 'unreal', 'blender', 'figma', 'sketch', 'zeplin', 'photoshop', 'illustrator', 'sap', 'dynamics',
+  'azure', 'gcp', 'bigquery', 'looker', 'vertex', 'bedrock', 'claude', 'gemini', 'copilot', 'watson', 'alexa', 'siri',
+  'cortana', 'selenium', 'cypress', 'playwright', 'puppeteer', 'postman', 'swagger', 'graphql', 'prisma', 'sequelize',
+  'hibernate', 'struts', 'spring', 'grails', 'groovy', 'scala', 'akka', 'play', 'elixir', 'phoenix', 'erlang', 'haskell',
+  'clojure', 'lisp', 'perl', 'lua', 'bash', 'powershell', 'zabbix', 'nagios', 'grafana', 'prometheus', 'datadog', 'splunk',
+  'kibana', 'elasticsearch', 'logstash', 'fluentd', 'nginx', 'apache', 'tomcat', 'jboss', 'weblogic', 'websphere', 'jetty',
+  'node', 'deno', 'bun', 'express', 'koa', 'nest', 'fastify', 'hono', 'python', 'java', 'cobol', 'fortran', 'pascal',
+  'delphi', 'matlab', 'octave', 'pandas', 'numpy', 'keras', 'pytorch', 'tensorflow', 'mysql', 'postgres', 'postgresql',
+  'mariadb', 'mongodb', 'dynamodb', 'sqlite', 'sybase', 'informix', 'teradata', 'vertica', 'hive', 'presto', 'trino',
+  'flink', 'storm', 'beam', 'dbt', 'fivetran', 'talend', 'informatica', 'mulesoft', 'boomi', 'zapier', 'notion', 'asana',
+  'trello', 'backlog', 'redmine', 'gitlab', 'github', 'bitbucket', 'sourcetree', 'intellij', 'eclipse', 'xcode',
+  'android', 'ios', 'linux', 'ubuntu', 'debian', 'centos', 'redhat', 'fedora', 'solaris', 'aix', 'windows', 'macos',
+  'vmware', 'citrix', 'openshift', 'rancher', 'helm', 'istio', 'envoy', 'consul', 'vault', 'nomad', 'okta', 'auth0',
+  'keycloak', 'cloudflare', 'akamai', 'fastly', 'twilio', 'sendgrid', 'stripe', 'paypal', 'shopify', 'magento',
+  'wordpress', 'drupal', 'joomla', 'wix', 'hubspot', 'marketo', 'pardot', 'zendesk', 'freshdesk', 'intercom',
+  'servicenow', 'workday', 'netsuite', 'quickbooks', 'xero', 'freee', 'kintone', 'cybozu', 'garoon', 'chatwork', 'line',
+  'teams', 'webex', 'skype', 'discord', 'telegram', 'whatsapp', 'wechat'
+])
+
+/**
+ * Whether a tagger entity is a technology, not a person: a known product
+ * name, or a single ASCII word written the way technologies are listed -
+ * bracketed after another token (AWS（Aurora）), slash-paired with one
+ * (Perl／PHP), or listed next to one (日本語、Scala，Spark). Names with a
+ * space, or in any other script, are never dropped.
+ */
+function isTechnologyMention(text: string, candidate: string): boolean {
+  if (!/^[A-Za-z][A-Za-z0-9+#.\-]*$/u.test(candidate)) return false
+  if (technologyNamesMistakenForPeople.has(candidate.toLowerCase())) return true
+  const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const bracketed = new RegExp(`[A-Za-z0-9+#.]\\s*[（(]\\s*${escaped}\\s*[）)]`, 'u')
+  const slashPaired = new RegExp(`(?:[A-Za-z0-9+#.]\\s*[／/]\\s*${escaped}(?![A-Za-z])|(?<![A-Za-z])${escaped}\\s*[／/]\\s*[A-Za-z])`, 'u')
+  const listedWithTechnology = new RegExp(
+    `(?:[A-Za-z0-9+#.]{2,}[^\\S\\r\\n]*[、，,・][^\\S\\r\\n]*${escaped}(?![A-Za-z])|(?<![A-Za-z])${escaped}[^\\S\\r\\n]*[、，,・][^\\S\\r\\n]*[A-Za-z0-9+#.]{2,})`,
+    'u'
+  )
+  return bracketed.test(text) || slashPaired.test(text) || listedWithTechnology.test(text)
+}
+
 export function collectLocalPersonNameCandidates(text: string, appleResult?: NameDetectionResult): string[] {
   const candidates = new Set<string>()
   for (const entity of appleResult?.entities ?? []) {
     const cleaned = cleanNameCandidate(entity.text)
-    if (cleaned) candidates.add(cleaned)
+    if (cleaned && !isTechnologyMention(text, cleaned)) candidates.add(cleaned)
   }
 
   const labeledName = /(?:氏名|姓名|候補者名|お名前|担当者?|営業担当|ご担当|窓口|Name|Candidate)\s*[:：]\s*([^\r\n]{2,40})/giu
   for (const match of text.matchAll(labeledName)) {
-    const cleaned = cleanNameCandidate(match[1] ?? '')
+    // 担当：山田太郎、Java 経験者 - the name ends where the list goes on.
+    const cleaned = cleanNameCandidate((match[1] ?? '').split(/[、，,／/｜|（(【\[]/u)[0] ?? '')
     if (cleaned && looksLikeStructuredPersonName(cleaned)) candidates.add(cleaned)
   }
   const spreadsheetRows = new Map<string, Array<{ column: number; value: string }>>()

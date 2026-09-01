@@ -1,5 +1,6 @@
 import type { ActionRuntimeStore } from './action-runtime-store'
 import type { AgentConversationStore } from './agent-conversation-store'
+import type { BroadcastStore } from './broadcast-store'
 import type { CandidateEvaluationStore } from './candidate-evaluation-store'
 import type { CandidateInterviewStore } from './candidate-interview-store'
 import type { CandidateMatchStore } from './candidate-match-store'
@@ -16,6 +17,7 @@ import type { WorkTaskStore } from './work-task-store'
 export interface StoreRegistry {
   readonly actionRuntime: ActionRuntimeStore
   readonly agentConversations: AgentConversationStore
+  readonly broadcast: BroadcastStore
   readonly candidateEvaluation: CandidateEvaluationStore
   readonly candidateInterviews: CandidateInterviewStore
   readonly candidateMatch: CandidateMatchStore

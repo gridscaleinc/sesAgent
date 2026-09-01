@@ -6,12 +6,20 @@ import {
   candidateInterviewKinds,
   candidateInterviewQuestionSources,
   candidateInterviewStages,
+  candidateMatchAssessmentFits,
   candidateMatchFeedbackReasonCodes,
   candidateMatchSuitableReasonCodes,
   candidateMatchUnsuitableReasonCodes,
   jobCaseFieldKeys,
+  jobCaseSourceTypes,
   applicationLocales,
-  proposalFollowUpStages
+  proposalFollowUpStages,
+  broadcastForbiddenFieldKeys,
+  broadcastLanguages,
+  broadcastRatePolicies,
+  caseBroadcastKinds,
+  type BroadcastTemplateFieldKey,
+  type BroadcastTemplateLine
 } from './contracts'
 
 const taskStepSchema = z.object({
@@ -162,7 +170,8 @@ export const enqueueProcessingJobInputSchema = z.object({
 export const stagedLocalFileSchema = z.object({
   token: z.string().uuid(),
   name: z.string().min(1).max(180),
-  format: z.enum(['pdf', 'docx', 'xlsx', 'xls', 'xlsb']),
+  // 'txt' is a Main-created intake source; upload entry points stay file-only.
+  format: z.enum(['pdf', 'docx', 'xlsx', 'xls', 'xlsb', 'txt']),
   size: z.number().int().positive().max(25 * 1024 * 1024),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   createdAt: z.string().datetime(),
@@ -332,7 +341,8 @@ const candidateInterviewQuestionSchema = z.object({
   text: z.string().trim().min(2).max(500),
   source: z.enum(candidateInterviewQuestionSources),
   sourceLabel: z.string().trim().min(1).max(160).nullable(),
-  selected: z.boolean()
+  selected: z.boolean(),
+  scoringGuide: z.string().trim().max(300).nullable().optional()
 })
 
 function isAllowedZoomMeetingUrl(value: string): boolean {
@@ -918,6 +928,50 @@ export const saveLocalApplicationPreferencesInputSchema = z.object({
   expectedRevision: z.number().int().positive().nullable()
 })
 
+/** A label as written before the colon: short, single-line, no colon of its own. */
+const jobCaseFieldAliasSchema = z.string().trim().min(1).max(40).regex(/^[^:：\r\n]+$/u)
+
+function normalizedAliasKey(alias: string): string {
+  return alias.normalize('NFKC').replace(/[\s　【】[\]()（）]/gu, '').toLocaleLowerCase('ja-JP')
+}
+
+/** One alias must mean exactly one field; the same alias on two fields is rejected. */
+export const jobCaseFieldAliasMapSchema = z.object(
+  Object.fromEntries(jobCaseFieldKeys.map((key) => [key, z.array(jobCaseFieldAliasSchema).max(20).optional()]))
+).superRefine((value, context) => {
+  const seen = new Map<string, string>()
+  for (const key of jobCaseFieldKeys) {
+    for (const alias of (value as Record<string, string[] | undefined>)[key] ?? []) {
+      const normalized = normalizedAliasKey(alias)
+      const owner = seen.get(normalized)
+      if (owner && owner !== key) {
+        context.addIssue({ code: 'custom', path: [key], message: `別名「${alias}」は複数の項目に割り当てられています。` })
+      }
+      seen.set(normalized, key)
+    }
+  }
+})
+
+export const jobCaseFieldAliasesSchema = z.object({
+  version: z.literal('job-case-field-aliases-v1'),
+  aliases: jobCaseFieldAliasMapSchema,
+  configured: z.boolean(),
+  revision: z.number().int().positive().nullable(),
+  updatedAt: z.string().datetime().nullable()
+}).superRefine((value, context) => {
+  if (value.configured && (value.revision === null || value.updatedAt === null)) {
+    context.addIssue({ code: 'custom', message: '保存済みの別名設定にはRevisionと更新日時が必要です。' })
+  }
+  if (!value.configured && (value.revision !== null || value.updatedAt !== null)) {
+    context.addIssue({ code: 'custom', message: '未設定の別名設定にRevisionまたは更新日時を保存できません。' })
+  }
+})
+
+export const saveJobCaseFieldAliasesInputSchema = z.object({
+  aliases: jobCaseFieldAliasMapSchema,
+  expectedRevision: z.number().int().positive().nullable()
+}).strict()
+
 export const prepareAiCommerceCloudPromptInputSchema = z.object({
   content: z.string().trim().min(1).max(12_000)
 }).strict()
@@ -985,6 +1039,20 @@ const agentJobCaseCardSchema = z.object({
   status: z.enum(['current', 'stale', 'deleted'])
 })
 
+export const candidateMatchAssessmentSchema = z.object({
+  version: z.literal('match-assessment-v1'),
+  fit: z.enum(candidateMatchAssessmentFits),
+  met: z.array(z.object({
+    requirement: z.string().min(1).max(200),
+    evidence: z.string().min(1).max(300)
+  })).max(8),
+  gaps: z.array(z.string().min(1).max(200)).max(8),
+  confirm: z.array(z.string().min(1).max(200)).max(8),
+  reason: z.string().max(400),
+  modelKey: z.string().min(1).max(120),
+  assessedAt: z.string().datetime()
+})
+
 const agentCandidateMatchCardSchema = z.object({
   reference: typedAiConversationReferenceSchema,
   candidateProfileId: z.string().uuid(),
@@ -995,9 +1063,10 @@ const agentCandidateMatchCardSchema = z.object({
   fitScore: z.number().finite().nullable(),
   matched: z.array(z.string().min(1).max(180)).max(40),
   missing: z.array(z.string().min(1).max(180)).max(40),
-  hardFilterStatus: z.enum(['passed', 'failed', 'unknown']),
+  hardFilterStatus: z.enum(['passed', 'failed', 'unknown', 'none']),
   projectEvidence: z.string().max(1_500).nullable(),
-  status: z.enum(['current', 'stale', 'deleted'])
+  status: z.enum(['current', 'stale', 'deleted']),
+  assessment: candidateMatchAssessmentSchema.nullable().optional()
 })
 
 const agentSystemAccessBlockSchema = z.discriminatedUnion('destination', [
@@ -1016,6 +1085,11 @@ const agentSystemAccessBlockSchema = z.discriminatedUnion('destination', [
   z.object({ type: z.literal('system-access'), destination: z.literal('candidate-management') }),
   z.object({
     type: z.literal('system-access'),
+    destination: z.literal('broadcast'),
+    reviewId: z.string().uuid().optional()
+  }),
+  z.object({
+    type: z.literal('system-access'),
     destination: z.literal('candidate'),
     sourceDocumentId: z.string().uuid(),
     view: z.enum(['overview', 'resume', 'schedule', 'prepare', 'workbench', 'decision', 'client', 'records', 'entry']),
@@ -1027,7 +1101,12 @@ const agentSystemAccessBlockSchema = z.discriminatedUnion('destination', [
     destination: z.literal('original-document'),
     sourceDocumentId: z.string().uuid()
   }),
-  z.object({ type: z.literal('system-access'), destination: z.literal('review-center') }),
+  z.object({
+    type: z.literal('system-access'),
+    destination: z.literal('review-center'),
+    intakeBatchId: z.string().uuid().optional(),
+    reviewIds: z.array(z.string().uuid()).max(10).optional()
+  }),
   z.object({
     type: z.literal('system-access'),
     destination: z.literal('task'),
@@ -1068,7 +1147,15 @@ const agentBlocksSchema = z.union([
     type: z.literal('candidate-match-cards'),
     runId: z.string().uuid(),
     resultHash: z.string().regex(/^[a-f0-9]{64}$/u),
-    cards: z.array(agentCandidateMatchCardSchema).max(5)
+    cards: z.array(agentCandidateMatchCardSchema).max(5),
+    cloudReview: z.discriminatedUnion('status', [
+      z.object({ status: z.literal('reviewed'), reviewedCount: z.number().int().nonnegative() }),
+      z.object({
+        status: z.literal('skipped'),
+        code: z.enum(['cloud-unavailable', 'no-job-case', 'no-candidates', 'nothing-matched', 'no-verdict', 'cloud-error']),
+        reason: z.string().max(300).nullable()
+      })
+    ]).nullable().optional()
   }),
   z.object({
     type: z.literal('candidate-profile-evidence'),
@@ -1172,6 +1259,66 @@ const agentBlocksSchema = z.union([
     })
   }),
   z.object({
+    type: z.literal('job-case-draft-cards'),
+    intakeBatchId: z.string().uuid(),
+    cards: z.array(z.object({
+      reviewId: z.string().uuid(),
+      label: z.string().min(1).max(60),
+      ordinal: z.number().int().min(1).max(10),
+      outcome: z.enum(['created', 'existing-review', 'already-imported', 'archived']),
+      title: z.string().max(500).nullable(),
+      reviewStatus: z.enum(['awaiting-review', 'completed']),
+      lifecycle: z.enum(['active', 'archived']),
+      jobCase: z.object({ id: z.string().uuid(), version: z.number().int().positive() }).nullable(),
+      fields: z.array(z.object({
+        key: z.enum(jobCaseFieldKeys),
+        label: z.string().min(1).max(80),
+        value: z.string().max(500).nullable(),
+        status: z.enum(['needs_review', 'missing', 'confirmed'])
+      })).max(20),
+      warningCodes: z.array(z.string().min(1).max(120)).max(100),
+      status: z.enum(['current', 'stale', 'deleted'])
+    })).max(10)
+  }),
+  z.object({
+    type: z.literal('job-case-broadcast-cards'),
+    // Bounded on every axis: at most 8 drafted cases per turn, and message
+    // texts capped well under what a group message can hold, so one turn can
+    // never inflate a stored conversation.
+    //
+    // Cards stored before the sales-group concept left the product still parse:
+    // their group fields are unknown keys and are dropped, their pending/sent
+    // status reads as copied, and their queue counts default the missing one.
+    cards: z.array(z.object({
+      reviewId: z.string().uuid(),
+      jobCaseId: z.string().uuid(),
+      jobCaseVersion: z.number().int().positive(),
+      ordinal: z.number().int().min(1).max(8),
+      title: z.string().min(1).max(200),
+      status: z.enum(['new', 'pending', 'sent', 'copied', 'attention'])
+        .transform((value) => (value === 'pending' || value === 'sent' ? 'copied' as const : value)),
+      templateId: z.string().uuid(),
+      templateRevision: z.number().int().positive(),
+      textJa: z.string().max(2_000),
+      textZh: z.string().max(2_000),
+      forbiddenJa: z.array(z.string().min(1).max(60)).max(20),
+      forbiddenZh: z.array(z.string().min(1).max(60)).max(20)
+    })).max(8),
+    queue: z.preprocess((value) => {
+      // Counts written before the copy model: 送信待ち meant copied but not yet
+      // claimed as sent, 送信済み meant claimed - both were a copy and nothing
+      // more, so they fold together rather than reading as zero.
+      if (value === null || typeof value !== 'object' || 'copied' in value) return value
+      const legacy = [(value as Record<string, unknown>).pending, (value as Record<string, unknown>).sent]
+        .filter((count) => typeof count === 'number')
+      return legacy.length === 0 ? value : { ...value, copied: legacy.reduce((sum, count) => sum + count, 0) }
+    }, z.object({
+      new: z.number().int().nonnegative(),
+      copied: z.number().int().nonnegative().optional().default(0),
+      attention: z.number().int().nonnegative()
+    }))
+  }),
+  z.object({
     type: z.literal('match-run-explanation'),
     facts: z.object({
       runId: z.string().uuid(),
@@ -1184,7 +1331,7 @@ const agentBlocksSchema = z.union([
       candidate: agentCandidateMatchCardSchema.nullable(),
       matched: z.array(z.string().min(1).max(180)).max(40),
       missing: z.array(z.string().min(1).max(180)).max(40),
-      hardFilterStatus: z.enum(['passed', 'failed', 'unknown']),
+      hardFilterStatus: z.enum(['passed', 'failed', 'unknown', 'none']),
       projectEvidence: z.string().max(1_500).nullable()
     })
   }),
@@ -1200,7 +1347,13 @@ const agentBlocksSchema = z.union([
 const salesAgentStateSchema = z.object({
   selectedJobCaseRef: typedAiConversationReferenceSchema.nullable(),
   lastMatchRunId: z.string().uuid().nullable(),
-  lastSearchMessageId: z.string().min(1).max(128).nullable()
+  lastSearchMessageId: z.string().min(1).max(128).nullable(),
+  // Optional so every conversation stored before it existed still parses.
+  lastIntakeBatch: z.object({
+    intakeBatchId: z.string().uuid(),
+    messageId: z.string().min(1).max(128),
+    reviewIds: z.array(z.string().uuid()).max(10)
+  }).nullable().optional()
 })
 
 export const aiConversationMessageSchema = z.object({
@@ -1541,10 +1694,12 @@ export const jobCaseSummarySchema = z.object({
   containsDirectIdentifiers: z.literal(false)
 })
 
+export const jobCaseSourceTypeSchema = z.enum(jobCaseSourceTypes)
+
 export const jobCaseReviewSnapshotSchema = z.object({
   reviewId: z.string().uuid(),
   sourceId: z.string().uuid(),
-  sourceType: z.enum(['gmail', 'manual', 'eml']),
+  sourceType: jobCaseSourceTypeSchema,
   providerMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable(),
   threadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
   fromDomain: z.string().max(253).nullable(),
@@ -1560,6 +1715,7 @@ export const jobCaseReviewSnapshotSchema = z.object({
   reviewerDisplayName: z.string().min(1).max(120).nullable(),
   jobCase: jobCaseSummarySchema.nullable(),
   lifecycle: z.enum(['active', 'archived']),
+  intakeBatchId: z.string().uuid().nullable().optional(),
   cloudEligible: z.literal(false)
 })
 
@@ -1612,6 +1768,66 @@ export const reopenJobCaseReviewInputSchema = z.object({
   reason: z.string().trim().min(3).max(300)
 })
 
+/* ── 案件配信 (case broadcast) ─────────────────────────────────────────── */
+
+/**
+ * Field lines can only reference the allowed keys: `contract_chain` and
+ * `payment_terms` are rejected here, so no stored template - however it was
+ * written - can put the商流 or the支払条件 into a group message.
+ */
+const broadcastTemplateFieldKeySchema = z.enum(
+  jobCaseFieldKeys.filter((key) => !(broadcastForbiddenFieldKeys as readonly string[]).includes(key)) as
+    [BroadcastTemplateFieldKey, ...BroadcastTemplateFieldKey[]]
+)
+
+export const broadcastTemplateLineSchema: z.ZodType<BroadcastTemplateLine> = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('field'),
+    field: broadcastTemplateFieldKeySchema,
+    labelJa: z.string().trim().min(1).max(40),
+    labelZh: z.string().trim().min(1).max(40),
+    on: z.boolean()
+  }),
+  z.object({
+    kind: z.literal('text'),
+    textJa: z.string().max(200),
+    textZh: z.string().max(200),
+    on: z.boolean()
+  })
+])
+
+const broadcastTemplateDraftShape = {
+  name: z.string().trim().min(1).max(60),
+  ratePublic: z.enum(broadcastRatePolicies),
+  headerJa: z.string().trim().min(1).max(200),
+  headerZh: z.string().trim().min(1).max(200),
+  footerJa: z.string().max(200),
+  footerZh: z.string().max(200),
+  lines: z.array(broadcastTemplateLineSchema).max(40)
+}
+
+export const createBroadcastTemplateInputSchema = z.object(broadcastTemplateDraftShape)
+export const updateBroadcastTemplateInputSchema = z.object({
+  id: z.string().uuid(),
+  ...broadcastTemplateDraftShape
+})
+export const deleteBroadcastTemplateInputSchema = z.object({ id: z.string().uuid() })
+
+export const draftCaseBroadcastInputSchema = z.object({
+  reviewId: jobCaseReviewIdSchema,
+  templateId: z.string().uuid().optional()
+})
+
+export const draftCaseUpdateNoticeInputSchema = z.object({ reviewId: jobCaseReviewIdSchema })
+
+export const recordCaseBroadcastCopyInputSchema = z.object({
+  reviewId: jobCaseReviewIdSchema,
+  templateId: z.string().uuid(),
+  lang: z.enum(broadcastLanguages),
+  kind: z.enum(caseBroadcastKinds),
+  text: z.string().trim().min(1).max(4_000)
+})
+
 export const deleteJobCaseDataInputSchema = z.object({
   reviewId: jobCaseReviewIdSchema,
   confirmationHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -1622,7 +1838,7 @@ export const jobCaseDeletionPreviewSchema = z.object({
   reviewId: jobCaseReviewIdSchema,
   sourceId: z.string().uuid(),
   title: z.string().min(1).max(500),
-  sourceType: z.enum(['gmail', 'manual', 'eml']),
+  sourceType: jobCaseSourceTypeSchema,
   counts: z.object({
     caseVersions: z.number().int().nonnegative(),
     reviewAudits: z.number().int().nonnegative(),

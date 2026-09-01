@@ -5,7 +5,9 @@ import type {
   MatchingHomeResult,
   SetBusinessPriorityOverrideInput
 } from '@shared'
+import { useUiLocale } from '../i18n'
 import { Icon } from './Icon'
+import { MatchAssessmentView } from './MatchAssessmentView'
 
 interface MatchingHomeDashboardProps {
   projection: MatchingHomeProjection
@@ -98,6 +100,7 @@ export function MatchingHomeDashboard({
   onOverridePriority
 }: MatchingHomeDashboardProps) {
   const [order, setOrder] = useState<'fit' | 'business'>('fit')
+  const zh = useUiLocale() === 'zh-CN'
   const run = projection.currentRun
   const selectedCase = projection.jobCases.find((jobCase) => jobCase.id === projection.selectedJobCaseId)
     ?? projection.jobCases[0]
@@ -176,6 +179,7 @@ export function MatchingHomeDashboard({
                   ))}
                   {result.fit.projectEvidence ? <span>案件経験：{result.fit.projectEvidence.title} <small>{result.fit.projectEvidence.sourceLabels.join(' / ')}</small></span> : null}
                 </div>
+                {result.assessment ? <MatchAssessmentView assessment={result.assessment} zh={zh} /> : null}
                 <div className="matching-home-priority-reason">
                   <strong>営業優先度の根拠</strong>
                   <p>{result.businessPriority.reasons.join(' · ')}</p>

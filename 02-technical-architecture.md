@@ -1,6 +1,6 @@
 # SES Agent Desktop 技术架构
 
-<!-- ses-current-state package=0.1.0 schema=39 -->
+<!-- ses-current-state package=0.1.0 schema=43 -->
 
 > 版本：v0.7
 > 目标：无需业务服务器即可交付安全、可恢复、可演进的桌面 MVP
