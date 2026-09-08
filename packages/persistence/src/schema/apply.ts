@@ -43,7 +43,10 @@ import {
   migrationV40,
   migrationV41,
   migrationV42,
-  migrationV43
+  migrationV43,
+  migrationV44,
+  migrationV45,
+  migrationV46
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
@@ -408,4 +411,11 @@ export function applyMigrations(database: Database.Database): void {
     .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 43')
     .get()
   if (!hasV43) database.exec(migrationV43)
+  const hasV44 = database
+    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 44')
+    .get()
+  if (!hasV44) database.exec(migrationV44)
+  const hasV45 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 45').get()
+  if (!hasV45) database.exec(migrationV45)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 46').get()) database.exec(migrationV46)
 }

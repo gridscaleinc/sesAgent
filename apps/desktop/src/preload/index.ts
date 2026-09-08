@@ -54,6 +54,17 @@ function parseGmailSyncCompletion(value: unknown): GmailScheduledSyncCompletion 
 }
 
 const api: DesktopApi = {
+  getBusinessFeed: () => ipcRenderer.invoke(ipcChannels.getBusinessFeed),
+  markBusinessFeed: (input) => ipcRenderer.invoke(ipcChannels.markBusinessFeed, input),
+  getPersonnelWorkspace: () => ipcRenderer.invoke(ipcChannels.getPersonnelWorkspace),
+  savePersonnelTemplate: (input) => ipcRenderer.invoke(ipcChannels.savePersonnelTemplate, input),
+  setCandidateOwnCompany: (input) => ipcRenderer.invoke(ipcChannels.setCandidateOwnCompany, input),
+  setCandidateBusinessState: (input) => ipcRenderer.invoke(ipcChannels.setCandidateBusinessState, input),
+  validatePersonnelMessage: (input) => ipcRenderer.invoke(ipcChannels.validatePersonnelMessage, input),
+  recordPersonnelCopy: (input) => ipcRenderer.invoke(ipcChannels.recordPersonnelCopy, input),
+  openPersonnelEmail: (input) => ipcRenderer.invoke(ipcChannels.openPersonnelEmail, input),
+  findPersonnelForCase: (input) => ipcRenderer.invoke(ipcChannels.findPersonnelForCase, input),
+  findCasesForPersonnel: (input) => ipcRenderer.invoke(ipcChannels.findCasesForPersonnel, input),
   getStartupStatus: () => ipcRenderer.invoke(ipcChannels.getStartupStatus),
   getBootstrap: () => ipcRenderer.invoke(ipcChannels.getBootstrap),
   resolveActionApproval: (input) => ipcRenderer.invoke(ipcChannels.resolveActionApproval, input),
@@ -112,10 +123,13 @@ const api: DesktopApi = {
   reopenJobCaseReview: (input) => ipcRenderer.invoke(ipcChannels.reopenJobCaseReview, input),
   previewJobCaseDeletion: (reviewId) => ipcRenderer.invoke(ipcChannels.previewJobCaseDeletion, reviewId),
   deleteJobCaseData: (input) => ipcRenderer.invoke(ipcChannels.deleteJobCaseData, input),
+  getJobCaseNewDigest: () => ipcRenderer.invoke(ipcChannels.getJobCaseNewDigest),
+  markJobCaseSeen: (reviewId) => ipcRenderer.invoke(ipcChannels.markJobCaseSeen, reviewId),
   listBroadcastWorkspace: () => ipcRenderer.invoke(ipcChannels.listBroadcastWorkspace),
   draftCaseBroadcast: (input) => ipcRenderer.invoke(ipcChannels.draftCaseBroadcast, input),
   draftCaseUpdateNotice: (input) => ipcRenderer.invoke(ipcChannels.draftCaseUpdateNotice, input),
   recordCaseBroadcastCopy: (input) => ipcRenderer.invoke(ipcChannels.recordCaseBroadcastCopy, input),
+  openCaseBroadcastEmail: (input) => ipcRenderer.invoke(ipcChannels.openCaseBroadcastEmail, input),
   copyTextToClipboard: (text) => ipcRenderer.invoke(ipcChannels.copyTextToClipboard, text),
   listCaseBroadcasts: (reviewId) => ipcRenderer.invoke(ipcChannels.listCaseBroadcasts, reviewId),
   createBroadcastTemplate: (input) => ipcRenderer.invoke(ipcChannels.createBroadcastTemplate, input),
@@ -150,6 +164,11 @@ const api: DesktopApi = {
   saveGoogleWorkspaceAdminConfiguration: (input) => ipcRenderer.invoke(ipcChannels.saveGoogleWorkspaceAdminConfiguration, input),
   disconnectGoogleWorkspace: () => ipcRenderer.invoke(ipcChannels.disconnectGoogleWorkspace),
   syncGoogleWorkspace: () => ipcRenderer.invoke(ipcChannels.syncGoogleWorkspace),
+  onOpenNewCaseBoard: (listener) => {
+    const handler = () => listener()
+    ipcRenderer.on(ipcChannels.openNewCaseBoard, handler)
+    return () => ipcRenderer.removeListener(ipcChannels.openNewCaseBoard, handler)
+  },
   onGmailSyncCompleted: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: unknown) => {
       const parsed = parseGmailSyncCompletion(payload)

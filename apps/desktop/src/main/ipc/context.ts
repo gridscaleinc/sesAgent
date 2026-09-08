@@ -205,8 +205,8 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
    */
   const conversationImports = new Map<string, Array<{ label: string; sourceDocumentId: string }>>()
 
-  const searchCandidates = async (query: string, maxResults: number) => {
-    const profiles = repository.listEligibleTalentProfiles()
+  const searchCandidates = async (query: string, maxResults: number, candidateDocumentId?: string, expectedProfileVersion?: number) => {
+    const profiles = repository.listEligibleTalentProfiles().filter((profile) => !candidateDocumentId || profile.sourceDocumentId === candidateDocumentId)
     const identities = new Map(profiles.map((profile) => [
       profile.sourceDocumentId,
       repository.getCandidateLocalIdentity(profile.sourceDocumentId)
@@ -230,6 +230,12 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
           cloudEligible: false as const
         }
       }))
+    if (candidateDocumentId) {
+      if (profiles.length !== 1 || (expectedProfileVersion !== undefined && profiles[0]!.profileVersion !== expectedProfileVersion)) {
+        throw new Error('所选人员资料已变化，请重新评估。')
+      }
+      return enrichLocalIdentity(searchConfirmedCandidateProfiles(profiles, query, 1, undefined, undefined, true))
+    }
     const normalizedQuery = query.normalize('NFKC').trim().toLocaleLowerCase('ja-JP')
     if (normalizedQuery.length >= 2) {
       const identityMatchedProfiles = profiles.filter((profile) => {

@@ -1,6 +1,6 @@
 # 安全与数据治理设计
 
-<!-- ses-current-state package=0.1.0 schema=43 -->
+<!-- ses-current-state package=0.1.0 schema=46 -->
 
 > 版本：v0.7
 > 适用范围：桌面 MVP、本地简历库、案件邮件、模型调用和提案草稿
@@ -200,6 +200,7 @@ macOS 微信已进入 B-03-1 受控开发试点。`wechat.visible.read` 只接�
 4. 当前网络/API 方法 Allowlist 是 GET-only，只允许 Profile、Message list/get 与 History。Draft create/get/update、Message/Thread Send、Modify 和 Delete 全部不可达；应用代码、Preload API、任务类型和测试 Fixture 中不得存在对应调用。
 5. MVP 不申请 `gmail.modify`、`gmail.send`、`https://mail.google.com/`、删除邮件、修改标签/规则或 Domain-wide Delegation。
 6. Token 交换和每次刷新都要求 Scope 恰好为单一 `gmail.readonly` 且 Token Type 为 Bearer；出现任何额外 Scope、非 Loopback 回调或非 Bearer Token 时，不保存新凭据。
+7. 案件配信的“打开邮件”不调用 Gmail API，也不改变上述只读授权。Main 只接受确认案件 ID、已登记模板、语言、文案种类和有界正文，重新执行直接标识符检测后自行构造无收件人的 `mailto:`；Renderer 不能提供 URL、抄送或密送参数。默认邮件客户端打开后，收件人与最终发送由 HR 确认，应用不记录或声称邮件已经发送。
 
 管理员在应用内只配置 Desktop OAuth Client ID、公司域和有界同步范围。配置自 SQLCipher Schema v21 起持久化，当前随 Schema v37 使用乐观 Revision 并进入加密恢复包；Client Secret、Refresh/Access Token、密码和 Cookie 不进入表单、数据库、ProcessingJob 或恢复包。Token 只由目标 OS 的 `safeStorage` 保护，修改配置前必须先断开当前账号并清除旧凭据。环境/设备管理注入值优先于本地配置，UI 只显示不可编辑状态。
 

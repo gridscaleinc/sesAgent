@@ -177,16 +177,7 @@ export class CandidateInterviewStore extends DomainStore {
         .get(validated.sourceDocumentId)
       if (!activeCandidate) throw new Error('Only an active imported candidate can enter a recruiting interview.')
     } else {
-      const eligibleMembership = this.database
-        .prepare<[string], { source_document_id: string }>(
-          `SELECT membership.source_document_id
-           FROM talent_pool_memberships membership
-           JOIN candidate_records record ON record.source_document_id = membership.source_document_id
-           JOIN candidate_profiles profile ON profile.source_document_id = membership.source_document_id
-           WHERE membership.source_document_id = ? AND membership.status = 'eligible'
-             AND record.record_status = 'active' AND profile.status = 'current'`
-        )
-        .get(validated.sourceDocumentId)
+      const eligibleMembership = this.stores.candidates.listEligibleTalentProfiles().some((profile) => profile.sourceDocumentId === validated.sourceDocumentId)
       if (!eligibleMembership) throw new Error('Only eligible talent-pool members can enter a client interview.')
     }
     let current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId, kind)

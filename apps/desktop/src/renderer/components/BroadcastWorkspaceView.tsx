@@ -9,6 +9,8 @@ import type {
   DraftCaseBroadcastResult,
   DraftCaseUpdateNoticeInput,
   DraftCaseUpdateNoticeResult,
+  OpenCaseBroadcastEmailInput,
+  OpenCaseBroadcastEmailResult,
   RecordCaseBroadcastCopyInput,
   RecordCaseBroadcastCopyResult
 } from '@shared'
@@ -22,6 +24,7 @@ export interface BroadcastPanelActions {
   draftBroadcast(input: DraftCaseBroadcastInput): Promise<DraftCaseBroadcastResult>
   draftUpdateNotice(input: DraftCaseUpdateNoticeInput): Promise<DraftCaseUpdateNoticeResult>
   recordCopy(input: RecordCaseBroadcastCopyInput): Promise<RecordCaseBroadcastCopyResult>
+  openEmail(input: OpenCaseBroadcastEmailInput): Promise<OpenCaseBroadcastEmailResult>
   listBroadcasts(reviewId: string): Promise<CaseBroadcastHistoryEntry[]>
 }
 
@@ -55,9 +58,15 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
   const zh = locale === 'zh-CN'
   const [workspace, setWorkspace] = useState<BroadcastWorkspace | null>(null)
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(initialReviewId ?? null)
+  // Arriving from one case's 配信文 button means that case, not the whole
+  // queue: keep the queue folded until the operator asks for it.
+  const [queueExpanded, setQueueExpanded] = useState(!initialReviewId)
   // The host can refocus the open queue (配信 on another case): follow it.
   useEffect(() => {
-    if (initialReviewId) setSelectedReviewId(initialReviewId)
+    if (initialReviewId) {
+      setSelectedReviewId(initialReviewId)
+      setQueueExpanded(false)
+    }
   }, [initialReviewId])
   const [templateId, setTemplateId] = useState<string | null>(null)
   // The language stays where the operator put it while the screen is open:
@@ -139,6 +148,23 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
     }
   }
 
+  const openEmail = async () => {
+    if (!selected || !templateId || busy || forbidden.length > 0 || text.trim().length === 0) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await actions.openEmail({ reviewId: selected.reviewId, templateId, lang, kind, text })
+      setNotice(zh
+        ? '已打开默认邮件客户端。请确认收件人和正文后手动发送；本应用不会标记为已发送。'
+        : '既定のメールアプリを開きました。宛先と本文を確認して送信してください。このアプリは送信済みとは記録しません。')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const loadUpdateNotice = async () => {
     if (!selected || busy) return
     setBusy(true)
@@ -182,19 +208,23 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
   const templateName = (id: string) => workspace?.templates.find((template) => template.id === id)?.name ?? '—'
 
   return <div className="broadcast-view">
-    <div className="agent-business-metrics">
+    {queueExpanded || !selected ? <div className="agent-business-metrics">
       <span><strong>{count('new')}</strong>{zh ? '新增（未复制）' : '新着（未コピー）'}</span>
       <span><strong>{count('copied')}</strong>{zh ? '已复制' : 'コピー済み'}</span>
       <span><strong>{count('attention')}</strong>{zh ? '待补充' : '要補完'}</span>
-    </div>
+    </div> : <div className="broadcast-focused-bar">
+      <span className={`broadcast-status is-${selected.status}`}>{statusLabel(selected.status, zh)}</span>
+      <strong>{selected.title || (zh ? '未命名案件' : '名称未設定案件')}</strong>
+      <button onClick={() => setQueueExpanded(true)} type="button"><span>{zh ? '全部案件' : 'すべての案件'}</span><b>{queue.length}</b></button>
+    </div>}
     <p className="broadcast-hint">{zh
-      ? '复制后请自行粘贴到微信发送；发到哪些群由您自己掌握，本机只记录复制这件事。'
-      : 'コピーしたら微信へ貼り付けて送信してください。どのグループへ送るかはご自身の管理です。端末が記録するのはコピーしたことだけです。'}</p>
+      ? '复制可用于微信；“打开邮件”会预填标题和正文，收件人与最终发送由您在默认邮件客户端中确认。本机不会把打开邮件记录成已发送。'
+      : 'コピーは微信で利用できます。「メールを開く」は件名と本文だけを既定のメールアプリへ渡し、宛先と最終送信はそこで確認します。メールを開いただけでは送信済みと記録しません。'}</p>
 
     {error ? <p className="agent-business-error" role="alert">{error}</p> : null}
     {notice ? <p className="broadcast-notice" role="status">{notice}</p> : null}
 
-    <div className="broadcast-queue" role="list">
+    {queueExpanded || !selected ? <div className="broadcast-queue" role="list">
       {queue.map((item) => <button
         aria-current={item.reviewId === selectedReviewId ? 'true' : undefined}
         className={item.reviewId === selectedReviewId ? 'is-selected' : ''}
@@ -211,7 +241,7 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
         {item.hasUpdateSinceLastCopy ? <em className="broadcast-update-badge">{zh ? '有更新' : '更新あり'}</em> : null}
       </button>)}
       {queue.length === 0 ? <div className="agent-business-empty"><Icon name="search" size={20} /><span>{zh ? '还没有可配信的案件' : '配信できる案件はまだありません'}</span></div> : null}
-    </div>
+    </div> : null}
 
     {selected && selected.status === 'attention' ? <p className="broadcast-notice">
       {zh ? '该案件还在待补充状态，确认后才能配信。' : 'この案件は要補完です。確定してから配信できます。'}
@@ -256,6 +286,11 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
           onClick={() => void copy()}
           type="button"
         ><Icon name="copy" size={14} />{zh ? '复制' : 'コピーする'}</button>
+        <button
+          disabled={busy || forbidden.length > 0 || text.trim().length === 0}
+          onClick={() => void openEmail()}
+          type="button"
+        ><Icon name="mail" size={14} />{zh ? '打开邮件' : 'メールを開く'}</button>
         {selected.hasUpdateSinceLastCopy ? <button disabled={busy} onClick={() => void loadUpdateNotice()} type="button">{zh ? '更新通知' : '更新通知を作る'}</button> : null}
       </div>
 

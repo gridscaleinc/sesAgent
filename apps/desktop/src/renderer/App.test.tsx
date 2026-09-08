@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSampleTasks, createWorkTaskPreview, materializeWorkTask } from '@application'
 import type { SignedWorkTaskPreview } from '@domain'
-import type { BootstrapPayload, CandidateEvaluationState, DesktopApi } from '@shared'
+import { builtInPersonnelTemplates, type BootstrapPayload, type CandidateEvaluationState, type CandidateReviewSnapshot, type BusinessFeedEntry, type DesktopApi, type JobCaseReviewSnapshot } from '@shared'
 import { App } from './App'
 
 const bootstrap: BootstrapPayload = {
@@ -135,6 +135,10 @@ describe('App workbench', () => {
       previewHash: 'a'.repeat(64)
     }
     const api: DesktopApi = {
+      getBusinessFeed: vi.fn().mockResolvedValue([]), markBusinessFeed: vi.fn().mockResolvedValue([]),
+      getPersonnelWorkspace: vi.fn().mockResolvedValue({ templates: [], states: [], copies: [] }),
+      savePersonnelTemplate: vi.fn(), setCandidateOwnCompany: vi.fn(), setCandidateBusinessState: vi.fn(), validatePersonnelMessage: vi.fn(),
+      recordPersonnelCopy: vi.fn(), openPersonnelEmail: vi.fn(), findCasesForPersonnel: vi.fn(), findPersonnelForCase: vi.fn(),
       copyTextToClipboard: vi.fn().mockResolvedValue(undefined),
     getStartupStatus: vi.fn().mockResolvedValue({ mode: 'normal' }),
       getBootstrap: vi.fn().mockResolvedValue(bootstrap),
@@ -192,10 +196,13 @@ describe('App workbench', () => {
       reopenJobCaseReview: vi.fn(),
       previewJobCaseDeletion: vi.fn(),
       deleteJobCaseData: vi.fn(),
+      getJobCaseNewDigest: vi.fn().mockResolvedValue({ groups: [], newCasesToday: 0, unseenCount: 0 }),
+      markJobCaseSeen: vi.fn().mockResolvedValue({ unseenCount: 0 }),
       listBroadcastWorkspace: vi.fn().mockResolvedValue({ queue: [], templates: [] }),
       draftCaseBroadcast: vi.fn().mockResolvedValue({ textJa: '', textZh: '', forbiddenJa: [], forbiddenZh: [] }),
       draftCaseUpdateNotice: vi.fn().mockResolvedValue({ status: 'no-sent-baseline' }),
       recordCaseBroadcastCopy: vi.fn().mockResolvedValue({ copy: {} }),
+      openCaseBroadcastEmail: vi.fn().mockResolvedValue({ opened: true }),
       listCaseBroadcasts: vi.fn().mockResolvedValue([]),
       createBroadcastTemplate: vi.fn().mockResolvedValue([]),
       updateBroadcastTemplate: vi.fn().mockResolvedValue([]),
@@ -233,6 +240,7 @@ describe('App workbench', () => {
       disconnectGoogleWorkspace: vi.fn(),
       syncGoogleWorkspace: vi.fn(),
       onGmailSyncCompleted: vi.fn().mockReturnValue(() => undefined),
+      onOpenNewCaseBoard: vi.fn().mockReturnValue(() => undefined),
       getRecoveryState: vi.fn().mockResolvedValue(bootstrap.recovery),
       createRecoveryPackage: vi.fn(),
       snoozeRecoveryReminder: vi.fn().mockResolvedValue(bootstrap.recovery),
@@ -256,6 +264,21 @@ describe('App workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: 'JSONを読み込む' }))
     expect(await screen.findByText('品質門通過')).toBeInTheDocument()
     expect(screen.getByText('94.4%')).toBeInTheDocument()
+  })
+
+  it('announces a scheduled Gmail import with a toast that clears itself', async () => {
+    expect(await screen.findByRole('button', { name: '候補者' })).toBeInTheDocument()
+    const notify = vi.mocked(window.sesAgent.onGmailSyncCompleted).mock.calls[0]![0]
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await act(async () => { notify({ imported: 3, duplicates: 1, filtered: 0, failed: 0 }) })
+      expect(screen.getByText('Gmail 同期：新規案件 3 件')).toBeInTheDocument()
+      // Non-blocking: it disappears on its own without the operator dismissing it.
+      await act(async () => { vi.advanceTimersByTime(5_000) })
+      expect(screen.queryByText('Gmail 同期：新規案件 3 件')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps candidate management separate from the confirmed talent database', async () => {
@@ -371,11 +394,61 @@ describe('App workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: '設定' }))
     const settings = await screen.findByRole('dialog', { name: '設定' })
     fireEvent.click(within(settings).getByRole('button', { name: /外部システム/ }))
-    expect(within(settings).getByText('Google Workspace')).toBeInTheDocument()
+    expect(within(settings).getByText('Google メール')).toBeInTheDocument()
     expect(within(settings).getByText('AICommerce Cloud AI')).toBeInTheDocument()
-    fireEvent.click(within(settings).getByRole('button', { name: '接続設定' }))
-    expect(await screen.findByRole('heading', { name: '会社 Gmail の管理者設定' })).toBeInTheDocument()
-    expect(screen.getByText(/gmail.readonly のみ/)).toBeInTheDocument()
+    expect(within(settings).queryByRole('button', { name: '接続設定' })).not.toBeInTheDocument()
+    expect(within(settings).getByText(/Google メール接続が組み込まれていません/)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '会社 Gmail の管理者設定' })).not.toBeInTheDocument()
+  })
+
+  it('runs the first bounded sync immediately after one-click Google authorization', async () => {
+    cleanup()
+    const configured: BootstrapPayload = {
+      ...bootstrap,
+      gmail: { ...bootstrap.gmail, configuration: 'ready' },
+      googleWorkspaceConfiguration: {
+        version: 'google-workspace-admin-config-v1', source: 'managed-environment', editable: false,
+        clientId: '1234567890-product.apps.googleusercontent.com', workspaceDomain: null,
+        labelIds: ['INBOX'], query: '案件 OR 募集', lookbackDays: 30, maxMessagesPerRun: 200,
+        revision: null, configuredBy: 'product', updatedAt: '2026-09-01T00:00:00.000Z'
+      },
+      gmailSync: { ...bootstrap.gmailSync, configuration: 'ready', labelIds: ['INBOX'], query: '案件 OR 募集' }
+    }
+    const connected = {
+      ...configured.gmail,
+      status: 'readonly' as const,
+      configuration: 'connected' as const,
+      workspaceDomain: 'gmail.com',
+      accountEmail: 'hr.personal@gmail.com',
+      grantedScopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+      readAccess: true
+    }
+    const synced: BootstrapPayload = {
+      ...configured,
+      gmail: connected,
+      gmailSync: {
+        ...configured.gmailSync,
+        status: 'idle', storedMessages: 1, lastSyncedAt: '2026-09-01T00:01:00.000Z',
+        lastRun: { mode: 'baseline', discovered: 1, imported: 1, duplicates: 0, filtered: 0, failed: 0 }
+      }
+    }
+    vi.mocked(window.sesAgent.getBootstrap).mockReset()
+      .mockResolvedValueOnce(configured)
+      .mockResolvedValueOnce(synced)
+    vi.mocked(window.sesAgent.connectGoogleWorkspace).mockReset().mockResolvedValue(connected)
+    vi.mocked(window.sesAgent.syncGoogleWorkspace).mockReset().mockResolvedValue(synced.gmailSync)
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '設定' }))
+    const settings = await screen.findByRole('dialog', { name: '設定' })
+    fireEvent.click(within(settings).getByRole('button', { name: /外部システム/ }))
+    fireEvent.click(within(settings).getByRole('button', { name: 'Google メールを接続' }))
+
+    await waitFor(() => expect(window.sesAgent.connectGoogleWorkspace).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(window.sesAgent.syncGoogleWorkspace).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(window.sesAgent.getBootstrap).toHaveBeenCalledTimes(2))
+    expect(within(settings).getByText('hr.personal@gmail.com')).toBeInTheDocument()
+    expect(screen.queryByText('Desktop OAuth Client ID')).not.toBeInTheDocument()
   })
 
   it('switches the display language to Simplified Chinese from local settings without a network action', async () => {
@@ -602,23 +675,24 @@ describe('App workbench', () => {
     expect(screen.getByRole('button', { name: '確認して開始' })).toBeInTheDocument()
   })
 
-  it('enters SES Agent on cold start when conversational matching is enabled', async () => {
+  it('opens Agent with latest information and preserves bulk drafts across navigation', async () => {
     cleanup()
-    const connected = {
-      ...bootstrap,
-      featureFlags: { conversationalMatchingEnabled: true },
-      aiCommerce: { ...bootstrap.aiCommerce, configuration: 'ready' as const, connection: 'connected' as const }
-    }
-    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue({ ...bootstrap, featureFlags: { conversationalMatchingEnabled: true } })
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toBeEnabled()
-    expect(screen.getByRole('region', { name: 'タスク' })).toBeInTheDocument()
-    expect(screen.getByRole('complementary', { name: 'システムナビゲーション' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '候補者' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '面談' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '設定' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '業務概要' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: '最新の業務情報' })).toBeVisible()
+    expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '最新情報の操作' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: '情報整理・紹介ワークスペース' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '貼り付け・一括整理' }))
+    const paste = screen.getByRole('textbox', { name: 'メール・会話テキスト' })
+    fireEvent.change(paste, { target: { value: '案件名：Java 基盤\n必須：Java' } })
+    fireEvent.click(screen.getByRole('button', { name: '業務パネルを閉じる' }))
+    fireEvent.click(screen.getByRole('button', { name: '候補者' }))
+    expect(await screen.findByRole('heading', { name: '候補者' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'SES Agent' }))
+    fireEvent.click(screen.getByRole('button', { name: '貼り付け・一括整理' }))
+    expect(screen.getByRole('textbox', { name: 'メール・会話テキスト' })).toHaveValue('案件名：Java 基盤\n必須：Java')
   })
 
   it('uses the Agent system rail as global navigation and preserves an unsent draft on return', async () => {
@@ -630,6 +704,8 @@ describe('App workbench', () => {
     }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
     render(<App />)
+    await screen.findByRole('heading', { name: 'SES Agent' })
+    fireEvent.click(screen.getByRole('button', { name: '現在の会話' }))
 
     const composer = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
     fireEvent.change(composer, { target: { value: '未送信の案件メモ' } })
@@ -654,6 +730,8 @@ describe('App workbench', () => {
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
     render(<App />)
     await screen.findByRole('heading', { name: 'SES Agent' })
+    fireEvent.click(screen.getByRole('button', { name: '現在の会話' }))
+    await screen.findByRole('heading', { name: 'SES Agent' })
 
     const destinations = [
       { rail: '面談', heading: '面談日程' },
@@ -662,7 +740,7 @@ describe('App workbench', () => {
     ] as const
 
     for (const destination of destinations) {
-      fireEvent.click(screen.getByRole('button', { name: destination.rail }))
+      fireEvent.click(within(screen.getByRole('complementary', { name: 'システムナビゲーション' })).getByRole('button', { name: destination.rail }))
       expect(await screen.findByRole('heading', { name: destination.heading })).toBeInTheDocument()
       expect(screen.getByRole('navigation', { name: 'メインナビゲーション' })).toBeInTheDocument()
       expect(screen.queryByRole('heading', { name: 'SES Agent' })).not.toBeInTheDocument()
@@ -681,6 +759,8 @@ describe('App workbench', () => {
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(connected)
     render(<App />)
     await screen.findByRole('heading', { name: 'SES Agent' })
+    fireEvent.click(screen.getByRole('button', { name: '現在の会話' }))
+    await screen.findByRole('heading', { name: 'SES Agent' })
     expect(screen.queryByRole('navigation', { name: '業務ステータス' })).not.toBeInTheDocument()
     // The count now appears only where it advances the current task.
     const pendingReviews = screen.getByRole('button', { name: /レビューセンターを開く1件が人の確認待ち/u })
@@ -692,6 +772,7 @@ describe('App workbench', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Agent' }))
     expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '最新の業務情報' })).toBeVisible()
   })
 
   it('keeps the classic dashboard on cold start when conversational matching is disabled', async () => {
@@ -712,6 +793,8 @@ describe('App workbench', () => {
     }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(unconnected)
     render(<App />)
+    await screen.findByRole('heading', { name: 'SES Agent' })
+    fireEvent.click(screen.getByRole('button', { name: '現在の会話' }))
     expect(await screen.findByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '受管アカウントに接続' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /履歴書を取り込む/ })).toBeInTheDocument()
@@ -730,6 +813,8 @@ describe('App workbench', () => {
     const agentEnabled = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: true } }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(agentEnabled)
     render(<App />)
+    await screen.findByRole('heading', { name: 'SES Agent' })
+    fireEvent.click(screen.getByRole('button', { name: '現在の会話' }))
     const composer = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
 
     const overlong = `案件名：テスト\n${'あ'.repeat(4_100)}`
@@ -750,6 +835,8 @@ describe('App workbench', () => {
     const enabledBootstrap = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: true } }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(enabledBootstrap)
     render(<App />)
+    await screen.findByRole('heading', { name: 'SES Agent' })
+    fireEvent.click(screen.getByRole('button', { name: '現在の会話' }))
     await screen.findByRole('heading', { name: 'SES Agent' })
     expect(screen.getByRole('region', { name: 'タスク' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '業務概要' })).not.toBeInTheDocument()
@@ -1045,4 +1132,133 @@ describe('App workbench', () => {
     await screen.findByRole('heading', { name: '業務ワークベンチ' })
     await waitFor(() => expect(window.sesAgent.getBootstrap).toHaveBeenCalledTimes(2))
   })
+  it('hands the selected personnel and preview options from Agent to the full business page', async () => {
+    cleanup()
+    const documentId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+    const candidate: CandidateReviewSnapshot = {
+      documentId, fileName: 'Selected Engineer.xlsx', reviewRevision: 1,
+      status: 'awaiting-review', piiReviewed: false, fields: [], projectExperiences: [],
+      completedAt: null, reviewerDisplayName: null, profile: null,
+      recruitingStatus: 'pending-review', talentPoolStatus: 'none', recordStatus: 'active'
+    }
+    const other = { ...candidate, documentId: 'ffffffff-ffff-4fff-8fff-ffffffffffff', fileName: 'Other Engineer.xlsx' }
+    const entry: BusinessFeedEntry = {
+      kind: 'person', objectId: documentId, revision: 'a'.repeat(64), title: 'Selected Engineer',
+      event: 'created', occurredAt: new Date().toISOString(), sourceAt: new Date().toISOString(),
+      source: 'local-personnel', unseen: false, deferred: false, archived: false,
+      businessStatus: 'available', needsReview: true, fields: [], changes: []
+    }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue({ ...bootstrap, featureFlags: { conversationalMatchingEnabled: true }, candidateReviews: [other, candidate] })
+    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([entry])
+    vi.mocked(window.sesAgent.getPersonnelWorkspace).mockResolvedValue({ templates: builtInPersonnelTemplates(), states: [], copies: [] })
+    render(<App />)
+    fireEvent.change(await screen.findByRole('combobox', { name: '閲覧状態' }), { target: { value: 'all' } })
+    fireEvent.click(await screen.findByRole('article', { name: 'Selected Engineer' }))
+    const panel = await screen.findByRole('complementary', { name: '業務ワークスペース' })
+    expect(within(panel).getByRole('heading', { name: 'Selected Engineer' })).toBeVisible()
+    expect(within(panel).queryByRole('textbox')).not.toBeInTheDocument()
+    fireEvent.change(await within(panel).findByRole('combobox', { name: '紹介テンプレート' }), { target: { value: builtInPersonnelTemplates()[1]!.id } })
+    fireEvent.change(within(panel).getByRole('combobox', { name: '言語' }), { target: { value: 'zh' } })
+    fireEvent.click(within(panel).getByRole('button', { name: '文面・テンプレートを編集' }))
+    expect(await screen.findByRole('heading', { name: '情報整理・紹介ワークスペース' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Selected Engineer' })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: '営業状態' })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: '紹介テンプレート' })).toHaveValue(builtInPersonnelTemplates()[1]!.id)
+    expect(screen.getByRole('combobox', { name: '言語' })).toHaveValue('zh')
+    expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
+    expect(window.sesAgent.setCandidateBusinessState).not.toHaveBeenCalled()
+    expect(window.sesAgent.submitCandidateReview).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole('textbox', { name: '紹介文' }), { target: { value: 'TEST updated personnel introduction' } })
+    fireEvent.click(screen.getByRole('button', { name: 'SES Agent' }))
+    expect(await screen.findByRole('region', { name: '紹介文' })).toHaveTextContent('TEST updated personnel introduction')
+    expect(within(screen.getByRole('complementary', { name: '業務ワークスペース' })).queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('preserves the feed selection, matched case selection and scroll when viewing a case and returning', async () => {
+    cleanup()
+    const documentId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+    const candidate: CandidateReviewSnapshot = {
+      documentId, fileName: 'Selected Engineer.xlsx', reviewRevision: 1, status: 'awaiting-review', piiReviewed: false,
+      fields: [], projectExperiences: [], completedAt: null, reviewerDisplayName: null,
+      profile: { id: documentId, sourceDocumentId: documentId, version: 1, status: 'current', confirmedAt: new Date().toISOString(), confirmedBy: '本机导入', containsDirectIdentifiers: false },
+      recruitingStatus: 'pending-review', talentPoolStatus: 'eligible', recordStatus: 'active'
+    }
+    const job: JobCaseReviewSnapshot = {
+      reviewId: '33333333-3333-4333-8333-333333333333', sourceId: 'manual-1', sourceType: 'manual', providerMessageId: null, threadId: 'manual-1', fromDomain: null,
+      messageDate: new Date().toISOString(), redactedSubject: 'Java project', redactedPreview: 'Java', reviewRevision: 1, status: 'completed', privacyReviewed: true,
+      fields: [{ key: 'title', label: '案件名', originalValue: 'Java project', value: 'Java project', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null }],
+      warningCodes: ['import-field-warning'], completedAt: new Date().toISOString(), reviewerDisplayName: 'HR', lifecycle: 'active', cloudEligible: false,
+      jobCase: { id: '44444444-4444-4444-8444-444444444444', sourceReviewId: '33333333-3333-4333-8333-333333333333', version: 1, status: 'active', confirmedAt: new Date().toISOString(), confirmedBy: 'HR', containsDirectIdentifiers: false }
+    }
+    const entry: BusinessFeedEntry = { kind: 'person', objectId: documentId, revision: 'a'.repeat(64), title: 'Selected Engineer', event: 'created', occurredAt: new Date().toISOString(), sourceAt: new Date().toISOString(),
+      source: 'local-personnel', unseen: false, deferred: false, archived: false, businessStatus: 'available', needsReview: false, fields: [], changes: [] }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue({ ...bootstrap, featureFlags: { conversationalMatchingEnabled: true }, candidateReviews: [candidate], jobCaseReviews: [job] })
+    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([entry, { ...entry, kind: 'case', objectId: job.reviewId, title: 'Java project', source: 'manual', businessStatus: 'active' }])
+    vi.mocked(window.sesAgent.getPersonnelWorkspace).mockResolvedValue({ templates: builtInPersonnelTemplates(), states: [], copies: [] })
+    const matchResult = { documentId, profileVersion: 1, localMatchCount: 1,
+      cloud: { status: 'reviewed', reviewedCount: 1, modelName: 'Test AI' }, items: [{ reviewId: job.reviewId, jobCaseId: job.jobCase!.id, jobCaseVersion: 1,
+        title: 'Java project', score: 90, matched: ['Java'], missing: [], hardFilters: [], assessment: { version: 'match-assessment-v1', fit: 'possible', met: [{ requirement: 'Java', evidence: 'Java' }], gaps: [], confirm: ['開始時期'], reason: 'Java project experience', modelKey: 'test', assessedAt: new Date().toISOString() } }] } as Awaited<ReturnType<DesktopApi['findCasesForPersonnel']>>
+    let finish!: (value: typeof matchResult) => void
+    vi.mocked(window.sesAgent.findCasesForPersonnel).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    render(<App />)
+    fireEvent.change(await screen.findByRole('combobox', { name: '閲覧状態' }), { target: { value: 'all' } })
+    fireEvent.click(await screen.findByRole('article', { name: 'Selected Engineer' }))
+    const panel = await screen.findByRole('complementary', { name: '業務ワークスペース' })
+    const findButton = await within(panel).findByRole('button', { name: 'この要員の案件を探す' })
+    await waitFor(() => expect(findButton).toBeEnabled())
+    const feedCard = screen.getByRole('article', { name: 'Selected Engineer' })
+    fireEvent.click(within(feedCard).getByRole('button', { name: '紹介文を作成' }))
+    await waitFor(() => expect(document.activeElement).toBe(panel.querySelector('.personnel-promotion')))
+    fireEvent.click(within(feedCard).getByRole('button', { name: '詳細を見る' }))
+    await waitFor(() => expect(document.activeElement).toBe(panel.querySelector('.personnel-detail')))
+    fireEvent.click(within(feedCard).getByRole('button', { name: '案件を探す' }))
+    const feedMatch = await within(feedCard).findByRole('button', { name: 'マッチング中…' })
+    expect(feedMatch).toBeDisabled()
+    expect(findButton).toBeDisabled()
+    fireEvent.click(feedMatch)
+    fireEvent.click(findButton)
+    expect(window.sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1)
+    await act(async () => finish(matchResult))
+    await waitFor(() => expect(within(feedCard).getByRole('button', { name: '案件を探す' })).toBeEnabled())
+    const results = await within(panel).findByRole('region', { name: '案件マッチング結果' })
+    expect(results).toHaveTextContent('Test AI')
+    expect(document.activeElement).toBe(results.parentElement)
+    const scroll = panel.querySelector('.agent-tool-content')!
+    scroll.scrollTop = 320
+    fireEvent.click(within(results).getByRole('button', { name: '案件を確認' }))
+    expect(screen.getByRole('article', { name: 'Selected Engineer' })).toHaveAttribute('aria-current', 'true')
+    fireEvent.click(await within(panel).findByRole('button', { name: '前の画面に戻る' }))
+    expect(within(panel).getByRole('heading', { name: 'Selected Engineer' })).toBeVisible()
+    expect(within(results).getByRole('article')).toHaveAttribute('aria-current', 'true')
+    expect(scroll.scrollTop).toBe(320)
+    expect(window.sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('article', { name: 'Selected Engineer' })).toHaveAttribute('aria-current', 'true')
+
+    let finishPeople!: (value: Awaited<ReturnType<DesktopApi['findPersonnelForCase']>>) => void
+    vi.mocked(window.sesAgent.findPersonnelForCase).mockImplementation(() => new Promise((resolve) => { finishPeople = resolve }))
+    const caseCard = screen.getByRole('article', { name: 'Java project' })
+    fireEvent.click(within(caseCard).getByRole('button', { name: '詳細を見る' }))
+    expect(within(panel).queryByText('取込の確認記録を表示')).not.toBeInTheDocument()
+    fireEvent.click(within(caseCard).getByRole('button', { name: '要員を探す' }))
+    const caseFind = await within(caseCard).findByRole('button', { name: 'マッチング中…' })
+    expect(caseFind).toBeDisabled()
+    const matchingPane = within(panel).getByRole('generic', { name: '案件の要員検索' })
+    expect(matchingPane.querySelector('.agent-business-case-picker')).toBeNull()
+    expect(within(matchingPane).getByRole('button', { name: 'マッチング中…' })).toBeDisabled()
+    fireEvent.click(caseFind)
+    expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledTimes(1)
+    await act(async () => finishPeople({ jobCaseId: job.jobCase!.id, jobCaseVersion: 1, localMatchCount: 1,
+      cloud: { status: 'reviewed', reviewedCount: 1, modelName: 'Test AI' },
+      items: [{ documentId, profileVersion: 1, score: 10, matched: ['Java'], missing: [], hardFilters: [] }] }))
+    expect(within(caseCard).getByRole('button', { name: '要員を探す' })).toBeEnabled()
+    matchingPane.scrollTop = 280
+    fireEvent.click(within(matchingPane).getByRole('button', { name: '要員を確認・紹介' }))
+    expect(caseCard).toHaveAttribute('aria-current', 'true')
+    fireEvent.click(within(panel).getByRole('button', { name: '前の画面に戻る' }))
+    expect(matchingPane).toBeVisible()
+    expect(matchingPane.scrollTop).toBe(280)
+    expect(within(matchingPane).getByRole('article', { name: 'Selected Engineer' })).toHaveAttribute('aria-current', 'true')
+    expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledTimes(1)
+  })
+
 })

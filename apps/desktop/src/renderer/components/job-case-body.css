@@ -1,0 +1,19 @@
+.agent-business-hero.is-case-detail { padding: 0 0 16px; border: 0; border-bottom: 1px solid #dfe6e1; border-radius: 0; background: transparent; }
+.agent-business-hero.is-case-detail h2 { margin: 8px 0 12px; font-size: 19px; line-height: 1.5; overflow-wrap: anywhere; }
+.agent-business-hero.is-case-detail .case-edit-link { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: #52705e; font-size: 12px; cursor: pointer; }
+.case-edit-link:hover { text-decoration: underline; }
+.case-body-reader { margin: 18px 0; padding: 18px; border: 1px solid #e0e7e2; border-radius: 10px; background: #fff; min-width: 0; }
+.case-body-reader > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.case-body-reader > header h3 { margin: 0; color: #293f33; font-size: 14px; }
+.case-body-reader > header small { color: #728377; font-size: 11px; }
+.case-body-text { color: #36463d; font-size: 13px; line-height: 1.85; overflow-wrap: anywhere; }
+.case-body-reader .case-body-text p { margin: 0 0 14px; color: inherit; font-size: inherit; line-height: inherit; white-space: pre-wrap; }
+.case-body-text h4 { margin: 22px 0 10px; color: #263e30; font-size: 13px; line-height: 1.7; }
+.case-body-text ul { margin: 8px 0 16px; padding-left: 20px; }
+.case-body-text li { margin: 5px 0; padding-left: 3px; white-space: pre-wrap; }
+.case-body-text hr { margin: 20px 0; border: 0; border-top: 1px solid #e6ebe7; }
+.case-body-text > :first-child { margin-top: 0; }
+.case-body-text > :last-child { margin-bottom: 0; }
+.case-body-reader > p, .case-body-load-state { color: #718075; font-size: 12px; line-height: 1.7; }
+.case-body-load-state { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.case-body-load-state button { border: 1px solid #cddbd1; border-radius: 6px; background: #fff; padding: 4px 10px; color: #365c43; cursor: pointer; }

@@ -1,3 +1,5 @@
+import type { BusinessFeedEntry, MarkBusinessFeedInput } from './business-feed'
+import type { PersonnelWorkspace, PersonnelTemplate, PersonnelMessageInput, PersonnelCopy, CandidateBusinessState, SetCandidateBusinessStateInput, PersonnelCaseMatch } from './business-workbench'
 import type { SignedWorkTaskPreview, WorkTask } from '@domain'
 
 export type WorkTaskScopeId =
@@ -274,7 +276,15 @@ export interface CandidateReviewFieldSnapshot {
   changeReason: string | null
 }
 
+export interface SetCandidateOwnCompanyInput {
+  documentId: string
+  expectedVersion: number
+  isOwnCompany: boolean | null
+}
+
 export interface CandidateProfileSummary {
+  /** HR-owned affiliation; null or absent means not set. */
+  isOwnCompany?: boolean | null
   id: string
   sourceDocumentId: string
   version: number
@@ -408,6 +418,7 @@ export interface CandidateProfileSearchResult extends CandidateProfileSummary {
         | 'japanese-level'
         | 'location'
         | 'work-authorization'
+        | 'own-company'
       requested: string
       actual: string | null
       outcome: 'passed' | 'failed' | 'unknown'
@@ -605,9 +616,12 @@ export interface CandidateMatchResult extends CandidateProfileSearchResult {
 export interface SearchCandidateProfilesInput {
   query: string
   maxResults?: number
+  sourceDocumentId?: string
 }
 
 export interface UpdateCandidateProfileInput {
+  /** HR-owned affiliation; null or absent means not set. */
+  isOwnCompany?: boolean | null
   sourceDocumentId: string
   expectedVersion: number
   identity: {
@@ -905,6 +919,8 @@ export interface EvaluateCandidateEvaluationDraftResult {
 }
 
 export interface CandidateReviewSnapshot {
+  /** HR-owned affiliation; null or absent means not set. */
+  isOwnCompany?: boolean | null
   documentId: string
   fileName: string
   reviewRevision: number
@@ -923,8 +939,9 @@ export interface CandidateReviewSnapshot {
 
 /**
  * Import creates a candidate record and review confirmation creates a profile
- * version. Recruiting remains a separate workflow; only an explicit passed
- * recruiting decision grants an eligible talent-pool membership.
+ * version. Matching eligibility can come from a passed recruiting decision or
+ * HR confirmation of the current profile for business promotion. An explicit
+ * paused/assigned business state overrides recruiting eligibility.
  */
 export const candidateInterviewStages = [
   'new',
@@ -1123,6 +1140,14 @@ export interface JobCaseReviewSnapshot {
   reviewerDisplayName: string | null
   jobCase: JobCaseSummary | null
   lifecycle: 'active' | 'archived'
+  /**
+   * When this review entered the local database, as opposed to messageDate,
+   * which is the source message's own time. A Gmail sync can import a mail
+   * that is days old, so arrival on this device is the only honest basis for
+   * 今日新着. Optional: rows written before v44 read it back from the store,
+   * but callers that build a snapshot by hand do not have to supply it.
+   */
+  intakeAt?: string | null
   /** The business-text paste that created this draft, when one did. */
   intakeBatchId?: string | null
   cloudEligible: false
@@ -1177,6 +1202,40 @@ export interface ReopenJobCaseReviewInput {
 
 export interface ReopenJobCaseReviewResult {
   review: JobCaseReviewSnapshot
+}
+
+/** Day buckets of 今日新着案件, cut on the Asia/Tokyo day boundary. */
+export type NewJobCaseDigestDay = 'today' | 'yesterday' | 'earlier'
+
+export interface NewJobCaseDigestEntry {
+  reviewId: string
+  /** Present only once the review is confirmed; matching needs it. */
+  jobCaseId: string | null
+  title: string
+  sourceType: JobCaseSourceType
+  arrivedAt: string
+  unseen: boolean
+  /** 有効 once confirmed and complete; 要補完 names what is still missing. */
+  status: 'ready' | 'needs-completion'
+  missingFieldKeys: JobCaseFieldKey[]
+  highlights: Array<{ key: JobCaseFieldKey; value: string }>
+}
+
+export interface NewJobCaseDigestGroup {
+  day: NewJobCaseDigestDay
+  count: number
+  unseenCount: number
+  entries: NewJobCaseDigestEntry[]
+}
+
+export interface NewJobCaseDigest {
+  groups: NewJobCaseDigestGroup[]
+  newCasesToday: number
+  unseenCount: number
+}
+
+export interface MarkJobCaseSeenResult {
+  unseenCount: number
 }
 
 export interface JobCaseDeletionPreview {
@@ -1573,6 +1632,8 @@ export interface GoogleWorkspaceReadinessReport {
 export type GoogleWorkspaceOnlineAcceptanceCheckId =
   | 'live-profile'
   | 'readonly-scope'
+  | 'account-identity'
+  /** Legacy persisted report ID retained for upgrade compatibility. */
   | 'company-domain'
   | 'credential-protection'
   | 'bounded-sync'
@@ -1624,7 +1685,8 @@ export interface GoogleWorkspaceAdminConfiguration {
   source: 'local-admin' | 'managed-environment'
   editable: boolean
   clientId: string
-  workspaceDomain: string
+  /** Optional domain restriction for private deployments; public builds accept any Google mailbox. */
+  workspaceDomain: string | null
   labelIds: string[]
   query: string
   lookbackDays: number
@@ -1908,6 +1970,7 @@ export type AgentCloudReviewOutcome =
 
 export interface AgentCandidateMatchCardsBlock {
   type: 'candidate-match-cards'
+  scope?: 'selected-person'
   runId: string
   resultHash: string
   cards: AgentCandidateMatchCard[]
@@ -2065,6 +2128,7 @@ export interface AgentJobCaseBroadcastCardsBlock {
 export type AgentSystemAccessBlock =
   | { type: 'system-access'; destination: 'job-cases' }
   | { type: 'system-access'; destination: 'case-import' }
+  | { type: 'system-access'; destination: 'new-cases' }
   | { type: 'system-access'; destination: 'case-review'; reviewId: string }
   | { type: 'system-access'; destination: 'matching'; jobCaseId?: string }
   | { type: 'system-access'; destination: 'candidate-management' }
@@ -2126,6 +2190,7 @@ export type AiConversationBlock =
   | AgentErrorBlock
 
 export interface AiConversationSalesAgentState {
+  selectedCandidateDocumentId?: string | null
   selectedJobCaseRef: TypedAiConversationReference | null
   lastMatchRunId: string | null
   lastSearchMessageId: string | null
@@ -2173,11 +2238,13 @@ export interface AiConversationSnapshot {
 }
 
 export interface ExecuteAgentTurnInput {
+  intakeOnly?: boolean
   conversationId: string
   message: string
   expectedConversationRevision: number | null
   requestId: string
   modelKey?: string
+  selectedCandidateDocumentId?: string | null
   selectedJobCaseRef?: TypedAiConversationReference | null
   /**
    * The structured business workspace currently visible beside the chat.
@@ -2260,7 +2327,18 @@ export type AgentTurnStatus = 'clarifying' | 'completed' | 'failed' | 'cancelled
  * content: the renderer keeps the pasted text in memory and uses
  * restoreComposerText to put it back into the composer for a tagged re-send.
  */
+export interface BusinessIntakeRecordResult {
+  kind: 'job-case' | 'candidate'
+  status: 'succeeded' | 'failed' | 'blocked'
+  outcome: 'created' | 'existing-review' | 'already-imported' | 'archived' | null
+  reviewId: string | null
+  sourceDocumentId: string | null
+  startLine?: number
+  endLine?: number
+}
+
 export interface AgentIntakeTurnFacts {
+  records?: BusinessIntakeRecordResult[]
   route: 'job-case' | 'candidate' | 'ambiguous-sensitive' | 'multiple'
   reason: string
   restoreComposerText: boolean
@@ -2630,6 +2708,24 @@ export interface RecordCaseBroadcastCopyResult {
   copy: CaseBroadcastCopy
 }
 
+/**
+ * Opens one locally generated case message in the operating system's default
+ * mail composer. There is deliberately no recipient here: the operator chooses
+ * and verifies it in their mail client, and this application never claims that
+ * opening a composer means the message was sent.
+ */
+export interface OpenCaseBroadcastEmailInput {
+  reviewId: string
+  templateId: string
+  lang: BroadcastLanguage
+  kind: CaseBroadcastKind
+  text: string
+}
+
+export interface OpenCaseBroadcastEmailResult {
+  opened: true
+}
+
 export interface BroadcastTemplateDraft {
   name: string
   ratePublic: BroadcastRatePolicy
@@ -2724,6 +2820,17 @@ export type BeginResumeImportResult =
   | { cancelled: false; task: WorkTask; files: StagedLocalFile[] }
 
 export interface DesktopApi {
+  getBusinessFeed(): Promise<BusinessFeedEntry[]>
+  markBusinessFeed(input: MarkBusinessFeedInput): Promise<BusinessFeedEntry[]>
+  getPersonnelWorkspace(): Promise<PersonnelWorkspace>
+  savePersonnelTemplate(input: PersonnelTemplate): Promise<PersonnelTemplate[]>
+  setCandidateOwnCompany(input: SetCandidateOwnCompanyInput): Promise<CandidateReviewSnapshot>
+  setCandidateBusinessState(input: SetCandidateBusinessStateInput): Promise<CandidateBusinessState>
+  validatePersonnelMessage(input: PersonnelMessageInput): Promise<PersonnelMessageInput>
+  recordPersonnelCopy(input: PersonnelMessageInput): Promise<PersonnelCopy>
+  openPersonnelEmail(input: PersonnelMessageInput): Promise<{ opened: true }>
+  findPersonnelForCase(jobCaseId: string): Promise<import('./business-workbench').CasePersonnelMatchResult>
+  findCasesForPersonnel(documentId: string): Promise<import('./business-workbench').PersonnelCaseMatchResult>
   getStartupStatus(): Promise<StartupStatus>
   getBootstrap(): Promise<BootstrapPayload>
   resolveActionApproval(input: ResolveActionApprovalInput): Promise<ActionApprovalSummary>
@@ -2771,10 +2878,14 @@ export interface DesktopApi {
   reopenJobCaseReview(input: ReopenJobCaseReviewInput): Promise<ReopenJobCaseReviewResult>
   previewJobCaseDeletion(reviewId: string): Promise<JobCaseDeletionPreview>
   deleteJobCaseData(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
+  /** 今日新着案件. The last Gmail sync time is already in bootstrap, so it is not repeated here. */
+  getJobCaseNewDigest(): Promise<NewJobCaseDigest>
+  markJobCaseSeen(reviewId: string): Promise<MarkJobCaseSeenResult>
   listBroadcastWorkspace(): Promise<BroadcastWorkspace>
   draftCaseBroadcast(input: DraftCaseBroadcastInput): Promise<DraftCaseBroadcastResult>
   draftCaseUpdateNotice(input: DraftCaseUpdateNoticeInput): Promise<DraftCaseUpdateNoticeResult>
   recordCaseBroadcastCopy(input: RecordCaseBroadcastCopyInput): Promise<RecordCaseBroadcastCopyResult>
+  openCaseBroadcastEmail(input: OpenCaseBroadcastEmailInput): Promise<OpenCaseBroadcastEmailResult>
   /** Copies via Main's clipboard: the sandboxed renderer's permission set denies navigator.clipboard. */
   copyTextToClipboard(text: string): Promise<void>
   listCaseBroadcasts(reviewId: string): Promise<CaseBroadcastHistoryEntry[]>
@@ -2811,6 +2922,8 @@ export interface DesktopApi {
   disconnectGoogleWorkspace(): Promise<GoogleWorkspaceState>
   syncGoogleWorkspace(): Promise<GmailSyncState>
   onGmailSyncCompleted(listener: (completion: GmailScheduledSyncCompletion) => void): () => void
+  /** Fired when the operator clicks the OS notice about newly arrived cases. */
+  onOpenNewCaseBoard(listener: () => void): () => void
   getRecoveryState(): Promise<RecoveryState>
   createRecoveryPackage(input: CreateRecoveryPackageInput): Promise<CreateRecoveryPackageResult>
   snoozeRecoveryReminder(input: SnoozeRecoveryReminderInput): Promise<RecoveryState>
@@ -2823,6 +2936,17 @@ export interface DesktopApi {
 }
 
 export const ipcChannels = {
+  getBusinessFeed: 'business-feed:list',
+  markBusinessFeed: 'business-feed:mark',
+  getPersonnelWorkspace: 'personnel:workspace',
+  savePersonnelTemplate: 'personnel:template-save',
+  setCandidateOwnCompany: 'personnel:own-company',
+  setCandidateBusinessState: 'personnel:business-state',
+  validatePersonnelMessage: 'personnel:validate-message',
+  recordPersonnelCopy: 'personnel:record-copy',
+  openPersonnelEmail: 'personnel:open-email',
+  findCasesForPersonnel: 'personnel:find-cases',
+  findPersonnelForCase: 'case:find-personnel',
   getStartupStatus: 'startup:get-status',
   getBootstrap: 'bootstrap:get',
   resolveActionApproval: 'action-approval:resolve',
@@ -2870,10 +2994,13 @@ export const ipcChannels = {
   reopenJobCaseReview: 'job-case:reopen-review',
   previewJobCaseDeletion: 'job-case:delete-preview',
   deleteJobCaseData: 'job-case:delete',
+  getJobCaseNewDigest: 'job-cases:new-digest',
+  markJobCaseSeen: 'job-cases:mark-seen',
   listBroadcastWorkspace: 'broadcast:workspace',
   draftCaseBroadcast: 'broadcast:draft',
   draftCaseUpdateNotice: 'broadcast:draft-update-notice',
   recordCaseBroadcastCopy: 'broadcast:record-copy',
+  openCaseBroadcastEmail: 'broadcast:open-email',
   copyTextToClipboard: 'clipboard:write-text',
   listCaseBroadcasts: 'broadcast:list-records',
   createBroadcastTemplate: 'broadcast:template-create',
@@ -2909,6 +3036,7 @@ export const ipcChannels = {
   disconnectGoogleWorkspace: 'google-workspace:disconnect',
   syncGoogleWorkspace: 'google-workspace:sync',
   gmailSyncCompleted: 'google-workspace:sync-completed',
+  openNewCaseBoard: 'job-cases:open-new-board',
   getRecoveryState: 'recovery:get-state',
   createRecoveryPackage: 'recovery:create-package',
   snoozeRecoveryReminder: 'recovery:snooze-reminder',

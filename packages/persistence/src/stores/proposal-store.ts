@@ -63,8 +63,8 @@ export class ProposalStore extends DomainStore {
       .prepare<[], CandidateProfileRow>(
         `SELECT profile.profile_json, profile.status FROM candidate_profiles profile
          JOIN candidate_records record ON record.source_document_id = profile.source_document_id
-         JOIN talent_pool_memberships membership ON membership.source_document_id = profile.source_document_id
-         WHERE profile.status = 'current' AND record.record_status = 'active' AND membership.status = 'eligible'
+         LEFT JOIN candidate_business_states business ON business.document_id = profile.source_document_id
+         WHERE profile.status = 'current' AND record.record_status = 'active' AND (business.document_id IS NULL OR business.status IN ('available','soon'))
          ORDER BY profile.confirmed_at DESC`
       )
       .all()
@@ -200,8 +200,8 @@ export class ProposalStore extends DomainStore {
       .prepare<[string], CandidateProfileRow>(
         `SELECT profile.profile_json, profile.status FROM candidate_profiles profile
          JOIN candidate_records record ON record.source_document_id = profile.source_document_id
-         JOIN talent_pool_memberships membership ON membership.source_document_id = profile.source_document_id
-         WHERE profile.id = ? AND profile.status = 'current' AND record.record_status = 'active' AND membership.status = 'eligible'`
+         LEFT JOIN candidate_business_states business ON business.document_id = profile.source_document_id
+         WHERE profile.id = ? AND profile.status = 'current' AND record.record_status = 'active' AND (business.document_id IS NULL OR business.status IN ('available','soon'))`
       )
       .get(input.candidateProfileId)
     if (!profileRow) throw new Error('Eligible current candidate profile was not found.')

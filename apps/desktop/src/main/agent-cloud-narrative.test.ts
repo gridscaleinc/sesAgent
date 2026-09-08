@@ -18,6 +18,8 @@ import {
   fixedInstructions,
   businessTextExtractionInstructionsFor,
   buildAgentMatchAssessmentProjection,
+  buildPersonnelCasesAssessmentProjection,
+  parsePersonnelCasesAssessmentResponse,
   matchAssessmentInstructions,
   parseAgentMatchAssessmentResponse
 } from './agent-cloud-narrative'
@@ -246,6 +248,26 @@ describe('Agent Cloud narrative boundary', () => {
     }
   })
 
+  it('projects the 今日新着案件 counts and tells both steps to answer from them', () => {
+    const planning = JSON.parse(buildAgentPlanningProjection({
+      locale: 'zh-CN', userMessage: '今天有什么新案件？', selectedJobCaseRef: null,
+      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
+      newCasesToday: 3, unseenCaseCount: 2, conversation: null
+    }))
+    expect(planning.state).toMatchObject({ newCasesToday: 3, unseenCaseCount: 2 })
+    const direct = JSON.parse(buildAgentDirectAnswerProjection({
+      locale: 'zh-CN', userMessage: '今日の新規案件は？', conversation: null, selectedJobCaseRef: null,
+      newCasesToday: 3, unseenCaseCount: 2
+    }))
+    expect(direct.state).toMatchObject({ newCasesToday: 3, unseenCaseCount: 2 })
+    // Without the rule the planner answered "which case do you mean" or listed the whole history.
+    expect(planningInstructions).toContain('state.newCasesToday and state.unseenCaseCount are 今日新着案件')
+    expect(planningInstructions).toContain('updatedAfter set to the ISO instant of today\'s Asia/Tokyo day boundary')
+    expect(planningInstructions).toContain('Never plan a broad search that enumerates the whole case history')
+    expect(directAnswerInstructions).toContain('今天有什么新案件 or 今日の新規案件')
+    expect(directAnswerInstructions).toContain('never pad the answer by listing older cases')
+  })
+
   it('does not let the interview read rule claim scheduling as well', () => {
     // read_candidate_interviews used to be introduced with "status, schedules,
     // notes", so a booking request matched it and the turn ended in "specify the
@@ -337,6 +359,7 @@ describe('Agent Cloud narrative boundary', () => {
     // The narrower guarantee has to survive: conversation text is still not fact.
     expect(directAnswerInstructions).toContain('verified facts only when present in the evidence array')
     expect(directAnswerInstructions).toContain('answer about that one case only')
+    expect(directAnswerInstructions).toContain('never state that a case, candidate, draft, or booking has been recorded')
   })
 
   it('carries the parsed attachment into the answer context, not only the planning one', () => {
@@ -572,6 +595,7 @@ describe('Agent Cloud narrative boundary', () => {
     expect(planningInput.instructions).toContain('must not rerun matching')
     expect(planningInput.instructions).toContain('read_candidate_profile')
     expect(planningInput.instructions).toContain('the case activeWorkspace is showing')
+    expect(planningInput.instructions).toContain('import_case_from_conversation')
     expect(planningInput.instructions).toContain('Japanese level')
     expect(planningInput.input).toContain('总结一下候选人的整体情况')
     expect(audits).toMatchObject([{
@@ -1101,6 +1125,55 @@ describe('business-text extraction protocol', () => {
 })
 
 describe('match assessment protocol', () => {
+  it('binds reverse-match evidence to the correct case and never accepts invented or cross-case support', () => {
+    const built = buildPersonnelCasesAssessmentProjection({ locale: 'zh-CN', person: {
+      facts: [{ label: 'skills', value: 'Java, SQL' }], projects: []
+    }, cases: [
+      { label: 'CASE_1', title: 'Java', requirements: [{ key: 'required_skills', label: '必須', value: 'Java' }], hardFilters: [] },
+      { label: 'CASE_2', title: 'SQL', requirements: [{ key: 'required_skills', label: '必須', value: 'SQL' }], hardFilters: [] }
+    ] })
+    const result = parsePersonnelCasesAssessmentResponse(JSON.stringify({ assessments: [
+      { case: 'CASE_1', fit: 'strong', met: [{ requirement: 'SQL', evidence: 'SQL' }], reason: 'Wrong case' },
+      { case: 'CASE_2', fit: 'possible', met: [{ requirement: 'SQL', evidence: 'SQL' }, { requirement: 'SQL', evidence: 'invented project' }] },
+      { case: 'CASE_999', fit: 'strong' }, { case: 'CASE_2', fit: 'strong' }
+    ] }), built.personText, built.cases)
+    expect(result.assessments).toHaveLength(2)
+    expect(result.assessments[0]).toMatchObject({ candidate: 'CASE_1', fit: 'insufficient-info', met: [], reason: '' })
+    expect(result.assessments[1]).toMatchObject({ candidate: 'CASE_2', fit: 'possible', met: [{ requirement: 'SQL', evidence: 'SQL' }] })
+    expect(built.projection).not.toContain('sourceDocumentId')
+    expect(JSON.parse(built.projection).responseLanguage).toContain('简体中文')
+    expect(() => parsePersonnelCasesAssessmentResponse('not JSON', '', [])).toThrow()
+  })
+
+  it('dispatches reverse matching through the redaction gateway and records the cloud audit', async () => {
+    const sessions = new Map<string, RedactionSessionEvidence>()
+    const appendCloudCallAudit = vi.fn()
+    const streamResponses = vi.fn(async (input: Parameters<AiCommerceNativeClient['streamResponses']>[0]) => {
+      input.onClientRequestId?.('personnel-remote-request')
+      return { clientRequestId: 'personnel-remote-request', responseId: 'personnel-response', billingModeUsed: 'subscription' as const,
+        content: JSON.stringify({ assessments: [{ case: 'CASE_1', fit: 'possible', met: [{ requirement: 'Java', evidence: 'Java' }], confirm: ['入场时间'], reason: 'Java project experience' }] }) }
+    })
+    const service = new AgentCloudNarrativeService({
+      repository: { saveRedactionSession: (session) => { sessions.set(session.id, session) }, getRedactionSession: (id) => sessions.get(id) ?? null, appendCloudCallAudit },
+      localNer: { engine: 'apple-natural-language', detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] }) },
+      aiCommerce: { responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses', streamResponses, cancelClientRequest: vi.fn() } as unknown as AiCommerceNativeClient,
+      policyVersion: 'cloud-redaction-v2', loadGates: vi.fn().mockResolvedValue(passedGates()), allowLoopbackHttp: false
+    })
+    const onRemoteSettled = vi.fn()
+    const result = await service.assessPersonnelCases({ conversationId, requestId, locale: 'zh-CN', model,
+      signal: new AbortController().signal, onClientRequestId: vi.fn(), onRemoteSettled,
+      person: { facts: [{ label: 'skills', value: 'Java, SQL; private@example.com' }], projects: [] },
+      cases: [{ label: 'CASE_1', title: 'Java project', requirements: [{ key: 'required_skills', label: '必須', value: 'Java' }], hardFilters: [] }]
+    })
+    expect(result.assessments[0]).toMatchObject({ candidate: 'CASE_1', fit: 'possible' })
+    expect(streamResponses).toHaveBeenCalledTimes(1)
+    expect(streamResponses.mock.calls[0]![0].input).not.toContain('private@example.com')
+    expect(streamResponses.mock.calls[0]![0].input).toContain('CASE_1')
+    expect(streamResponses.mock.calls[0]![0].instructions).toContain('The UI language is Simplified Chinese')
+    expect(appendCloudCallAudit).toHaveBeenCalled()
+    expect(onRemoteSettled).toHaveBeenCalledTimes(1)
+  })
+
   const candidates = [
     {
       label: 'CANDIDATE_1',
@@ -1157,9 +1230,9 @@ describe('match assessment protocol', () => {
     })
     expect(parseAgentMatchAssessmentResponse(payload, shown.candidates, shown.requirements)).toEqual({
       assessments: [{
-        candidate: 'CANDIDATE_1', fit: 'possible',
+        candidate: 'CANDIDATE_1', fit: 'insufficient-info',
         met: [{ requirement: 'Spring Boot', evidence: 'Spring Boot で決済 API を開発' }],
-        gaps: ['AWS 経験なし'], confirm: ['日本語レベル'], reason: '主要スキルは一致。'
+        gaps: [], confirm: ['日本語レベル', 'AWS 経験なし'], reason: ''
       }]
     })
   })
@@ -1171,13 +1244,13 @@ describe('match assessment protocol', () => {
       { candidate: 'CANDIDATE_2', fit: { level: 'weak' }, met: [], gaps: [], confirm: [], reason: 'x' },
       { candidate: 42, fit: 'weak' }
     ]
-    const expected = { assessments: [{ candidate: 'CANDIDATE_1', fit: 'possible', met: [], gaps: ['AWS'], confirm: [], reason: 'ok' }] }
+    const expected = { assessments: [{ candidate: 'CANDIDATE_1', fit: 'insufficient-info', met: [], gaps: [], confirm: ['AWS'], reason: '' }] }
     expect(parseAgentMatchAssessmentResponse(JSON.stringify(loose), shown.candidates, shown.requirements)).toEqual(expected)
     expect(parseAgentMatchAssessmentResponse(JSON.stringify({ results: loose }), shown.candidates, shown.requirements)).toEqual(expected)
     expect(parseAgentMatchAssessmentResponse('```json\n' + JSON.stringify({ review: loose }) + '\n```', shown.candidates, shown.requirements)).toEqual(expected)
   })
 
-  it('turns a "confirm" item about a required technology the candidate never mentions into a gap', () => {
+  it('keeps an unrecorded required technology as unknown instead of claiming it is absent', () => {
     const shown = texts()
     const payload = JSON.stringify({
       assessments: [{
@@ -1190,14 +1263,14 @@ describe('match assessment protocol', () => {
     })
     expect(parseAgentMatchAssessmentResponse(payload, shown.candidates, shown.requirements)).toEqual({
       assessments: [{
-        candidate: 'CANDIDATE_2', fit: 'weak', met: [],
-        gaps: ['Java と Spring Boot の実務経験の有無'],
-        confirm: ['日本語レベル（N2以上か）'],
+        candidate: 'CANDIDATE_2', fit: 'insufficient-info', met: [],
+        gaps: [],
+        confirm: ['Java と Spring Boot の実務経験の有無', '日本語レベル（N2以上か）'],
         reason: '主要スキル未確認。'
       }]
     })
-    expect(matchAssessmentInstructions).toContain('never a confirm item')
-    expect(fixedInstructions).toContain('lacks COBOL')
+    expect(matchAssessmentInstructions).toContain('An absent skill is unknown')
+    expect(fixedInstructions).toContain('Missing evidence is unknown')
     expect(fixedInstructions).toContain('no suitable candidate was found')
   })
 
@@ -1208,18 +1281,18 @@ describe('match assessment protocol', () => {
 
   it('restores placeholders locally and never lets a partial one through', () => {
     const mappings = [{ placeholder: '<PERSON_NAME_001>', originalValue: '山田太郎', identifierType: 'person_name' }] as never
-    const shown = [{ label: 'CANDIDATE_1', redactedText: '<PERSON_NAME_001> と決済 API を開発' }]
+    const shown = [{ label: 'CANDIDATE_1', redactedText: '<PERSON_NAME_001> と Java 決済 API を開発' }]
     const payload = JSON.stringify({
       assessments: [{
         candidate: 'CANDIDATE_1', fit: 'strong',
-        met: [{ requirement: 'Java', evidence: '<PERSON_NAME_001> と決済 API を開発' }],
+        met: [{ requirement: 'Java', evidence: '<PERSON_NAME_001> と Java 決済 API を開発' }],
         gaps: ['<PERSON_NAME_0'], confirm: [], reason: '<PERSON_NAME_001> の経験'
       }]
     })
     expect(parseAgentMatchAssessmentResponse(payload, shown, 'Java', mappings)).toEqual({
       assessments: [{
         candidate: 'CANDIDATE_1', fit: 'strong',
-        met: [{ requirement: 'Java', evidence: '山田太郎 と決済 API を開発' }],
+        met: [{ requirement: 'Java', evidence: '山田太郎 と Java 決済 API を開発' }],
         gaps: [], confirm: [], reason: '山田太郎 の経験'
       }]
     })

@@ -13,6 +13,7 @@ import {
   type DraftCaseUpdateNoticeResult,
   type JobCaseReviewSnapshot,
   type JobCaseVersionDetail,
+  type OpenCaseBroadcastEmailInput,
   type RecordCaseBroadcastCopyInput,
   type RecordCaseBroadcastCopyResult
 } from '@shared'
@@ -200,4 +201,44 @@ export function recordCaseBroadcastCopy(
   // Ids, counts and fixed codes only - never the case text.
   console.info('[case-broadcast-copied]', { copyId: copy.id, kind: copy.kind, lang: copy.lang })
   return { copy }
+}
+
+export interface PreparedCaseBroadcastEmail {
+  mailtoUrl: string
+  subject: string
+  body: string
+}
+
+function encodeMailtoQueryValue(value: string): string {
+  // Some native mail clients display URLSearchParams' `+` literally instead
+  // of treating it as a space in mailto fields. RFC 3986 percent encoding is
+  // accepted consistently and also prevents query-parameter injection.
+  return encodeURIComponent(value).replace(/[!'()*]/gu, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+}
+
+/**
+ * Builds a mailto hand-off from the same confirmed, locally checked message
+ * the operator can copy. The recipient deliberately stays empty: choosing and
+ * verifying it, then pressing Send, belongs to the default mail client.
+ */
+export function prepareCaseBroadcastEmail(
+  repository: BroadcastServiceRepository,
+  input: OpenCaseBroadcastEmailInput
+): PreparedCaseBroadcastEmail {
+  const review = requireSendableReview(repository, input.reviewId)
+  resolveBroadcastTemplate(repository, input.templateId)
+  const title = activeCaseTitle(review).replace(/[\r\n]+/gu, ' ').replace(/\s+/gu, ' ').trim()
+  const subject = `${input.kind === 'update' ? '【案件更新】' : '【案件】'}${title}`
+  const identifiers = detectDirectIdentifiers(`${subject}\n${input.text}`)
+  if (identifiers.length > 0) {
+    throw new Error(`本文に識別子が残っています（${identifiers.join('、')}）。削除してからもう一度操作してください。`)
+  }
+  const mailtoUrl = `mailto:?subject=${encodeMailtoQueryValue(subject)}&body=${encodeMailtoQueryValue(input.text)}`
+  // Avoid handing an unreasonably large command URL to an operating-system
+  // protocol handler. Normal generated case messages are far below this cap.
+  if (mailtoUrl.length > 16_000) {
+    throw new Error('メール本文が長すぎます。本文を短くしてからもう一度操作してください。')
+  }
+  return { mailtoUrl, subject, body: input.text }
 }

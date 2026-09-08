@@ -10,6 +10,7 @@ import {
 } from '@job-cases'
 import { effectiveJobCaseFieldAliases } from '../app-defaults'
 import { importChatPastedJobCaseText, autoConfirmJobCaseDraft } from '../business-text-intake'
+import { deriveNewCaseDigest } from '../job-case-digest'
 import { collectLocalPersonNameCandidates } from '@local-ai'
 import { maxEmlFileSizeBytes, maxEmlFilesPerImport } from '@mail'
 import {
@@ -20,6 +21,8 @@ import {
   type ExecuteWechatVisibleReadResult,
   type ImportEmlJobCaseDraftsResult,
   type JobCaseSourceText,
+  type MarkJobCaseSeenResult,
+  type NewJobCaseDigest,
   type PrepareWechatVisibleReadResult,
   type ReopenJobCaseReviewResult,
   type SetJobCaseLifecycleResult,
@@ -490,6 +493,26 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     assertTrustedSender(event)
     const reviewId = jobCaseReviewIdSchema.parse(rawReviewId)
     return repository.previewJobCaseDeletion(reviewId)
+  })
+
+  // One derivation for the card, the rail badge and the agent's counts, so the
+  // three can never disagree about what arrived today.
+  const newDigest = (): NewJobCaseDigest => deriveNewCaseDigest({
+    reviews: repository.listJobCaseReviews(),
+    seenReviewIds: repository.listSeenJobCaseReviewIds(),
+    now: new Date()
+  })
+
+  ipcMain.handle(ipcChannels.getJobCaseNewDigest, (event): NewJobCaseDigest => {
+    assertTrustedSender(event)
+    return newDigest()
+  })
+
+  ipcMain.handle(ipcChannels.markJobCaseSeen, (event, rawReviewId): MarkJobCaseSeenResult => {
+    assertTrustedSender(event)
+    const reviewId = jobCaseReviewIdSchema.parse(rawReviewId)
+    repository.markJobCaseReviewSeen(reviewId, new Date().toISOString())
+    return { unseenCount: newDigest().unseenCount }
   })
 
   ipcMain.handle(ipcChannels.deleteJobCaseData, (event, rawInput): DeleteJobCaseDataResult => {

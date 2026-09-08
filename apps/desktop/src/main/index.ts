@@ -1,9 +1,10 @@
+import { registerPersonnelHandlers } from './ipc/personnel'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { lstat, readFile, rm } from 'node:fs/promises'
 import { dirname, join, normalize, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, session, shell } from 'electron'
 
 import {
   createSampleTasks,
@@ -386,11 +387,13 @@ async function initializeServices(options: { restoring?: boolean } = {}): Promis
     const googleWorkspaceConfiguration = loadManagedGoogleWorkspaceConfiguration() ??
       repository.getGoogleWorkspaceAdminConfiguration()
     const googleClientId = googleWorkspaceConfiguration?.clientId ?? null
+    const googleClientSecret = process.env.SES_GOOGLE_OAUTH_CLIENT_SECRET?.trim() || undefined
     const googleWorkspaceDomain = googleWorkspaceConfiguration?.workspaceDomain ?? null
-    const googleWorkspace = googleClientId && googleWorkspaceDomain
+    const googleWorkspace = googleClientId
       ? new GoogleWorkspaceOAuthClient(
           {
             clientId: googleClientId,
+            clientSecret: googleClientSecret,
             workspaceDomain: googleWorkspaceDomain
           },
           {
@@ -466,13 +469,15 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   const googleWorkspaceSync = registerGoogleWorkspaceHandlers(context)
   registerRecoveryHandlers(context)
   registerCandidateHandlers(context)
+  registerPersonnelHandlers(context)
   registerAtsImportHandlers(context)
   registerCandidateEvaluationHandlers(context)
   registerJobCaseHandlers(context)
   registerBroadcastHandlers({
     repository: context.repository,
     currentOperator: context.currentOperator,
-    assertTrustedSender
+    assertTrustedSender,
+    openExternal: (url) => shell.openExternal(url)
   })
   registerProposalHandlers(context)
   registerInterviewHandlers(context)
@@ -552,6 +557,20 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
     onImported: (counts) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(ipcChannels.gmailSyncCompleted, counts)
+      }
+      // HR may not be looking at the app when mail lands. Counts only - case
+      // content never enters an OS notification.
+      if (counts.imported > 0 && BrowserWindow.getFocusedWindow() === null && Notification.isSupported()) {
+        const notice = new Notification({ title: 'SES Agent', body: `新着案件 ${counts.imported}件` })
+        notice.on('click', () => {
+          const window = BrowserWindow.getAllWindows()[0]
+          if (!window) return
+          if (window.isMinimized()) window.restore()
+          window.show()
+          window.focus()
+          window.webContents.send(ipcChannels.openNewCaseBoard)
+        })
+        notice.show()
       }
     },
     setTimer: (callback, delayMs) => setTimeout(callback, delayMs),

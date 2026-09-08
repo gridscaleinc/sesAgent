@@ -116,10 +116,10 @@ export function GovernancePanel({
     ? '管理者設定待ち'
     : bootstrap.gmail.status === 'not-connected' ? '未接続' : '読取専用'
   const gmailDescription = bootstrap.gmail.configuration === 'required'
-    ? 'Desktop OAuth Client ID と会社の Workspace ドメインを管理者が設定すると、読取専用接続を開始できます。'
+    ? 'このビルドには Google メール接続が組み込まれていません。ソフトウェア提供元に連絡してください。'
     : bootstrap.gmail.status === 'readonly'
       ? `${bootstrap.gmail.accountEmail} を読取専用で接続中です。Gmail 草稿・送信権限は取得していません。`
-      : `${bootstrap.gmail.workspaceDomain} のアカウントを、システムブラウザと PKCE で読取専用接続します。`
+      : '個人 Gmail または Google Workspace の会社メールを、システムブラウザと PKCE で読取専用接続します。'
   const localOcrUnavailable = bootstrap.privacy.localAi === 'pii-rules-active-ocr-unavailable'
   const localOcrIsolationPending = bootstrap.privacy.localAi === 'windows-ocr-bundled-isolation-pending'
   const windowsOcrRulesActive = bootstrap.privacy.localAi === 'windows-ocr-and-pii-rules-active'
@@ -128,12 +128,12 @@ export function GovernancePanel({
   const gmailAcceptanceHasWarning = gmailAcceptance?.checks.some((check) => check.status === 'warning') ?? false
   const gmailSyncError = bootstrap.gmailSync.lastError
     ? ({
-        GOOGLE_REAUTH_REQUIRED: 'Google Workspace の認証が失効しました。会社アカウントを再接続してください。',
+        GOOGLE_REAUTH_REQUIRED: 'Google の認証が失効しました。Google メールアカウントを再接続してください。',
         GMAIL_SCOPE_REJECTED: '読取専用以外の権限が検出されました。接続を解除して管理者設定を確認してください。',
         SYNC_SCOPE_TOO_BROAD: '同期対象が上限を超えました。Label・期間・キーワードを絞ってください。',
         MESSAGE_PROCESSING_FAILED: '一部メールのローカル脱敏に失敗しました。チェックポイントは進めていません。',
-        GMAIL_HTTP_401: 'Gmail API が認証を拒否しました。会社アカウントを再接続してください。',
-        GMAIL_HTTP_403: 'Gmail API の利用権限を確認できません。管理者に Gmail API と Scope を確認してください。'
+        GMAIL_HTTP_401: 'Gmail API が認証を拒否しました。Google メールアカウントを再接続してください。',
+        GMAIL_HTTP_403: 'Gmail API の利用権限を確認できません。会社アカウントの場合は Workspace 管理者に本製品の許可を依頼してください。'
       } as Record<string, string>)[bootstrap.gmailSync.lastError] ?? 'Gmail の同期に失敗しました。設定とネットワークを確認してください。'
     : null
 

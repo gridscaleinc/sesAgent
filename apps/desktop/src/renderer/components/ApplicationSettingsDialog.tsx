@@ -25,7 +25,6 @@ interface ApplicationSettingsDialogProps {
   onDisconnectGoogleWorkspace(): Promise<void>
   onOpenAiCommerce(): void
   onOpenDataSecurity(): void
-  onOpenGoogleWorkspace(): void
   onOpenOperatorProfile(): void
   onOpenZoomTestMeeting?(): Promise<unknown>
   onSave(input: SaveLocalApplicationPreferencesInput): Promise<LocalApplicationPreferences>
@@ -73,7 +72,6 @@ export function ApplicationSettingsDialog({
   onDisconnectGoogleWorkspace,
   onOpenAiCommerce,
   onOpenDataSecurity,
-  onOpenGoogleWorkspace,
   onOpenOperatorProfile,
   onOpenZoomTestMeeting,
   onSave,
@@ -173,7 +171,7 @@ export function ApplicationSettingsDialog({
 
   const googleConnected = bootstrap.gmail.status === 'readonly'
   const googleConfigured = bootstrap.gmail.configuration === 'ready' && bootstrap.gmailSync.configuration === 'ready'
-  const googleStatus = googleConnected ? '読取専用で接続済み' : googleConfigured ? '接続待ち' : '管理者設定が必要'
+  const googleStatus = googleConnected ? '読取専用で接続済み' : googleConfigured ? '接続待ち' : 'このビルドでは未設定'
   const aiCommerceConnected = bootstrap.aiCommerce.connection === 'connected'
 
   return (
@@ -314,22 +312,33 @@ export function ApplicationSettingsDialog({
                   <div className="integration-settings-logo google"><Icon name="mail" size={21} /></div>
                   <div className="integration-settings-main">
                     <div className="integration-settings-title">
-                      <div><h4>Google Workspace</h4><p>会社 Gmail から案件情報を読取専用で取り込みます。</p></div>
+                      <div><h4>Google メール</h4><p>個人 Gmail または Google Workspace の会社メールから、案件情報を読取専用で取り込みます。</p></div>
                       <span className={googleConnected ? 'integration-status is-connected' : 'integration-status'}>{t(googleStatus)}</span>
                     </div>
+                    {!googleConnected && googleConfigured ? (
+                      <div className="integration-settings-note google-data-disclosure" role="note">
+                        <Icon name="lock" size={16} />
+                        <span>
+                          <strong>Google メールデータの利用</strong>
+                          <span>接続すると、件名・送信者・本文・日時・Labelを読み取り、端末内で案件を識別します。添付ファイルは取得しません。Gmail接続処理では原文とTokenを当社サーバーやCloud AIへ送信しません。</span>
+                          <span>接続ボタンを押すと、Googleの gmail.readonly 同意画面へ進みます。</span>
+                        </span>
+                      </div>
+                    ) : null}
                     <dl className="integration-settings-facts">
                       <div><dt>アカウント</dt><dd>{bootstrap.gmail.accountEmail ?? '未接続'}</dd></div>
                       <div><dt>権限</dt><dd>gmail.readonly</dd></div>
                       <div><dt>同期</dt><dd>{bootstrap.gmailSync.lastSyncedAt ? new Date(bootstrap.gmailSync.lastSyncedAt).toLocaleString(preferences.locale) : '未同期'}</dd></div>
                     </dl>
                     <div className="integration-settings-actions">
-                      <button onClick={onOpenGoogleWorkspace} type="button">接続設定</button>
                       {googleConnected ? <>
                         <button disabled={busy !== null} onClick={() => void runIntegrationAction('google-sync', onSyncGoogleWorkspace)} type="button">{busy === 'google-sync' ? '同期中…' : '今すぐ同期'}</button>
                         <button className="is-danger" disabled={busy !== null} onClick={() => void runIntegrationAction('google-disconnect', onDisconnectGoogleWorkspace)} type="button">接続を解除</button>
                       </> : googleConfigured ? (
-                        <button disabled={busy !== null} onClick={() => void runIntegrationAction('google-connect', onConnectGoogleWorkspace)} type="button">{busy === 'google-connect' ? 'ブラウザを起動中…' : '読取専用で接続'}</button>
-                      ) : null}
+                        <button disabled={busy !== null} onClick={() => void runIntegrationAction('google-connect', onConnectGoogleWorkspace)} type="button">{busy === 'google-connect' ? '接続・同期中…' : 'Google メールを接続'}</button>
+                      ) : (
+                        <div className="integration-settings-note" role="status"><span>このビルドには Google メール接続が組み込まれていません。ソフトウェア提供元に連絡してください。</span></div>
+                      )}
                     </div>
                   </div>
                 </article>
@@ -394,7 +403,7 @@ export function ApplicationSettingsDialog({
               </section>
             ) : null}
 
-            {error ? <p className="application-settings-error" role="alert"><Icon name="alert" size={15} />{error}</p> : null}
+            {error ? <p className="application-settings-error" role="alert"><Icon name="alert" size={15} />{t(error)}</p> : null}
           </div>
         </div>
 

@@ -175,6 +175,7 @@ const taskIdSchema = z.string().min(1).max(128)
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/u)
 const idSchema = z.object({ taskId: taskIdSchema }).strict()
 const agentCaseSearchSchema = z.object({
+  candidateDocumentId: z.string().uuid().optional(),
   mode: z.enum(['recent', 'by-id']),
   caseId: z.string().uuid().nullable().optional(),
   query: z.string().max(200).nullable().optional(),

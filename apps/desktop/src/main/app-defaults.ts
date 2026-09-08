@@ -97,34 +97,51 @@ export function unconfiguredGoogleWorkspaceState(workspaceDomain: string | null)
   }
 }
 
+const defaultGmailLabelIds = 'INBOX'
+const defaultGmailBusinessQuery = '案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画'
+
+/**
+ * Product-managed Gmail connection settings. The public Desktop OAuth Client
+ * ID is the only required build-time value. Public distributions leave the
+ * domain null so personal Gmail and any customer Workspace account can use the
+ * same consent flow; private distributions may optionally restrict one domain.
+ */
 export function loadManagedGoogleWorkspaceConfiguration(now = new Date()): GoogleWorkspaceAdminConfiguration | null {
   const clientId = process.env.SES_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? ''
   const workspaceDomain = process.env.SES_GOOGLE_WORKSPACE_DOMAIN?.trim() ?? ''
-  const rawLabels = process.env.SES_GMAIL_LABEL_IDS?.trim() ?? ''
-  const rawQuery = process.env.SES_GMAIL_QUERY?.trim() ?? ''
-  if (![clientId, workspaceDomain, rawLabels, rawQuery].some(Boolean)) return null
-  if (![clientId, workspaceDomain, rawLabels, rawQuery].every(Boolean)) {
-    throw new Error('Managed Google Workspace configuration requires OAuth Client ID, company domain, Gmail labels, and query together.')
+  const configuredValues = [
+    clientId,
+    workspaceDomain,
+    process.env.SES_GMAIL_LABEL_IDS?.trim() ?? '',
+    process.env.SES_GMAIL_QUERY?.trim() ?? '',
+    process.env.SES_GMAIL_LOOKBACK_DAYS?.trim() ?? '',
+    process.env.SES_GMAIL_MAX_MESSAGES_PER_RUN?.trim() ?? ''
+  ]
+  if (!configuredValues.some(Boolean)) return null
+  if (!clientId) {
+    throw new Error('Managed Google connection settings require a Desktop OAuth Client ID.')
   }
+  const rawLabels = process.env.SES_GMAIL_LABEL_IDS?.trim() || defaultGmailLabelIds
+  const rawQuery = process.env.SES_GMAIL_QUERY?.trim() || defaultGmailBusinessQuery
   const sync = gmailSyncConfigurationSchema.parse({
     version: 'gmail-sync-config-v1' as const,
     labelIds: rawLabels.split(',').map((label) => label.trim()).filter(Boolean),
     query: rawQuery,
-    lookbackDays: Number(process.env.SES_GMAIL_LOOKBACK_DAYS ?? 30),
-    maxMessagesPerRun: Number(process.env.SES_GMAIL_MAX_MESSAGES_PER_RUN ?? 200)
+    lookbackDays: Number(process.env.SES_GMAIL_LOOKBACK_DAYS?.trim() || 30),
+    maxMessagesPerRun: Number(process.env.SES_GMAIL_MAX_MESSAGES_PER_RUN?.trim() || 200)
   })
   return googleWorkspaceAdminConfigurationSchema.parse({
     version: 'google-workspace-admin-config-v1',
     source: 'managed-environment',
     editable: false,
     clientId,
-    workspaceDomain,
+    workspaceDomain: workspaceDomain || null,
     labelIds: sync.labelIds,
     query: sync.query,
     lookbackDays: sync.lookbackDays,
     maxMessagesPerRun: sync.maxMessagesPerRun,
     revision: null,
-    configuredBy: '受管環境設定',
+    configuredBy: '製品受管設定',
     updatedAt: now.toISOString()
   })
 }

@@ -19,6 +19,7 @@ import {
   ipcChannels
 } from '@shared'
 import { registerAgentIpcHandlers } from '../agent-ipc'
+import { deriveNewCaseDigest } from '../job-case-digest'
 import {
   executeBusinessTextIntakeTurn,
   importChatPastedJobCaseText,
@@ -65,7 +66,11 @@ export function registerCandidateMatchHandlers(
       const query = boundJobCase
         ? candidateBenchmarkQueryFromJobCase(boundJobCase)
         : candidateSearchQueryFromInstruction(task.instruction)
-      const profiles = repository.listEligibleTalentProfiles()
+      const candidateBinding = task.contextBindings.find((binding) => binding.objectType === 'candidate-profile')
+      const profiles = repository.listEligibleTalentProfiles().filter((profile) => !candidateBinding || profile.sourceDocumentId === candidateBinding.objectId)
+      if (candidateBinding && (profiles.length !== 1 || String(profiles[0]!.profileVersion) !== candidateBinding.version)) {
+        throw new Error('所选人员已更新或不在可匹配人才中，请核对资料后重新评估。')
+      }
       const requestFingerprint = createHash('sha256').update(JSON.stringify({
         version: 'candidate-match-job-v1',
         query,
@@ -158,7 +163,7 @@ export function registerCandidateMatchHandlers(
             throw new Error('候補者検索ジョブをキャンセルしました。')
           }
           const matches = query
-            ? await searchCandidates(query, 20)
+            ? await searchCandidates(query, candidateBinding ? 1 : 20, candidateBinding?.objectId, candidateBinding ? Number(candidateBinding.version) : undefined)
             : []
           if (lease && repository.isProcessingJobCancellationRequested(processingJob.id, lease.leaseToken)) {
             repository.completeProcessingJob(processingJob.id, lease.leaseToken, { cancelled: true })
@@ -244,7 +249,7 @@ export function registerCandidateMatchHandlers(
     locale: () => effectiveApplicationPreferences(repository).locale,
     currentOperator,
     currentMatchRuntimeIdentity,
-    createMatchTask: (jobCaseId, jobCaseVersion) => {
+    createMatchTask: (jobCaseId, jobCaseVersion, candidateDocumentId) => {
       const preview = createVerifiedPreview(repository, {
         instruction: '为所选案件匹配确认人才',
         scopeId: 'selected-case',
@@ -255,6 +260,11 @@ export function registerCandidateMatchHandlers(
       const task = materializeWorkTask(preview, randomUUID(), new Date().toISOString())
       const binding = task.contextBindings.find((item) => item.objectType === 'job-case')
       if (!binding || binding.version !== String(jobCaseVersion)) throw new Error('案件版本已变化，请重新选择案件。')
+      if (candidateDocumentId) {
+        const profile = repository.listEligibleTalentProfiles().find((item) => item.sourceDocumentId === candidateDocumentId)
+        if (!profile) throw new Error('所选人员不存在或已停用，请重新选择人员。')
+        task.contextBindings.push({ objectType: 'candidate-profile', objectId: candidateDocumentId, version: String(profile.profileVersion) })
+      }
       repository.saveWorkTask(task)
       return { taskId: task.id }
     },
@@ -291,6 +301,14 @@ export function registerCandidateMatchHandlers(
         .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.sourceDocumentId }))
       return [...persisted, ...runtime]
         .filter((item, index, all) => all.findIndex((other) => other.sourceDocumentId === item.sourceDocumentId) === index)
+    },
+    newCaseDigestCounts: () => {
+      const digest = deriveNewCaseDigest({
+        reviews: repository.listJobCaseReviews(),
+        seenReviewIds: repository.listSeenJobCaseReviewIds(),
+        now: new Date()
+      })
+      return { newCasesToday: digest.newCasesToday, unseenCaseCount: digest.unseenCount }
     },
     listSchedulableCandidates: () => repository.listCandidateReviews()
       .filter((review) => review.recordStatus === 'active')

@@ -7,6 +7,8 @@ import type {
 } from '@shared'
 import {
   agentPlanningToolCatalog,
+  isCandidateCaseRequest,
+  isSpecificCandidateFitRequest,
   looksLikeInterviewBookingRequest,
   loadAgentChatModelCatalog,
   LocalAgentUseCase,
@@ -1044,5 +1046,20 @@ describe('local conversational matching agent', () => {
       type: 'candidate-profile-evidence',
       facts: { candidate: { rank: 1 }, profile: { japaneseLevel: 'N1' } }
     })
+  })
+})
+
+
+describe('person and case intent boundaries', () => {
+  it('distinguishes a specific pair, reverse search, and an ordinary context question', () => {
+    expect(isSpecificCandidateFitRequest('这个案件适合他吗')).toBe(true)
+    expect(isSpecificCandidateFitRequest('这个候选人适合这个案件吗')).toBe(true)
+    expect(isSpecificCandidateFitRequest('他适合当前案件吗')).toBe(true)
+    expect(isCandidateCaseRequest('该名候选人适合哪些案件')).toBe(true)
+    expect(isCandidateCaseRequest('改名候选人适合哪些案件')).toBe(true)
+    expect(isSpecificCandidateFitRequest('该名候选人适合哪些案件')).toBe(false)
+    expect(isCandidateCaseRequest('候选人的资料在案件右边吗')).toBe(false)
+    expect(isCandidateCaseRequest('最近有哪些案件')).toBe(false)
+    expect(isSpecificCandidateFitRequest('给当前案件匹配候选人')).toBe(false)
   })
 })

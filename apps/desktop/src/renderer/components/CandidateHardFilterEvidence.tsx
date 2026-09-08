@@ -9,7 +9,8 @@ const hardFilterLabels: Record<HardFilter['type'], string> = {
   'remote-work': '勤務',
   'japanese-level': '日本語',
   location: '勤務地',
-  'work-authorization': '就労資格'
+  'work-authorization': '就労資格',
+  'own-company': '自社所属'
 }
 
 export function CandidateHardFilterEvidence({ filters }: { filters: HardFilter[] }) {
@@ -24,7 +25,7 @@ export function CandidateHardFilterEvidence({ filters }: { filters: HardFilter[]
             {filter.outcome === 'passed'
               ? `確認済み · ${filter.actual}`
               : filter.outcome === 'failed'
-                ? `不一致 · ${filter.actual}`
+                ? `不一致 · ${filter.actual ?? '未設定'}`
                 : `未確認 · ${filter.actual ?? '候補者資料に記載なし'}`}
           </small>
         </div>

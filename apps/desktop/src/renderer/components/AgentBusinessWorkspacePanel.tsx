@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { CandidateProfileSummary } from './CandidateProfileSummary'
+import { SpreadsheetPreview } from './OriginalDocumentWorkspace'
 import type { WorkTask } from '@domain'
 import type {
-  ReopenJobCaseReviewInput,
-  ReopenJobCaseReviewResult,
-  SetJobCaseLifecycleInput,
-  SetJobCaseLifecycleResult,
   AgentSystemAccessBlock,
   CandidateInterviewSnapshot,
   CandidateReviewSnapshot,
@@ -13,21 +11,27 @@ import type {
   JobCaseSourceText,
   MatchingHomeProjection,
   OriginalDocumentPreview,
+  NewJobCaseDigest,
   SubmitJobCaseReviewInput,
   SubmitJobCaseReviewResult
 } from '@shared'
 import { useUiLocale } from '../i18n'
 import { BroadcastWorkspaceView, type BroadcastPanelActions } from './BroadcastWorkspaceView'
+import { NewCaseDigestCard } from './NewCaseDigestCard'
 import { Icon, type IconName } from './Icon'
-import { JobCaseSourceTextSection } from './JobCaseSourceTextSection'
-import { MatchAssessmentView } from './MatchAssessmentView'
+import { JobCaseBody } from './JobCaseBody'
+import { CaseMatchingWorkspace } from './CaseMatchingWorkspace'
 import type { ReviewQueueItem } from './ReviewCenter'
 
 type BusinessAccess = Exclude<AgentSystemAccessBlock, { destination: 'interview-schedule' }>
 
 interface AgentBusinessWorkspacePanelProps {
   access: BusinessAccess
+  focusRequest?: number
   candidateReviews: CandidateReviewSnapshot[]
+  newCaseDigest?: NewJobCaseDigest | null
+  gmailLastSyncedAt?: string | null
+  onMarkSeen?(reviewId: string): void
   interviews: CandidateInterviewSnapshot[]
   jobCaseReviews: JobCaseReviewSnapshot[]
   matchingHome: MatchingHomeProjection
@@ -42,8 +46,7 @@ interface AgentBusinessWorkspacePanelProps {
   onLoadOriginalDocument(sourceDocumentId: string): Promise<OriginalDocumentPreview>
   onResolveActionApproval(approvalId: string, decision: 'approve' | 'deny'): Promise<void>
   onSubmitJobCaseReview?(input: SubmitJobCaseReviewInput): Promise<SubmitJobCaseReviewResult>
-  onReopenJobCaseReview?(input: ReopenJobCaseReviewInput): Promise<ReopenJobCaseReviewResult>
-  onSetJobCaseLifecycle?(input: SetJobCaseLifecycleInput): Promise<SetJobCaseLifecycleResult>
+  onEditCase?(reviewId: string): void
   /** Present once 案件配信 is reachable; the broadcast screen is withheld without it. */
   broadcastActions?: BroadcastPanelActions
 }
@@ -69,6 +72,7 @@ function formatDateTime(value: string | null, locale: 'ja-JP' | 'zh-CN'): string
 }
 
 function accessPresentation(access: BusinessAccess, zh: boolean): { icon: IconName; title: string } {
+  if (access.destination === 'new-cases') return { icon: 'briefcase', title: zh ? '今日新案件' : '今日の新着案件' }
   if (access.destination === 'job-cases') return { icon: 'briefcase', title: zh ? '案件' : '案件' }
   if (access.destination === 'case-import') return { icon: 'upload', title: zh ? '导入案件' : '案件を取り込む' }
   if (access.destination === 'case-review') return { icon: 'briefcase', title: zh ? '案件详情' : '案件詳細' }
@@ -118,103 +122,35 @@ function JobCasesView({ reviews, onOpen, zh }: {
   </>
 }
 
-/** Fields written as one or two lines in a chat; everything else fits an input. */
-const multilineCaseFields = new Set(['required_skills', 'preferred_skills', 'notes'])
-
-function CaseReviewView({ access, reviews, onOpen, onLoadSourceText, onSubmitCase, onReopenCase, onSetLifecycle, zh }: {
+function CaseReviewView({ access, reviews, onOpen, onLoadSourceText, onEditCase, zh }: {
   access: Extract<BusinessAccess, { destination: 'case-review' }>
   reviews: JobCaseReviewSnapshot[]
   onOpen(access: AgentSystemAccessBlock): void
   onLoadSourceText?(reviewId: string): Promise<JobCaseSourceText>
-  onSubmitCase?(input: SubmitJobCaseReviewInput): Promise<SubmitJobCaseReviewResult>
-  onReopenCase?(input: ReopenJobCaseReviewInput): Promise<ReopenJobCaseReviewResult>
-  onSetLifecycle?(input: SetJobCaseLifecycleInput): Promise<SetJobCaseLifecycleResult>
+  onEditCase?(reviewId: string): void
   zh: boolean
 }) {
   const review = reviews.find((item) => item.reviewId === access.reviewId)
-  // Edits live here until saved; a saved or externally changed review
-  // (new revision) starts the operator from the stored values again.
-  const [edits, setEdits] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState<'save' | 'lifecycle' | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const revisionKey = review ? `${review.reviewId}:${review.reviewRevision}:${review.lifecycle}` : null
-  useEffect(() => { setEdits({}); setError(null) }, [revisionKey])
   if (!review) return <Empty>{zh ? '案件记录不存在或已经删除' : '案件レコードが存在しないか削除されています'}</Empty>
   const archived = review.lifecycle === 'archived'
   const valid = review.status === 'completed' && !archived
-  const editReason = zh ? '右侧工作区直接修改' : '右ワークスペースで編集'
-  const valueOf = (key: string, stored: string | null): string => edits[key] ?? (stored ?? '')
-  const dirty = review.fields.some((field) => valueOf(field.key, field.value).trim() !== (field.value ?? '').trim())
-  const canEdit = Boolean(onSubmitCase) && !archived && (review.status !== 'completed' || Boolean(onReopenCase))
-
-  const save = async () => {
-    if (!onSubmitCase || !dirty || busy) return
-    setBusy('save')
-    setError(null)
-    try {
-      // A valid case is revised in place: reopen, then confirm the edited values.
-      const target = review.status === 'completed' && onReopenCase
-        ? (await onReopenCase({ reviewId: review.reviewId, reason: editReason })).review
-        : review
-      await onSubmitCase({
-        reviewId: target.reviewId,
-        reviewRevision: target.reviewRevision,
-        privacyReviewed: true,
-        fields: target.fields.map((field) => {
-          const next = valueOf(field.key, field.value).trim() || null
-          return { key: field.key, value: next, confirmed: true, ...(next !== (field.value ?? null) ? { changeReason: editReason } : {}) }
-        })
-      })
-      setEdits({})
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : (zh ? '案件保存失败。' : '案件を保存できませんでした。'))
-    } finally {
-      setBusy(null)
-    }
-  }
-  const toggleLifecycle = async () => {
-    if (!onSetLifecycle || busy || review.status !== 'completed') return
-    setBusy('lifecycle')
-    setError(null)
-    try {
-      await onSetLifecycle({ reviewId: review.reviewId, state: archived ? 'active' : 'archived', reason: zh ? (archived ? '右侧工作区恢复有效' : '右侧工作区设为无效') : (archived ? '右ワークスペースで有効化' : '右ワークスペースで無効化') })
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : (zh ? '案件状态更新失败。' : '案件の状態を更新できませんでした。'))
-    } finally {
-      setBusy(null)
-    }
-  }
-
   return <>
-    <div className="agent-business-hero">
+    <div className="agent-business-hero is-case-detail">
       <small>{review.sourceType.toLocaleUpperCase('en-US')} · <span className={`agent-case-validity is-${archived ? 'archived' : valid ? 'valid' : 'attention'}`}>{archived ? (zh ? '无效' : '無効') : valid ? (zh ? '有效' : '有効') : (zh ? '待补充' : '要補完')}</span></small>
       <h2>{caseField(review, 'title') ?? review.redactedSubject}</h2>
-      <p>{review.redactedPreview}</p>
+      {onEditCase ? <button className="case-edit-link" onClick={() => onEditCase(review.reviewId)} type="button">{zh ? '在案件页面编辑' : '案件画面で編集'}<span aria-hidden="true">↗</span></button> : null}
     </div>
+    <dl className="agent-business-facts">{review.fields.filter((field) => ['required_skills', 'rate', 'location', 'remote', 'start_date'].includes(field.key)).map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value || (zh ? '待补充' : '未記入')}</dd></div>)}</dl>
+    <JobCaseBody key={`body:${review.reviewId}`} review={review} onLoad={onLoadSourceText} zh={zh} />
+    <details className="agent-case-edit-details"><summary>{zh ? '查看全部字段' : '全項目を表示'}</summary>
     <ContextSection title={zh ? '案件字段' : '案件項目'}>
-      {canEdit
-        ? <div className="agent-case-editor">
-            {review.fields.map((field) => <label key={field.key}>
-              <span>{field.label}</span>
-              {multilineCaseFields.has(field.key)
-                ? <textarea aria-label={field.label} disabled={busy !== null} onChange={(event) => setEdits((current) => ({ ...current, [field.key]: event.target.value }))} rows={2} value={valueOf(field.key, field.value)} />
-                : <input aria-label={field.label} disabled={busy !== null} onChange={(event) => setEdits((current) => ({ ...current, [field.key]: event.target.value }))} value={valueOf(field.key, field.value)} />}
-            </label>)}
-            <div className="agent-case-editor-actions">
-              <button className="agent-business-primary" disabled={!dirty || busy !== null} onClick={() => void save()} type="button"><Icon name="check" size={14} />{busy === 'save' ? (zh ? '保存中…' : '保存中…') : review.status === 'completed' ? (zh ? '保存修改' : '変更を保存') : (zh ? '保存并生效' : '保存して有効化')}</button>
-              {dirty ? <button disabled={busy !== null} onClick={() => setEdits({})} type="button">{zh ? '放弃修改' : '変更を破棄'}</button> : null}
-            </div>
-            {error ? <p className="agent-business-error" role="alert">{error}</p> : null}
-          </div>
-        : <dl className="agent-business-facts">{review.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value || '—'}</dd></div>)}</dl>}
+      <dl className="agent-business-facts">{review.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value || '—'}</dd></div>)}</dl>
     </ContextSection>
-    {onLoadSourceText ? <JobCaseSourceTextSection key={review.reviewId} onLoad={onLoadSourceText} review={review} /> : null}
-    {review.warningCodes.length > 0 ? <ContextSection title={zh ? '注意事项' : '注意事項'}><div className="agent-business-tags">{review.warningCodes.map((code) => <span key={code}>{code}</span>)}</div></ContextSection> : null}
+    </details>
+
     <div className="agent-case-actions">
-      {review.jobCase && !archived ? <button className="agent-business-primary" onClick={() => onOpen({ type: 'system-access', destination: 'matching', jobCaseId: review.jobCase!.id })} type="button"><Icon name="sparkles" size={14} />{zh ? '查看该案件的匹配结果' : 'この案件のマッチ結果を見る'}</button> : null}
-      {onSetLifecycle && review.status === 'completed' ? <button disabled={busy !== null} onClick={() => void toggleLifecycle()} type="button">{archived ? (zh ? '恢复为有效' : '有効に戻す') : (zh ? '设为无效' : '無効にする')}</button> : null}
+      {review.jobCase && !archived ? <button className="agent-business-primary" onClick={() => onOpen({ type: 'system-access', destination: 'matching', jobCaseId: review.jobCase!.id })} type="button"><Icon name="sparkles" size={14} />{zh ? '为此案件找人' : 'この案件の要員を探す'}</button> : null}
     </div>
-    {!canEdit && error ? <p className="agent-business-error" role="alert">{error}</p> : null}
   </>
 }
 
@@ -254,39 +190,16 @@ function CandidateView({ access, reviews, interviews, onOpen, zh, locale }: {
     <div className="agent-business-hero is-candidate"><span className="agent-business-avatar">{candidateName(review).slice(-1)}</span><div><small>{review.status === 'completed' ? (zh ? '档案已确认' : 'プロフィール確認済み') : (zh ? '待人工审核' : '人の確認待ち')}</small><h2>{candidateName(review)}</h2><p>{[fieldValue(review, 'role'), fieldValue(review, 'experience_years'), fieldValue(review, 'location')].filter(Boolean).join(' · ')}</p></div></div>
     <div className="agent-business-tabs" role="group"><button className={access.view === 'overview' ? 'is-active' : ''} onClick={() => onOpen({ type: 'system-access', destination: 'candidate', sourceDocumentId: review.documentId, view: 'overview' })} type="button">{zh ? '档案' : 'プロフィール'}</button><button className={access.view === 'resume' ? 'is-active' : ''} onClick={() => onOpen({ type: 'system-access', destination: 'candidate', sourceDocumentId: review.documentId, view: 'resume' })} type="button">{zh ? '简历' : '履歴書'}</button><button className={access.view !== 'overview' && access.view !== 'resume' ? 'is-active' : ''} onClick={() => onOpen({ type: 'system-access', destination: 'candidate', sourceDocumentId: review.documentId, view: 'records' })} type="button">{zh ? '面试记录' : '面談記録'}</button></div>
     {access.view === 'resume' ? <>
-      <ContextSection title={zh ? '简历抽取字段' : '履歴書抽出項目'}><dl className="agent-business-facts">{review.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value || '—'}<small>{field.sourceLabels.join(' · ')}</small></dd></div>)}</dl></ContextSection>
+      <CandidateProfileSummary key={review.documentId} review={review} />
+      <details className="candidate-review-disclosure"><summary>{zh ? '查看字段来源' : '項目の出所を表示'}</summary><dl className="agent-business-facts">{review.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.sourceLabels.join(' · ') || '—'}</dd></div>)}</dl></details>
       <button className="agent-business-primary" onClick={() => onOpen({ type: 'system-access', destination: 'original-document', sourceDocumentId: review.documentId })} type="button"><Icon name="file" size={14} />{zh ? '在右侧查看原始简历' : '右側で原始履歴書を見る'}</button>
     </> : access.view === 'overview' ? <>
       <div className="agent-business-status-grid"><span><small>{zh ? '招聘状态' : '採用状態'}</small><strong>{review.recruitingStatus}</strong></span><span><small>{zh ? '人才池' : '人材プール'}</small><strong>{review.talentPoolStatus}</strong></span><span><small>{zh ? '记录状态' : '記録状態'}</small><strong>{review.recordStatus}</strong></span></div>
-      <ContextSection title={zh ? '候选人档案' : '候補者プロフィール'}><dl className="agent-business-facts">{review.fields.filter((field) => field.value).map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl></ContextSection>
-      {review.projectExperiences.length > 0 ? <ContextSection title={zh ? '项目经历' : 'プロジェクト経験'}><div className="agent-business-projects">{review.projectExperiences.map((project) => <article key={project.draftId}><strong>{project.title}</strong><small>{[project.period, project.role].filter(Boolean).join(' · ')}</small><p>{project.summary}</p><span>{project.technologies.join(' · ')}</span></article>)}</div></ContextSection> : null}
+      <CandidateProfileSummary key={review.documentId} review={review} />
     </> : <ContextSection title={zh ? '面试轮次' : '面談ラウンド'}><div className="agent-business-list">{sessions.map((interview) => <article className={access.interviewId === interview.id ? 'is-selected' : ''} key={interview.id}><header><div><small>{interview.kind === 'client' ? (zh ? '客户面试' : '顧客面談') : (zh ? '招聘面试' : '採用面談')}</small><strong>{zh ? `第 ${interview.roundNumber} 轮` : `${interview.roundNumber}回目`} · {interview.stage}</strong></div><span>{formatDateTime(interview.scheduledAt, locale)}</span></header><p>{interview.interviewNotes || interview.interviewGoal || (zh ? '暂无面试记录内容' : '面談記録はまだありません')}</p>{interview.scheduledAt ? <footer><button className="is-primary" onClick={() => onOpen({ type: 'system-access', destination: 'interview-schedule', receipt: { sourceDocumentId: review.documentId, candidateLabel: candidateName(review), scheduledAt: interview.scheduledAt!, durationMinutes: interview.durationMinutes, meetingMethod: interview.meetingMethod, kind: interview.kind, meetingLinkStoredLocally: Boolean(interview.meetingUrl) } })} type="button">{zh ? '打开面试日程' : '面談日程を開く'}</button></footer> : null}</article>)}</div>{sessions.length === 0 ? <Empty>{zh ? '还没有面试记录' : '面談記録はまだありません'}</Empty> : null}</ContextSection>}
   </>
 }
 
-function MatchingView({ access, projection, reviews, onOpen, zh }: {
-  access: Extract<BusinessAccess, { destination: 'matching' }>
-  projection: MatchingHomeProjection
-  reviews: CandidateReviewSnapshot[]
-  onOpen(access: AgentSystemAccessBlock): void
-  zh: boolean
-}) {
-  const selectedCase = projection.jobCases.find((item) => item.id === access.jobCaseId)
-    ?? projection.jobCases.find((item) => item.id === projection.selectedJobCaseId)
-    ?? projection.jobCases[0]
-  const runMatchesCase = Boolean(selectedCase && projection.currentRun?.run.binding?.jobCaseId === selectedCase.id)
-  const results = runMatchesCase ? projection.currentRun?.results ?? [] : []
-  const candidateByProfileId = new Map(reviews.flatMap((review) => review.profile ? [[review.profile.id, review] as const] : []))
-  if (!selectedCase) return <Empty>{zh ? '没有可用于匹配的案件' : 'マッチング可能な案件がありません'}</Empty>
-  return <>
-    <div className="agent-business-case-picker">{projection.jobCases.map((item) => <button className={item.id === selectedCase.id ? 'is-active' : ''} key={item.id} onClick={() => onOpen({ type: 'system-access', destination: 'matching', jobCaseId: item.id })} type="button"><strong>{item.title}</strong><small>{item.validity}</small></button>)}</div>
-    <div className="agent-business-hero"><small>{selectedCase.validity}</small><h2>{selectedCase.title}</h2><p>{zh ? `${projection.eligibleCandidateCount} 名已确认人才参与当前匹配范围` : `確認済み人材${projection.eligibleCandidateCount}名が現在の対象です`}</p></div>
-    {results.length > 0 ? <div className="agent-business-list is-results">{results.toSorted((left, right) => left.fit.rank - right.fit.rank).map((result) => {
-      const candidate = candidateByProfileId.get(result.candidateProfileId)
-      return <article key={result.matchResultId}><header><div><small>#{result.fit.rank}</small><strong>{result.anonymousLabel}</strong></div><span>{result.fit.matchScore ?? '—'}</span></header><p>{result.fit.matchedTerms.join(' · ') || (zh ? '暂无匹配词' : '一致語なし')}</p><div className="agent-business-tags">{result.fit.evidence.slice(0, 4).map((item) => <span key={item.key}>{item.label}：{item.value ?? '—'}</span>)}</div>{result.assessment ? <MatchAssessmentView assessment={result.assessment} zh={zh} compact /> : null}{candidate ? <footer><button onClick={() => onOpen({ type: 'system-access', destination: 'candidate', sourceDocumentId: candidate.documentId, view: 'overview' })} type="button">{zh ? '查看候选人' : '候補者を見る'}</button></footer> : null}</article>
-    })}</div> : <Empty>{selectedCase.validity === 'not_run' ? (zh ? '该案件还没有运行匹配' : 'この案件はまだマッチング未実行です') : (zh ? '当前没有可显示的有效匹配结果' : '現在表示できる有効な結果がありません')}</Empty>}
-  </>
-}
 
 /**
  * Quick confirm submits the draft exactly as it stands: every field with its
@@ -408,6 +321,8 @@ function OriginalDocumentView({ access, onLoad, zh }: {
 }) {
   const [preview, setPreview] = useState<OriginalDocumentPreview | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sheetName, setSheetName] = useState('')
+  const [zoom, setZoom] = useState(75)
   useEffect(() => {
     let active = true
     setPreview(null); setError(null)
@@ -416,11 +331,15 @@ function OriginalDocumentView({ access, onLoad, zh }: {
   }, [access.sourceDocumentId, onLoad])
   if (error) return <div className="agent-business-error" role="alert">{error}</div>
   if (!preview) return <div className="agent-business-loading"><span className="matching-spinner" />{zh ? '正在读取本机加密文件…' : '暗号化ローカルファイルを読込中…'}</div>
-  return <><div className="agent-business-hero"><small>{preview.format.toLocaleUpperCase('en-US')} · {Math.max(1, Math.round(preview.size / 1024))} KB</small><h2>{preview.fileName}</h2><p>{zh ? '原始文件只在本机解密显示；对话只读取对应的脱敏结构化字段。' : '原始ファイルは端末内だけで復号表示し、会話には対応する脱敏済み構造化項目だけを渡します。'}</p></div><div className="agent-original-preview">{preview.viewMode === 'pdf' && preview.previewUrl ? <iframe src={preview.previewUrl} title={preview.fileName} /> : preview.viewMode === 'spreadsheet' ? preview.sheets.map((sheet) => <section key={sheet.name}><strong>{sheet.name}</strong>{sheet.cells.slice(0, 180).map((cell) => <p key={`${sheet.name}-${cell.address}`}><small>{cell.address}</small>{cell.text}</p>)}</section>) : preview.paragraphs.map((paragraph) => <p key={paragraph.paragraphNumber}>{paragraph.text}</p>)}</div></>
+  const activeSheet = preview.sheets.find((sheet) => sheet.name === sheetName) ?? preview.sheets[0]
+  return <><div className="agent-business-hero"><small>{preview.format.toLocaleUpperCase('en-US')} · {Math.max(1, Math.round(preview.size / 1024))} KB</small><h2>{preview.fileName}</h2><p>{zh ? '原始文件只在本机解密显示；对话只读取对应的脱敏结构化字段。' : '原始ファイルは端末内だけで復号表示し、会話には対応する脱敏済み構造化項目だけを渡します。'}</p></div>
+    {preview.viewMode === 'spreadsheet' ? <div className="agent-original-controls"><label>{zh ? '工作表' : 'シート'}<select value={activeSheet?.name ?? ''} onChange={(event) => setSheetName(event.target.value)}>{preview.sheets.map((sheet) => <option key={sheet.name} value={sheet.name}>{sheet.name}</option>)}</select></label><label>{zh ? '缩放' : 'ズーム'}<select value={zoom} onChange={(event) => setZoom(Number(event.target.value))}>{[50, 75, 100, 125].map((value) => <option key={value} value={value}>{value}%</option>)}</select></label></div> : null}
+    <div className="agent-original-preview">{preview.viewMode === 'pdf' && preview.previewUrl ? <iframe src={preview.previewUrl} title={preview.fileName} /> : preview.viewMode === 'spreadsheet' && activeSheet ? <SpreadsheetPreview sheet={activeSheet} zoom={zoom} search="" selectedSources={[]} /> : preview.viewMode === 'pdf' ? <div className="original-pdf-fallback">{preview.pages.map((page) => <article key={page.pageNumber}><span>Page {page.pageNumber}</span>{page.blocks.map((block, index) => <p key={index}>{block.text}</p>)}</article>)}</div> : <div className="original-word-pages">{preview.paragraphs.map((paragraph) => <p key={paragraph.paragraphNumber}>{paragraph.text}</p>)}</div>}</div></>
 }
 
 export function AgentBusinessWorkspacePanel({
   access,
+  focusRequest,
   candidateReviews,
   interviews,
   jobCaseReviews,
@@ -435,18 +354,32 @@ export function AgentBusinessWorkspacePanel({
   onLoadOriginalDocument,
   onResolveActionApproval,
   onSubmitJobCaseReview,
-  onReopenJobCaseReview,
-  onSetJobCaseLifecycle,
-  broadcastActions
+  onEditCase,
+  broadcastActions,
+  newCaseDigest = null,
+  gmailLastSyncedAt = null,
+  onMarkSeen
 }: AgentBusinessWorkspacePanelProps) {
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!focusRequest || !bodyRef.current || bodyRef.current.closest('[hidden]')) return
+    bodyRef.current.scrollTop = 0
+    bodyRef.current.focus({ preventScroll: true })
+  }, [focusRequest])
   const presentation = accessPresentation(access, zh)
   let content: ReactNode
-  if (access.destination === 'job-cases') content = <JobCasesView onOpen={onOpenAccess} reviews={jobCaseReviews} zh={zh} />
+  if (access.destination === 'new-cases') content = <NewCaseDigestCard
+    digest={newCaseDigest ?? { groups: [], newCasesToday: 0, unseenCount: 0 }}
+    gmailLastSyncedAt={gmailLastSyncedAt ?? null}
+    onMarkSeen={(reviewId) => onMarkSeen?.(reviewId)}
+    onOpenAccess={onOpenAccess}
+  />
+  else   if (access.destination === 'job-cases') content = <JobCasesView onOpen={onOpenAccess} reviews={jobCaseReviews} zh={zh} />
   else if (access.destination === 'case-import') content = <CaseImportView onCreate={onCreateManualCase} onOpen={onOpenAccess} zh={zh} />
-  else if (access.destination === 'case-review') content = <CaseReviewView access={access} onLoadSourceText={onLoadJobCaseSourceText} onOpen={onOpenAccess} onReopenCase={onReopenJobCaseReview} onSetLifecycle={onSetJobCaseLifecycle} onSubmitCase={onSubmitJobCaseReview} reviews={jobCaseReviews} zh={zh} />
-  else if (access.destination === 'matching') content = <MatchingView access={access} onOpen={onOpenAccess} projection={matchingHome} reviews={candidateReviews} zh={zh} />
+  else if (access.destination === 'case-review') content = <CaseReviewView key={access.reviewId} access={access} onLoadSourceText={onLoadJobCaseSourceText} onOpen={onOpenAccess} onEditCase={onEditCase} reviews={jobCaseReviews} zh={zh} />
+  else if (access.destination === 'matching') content = <CaseMatchingWorkspace jobCaseId={access.jobCaseId ?? matchingHome.selectedJobCaseId ?? undefined} request={access.jobCaseId ? { id: focusRequest ?? 1, jobCaseId: access.jobCaseId } : undefined} reviews={jobCaseReviews} candidates={candidateReviews} onOpenPerson={(documentId) => onOpenAccess({ type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'overview' })} />
   else if (access.destination === 'broadcast') {
     content = broadcastActions
       ? <BroadcastWorkspaceView actions={broadcastActions} initialReviewId={access.reviewId} onSelectedReviewChange={(reviewId) => onOpenAccess({ type: 'system-access', destination: 'broadcast', reviewId })} />
@@ -454,7 +387,7 @@ export function AgentBusinessWorkspacePanel({
   }
   else if (access.destination === 'candidate-management') content = <CandidateDirectoryView onOpen={onOpenAccess} reviews={candidateReviews} zh={zh} />
   else if (access.destination === 'candidate') content = <CandidateView access={access} interviews={interviews} locale={locale} onOpen={onOpenAccess} reviews={candidateReviews} zh={zh} />
-  else if (access.destination === 'original-document') content = <OriginalDocumentView access={access} onLoad={onLoadOriginalDocument} zh={zh} />
+  else if (access.destination === 'original-document') content = <OriginalDocumentView key={access.sourceDocumentId} access={access} onLoad={onLoadOriginalDocument} zh={zh} />
   else if (access.destination === 'review-center' && access.reviewIds && access.reviewIds.length > 0) {
     content = <IntakeBatchReviewView access={access} onOpen={onOpenAccess} onSubmitCase={onSubmitJobCaseReview} reviews={jobCaseReviews} zh={zh} />
   }
@@ -462,8 +395,8 @@ export function AgentBusinessWorkspacePanel({
   else content = <TaskView access={access} tasks={tasks} zh={zh} />
 
   return <div className="agent-business-context-panel">
-    <header className="agent-context-panel-header"><div>{onBack ? <button aria-label={zh ? '返回上一级' : '前の画面に戻る'} className="agent-context-panel-back" onClick={onBack} type="button">←<span>{zh ? '返回' : '戻る'}</span></button> : null}<Icon name={presentation.icon} size={17} /><strong>{presentation.title}</strong><span className="agent-context-connected"><Icon name="sparkles" size={11} />{zh ? '已接入对话上下文' : '会話コンテキストに接続'}</span></div><button aria-label={zh ? '关闭右侧工作区' : '右ワークスペースを閉じる'} className="agent-context-panel-close" onClick={onClose} type="button">×</button></header>
-    <div className="agent-business-context-note"><Icon name="shield" size={13} /><span>{zh ? '发送下一条消息时，Agent 会读取此工作区的最新本机数据；仅生成脱敏结构化投影，不读取页面 DOM，也不发送本机标识符或会议链接。' : '次の送信時、Agent はこのワークスペースの最新ローカルデータを読み取ります。脱敏済み構造化投影だけを生成し、DOM・端末内ID・会議リンクは送信しません。'}</span></div>
-    <div className="agent-business-context-body">{content}</div>
+    <header className="agent-context-panel-header"><div>{onBack ? <button aria-label={zh ? '返回上一级' : '前の画面に戻る'} className="agent-context-panel-back" onClick={onBack} type="button">←<span>{zh ? '返回' : '戻る'}</span></button> : null}<Icon name={presentation.icon} size={17} /><strong>{presentation.title}</strong><span className="agent-context-connected"><Icon name="sparkles" size={11} />{zh ? '已接入对话上下文' : '会話コンテキストに接続'}</span></div>{access.destination !== 'new-cases' ? <button aria-label={zh ? '显示今日新案件' : '今日の新着案件を表示'} className="agent-context-panel-board" onClick={() => onOpenAccess({ type: 'system-access', destination: 'new-cases' })} type="button"><Icon name="briefcase" size={13} /><span>{zh ? '新案件' : '新着案件'}</span></button> : null}<button aria-label={zh ? '关闭右侧工作区' : '右ワークスペースを閉じる'} className="agent-context-panel-close" onClick={onClose} type="button">×</button></header>
+    <div className="agent-business-context-note"><Icon name="shield" size={13} /><span>{zh ? '这里的资料可用于后续提问；姓名和联系方式保留在本机。' : 'この資料を次の質問に利用できます。氏名と連絡先は端末内に保管します。'}</span></div>
+    <div ref={bodyRef} tabIndex={-1} className="agent-business-context-body">{content}</div>
   </div>
 }

@@ -1,6 +1,6 @@
 # SES Agent Desktop 整改与外部能力吸收改造方案
 
-<!-- ses-current-state package=0.1.0 schema=43 -->
+<!-- ses-current-state package=0.1.0 schema=46 -->
 
 > 版本：v0.7
 > 日期：2026-08-18

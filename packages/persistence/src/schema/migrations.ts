@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 43
+export const currentSchemaVersion = 46
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2040,5 +2040,90 @@ BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strft
 INSERT INTO schema_migrations(version, applied_at)
 VALUES (43, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 
+COMMIT;
+`
+
+/**
+ * v44: 今日新着案件 needs to know which arrivals the operator has already
+ * looked at. "Seen" is a single per-review fact with no history worth keeping,
+ * so it is one upsertable row rather than an event log. It hangs off the
+ * review root like the broadcast copies do, so a controlled case deletion
+ * takes the flag with it.
+ */
+export const migrationV44 = `
+BEGIN IMMEDIATE;
+
+CREATE TABLE job_case_seen (
+  review_id TEXT PRIMARY KEY REFERENCES job_case_extractions(review_id) ON DELETE CASCADE,
+  seen_at TEXT NOT NULL
+);
+
+CREATE TRIGGER backup_revision_job_case_seen_insert AFTER INSERT ON job_case_seen
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_job_case_seen_update AFTER UPDATE ON job_case_seen
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_job_case_seen_delete AFTER DELETE ON job_case_seen
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+INSERT INTO schema_migrations(version, applied_at)
+VALUES (44, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+COMMIT;
+`
+
+/** v45: HR-confirmed personnel business availability and template promotion. */
+export const migrationV45 = `
+BEGIN IMMEDIATE;
+CREATE TABLE candidate_business_states (
+  document_id TEXT PRIMARY KEY REFERENCES staged_files(token) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK(status IN ('available','soon','paused','assigned')),
+  profile_version INTEGER NOT NULL, payload TEXT NOT NULL
+);
+CREATE TABLE personnel_templates (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+CREATE TABLE personnel_copies (
+  id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES staged_files(token) ON DELETE CASCADE,
+  created_at TEXT NOT NULL, payload TEXT NOT NULL, text_hash TEXT NOT NULL, actor_id TEXT NOT NULL
+);
+CREATE INDEX idx_personnel_copies_document ON personnel_copies(document_id,created_at DESC);
+CREATE TRIGGER backup_revision_candidate_business_states_insert AFTER INSERT ON candidate_business_states
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_business_states_update AFTER UPDATE ON candidate_business_states
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_business_states_delete AFTER DELETE ON candidate_business_states
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_personnel_templates_insert AFTER INSERT ON personnel_templates
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_personnel_templates_update AFTER UPDATE ON personnel_templates
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_personnel_templates_delete AFTER DELETE ON personnel_templates
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_personnel_copies_insert AFTER INSERT ON personnel_copies
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_personnel_copies_update AFTER UPDATE ON personnel_copies
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_personnel_copies_delete AFTER DELETE ON personnel_copies
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+INSERT INTO schema_migrations(version,applied_at) VALUES(45,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+export const migrationV46 = `
+BEGIN IMMEDIATE;
+CREATE TABLE business_feed_marks (
+  id TEXT PRIMARY KEY,
+  case_review_id TEXT REFERENCES job_case_review_states(review_id) ON DELETE CASCADE,
+  candidate_document_id TEXT REFERENCES staged_files(token) ON DELETE CASCADE,
+  revision TEXT NOT NULL,
+  seen_at TEXT NOT NULL,
+  deferred INTEGER NOT NULL DEFAULT 0 CHECK(deferred IN (0,1)),
+  CHECK((case_review_id IS NULL) != (candidate_document_id IS NULL))
+);
+CREATE TRIGGER backup_revision_business_feed_marks_insert AFTER INSERT ON business_feed_marks
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_business_feed_marks_update AFTER UPDATE ON business_feed_marks
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_business_feed_marks_delete AFTER DELETE ON business_feed_marks
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton = 1; END;
+INSERT INTO schema_migrations(version,applied_at) VALUES(46,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
 `

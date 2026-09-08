@@ -232,7 +232,8 @@ export class JobCaseStore extends DomainStore {
   getJobCaseReview(reviewId: string): JobCaseReviewSnapshot | null {
     const row = this.database
       .prepare<[string], JobCaseReviewJoinRow>(
-        `SELECT state.*, extraction.draft_json, source.id AS source_id, source.source_type,
+        `SELECT state.*, extraction.draft_json, extraction.created_at AS intake_at,
+                source.id AS source_id, source.source_type,
                 source.provider_message_id, source.thread_id, source.message_date,
                 source.from_domain, source.redacted_subject, source.redacted_body
          FROM job_case_review_states state
@@ -309,6 +310,7 @@ export class JobCaseStore extends DomainStore {
           }
         : null,
       lifecycle: lifecycle?.state ?? 'active',
+      intakeAt: row.intake_at,
       intakeBatchId: draft.version === 'job-case-extraction-v2' ? draft.intakeBatchId ?? null : null,
       cloudEligible: false
     })
@@ -407,13 +409,7 @@ export class JobCaseStore extends DomainStore {
     const state = this.database
       .prepare<[string], JobCaseReviewStateRow>('SELECT * FROM job_case_review_states WHERE review_id = ?')
       .get(validated.reviewId)
-    if (!state || state.status !== 'completed') throw new Error('Confirmed job case was not found.')
-    const activeCase = this.database
-      .prepare<[string], { id: string }>(
-        "SELECT id FROM job_cases WHERE source_review_id = ? AND status = 'active'"
-      )
-      .get(validated.reviewId)
-    if (!activeCase) throw new Error('Active job case was not found.')
+    if (!state) throw new Error('Job case was not found.')
     const changedAt = now.toISOString()
     const save = this.database.transaction(() => {
       this.database

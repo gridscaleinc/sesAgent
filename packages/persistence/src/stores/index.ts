@@ -1,3 +1,4 @@
+import { PersonnelStore } from './personnel-store'
 import type Database from 'better-sqlite3-multiple-ciphers'
 
 import { ActionRuntimeStore } from './action-runtime-store'
@@ -9,6 +10,7 @@ import { CandidateInterviewStore } from './candidate-interview-store'
 import { CandidateMatchStore } from './candidate-match-store'
 import { CandidateStore } from './candidate-store'
 import { GmailStore } from './gmail-store'
+import { JobCaseSeenStore } from './job-case-seen-store'
 import { JobCaseStore } from './job-case-store'
 import { LocalSettingsStore } from './local-settings-store'
 import { MaintenanceStore } from './maintenance-store'
@@ -39,6 +41,7 @@ export function createStoreRegistry(options: {
   }
 
   const stores: StoreRegistry = {
+    personnel: new PersonnelStore(context),
     actionRuntime: new ActionRuntimeStore(context),
     agentConversations: new AgentConversationStore(context),
     broadcast: new BroadcastStore(context),
@@ -47,6 +50,7 @@ export function createStoreRegistry(options: {
     candidateMatch: new CandidateMatchStore(context),
     candidates: new CandidateStore(context),
     gmail: new GmailStore(context),
+    jobCaseSeen: new JobCaseSeenStore(context),
     jobCases: new JobCaseStore(context),
     localSettings: new LocalSettingsStore(context),
     maintenance: new MaintenanceStore(context),

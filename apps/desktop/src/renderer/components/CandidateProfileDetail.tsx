@@ -242,6 +242,7 @@ export function CandidateProfileDetail({
     graduationDate: candidate.localIdentity?.graduationDate ?? '',
     degree: candidate.localIdentity?.degree ?? ''
   }))
+  const [draftOwnCompany, setDraftOwnCompany] = useState<boolean | null>(candidate.isOwnCompany ?? null)
   const [draftFields, setDraftFields] = useState<Record<CandidateFieldKey, string>>(() =>
     Object.fromEntries(candidate.fields.map((field) => [field.key, field.value ?? ''])) as Record<CandidateFieldKey, string>
   )
@@ -283,6 +284,7 @@ export function CandidateProfileDetail({
   const projectsReadyToSave = draftProjects.every((project) => project.title.trim().length > 0 && project.summary.trim().length > 0)
 
   const resetDraft = (nextCandidate = candidate) => {
+    setDraftOwnCompany(nextCandidate.isOwnCompany ?? null)
     setDraftIdentity({
       displayName: nextCandidate.localIdentity?.displayName ?? '',
       gender: nextCandidate.localIdentity?.gender ?? '',
@@ -323,6 +325,7 @@ export function CandidateProfileDetail({
       const result = await onUpdateCandidate({
         sourceDocumentId: candidate.sourceDocumentId,
         expectedVersion: candidate.version,
+        isOwnCompany: draftOwnCompany,
         identity: {
           displayName: normalize(draftIdentity.displayName),
           gender: normalize(draftIdentity.gender),
@@ -485,6 +488,7 @@ export function CandidateProfileDetail({
             <section>
               <header><span>{t('STANDARD PROFILE')}</span><h2>{t('人材プロフィール項目')}</h2><p>{t('すべて任意です。未入力の項目は空欄のまま保存できます。')}</p></header>
               <div className="candidate-profile-edit-grid">
+                <label>{t('自社所属')}<select aria-label={t('自社所属')} value={draftOwnCompany === null ? '' : String(draftOwnCompany)} onChange={(event) => setDraftOwnCompany(event.target.value === '' ? null : event.target.value === 'true')}><option value="">{t('未設定')}</option><option value="true">{t('自社')}</option><option value="false">{t('非自社')}</option></select></label>
                 {candidate.fields.map((field) => <label className={field.key === 'skills' ? 'is-wide' : undefined} key={field.key}>{t(field.label)}{field.key === 'skills'
                   ? <textarea aria-label={t(field.label)} maxLength={500} onChange={(event) => setDraftFields((current) => ({ ...current, [field.key]: event.target.value }))} value={draftFields[field.key] ?? ''} />
                   : field.key === 'work_authorization'
@@ -515,6 +519,7 @@ export function CandidateProfileDetail({
             <section className="profile-overview-section">
               <h2>{t('候補者概要')}</h2>
               <div className="candidate-local-contact-card">
+                <div><span>{t('自社所属')}</span><strong>{candidate.isOwnCompany === true ? t('自社') : candidate.isOwnCompany === false ? t('非自社') : t('未設定')}</strong></div>
                 <div><span>{t('姓名')}</span><strong>{candidate.localIdentity?.displayName || t('未設定')}</strong></div>
                 <div><span>{t('性別')}</span><strong>{candidate.localIdentity?.gender || t('未設定')}</strong></div>
                 <div><span>{t('生年月')}</span><strong>{candidate.localIdentity?.birthDate || t('未設定')}</strong></div>

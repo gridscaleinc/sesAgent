@@ -66,6 +66,7 @@ function review(overrides: Partial<JobCaseReviewSnapshot> = {}): JobCaseReviewSn
 
 function dependencies(overrides: Partial<Record<string, unknown>> = {}): BroadcastIpcDependencies & {
   repository: Record<string, ReturnType<typeof vi.fn>>
+  openExternal: ReturnType<typeof vi.fn>
 } {
   const repository = {
     getJobCaseReview: vi.fn(() => review()),
@@ -84,7 +85,8 @@ function dependencies(overrides: Partial<Record<string, unknown>> = {}): Broadca
   return {
     repository: repository as unknown as EncryptedApplicationRepository & Record<string, ReturnType<typeof vi.fn>>,
     currentOperator: () => ({ operatorId: 'operator-1', displayName: 'HR' }),
-    assertTrustedSender: vi.fn()
+    assertTrustedSender: vi.fn(),
+    openExternal: vi.fn().mockResolvedValue(undefined)
   } as never
 }
 
@@ -175,6 +177,41 @@ describe('broadcast IPC handlers', () => {
       templateId: builtInBroadcastTemplate().id, text: '【案件】<PERSON_NAME_001> 様の案件'
     })).toThrow(/person_name/u)
     expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
+  })
+
+  it('opens a recipient-free mailto composer with the checked case subject and body', async () => {
+    const deps = dependencies()
+    registerBroadcastHandlers(deps)
+    const body = '【案件】Java 案件\n必須：Java & Spring Boot\nbcc=本文の一部'
+
+    await expect(invoke(ipcChannels.openCaseBroadcastEmail, {
+      reviewId, lang: 'ja', kind: 'new',
+      templateId: builtInBroadcastTemplate().id, text: body,
+      recipient: 'untrusted@example.invalid', bcc: 'hidden@example.invalid', url: 'https://example.invalid/'
+    })).resolves.toEqual({ opened: true })
+
+    expect(deps.openExternal).toHaveBeenCalledTimes(1)
+    const openedUrl = String(deps.openExternal.mock.calls[0]![0])
+    expect(openedUrl).toContain('Java%20%E6%A1%88%E4%BB%B6')
+    expect(openedUrl).not.toContain('+')
+    const opened = new URL(openedUrl)
+    expect(opened.protocol).toBe('mailto:')
+    expect(opened.pathname).toBe('')
+    expect(opened.searchParams.get('subject')).toBe('【案件】Java 案件')
+    expect(opened.searchParams.get('body')).toBe(body)
+    expect(opened.searchParams.get('bcc')).toBeNull()
+    expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
+  })
+
+  it('blocks an unsafe mail body before the operating-system handler is opened', async () => {
+    const deps = dependencies()
+    registerBroadcastHandlers(deps)
+
+    await expect(invoke(ipcChannels.openCaseBroadcastEmail, {
+      reviewId, lang: 'ja', kind: 'new',
+      templateId: builtInBroadcastTemplate().id, text: '【案件】<PERSON_NAME_001> 様の案件'
+    })).rejects.toThrow(/person_name/u)
+    expect(deps.openExternal).not.toHaveBeenCalled()
   })
 
   it('refuses to record a copy of an unconfirmed case', () => {

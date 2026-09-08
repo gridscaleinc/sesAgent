@@ -1,10 +1,14 @@
 # SES Agent Desktop 文档总览
 
-<!-- ses-current-state package=0.1.0 schema=43 -->
+<!-- ses-current-state package=0.1.0 schema=46 -->
 
-> 文档版本：v0.41
-> 更新日期：2026-08-20
+> 文档版本：v0.42
+> 更新日期：2026-09-07
 > 状态：Agent-first Codex 式核心对话、用户输入复制/编辑分支重发、按完整 Turn 裁剪的受控上下文、会议链接本地隔离、typed block 本地交互、受控对话 Tool 与 A-01 两阶段 Cloud Review 已进入源码；本机回归与构建证据按各节口径分别记录。真实日文专家报告作为非阻断的质量/审计/发布准备度建议证据仍未完成，当前安装包、签名、公证与 Windows x64 实机证据也未完成
+
+产品原则：围绕“案件找人、人员找案件”让 HR 快捷完成业务，非必要不新增步骤。人员导入后即可推广与匹配，无需额外的推广资格、人才库或字段审核确认；资料修正在传统人员管理页面进行。
+
+默认入口是 Agent 工作台：先展示案件和人员的最新动态，底部显示紧凑操作栏，选中具体资料后展开带对象名称的 Agent 输入区；批量整理、人员推广与案件操作在右侧工作区展开。动态按资料版本记录已读，并提供独立的“稍后处理”，同一资料更新后重新显示为未读。实现范围见 [Agent 最新动态工作台](docs/implementation/agent-latest-workspace-v1.md)；基础整理与推广流程见 [信息整理与推广工作区 v1](docs/implementation/business-workbench-v1.md)。
 
 ## 1. 项目定义
 
@@ -36,7 +40,7 @@ SES Agent Desktop 是面向日本 SES 公司的桌面业务助手，服务对象
 | 本地 AI | 已实现本地 OCR、姓名候选、PII 检测/DLP、字段抽取、任务分类、固定版本多语 Embedding 与日文 Cross-Encoder 精排；小型生成式本地 LLM 仍只做质量 Spike |
 | 云端 AI | 已具备受管 AICommerce 接入层；未配置不发起网络请求，启用后也只能发送通过强制脱敏门的占位符载荷 |
 | 邮件处理 | 已确认 Google Workspace；使用 Gmail API，连接完成前支持粘贴邮件/导入 `.eml` |
-| 邮件发送 | 首版只生成并导出提案包，必须人工确认；不申请 Gmail Compose/Send 权限 |
+| 邮件发送 | 案件配信文可预填到系统默认邮件客户端，由 HR 确认收件人并最终发送；不申请 Gmail Compose/Send 权限，应用不声称邮件已发送 |
 | 团队协作 | 第二阶段增加轻量同步服务 |
 
 逻辑上仍保留“界面层、业务层、数据层”分层，但它们在第一阶段被打包到同一个桌面应用里，不再要求部署 FastAPI、Go 服务或独立 PostgreSQL。
@@ -115,7 +119,7 @@ SES Agent Desktop 是面向日本 SES 公司的桌面业务助手，服务对象
 8. 本地确定性 PII 引擎生成稳定占位符，独立 DLP 复检后才产生带品牌的 `RedactedPayload`；Cloud Gateway 还会检查持久化会话、策略、来源版本、哈希、有效期和 HTTPS Endpoint Allowlist。
 9. PDF.js、SheetJS、Mammoth 和 PostalMime 在一次一进程的 Parser Worker 中处理不可信文件；简历生成 `DocumentIR v1`，EML 只返回受限正文、哈希身份和非身份域名。
 10. Parser Worker 不继承应用密钥或 Provider 环境变量，并安装 Node 网络拒绝守卫；宏、公式和外部链接不执行、不加载。
-11. 解析结果、PII 映射、候选人/案件字段草稿、案件字段别名、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Assessment、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话、紹介文模板/案件配信复制记录和备份修订状态持久化到当前 Schema v43；应用重启后仍能恢复。
+11. 解析结果、PII 映射、候选人/案件字段草稿、案件字段别名、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Assessment、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话、紹介文模板/案件配信复制记录、案件既読状態和备份修订状态持久化到当前 Schema v46；应用重启后仍能恢复。
 12. macOS 原生 Helper 使用 Apple Vision 在本地处理扫描 PDF，输出文字、置信度、坐标、人脸和条码候选区域；进程由系统沙箱禁止联网，原 PDF 不进入云端。
 13. Apple Natural Language 处理其可靠覆盖的英文姓名；日文姓名采用保守标签/形式规则生成候选，所有姓名候选都必须人工确认，不把当前实现包装成已经达到发布质量的日文 NER。
 14. 技能、经验年数、稼动时间、单价、日语等级、工作方式和角色由确定性本地提取器生成草稿；每个字段显示置信度和页码/Sheet/Cell 来源，缺失项保持 `null`。
@@ -280,19 +284,23 @@ npm run test:dmg:mac
 
 正式发布使用 `npm run release:mac`。该命令先检查 Developer ID Application 身份、`notarytool`、原生 Helper 架构与 macOS 13 deployment target、ICNS，以及以下三种公证凭据之一，再构建签名/公证 DMG 与 ZIP：App Store Connect API Key 三件套、Apple ID/App-specific password/Team ID 三件套，或 `APPLE_KEYCHAIN_PROFILE`。凭据只能通过本机 Keychain 或 CI Secret 注入，不写入仓库。当前机器未配置 Developer ID 和公证凭据，所以正式发布门仍为未通过。
 
-Google Workspace 读权限在线验收需要管理员在 Google Cloud 中启用 Gmail API、创建 Desktop App OAuth Client。普通试点设备可在“数据与承认 → Google Workspace → 管理者设置”中填写 Client ID、公司域和同步范围；配置加密写入 SQLCipher，保存后重启生效。集中受管设备仍可通过以下运行环境注入配置，环境值优先且在应用内只读；值不得提交到仓库：
+Google 邮箱在线连接采用面向外部用户的产品级 OAuth：软件厂商在 Google Cloud 中启用 Gmail API、创建并维护一个 Desktop OAuth Client，并完成正式发行所需的品牌与 `gmail.readonly` 受限范围审核。普通 HR 不进入 Google Cloud，也不填写 API、Client ID、域名、Label、关键词、密钥或令牌；只在应用内点击“连接 Google 邮箱”，在 Google 系统浏览器中选择个人 Gmail 或任意由 Google Workspace 托管的公司邮箱并同意只读授权。Google 为 Desktop Client 同时签发 Client ID 与 Client Secret；桌面应用属于公共客户端，该 Secret 无法作为真正机密，但当前 Google Token 端点要求提交，因此由软件厂商在构建时一并注入，绝不要求 HR 输入。同步范围使用下列有界默认值：
 
 ```bash
 SES_GOOGLE_OAUTH_CLIENT_ID="...apps.googleusercontent.com" \
-SES_GOOGLE_WORKSPACE_DOMAIN="company.example.jp" \
-SES_GMAIL_LABEL_IDS="INBOX,Label_SES" \
-SES_GMAIL_QUERY="案件 OR 要員" \
+SES_GOOGLE_OAUTH_CLIENT_SECRET="<desktop-client-secret>" \
+SES_GMAIL_LABEL_IDS="INBOX" \
+SES_GMAIL_QUERY="案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画" \
 SES_GMAIL_LOOKBACK_DAYS="30" \
 SES_GMAIL_MAX_MESSAGES_PER_RUN="200" \
-npm run dev
+npm run pack:mac:dir
 ```
 
-应用内和受管环境都没有 Client Secret 配置路径；Desktop App 是公共客户端，Token 交换只发送 Client ID、PKCE 和授权码。OAuth Token 不写入 SQLCipher/恢复包，只由 OS `safeStorage` 保护。未配置 OAuth 时 UI 保持“管理者设置待ち”，不会启动登录或尝试 Gmail 网络访问。同步范围要求 Label ID 与关键词同时存在；关键词只支持用 `OR` 分隔的业务词，不接受 `from:` 等 Gmail 操作符。默认初回取得 30 天、每轮最多 200 封，硬上限 500 封。
+应用内没有 HR 可见的 Client ID 或 Client Secret 配置路径；Token 交换发送 Client ID、构建时注入的 Desktop Client Secret、PKCE 和一次性授权码。Desktop Client Secret 不进入 SQLCipher、Renderer、恢复包或日志；OAuth Token 同样不写入 SQLCipher/恢复包，只由 OS `safeStorage` 保护。公开发行版本不设置 `SES_GOOGLE_WORKSPACE_DOMAIN`，因此同一个 Client ID 可连接个人 Gmail 和不同客户的 Workspace 邮箱；该环境变量只保留给必须限制单一域名的私有发行版。构建未注入 Client ID 时，UI 说明该版本未内置 Google 邮箱连接并阻止登录，不尝试 Gmail 网络访问。默认同步 `INBOX`、上述案件业务词、初回 30 天、每轮最多 200 封，硬上限 500 封；产品管理员仍可用环境变量收窄范围。关键词只支持用 `OR` 分隔的业务词，不接受 `from:` 等 Gmail 操作符。
+
+公司 Workspace 管理策略可能阻止第三方 OAuth 应用。遇到这种情况，普通 HR 不需要配置 Google Cloud，而是由该公司的 Workspace 管理员按产品帮助文档提供的 OAuth Client ID，一次性将本产品设为允许访问 `gmail.readonly`。非 Google 托管邮箱不走此连接器：Microsoft 365 / Outlook 需要独立的 Microsoft OAuth 连接器，其他邮箱的 IMAP 接入留待后续需求验证。
+
+Google OAuth 对外主页、三语隐私政策和利用条款源码位于 `apps/oauth-public-site/`。该站点目前只完成本地构建，尚未公开部署：`gridscale.com` 的 DNS 与 Google Search Console 权限不在当前操作者手中，因此不能把未经域名所有者授权的地址登记为 OAuth Authorized Domain。公开前还必须确认 `gridscale` 是否为客户合同中使用的完整法定运营主体名称。
 
 ### AICommerce 会员与 Cloud AI（受管配置）
 

@@ -43,6 +43,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:business-workbench": "node scripts/run-electron-tsx.mjs scripts/verify-business-workbench.ts",
     "test:persistence": "node scripts/run-electron-tsx.mjs scripts/verify-persistence.ts",
     "test:schema-upgrade": "node scripts/run-electron-tsx.mjs scripts/verify-schema-v22-upgrade.ts",
     "test:schema-v37-agent": "node scripts/run-electron-tsx.mjs scripts/verify-schema-v37-agent-upgrade.ts",

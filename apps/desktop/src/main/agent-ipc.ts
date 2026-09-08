@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import {
   AgentExecutionError,
+  isCandidateCaseRequest,
+  isSpecificCandidateFitRequest,
   loadAgentChatModelCatalog,
   LocalAgentUseCase,
   resolveAgentChatModel,
@@ -16,7 +18,7 @@ import {
 } from '@agent'
 import { candidateBenchmarkQueryFromJobCase } from '@job-cases'
 import type { JobCaseFieldAliasMap } from '@shared/contracts'
-import { candidateSearchTerms, scorableCandidateSearchTerms } from '@resume'
+import { candidateSearchTerms, scorableCandidateSearchTerms, searchConfirmedCandidateProfiles } from '@resume'
 import { hashActionInput, type ActionContext, type ActionOrchestrator } from '@action-runtime'
 import type { MatchRuntimeIdentity } from '@matching'
 import type { EncryptedApplicationRepository } from '@persistence'
@@ -37,6 +39,7 @@ import {
 } from '@shared'
 import { isUnassessableMatchCard } from '@shared'
 import type { AgentCandidateDraftFacts, AgentCloudReviewOutcome, AgentCloudReviewSkipCode, AgentJobCaseBroadcastCard, AgentTurnTimings, CandidateMatchAssessment } from '@shared'
+import { deriveNewCaseDigest } from './job-case-digest'
 import { matchAssessmentShortlistSize, type AgentActiveWorkspaceEvidence, type AgentNarrativeStreamer } from './agent-cloud-narrative'
 import { deriveBroadcastQueue } from './broadcast-workspace'
 import {
@@ -65,7 +68,7 @@ export interface AgentIpcDependencies {
   locale(): ApplicationLocale
   currentOperator(): { operatorId: string; displayName: string }
   currentMatchRuntimeIdentity: MatchRuntimeIdentity
-  createMatchTask(jobCaseId: string, jobCaseVersion: number): { taskId: string }
+  createMatchTask(jobCaseId: string, jobCaseVersion: number, candidateDocumentId?: string): { taskId: string }
   runCandidateMatchTask(taskId: string, metadata: AgentToolExecutionMetadata): Promise<AgentMatchTaskResult>
   cancelMatchTask(taskId: string): void
   /** Runs the existing local resume analysis for one staged file. */
@@ -77,6 +80,8 @@ export interface AgentIpcDependencies {
   /** Writes one interview through the same repository path the manual form uses. */
   /** How many candidates can hold an interview, so the planner knows one exists. */
   listSchedulableCandidates?(): Array<{ anonymousLabel: string; sourceDocumentId: string }>
+  /** 今日新着案件 counts, from the same digest the home card and the rail badge read. */
+  newCaseDigestCounts?(): { newCasesToday: number; unseenCaseCount: number }
   /** Records an import against the conversation it happened in. */
   registerConversationImport?(conversationId: string, sourceDocumentId: string): void
   /** Operator aliases for job-case field labels; the local router honours them. */
@@ -397,6 +402,32 @@ function buildActiveWorkspaceEvidence(
     }
   }
 
+  if (access.destination === 'new-cases') {
+    // The morning board: today's arrivals, the same derivation the card uses.
+    const digest = deriveNewCaseDigest({
+      reviews: deps.repository.listJobCaseReviews(),
+      seenReviewIds: deps.repository.listSeenJobCaseReviewIds(),
+      now: new Date()
+    })
+    return {
+      destination: access.destination,
+      data: {
+        newCasesToday: digest.newCasesToday,
+        unseenCount: digest.unseenCount,
+        cases: digest.groups.flatMap((group) => group.entries.map((entry) => ({
+          day: group.day,
+          title: boundedWorkspaceText(entry.title, 240),
+          status: entry.status,
+          unseen: entry.unseen,
+          highlights: entry.highlights.map((highlight) => ({
+            key: highlight.key,
+            value: boundedWorkspaceText(highlight.value, 200)
+          }))
+        }))).slice(0, 12)
+      }
+    }
+  }
+
   if (access.destination === 'broadcast') {
     // Counts only. What a broadcast says is written on this device and never
     // becomes part of a cloud narrative projection. Where a copied message was
@@ -474,8 +505,10 @@ function agentRequestFingerprint(input: ReturnType<typeof executeAgentTurnInputS
   return createHash('sha256').update(JSON.stringify({
     conversationId: input.conversationId,
     message: input.message,
+    intakeOnly: input.intakeOnly ?? false,
     expectedConversationRevision: input.expectedConversationRevision,
     modelKey: input.modelKey,
+    selectedCandidateDocumentId: input.selectedCandidateDocumentId,
     selectedJobCaseRef: input.selectedJobCaseRef,
     activeSystemAccess: input.activeSystemAccess ?? null,
     attachmentFileTokens: input.attachmentFileTokens ?? [],
@@ -735,7 +768,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         if (!card) continue
         const assessment: CandidateMatchAssessment = {
           version: 'match-assessment-v1',
-          fit: verdict.fit,
+          fit: card.hardFilterStatus === 'failed' ? 'weak' : verdict.fit,
           met: verdict.met,
           gaps: verdict.gaps,
           confirm: verdict.confirm,
@@ -846,8 +879,8 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         : null
       const context = actionContext(metadata, scopeId, scopeFingerprint, actorId, persistedConversationId)
       if (toolName === 'candidate.match.local') {
-        const input = rawInput as { jobCaseId: string; jobCaseVersion: number }
-        const task = deps.createMatchTask(input.jobCaseId, input.jobCaseVersion)
+        const input = rawInput as { jobCaseId: string; jobCaseVersion: number; candidateDocumentId?: string }
+        const task = deps.createMatchTask(input.jobCaseId, input.jobCaseVersion, input.candidateDocumentId)
         const active = activeTurns.get(metadata.conversationId)
         if (active?.requestId === metadata.requestId) active.taskId = task.taskId
         let execution: AgentMatchTaskResult
@@ -865,6 +898,9 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           throw new AgentExecutionError('AGENT_TOOL_FAILED', '候选人匹配工具执行失败。', null)
         }
         if (active?.cancelled) throw new AgentExecutionError('TURN_CANCELLED', '当前案件匹配操作已取消。')
+        if (input.candidateDocumentId && execution.matches.some((match) => match.sourceDocumentId !== input.candidateDocumentId)) {
+          throw new AgentExecutionError('AGENT_TOOL_FAILED', '匹配结果超出所选人员范围，请重新评估。')
+        }
         const cards: AgentCandidateMatchRecord[] = execution.matches.map((match, index) => ({
           candidateProfileId: match.id,
           sourceDocumentId: match.sourceDocumentId,
@@ -1106,6 +1142,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
       try {
         if (toolName === 'job-case.search.local') {
           const input = action.input as {
+            candidateDocumentId?: string
             mode: 'recent' | 'by-id'
             caseId?: string | null
             query?: string | null
@@ -1113,7 +1150,13 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             updatedBefore?: string | null
             limit: number
           }
-          const source = deps.repository.listActiveJobCases().map(safeJobCaseRecord)
+          const profile = input.candidateDocumentId ? deps.repository.listEligibleTalentProfiles().find((item) => item.sourceDocumentId === input.candidateDocumentId) : null
+          if (input.candidateDocumentId && !profile) throw new Error('所选人员尚未确认或已停用，请先核对人员资料。')
+          const source = deps.repository.listActiveJobCases().map((jobCase) => ({ jobCase,
+            match: profile ? searchConfirmedCandidateProfiles([profile], candidateBenchmarkQueryFromJobCase(jobCase), 1)[0] : null
+          })).filter((item) => !profile || (item.match && item.match.matchedTerms.length > 0))
+            .sort((a, b) => profile ? (b.match?.matchScore ?? 0) - (a.match?.matchScore ?? 0) : 0)
+            .map((item) => safeJobCaseRecord(item.jobCase))
           const filtered = source.filter((record) => {
             if (input.mode === 'by-id') return record.id === input.caseId
             const after = input.updatedAfter ? new Date(input.updatedAfter).getTime() : Number.NEGATIVE_INFINITY
@@ -1322,8 +1365,15 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
       // The local intake gate runs BEFORE any cloud dependency: pasted business
       // text must never enter the planning projection or its DLP gate, and a
       // local import must keep working when the cloud is unavailable.
+      if (input.intakeOnly && !deps.executeBusinessTextIntake) {
+        throw new Error('业务信息整理服务当前不可用，请稍后重试。')
+      }
       if (deps.executeBusinessTextIntake) {
         const intakeDecision = routeBusinessText(input.message, { aliases: deps.jobCaseFieldAliases?.() ?? {} })
+        if (input.intakeOnly && intakeDecision.route === 'not-intake') {
+          intakeDecision.route = 'ambiguous-sensitive'
+          intakeDecision.reason = 'structure-without-type'
+        }
         if (intakeDecision.route !== 'not-intake') {
           emit(state, { type: 'started', phase: 'local-tool' })
           const result = await deps.executeBusinessTextIntake(useCase, input, intakeDecision, {
@@ -1359,7 +1409,19 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         .map((token) => deps.previewedDrafts?.get(token))
         .filter((draft): draft is AgentCandidateDraftFacts => Boolean(draft))
       const planningConversation = useCase.loadPlanningConversation(input)
-      const activeWorkspaceEvidence = buildActiveWorkspaceEvidence(input.activeSystemAccess, deps)
+      const selectedCandidateDocumentId = input.selectedCandidateDocumentId !== undefined ? input.selectedCandidateDocumentId
+        : planningConversation?.salesAgentState?.selectedCandidateDocumentId ?? null
+      const pairRequest = isSpecificCandidateFitRequest(input.message)
+      const reverseRequest = isCandidateCaseRequest(input.message) && !pairRequest
+      if ((pairRequest || reverseRequest) && !selectedCandidateDocumentId) {
+        emit(state, { type: 'completed' })
+        return useCase.saveDirectAnswer(input, deps.locale() === 'zh-CN'
+          ? '请先打开要评估的人员资料，明确当前人员后再匹配案件。当前没有指定人员，无法确定“他”是谁。'
+          : '評価対象の人材を先に開いてください。現在、人材が指定されていません。')
+      }
+      const activeWorkspaceEvidence = buildActiveWorkspaceEvidence(selectedCandidateDocumentId
+        ? { type: 'system-access', destination: 'candidate', sourceDocumentId: selectedCandidateDocumentId, view: 'overview' }
+        : input.activeSystemAccess, deps)
       const emitDelta = (delta: string) => {
         if (state.cancelled) return
         if (!state.streamingStarted) {
@@ -1379,6 +1441,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         }
       }
 
+      const newCaseCounts = deps.newCaseDigestCounts?.() ?? { newCasesToday: 0, unseenCaseCount: 0 }
       emit(state, { type: 'started', phase: 'planning' })
       const planningStartedAt = performance.now()
       state.timings.cloudCalls += 1
@@ -1395,6 +1458,8 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           attachmentCount: state.attachmentFileTokens.length,
           conversationImportCount: (deps.listConversationImports?.(input.conversationId) ?? []).length,
           schedulableCandidateCount: (deps.listSchedulableCandidates?.() ?? []).length,
+          newCasesToday: newCaseCounts.newCasesToday,
+          unseenCaseCount: newCaseCounts.unseenCaseCount,
           attachmentDrafts: turnAttachmentDrafts(),
           model,
           signal: state.abortController.signal,
@@ -1434,6 +1499,11 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         )
       }
 
+      if (selectedCandidateDocumentId && (pairRequest || reverseRequest)) {
+        plan = { kind: 'tool', action: pairRequest
+          ? { toolName: 'candidate.match.local', arguments: { ordinal: null } }
+          : { toolName: 'job-case.search.local', arguments: { operation: 'search', query: null, recent: false } } }
+      }
       state.timings.planningMs = Math.round(performance.now() - planningStartedAt)
       // PII-free plan visibility: which workspace was open and what the cloud chose.
       console.info('[agent-plan-debug]', {
@@ -1467,6 +1537,8 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             conversation: planningConversation,
             selectedJobCaseRef: input.selectedJobCaseRef ?? null,
             activeWorkspaceEvidence,
+            newCasesToday: newCaseCounts.newCasesToday,
+            unseenCaseCount: newCaseCounts.unseenCaseCount,
             attachmentDrafts: turnAttachmentDrafts(),
             model,
             signal: state.abortController.signal,
@@ -1504,6 +1576,45 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           })
           return useCase.saveDirectAnswer(input, 'AI 回答生成失败，请重试。', undefined, 'failed')
         }
+      }
+
+      if (plan.action.toolName === 'job-case.conversation-import.local') {
+        // The operator asked to record text they pasted earlier. Main re-reads
+        // it from the conversation locally; the answer lane can never write.
+        const zh = deps.locale() === 'zh-CN'
+        const priorText = [...(planningConversation?.messages ?? [])]
+          .reverse()
+          .find((message) => message.role === 'user' && message.content.trim().length >= 40
+            && !message.content.startsWith('【已提交') && !message.content.includes('を送信】'))
+          ?.content ?? null
+        if (!priorText || !deps.executeBusinessTextIntake) {
+          emit(state, { type: 'completed' })
+          return useCase.saveDirectAnswer(input, zh
+            ? '在这个对话里没有找到可登记的业务文本。请把案件原文直接粘贴进来，我会立即导入。'
+            : 'この会話には登録できる業務テキストが見つかりませんでした。案件の原文をそのまま貼り付けてください。すぐに取り込みます。', undefined, 'completed')
+        }
+        emit(state, { type: 'started', phase: 'local-tool' })
+        const routed = routeBusinessText(priorText, { aliases: deps.jobCaseFieldAliases?.() ?? {} })
+        // The operator's request IS the declaration: a prose paste the router
+        // left alone still imports as a job case.
+        const decision = routed.route === 'not-intake' || routed.route === 'ambiguous-sensitive'
+          ? { ...routed, route: 'job-case' as const, reason: 'declared-job-case' as const }
+          : routed
+        const result = await deps.executeBusinessTextIntake(useCase, input, decision, {
+          signal: state.abortController.signal,
+          onCloudLaneStarted: () => emit(state, { type: 'started', phase: 'connecting-model' }),
+          onClientRequestId: (clientRequestId) => markRemoteRequestStarted(state, clientRequestId),
+          onRemoteSettled: () => markRemoteRequestSettled(state)
+        })
+        if (result.status === 'failed') {
+          emit(state, {
+            type: 'failed', code: 'AGENT_INTAKE_FAILED',
+            message: '本地业务文本导入失败，原文未写入会话。', localFallbackPreserved: true
+          })
+        } else {
+          emit(state, { type: 'completed' })
+        }
+        return result
       }
 
       state.streamingStarted = false

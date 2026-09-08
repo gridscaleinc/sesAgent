@@ -45,10 +45,11 @@ const labelLinePattern = /^([\s　■●▼▲★◆◇□○◎・*+=~〜|｜>�
 
 /** Rewrites "alias：value" to "built-in label：value"; other lines pass through untouched. */
 export function canonicalizeJobCaseLabelLine(line: string, aliases: JobCaseFieldAliasMap): string {
-  const match = labelLinePattern.exec(line)
-  if (!match) return line
+  const normalizedLine = line.replace(/^\s*【([^】]{1,40})】\s*[:：]?\s*/u, '$1：')
+  const match = labelLinePattern.exec(normalizedLine)
+  if (!match) return normalizedLine
   const key = canonicalJobCaseFieldForLabel(match[2]!, aliases)
-  if (!key) return line
+  if (!key) return normalizedLine
   return `${match[1]}${jobCaseFieldCanonicalLabels[key]}${match[3]}${match[4]}`
 }
 

@@ -39,7 +39,7 @@ export interface PrivacyPolicySummary {
 }
 
 export interface ContextBinding {
-  objectType: 'staged-file' | 'candidate-pool' | 'gmail-message' | 'job-case'
+  objectType: 'staged-file' | 'candidate-profile' | 'candidate-pool' | 'gmail-message' | 'job-case'
   objectId: string
   version: string
 }

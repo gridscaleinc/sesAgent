@@ -77,7 +77,7 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.connectGoogleWorkspace, async (event): Promise<GoogleWorkspaceState> => {
     assertTrustedSender(event)
     if (!googleWorkspace) {
-      throw new Error('Google Workspace OAuth Client ID と会社ドメインの管理者設定が必要です。')
+      throw new Error('このビルドには Google OAuth Client ID が組み込まれていません。')
     }
     return googleWorkspace.connectReadonly()
   })
@@ -96,7 +96,7 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
     async (event): Promise<GoogleWorkspaceOnlineAcceptanceReport> => {
       assertTrustedSender(event)
       if (!googleWorkspace || !googleWorkspaceConfiguration || !gmailSyncConfig) {
-        throw new Error('Google Workspace の管理者設定と読取専用接続が必要です。')
+        throw new Error('製品の Google 接続設定と読取専用接続が必要です。')
       }
       const state = await googleWorkspace.getState()
       if (state.status !== 'readonly' || !state.accountEmail) {
@@ -159,8 +159,8 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
    * trail, and the immediate case intake.
    */
   const startGmailSync = (): Promise<GmailSyncState> => {
-    if (!googleWorkspace) throw new Error('Google Workspace OAuth の管理者設定が必要です。')
-    if (!gmailSyncConfig) throw new Error('Gmail Label・Query・回溯期間の管理者設定が必要です。')
+    if (!googleWorkspace) throw new Error('このビルドには Google OAuth Client ID が組み込まれていません。')
+    if (!gmailSyncConfig) throw new Error('このビルドには Gmail 同期範囲が組み込まれていません。')
     if (gmailSyncInFlight) return gmailSyncInFlight
     const configurationFingerprint = createHash('sha256').update(JSON.stringify(gmailSyncConfig)).digest('hex')
     const actionRunId = preflightAction('gmail.sync.read', {

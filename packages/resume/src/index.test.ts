@@ -220,6 +220,17 @@ describe('extractCandidateDraft', () => {
     expect(draft.fields.find((item) => item.key === 'availability')?.value).toBe('8月から参画可能')
   })
 
+  it('extracts labeled chat availability dates without adding an unstated date', () => {
+    const document: DocumentIR = {
+      version: 'document-ir-v1', documentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
+      source: { name: 'chat.pdf', format: 'pdf', sha256: 'd'.repeat(64), size: 512 },
+      blocks: [{ id: 'line1', kind: 'text', text: '稼働：2026年10月', source: { page: 1 } }],
+      warnings: [], requiresLocalOcr: false, statistics: { pages: 1, sheets: 0, blocks: 1, characters: 12 },
+      security: { externalContentLoaded: false, macrosExecuted: false, rawFileCloudEligible: false }
+    }
+    expect(extractCandidateDraft(document).fields.find((f) => f.key === 'availability')?.value).toBe('2026年10月')
+  })
+
   it('reads an anonymous chat profile whose labels are padded brackets', () => {
     // The shape a WeChat broadcast uses for a person with no name: a gender and
     // age header, then 【…】 labels padded for alignment. The rate is masked in
@@ -392,6 +403,16 @@ describe('searchConfirmedCandidateProfiles', () => {
     confirmedBy: '山田 太郎',
     containsDirectIdentifiers: false
   }
+
+  it('keeps failed and zero-match evidence only for an explicit one-person evaluation', () => {
+    expect(searchConfirmedCandidateProfiles([baseProfile], 'Java 8年以上')).toEqual([])
+    const explicit = searchConfirmedCandidateProfiles([baseProfile], 'Java 8年以上', 1, undefined, undefined, true)
+    expect(explicit).toHaveLength(1)
+    expect(explicit[0]!.sourceDocumentId).toBe(baseProfile.sourceDocumentId)
+    expect(explicit[0]!.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')).toBe(true)
+    expect(searchConfirmedCandidateProfiles([baseProfile], 'Rust')).toEqual([])
+    expect(searchConfirmedCandidateProfiles([baseProfile], 'Rust', 1, undefined, undefined, true)[0]!.matchedTerms).toEqual([])
+  })
 
   it('accepts personal-data metadata for encrypted local candidate profiles', () => {
     expect(candidateProfileSchema.parse({ ...baseProfile, containsDirectIdentifiers: true }).containsDirectIdentifiers).toBe(true)

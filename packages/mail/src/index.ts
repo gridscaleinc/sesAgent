@@ -72,7 +72,8 @@ export interface GoogleWorkspaceCredentialStore {
 
 export interface AuthorizationCodeRequest {
   clientId: string
-  workspaceDomain: string
+  /** Optional hosted-domain hint/restriction for private deployments. */
+  workspaceDomain: string | null
   scopes: [typeof gmailReadonlyScope]
   state: string
   codeChallenge: string
@@ -111,7 +112,7 @@ export function buildGoogleAuthorizationUrl(
   url.searchParams.set('code_challenge_method', 'S256')
   url.searchParams.set('access_type', 'offline')
   url.searchParams.set('prompt', 'consent')
-  url.searchParams.set('hd', request.workspaceDomain)
+  if (request.workspaceDomain) url.searchParams.set('hd', request.workspaceDomain)
   return url.toString()
 }
 
@@ -269,7 +270,7 @@ export async function diagnoseGoogleWorkspaceReadiness(options: {
       id: 'configuration',
       status: configuration ? 'passed' : 'failed',
       label: '管理者設定',
-      detail: configuration ? 'Client ID・会社ドメイン・同期範囲を暗号化設定から読み込みました。' : 'Google Workspace 管理者設定を保存してください。'
+      detail: configuration ? '製品の Client ID と有界同期範囲を読み込みました。' : 'このビルドには Google OAuth Client ID が組み込まれていません。'
     },
     {
       id: 'desktop-client-format',
@@ -311,7 +312,7 @@ export async function diagnoseGoogleWorkspaceReadiness(options: {
       id: 'admin-console-confirmation',
       status: 'warning',
       label: 'Google Cloud 管理者確認',
-      detail: 'Gmail API 有効化、OAuth Client 種別 Desktop、社内向け同意画面は Google Cloud Console で確認してください。'
+      detail: 'Gmail API、Desktop OAuth Client、外部向け同意画面と gmail.readonly の審査状態を製品管理者が確認してください。'
     }
   ]
   return {
@@ -327,7 +328,10 @@ export async function diagnoseGoogleWorkspaceReadiness(options: {
 
 export interface GoogleWorkspaceOAuthConfig {
   clientId: string
-  workspaceDomain: string
+  /** Desktop OAuth clients are public clients; Google may still require this value at the token endpoint. */
+  clientSecret?: string
+  /** Null in the public product; set only to restrict a private distribution. */
+  workspaceDomain: string | null
 }
 
 export interface GoogleWorkspaceOAuthDependencies {
@@ -340,7 +344,7 @@ export interface GoogleWorkspaceOAuthDependencies {
 export interface GoogleWorkspaceLiveVerification {
   checkedAt: string
   grantedScopes: string[]
-  companyDomainVerified: true
+  accountIdentityVerified: true
   mailboxMetadataAccessed: true
   messageContentAccessed: false
 }
@@ -352,6 +356,29 @@ const tokenResponseSchema = z.object({
   scope: z.string().min(1).max(4_096).optional(),
   token_type: z.literal('Bearer')
 })
+
+const oauthErrorResponseSchema = z.object({
+  error: z.string().regex(/^[a-z_]{1,64}$/u),
+  error_description: z.string().max(2_000).optional()
+}).passthrough()
+
+async function oauthErrorCode(response: Response): Promise<string> {
+  try {
+    const parsed = oauthErrorResponseSchema.safeParse(await response.json())
+    if (!parsed.success) return 'provider_error'
+    const description = parsed.data.error_description ?? ''
+    const parameter = [
+      ['client_secret', /client[_ ]secret/iu],
+      ['code_verifier', /code[_ ]verifier|code[_ ]challenge/iu],
+      ['redirect_uri', /redirect[_ ]uri/iu],
+      ['client_id', /client[_ ]id/iu],
+      ['missing_parameter', /missing|required parameter/iu]
+    ].find(([, pattern]) => (pattern as RegExp).test(description))?.[0]
+    return parameter ? `${parsed.data.error}/${parameter}` : parsed.data.error
+  } catch {
+    return 'provider_error'
+  }
+}
 
 const gmailProfileSchema = z.object({
   emailAddress: z.string().email().max(254),
@@ -370,8 +397,14 @@ function assertReadonlyScopes(scopes: string[]): void {
 
 const googleWorkspaceOAuthConfigSchema = z.object({
   clientId: googleWorkspaceOAuthClientIdSchema,
-  workspaceDomain: googleWorkspaceDomainSchema
+  clientSecret: z.string().min(8).max(512).optional(),
+  workspaceDomain: googleWorkspaceDomainSchema.nullable()
 }).strict()
+
+function accountDomain(emailAddress: string): string {
+  const separator = emailAddress.lastIndexOf('@')
+  return googleWorkspaceDomainSchema.parse(emailAddress.slice(separator + 1))
+}
 
 function assertLoopbackRedirectUri(value: string): string {
   const url = new URL(value)
@@ -404,7 +437,7 @@ export class GoogleWorkspaceOAuthClient {
       await this.dependencies.credentialStore.clear()
       return this.disconnectedState()
     }
-    if (credential.workspaceDomain !== this.config.workspaceDomain) {
+    if (this.config.workspaceDomain && credential.workspaceDomain !== this.config.workspaceDomain) {
       await this.dependencies.credentialStore.clear()
       return this.disconnectedState()
     }
@@ -440,14 +473,17 @@ export class GoogleWorkspaceOAuthClient {
     if (profile.emailAddress.toLocaleLowerCase('en-US') !== credential.accountEmail.toLocaleLowerCase('en-US')) {
       throw new Error('Gmail account changed after authorization.')
     }
-    const expectedSuffix = `@${this.config.workspaceDomain.toLocaleLowerCase('en-US')}`
-    if (!profile.emailAddress.toLocaleLowerCase('en-US').endsWith(expectedSuffix)) {
+    const profileDomain = accountDomain(profile.emailAddress)
+    if (profileDomain !== credential.workspaceDomain) {
+      throw new Error('Google account domain changed after authorization.')
+    }
+    if (this.config.workspaceDomain && profileDomain !== this.config.workspaceDomain) {
       throw new Error('Google account no longer belongs to the configured Workspace domain.')
     }
     return {
       checkedAt: (this.dependencies.now?.() ?? new Date()).toISOString(),
       grantedScopes: [...credential.scopes],
-      companyDomainVerified: true,
+      accountIdentityVerified: true,
       mailboxMetadataAccessed: true,
       messageContentAccessed: false
     }
@@ -472,6 +508,7 @@ export class GoogleWorkspaceOAuthClient {
       refresh_token: credential.refreshToken,
       grant_type: 'refresh_token'
     })
+    if (this.config.clientSecret) body.set('client_secret', this.config.clientSecret)
     const response = await this.dependencies.fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -480,7 +517,7 @@ export class GoogleWorkspaceOAuthClient {
     if (!response.ok) {
       if (response.status === 400 || response.status === 401) {
         await this.dependencies.credentialStore.clear()
-        throw new Error('Google Workspace authorization expired or was revoked. Reconnect the company account.')
+        throw new Error('Google authorization expired or was revoked. Reconnect the Google account.')
       }
       throw new Error(`Google access token refresh failed (${response.status}).`)
     }
@@ -538,12 +575,15 @@ export class GoogleWorkspaceOAuthClient {
       grant_type: 'authorization_code',
       redirect_uri: redirectUri
     })
+    if (this.config.clientSecret) body.set('client_secret', this.config.clientSecret)
     const response = await this.dependencies.fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body
     })
-    if (!response.ok) throw new Error(`Google authorization code exchange failed (${response.status}).`)
+    if (!response.ok) {
+      throw new Error(`Google authorization code exchange failed (${response.status}: ${await oauthErrorCode(response)}).`)
+    }
     const token = tokenResponseSchema.parse(await response.json())
     if (!token.refresh_token) throw new Error('Google did not return an offline refresh token.')
     const scopes = (token.scope ?? gmailReadonlyScope).split(/\s+/u).filter(Boolean)
@@ -553,10 +593,13 @@ export class GoogleWorkspaceOAuthClient {
     const profileResponse = await this.dependencies.fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
       headers: { authorization: `Bearer ${token.access_token}` }
     })
+    if (profileResponse.status === 403) {
+      throw new Error('Gmail の読取権限を取得できませんでした。個人アカウントは Gmail が有効な Google アカウントを使用してください。会社アカウントは Workspace 管理者に本製品の許可を依頼してください。')
+    }
     if (!profileResponse.ok) throw new Error(`Gmail profile verification failed (${profileResponse.status}).`)
     const profile = gmailProfileSchema.parse(await profileResponse.json())
-    const expectedSuffix = `@${this.config.workspaceDomain.toLocaleLowerCase('en-US')}`
-    if (!profile.emailAddress.toLocaleLowerCase('en-US').endsWith(expectedSuffix)) {
+    const profileDomain = accountDomain(profile.emailAddress)
+    if (this.config.workspaceDomain && profileDomain !== this.config.workspaceDomain) {
       throw new Error(`Google account must belong to ${this.config.workspaceDomain}.`)
     }
     const now = this.dependencies.now?.() ?? new Date()
@@ -567,7 +610,7 @@ export class GoogleWorkspaceOAuthClient {
       expiresAt: new Date(now.getTime() + token.expires_in * 1000).toISOString(),
       scopes,
       accountEmail: profile.emailAddress,
-      workspaceDomain: this.config.workspaceDomain,
+      workspaceDomain: profileDomain,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     })
@@ -893,7 +936,8 @@ export function redactGmailMessageForLocalStorage(
 export class GmailReadClient {
   constructor(
     private readonly accessToken: (forceRefresh?: boolean) => Promise<string>,
-    private readonly fetchImpl: typeof fetch
+    private readonly fetchImpl: typeof fetch,
+    private readonly requestTimeoutMs = 20_000
   ) {}
 
   async getProfile(): Promise<z.infer<typeof gmailProfileSchema>> {
@@ -978,13 +1022,15 @@ export class GmailReadClient {
     let token = await this.accessToken(false)
     let response = await this.fetchImpl(`https://gmail.googleapis.com${path}`, {
       method: 'GET',
-      headers: { authorization: `Bearer ${token}`, accept: 'application/json' }
+      headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+      signal: AbortSignal.timeout(this.requestTimeoutMs)
     })
     if (response.status === 401) {
       token = await this.accessToken(true)
       response = await this.fetchImpl(`https://gmail.googleapis.com${path}`, {
         method: 'GET',
-        headers: { authorization: `Bearer ${token}`, accept: 'application/json' }
+        headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+        signal: AbortSignal.timeout(this.requestTimeoutMs)
       })
     }
     if (!response.ok) throw new GmailApiError(response.status, path)
@@ -1104,10 +1150,10 @@ export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
       detail: exactReadonlyScope ? '付与 Scope は gmail.readonly のみです。' : 'gmail.readonly 以外の Scope が含まれています。再接続してください。'
     },
     {
-      id: 'company-domain',
+      id: 'account-identity',
       status: 'passed',
-      label: '会社 Workspace ドメイン',
-      detail: 'オンラインのアカウント所属ドメインが管理設定と一致しました。アドレスは報告に保存しません。'
+      label: 'Google アカウント本人確認',
+      detail: '保存済みの接続先とオンラインの Gmail アカウントが一致しました。アドレスは報告に保存しません。'
     },
     {
       id: 'credential-protection',

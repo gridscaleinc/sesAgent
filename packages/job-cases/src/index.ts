@@ -1,3 +1,4 @@
+import { requiresOwnCompany } from '@shared'
 import { z } from 'zod'
 import {
   jobCaseFieldKeys,
@@ -342,7 +343,8 @@ export function candidateBenchmarkQueryFromJobCase(jobCase: ConfirmedJobCase): s
     .filter((item) => item.length >= 2 && !item.includes('"'))
     .slice(0, 8)
     .map((item) => `"尚可:${item}"`)
-  return [...new Set([...values, ...preferred])].join(' ').slice(0, 500)
+  const ownOnly = jobCase.fields.some((field) => field.key !== 'preferred_skills' && field.value && requiresOwnCompany(field.value))
+  return [...new Set([...(ownOnly ? ['自社限定'] : []), ...values, ...preferred])].join(' ').slice(0, 500)
 }
 
 const piiPlaceholderPattern = /<(?:PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/gu

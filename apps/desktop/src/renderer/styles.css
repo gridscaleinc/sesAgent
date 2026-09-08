@@ -11382,6 +11382,19 @@ body,
   line-height: 1.5;
 }
 
+.google-data-disclosure {
+  margin-top: 12px;
+}
+
+.google-data-disclosure > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.google-data-disclosure span span {
+  display: block;
+}
+
 .privacy-settings-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -16997,6 +17010,15 @@ body,
 .agent-context-panel-header button { border: 0; cursor: pointer; }
 .agent-context-panel-close { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; color: #344964; font-size: 24px; font-weight: 300; line-height: 1; background: transparent; border-radius: 8px; }
 .agent-context-panel-close:hover { background: #f0f3f7; }
+.agent-context-panel-board { display: inline-flex; align-items: center; gap: 5px; margin-right: 4px; padding: 6px 10px; color: #23405f; font-size: 10px; font-weight: 640; background: #eef4fb; border: 1px solid #cfe0f3; border-radius: 8px; cursor: pointer; }
+.agent-context-panel-board:hover { background: #e2ecf8; }
+.agent-open-board { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding: 6px 11px; color: #23405f; font-size: 10px; font-weight: 640; background: #fff; border: 1px solid #cfe0f3; border-radius: 999px; cursor: pointer; }
+.agent-open-board:hover { background: #f4f8fd; }
+.broadcast-focused-bar { display: flex; align-items: center; gap: 9px; padding: 9px 12px; background: #f7fafd; border: 1px solid #dfe9f4; border-radius: 10px; }
+.broadcast-focused-bar strong { flex: 1; min-width: 0; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.broadcast-focused-bar button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; color: #23405f; font-size: 10px; font-weight: 640; background: #fff; border: 1px solid #cfe0f3; border-radius: 999px; cursor: pointer; }
+.broadcast-focused-bar button b { color: #4a6076; font-weight: 640; }
+.agent-open-board b { min-width: 17px; padding: 1px 5px; color: #fff; font-size: 9px; text-align: center; background: #d1543f; border-radius: 999px; }
 .agent-context-connected {
   display: inline-flex;
   flex: 0 1 auto;
@@ -17379,3 +17401,36 @@ body,
 .broadcast-settings-actions > button.is-primary { color: #fff; background: #2469c7; border-color: #2469c7; }
 .broadcast-settings-actions > button:disabled { cursor: not-allowed; opacity: .55; }
 .broadcast-settings-actions small { color: #267257; font-size: 9px; }
+
+.new-case-digest { width: 100%; margin: 0 0 14px; padding: 12px 13px; text-align: left; background: #fff; border: 1px solid #dde5ef; border-radius: 13px; box-shadow: 0 6px 20px rgba(46, 103, 174, .06); }
+.new-case-digest > header { display: flex; align-items: center; gap: 8px; }
+.new-case-digest > header strong { color: #2d4562; font-size: 12px; font-weight: 720; }
+.new-case-digest-mark { display: grid; place-items: center; width: 26px; height: 26px; color: #2d6dbd; background: #eaf3ff; border-radius: 8px; }
+.new-case-digest-unseen { margin-left: auto; padding: 2px 8px; color: #b23b32; font-size: 9px; font-weight: 700; background: #fdeceb; border-radius: 999px; }
+.new-case-digest-empty { margin: 9px 0 0; color: #7e8da0; font-size: 10px; line-height: 1.6; }
+.new-case-digest-group { margin-top: 11px; }
+.new-case-digest-group h3 { display: flex; align-items: baseline; gap: 7px; margin: 0 0 6px; color: #49657f; font-size: 10px; font-weight: 700; }
+.new-case-digest-group h3 small { color: #8a99aa; font-size: 9px; font-weight: 560; }
+.new-case-digest-group ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.new-case-digest-row { display: grid; gap: 5px; padding: 9px 10px; background: #fbfcfe; border: 1px solid #e4eaf2; border-radius: 10px; }
+.new-case-digest-row.is-unseen { background: #f6faff; border-color: #c9dcf3; }
+.new-case-digest-row-head { display: flex; align-items: center; min-width: 0; gap: 6px; }
+.new-case-digest-row-head strong { overflow: hidden; color: #2f4055; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.new-case-digest-row-head time { margin-left: auto; color: #9aa7b7; font-size: 9px; }
+.new-case-digest-source { flex: 0 0 auto; padding: 2px 6px; color: #3a6ba8; font-size: 8px; font-weight: 700; background: #eaf3ff; border-radius: 5px; }
+.new-case-digest-new { flex: 0 0 auto; padding: 1px 6px; color: #fff; font-size: 8px; font-weight: 700; background: #d0483d; border-radius: 999px; }
+.new-case-digest-fields { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; color: #667d97; font-size: 9px; line-height: 1.5; }
+.new-case-digest-fields span { display: inline-flex; gap: 4px; }
+.new-case-digest-fields small { color: #9aa7b7; font-size: 8px; }
+.new-case-digest-row-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.new-case-digest-chip { margin-right: auto; padding: 2px 7px; color: #8a6d3b; font-size: 8.5px; font-weight: 640; background: #fff8ea; border-radius: 999px; }
+.new-case-digest-chip.is-ready { color: #267257; background: #e9f6ef; }
+.new-case-digest-row-foot button { min-height: 24px; padding: 3px 9px; color: #315476; font-size: 9px; font-weight: 660; background: #fff; border: 1px solid #cdd9e7; border-radius: 7px; cursor: pointer; }
+.new-case-digest-row-foot button.is-primary { color: #fff; background: #2469c7; border-color: #2469c7; }
+.agent-system-rail-badge { position: absolute; top: 12px; right: 14px; min-width: 16px; padding: 1px 4px; color: #fff; font-size: 8px; font-weight: 720; line-height: 1.5; text-align: center; background: #d0483d; border-radius: 999px; }
+.app-toasts { position: fixed; top: 18px; right: 18px; z-index: 60; display: grid; gap: 8px; }
+.app-toast { display: flex; align-items: center; gap: 8px; padding: 9px 13px; color: #23405f; font-size: 10px; font-weight: 640; background: #fff; border: 1px solid #cfe0f3; border-radius: 10px; box-shadow: 0 10px 28px rgba(31, 35, 43, .14); cursor: pointer; text-align: left; }
+.job-case-list-day { display: flex; align-items: baseline; gap: 6px; margin: 10px 0 2px; color: #8a99aa; font-size: 9px; font-weight: 700; }
+.job-case-list-day:first-child { margin-top: 0; }
+.job-case-list-day small { color: #a9b5c3; font-size: 8px; font-weight: 560; }
+.job-case-list-new { padding: 1px 5px; color: #fff; font-size: 8px; font-weight: 700; background: #d0483d; border-radius: 999px; }

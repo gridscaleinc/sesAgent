@@ -1,6 +1,6 @@
 # SES Agent Desktop 技术架构
 
-<!-- ses-current-state package=0.1.0 schema=43 -->
+<!-- ses-current-state package=0.1.0 schema=46 -->
 
 > 版本：v0.7
 > 目标：无需业务服务器即可交付安全、可恢复、可演进的桌面 MVP
@@ -503,6 +503,7 @@ sequenceDiagram
 3. 首次连接只申请 `gmail.readonly`；应用内只查询配置的 Label、时间窗口和业务搜索条件。该 Scope 属于 Restricted，Phase 0 必须确认 Google OAuth Verification、内部/外部应用类型和安全评估要求。
 4. 当前网络方法 Allowlist 是 GET-only，仅允许 `users.getProfile`、`users.messages.list/get` 和 `users.history.list`。Draft create/get/update、Send、Modify、Delete 和 Thread 读取均不在运行时白名单中。
 5. 若未来产品决定创建 Gmail 草稿，必须作为新的版本和权限评审重新实现。`gmail.compose` 同时允许发送，不是真正的 Draft-only Scope；Google Desktop Installed App 也不支持增量授权，因此不能通过配置开关把当前只读凭据升级。MVP 不申请 `gmail.compose`、`gmail.modify`、`gmail.send`、`https://mail.google.com/`、删除邮件、修改标签/规则或 Domain-wide Delegation。
+6. 案件配信文的邮件交接不经过 Gmail API：Main 对确认案件、模板和最终正文重新执行本地 DLP 后，构造无收件人的 `mailto:`，通过系统默认邮件客户端预填主题与正文。Renderer 不能传入协议或 URL；打开编辑器不记为已发送，收件人与最终发送由 HR 在邮件客户端确认。
 
 ### 11.2 增量同步
 

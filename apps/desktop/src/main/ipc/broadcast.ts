@@ -7,12 +7,14 @@ import {
   draftCaseUpdateNoticeInputSchema,
   ipcChannels,
   jobCaseReviewIdSchema,
+  openCaseBroadcastEmailInputSchema,
   recordCaseBroadcastCopyInputSchema,
   updateBroadcastTemplateInputSchema,
   type BroadcastWorkspace,
   type CaseBroadcastHistoryEntry,
   type DraftCaseBroadcastResult,
   type DraftCaseUpdateNoticeResult,
+  type OpenCaseBroadcastEmailResult,
   type RecordCaseBroadcastCopyResult
 } from '@shared'
 import {
@@ -20,6 +22,7 @@ import {
   draftCaseUpdateNotice,
   loadBroadcastWorkspace,
   loadCaseBroadcastHistory,
+  prepareCaseBroadcastEmail,
   recordCaseBroadcastCopy
 } from '../broadcast-service'
 
@@ -32,6 +35,7 @@ export interface BroadcastIpcDependencies {
   repository: EncryptedApplicationRepository
   currentOperator(): { operatorId: string; displayName: string }
   assertTrustedSender(event: IpcMainInvokeEvent): void
+  openExternal(url: string): Promise<void>
 }
 
 /**
@@ -60,6 +64,13 @@ export function registerBroadcastHandlers(dependencies: BroadcastIpcDependencies
   ipcMain.handle(ipcChannels.recordCaseBroadcastCopy, (event, rawInput): RecordCaseBroadcastCopyResult => {
     assertTrustedSender(event)
     return recordCaseBroadcastCopy(repository, currentOperator(), recordCaseBroadcastCopyInputSchema.parse(rawInput))
+  })
+
+  ipcMain.handle(ipcChannels.openCaseBroadcastEmail, async (event, rawInput): Promise<OpenCaseBroadcastEmailResult> => {
+    assertTrustedSender(event)
+    const prepared = prepareCaseBroadcastEmail(repository, openCaseBroadcastEmailInputSchema.parse(rawInput))
+    await dependencies.openExternal(prepared.mailtoUrl)
+    return { opened: true }
   })
 
   ipcMain.handle(ipcChannels.listCaseBroadcasts, (event, rawReviewId): CaseBroadcastHistoryEntry[] => {

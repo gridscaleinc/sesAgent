@@ -1,4 +1,6 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -10,6 +12,7 @@ import {
   type ReactNode
 } from 'react'
 import type {
+  CandidateReviewSnapshot,
   ImportAtsCsvCandidatesResult,
   JobCaseDeletionPreview,
   DeleteJobCaseDataResult,
@@ -34,7 +37,7 @@ import type {
   ExecuteAgentTurnInput,
   TypedAiConversationReference
 } from '@shared'
-import { isUnassessableMatchCard } from '@shared'
+import { isUnassessableMatchCard, reviewMatchAssessmentEvidence } from '@shared'
 import { copyTextToClipboard } from '../copy-text'
 import { useUiLocale } from '../i18n'
 import { Icon, type IconName } from './Icon'
@@ -43,11 +46,22 @@ import { AgentMarkdown } from './AgentMarkdown'
 import { MatchAssessmentView } from './MatchAssessmentView'
 import { useAiConversationHistory } from './useAiConversationHistory'
 
+const CandidateNamesContext = createContext<ReadonlyMap<string, string>>(new Map())
+
 interface AgentWorkspaceProps {
+  candidateReviews?: ReadonlyArray<CandidateReviewSnapshot>
+  composerObject?: { kind: 'case' | 'person'; label: string; onMatch?(): void; onPromote?(): void }
+  latestContent?: ReactNode
+  homeRequestToken?: number
+  contextPanelOpen?: boolean
+  focusRequest?: { id: number; caseReference: TypedAiConversationReference | null; candidateDocumentId?: string }
+  onOpenBatch?(text?: string): void
   activeSystemAccess?: AgentSystemAccessBlock | null
   composerDraft?: string
   contextPanel?: ReactNode
   contextPanelLabel?: string
+  newCaseUnseenCount?: number
+  onOpenNewCaseBoard?(): void
   onCloseContextPanel?(): void
   onComposerDraftChange?(value: string): void
   onOpenMatching(jobCaseId: string): void
@@ -100,6 +114,7 @@ interface AgentWorkspaceProps {
   /** The governed deletion flow: impact preview first, typed confirmation second. */
   onPreviewJobCaseDeletion?(reviewId: string): Promise<JobCaseDeletionPreview>
   onDeleteJobCase?(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
+  /** 今日新着案件 for the conversation home; null while it is still loading. */
 }
 
 export interface AgentWorkspaceStatus {
@@ -276,8 +291,18 @@ function formatJstDateTime(value: string): string {
 }
 
 function MessageText({ message }: { message: AiConversationMessage }) {
+  const names = useContext(CandidateNamesContext)
+  const zh = useUiLocale() === 'zh-CN'
+  const cards = message.blocks?.flatMap((block) => block.type === 'candidate-match-cards' ? block.cards : []) ?? []
+  const content = message.content.replace(/\bCANDIDATE_(\d+)\b/gu, (label, rank) => {
+    const card = cards.find((item) => item.rank === Number(rank))
+    return card?.sourceDocumentId ? names.get(card.sourceDocumentId) ?? label : label
+  })
+  if (message.role === 'assistant' && cards.some((card) => card.assessment && reviewMatchAssessmentEvidence(card.assessment).corrected)) {
+    return <div><p>{zh ? '这条历史评估的依据需要核对，请以卡片中修正后的证据为准。' : 'この過去の評価には確認が必要です。カードの修正済み根拠を参照してください。'}</p><details><summary>{zh ? '查看原评估文字' : '元の評価文を表示'}</summary><AgentMarkdown content={content} /></details></div>
+  }
   return message.role === 'assistant'
-    ? <AgentMarkdown content={message.content} />
+    ? <AgentMarkdown content={content} />
     : <p className="agent-message-text">{message.content}</p>
 }
 
@@ -373,8 +398,8 @@ function CandidateMatchCardsView({ block, zh, currentCaseId, onOpenCandidate, on
   const note = block.cloudReview?.status === 'skipped'
     ? <p className="agent-cloud-review-note"><Icon name="alert" size={12} />{zh ? '云端评审未完成：' : 'クラウド評価は未実施：'}{cloudReviewSkipLabel(block.cloudReview.code, zh)}{block.cloudReview.reason ? <small>{block.cloudReview.reason}</small> : null}</p>
     : null
-  const cards = block.cards.map((card) => <CandidateCardView card={card} currentCaseId={currentCaseId} key={card.reference.objectId} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} zh={zh} />)
-  if (!noneAssessable) return <div className="agent-card-stack">{note}{cards}</div>
+  const cards = block.cards.map((card) => <CandidateCardView scoped={block.scope === 'selected-person'} card={card} currentCaseId={currentCaseId} key={card.reference.objectId} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} zh={zh} />)
+  if (!noneAssessable || block.scope === 'selected-person') return <div className="agent-card-stack">{note}{cards}</div>
   return (
     <div className="agent-card-stack agent-no-match">
       <p className="agent-no-match-summary"><Icon name="alert" size={13} />{zh ? '当前案件暂无可确认的匹配候选人。' : '現在の案件に確認できる候補者はいません。'}</p>
@@ -395,13 +420,15 @@ function cloudReviewSkipLabel(code: AgentCloudReviewSkipCode, zh: boolean): stri
   return zh ? '云端调用失败' : 'クラウド呼び出し失敗'
 }
 
-function CandidateCardView({ card, zh, onOpenCandidate, onOpenMatching, currentCaseId }: {
+function CandidateCardView({ card, scoped = false, zh, onOpenCandidate, onOpenMatching, currentCaseId }: {
   card: AgentCandidateMatchCard
+  scoped?: boolean
   zh: boolean
   onOpenCandidate?(sourceDocumentId: string): void
   onOpenMatching(jobCaseId: string): void
   currentCaseId: string | null
 }) {
+  const names = useContext(CandidateNamesContext)
   // Nothing matched and the hard filter could not decide: the candidate was
   // merely not excluded. Showing "#1 · Fit 0" would read as a recommendation.
   const unassessable = isUnassessableMatchCard(card)
@@ -417,13 +444,13 @@ function CandidateCardView({ card, zh, onOpenCandidate, onOpenMatching, currentC
   return (
     <article className={`agent-candidate-card is-${card.status}${unassessable ? ' is-unassessable' : ''}`}>
       <header>
-        <span className="agent-rank">{unassessable ? '—' : `#${card.rank}`}</span>
-        <div><h3>{card.anonymousLabel}</h3><small>{unassessable ? (zh ? '无匹配依据 · 无法评估' : '判定根拠なし・評価不能') : card.fitScore === null ? (zh ? 'Fit 未提供' : 'Fit unavailable') : `Fit ${card.fitScore}`}</small></div>
+        <span className="agent-rank">{scoped ? (zh ? '指定人员' : '指定人材') : unassessable ? '—' : `#${card.rank}`} </span>
+        <div><h3>{(card.sourceDocumentId && names.get(card.sourceDocumentId)) || card.anonymousLabel}</h3><small title={zh ? '用于本地检索排序，不是录用概率。' : '検索順位の指標です。採用確率ではありません。'}>{unassessable ? (zh ? '无匹配依据 · 无法评估' : '判定根拠なし・評価不能') : card.fitScore === null ? (zh ? '本地相关度未提供' : '関連度なし') : `${zh ? '本地相关度' : 'ローカル関連度'} ${card.fitScore}`}</small></div>
         <span className="agent-status-chip">{statusLabel(card.status, zh)}</span>
       </header>
       <div className="agent-candidate-facts">
         <span><strong>{zh ? '匹配' : 'Matched'}</strong>{card.matched.length > 0 ? card.matched.join(' · ') : '—'}</span>
-        <span><strong>{zh ? '不足' : '不足'}</strong>{card.missing.length > 0 ? card.missing.join(' · ') : (zh ? '未记录不足项' : '不足項目なし')}</span>
+        <span><strong>{card.hardFilterStatus === 'failed' ? (zh ? '未满足' : '不適合') : (zh ? '待核对' : '要確認')}</strong>{card.missing.length > 0 ? card.missing.join(' · ') : (zh ? '无待核对硬条件' : '確認が必要な必須条件なし')}</span>
         <span><strong>{zh ? '硬条件' : '必須条件'}</strong>{hardFilterLabel}</span>
         {card.projectEvidence ? <span><strong>{zh ? '项目证据' : 'プロジェクト根拠'}</strong>{card.projectEvidence}</span> : null}
       </div>
@@ -589,11 +616,12 @@ function draftOutcomeLabel(card: AgentJobCaseDraftCard, zh: boolean): string {
   return zh ? '待补充' : '要補完'
 }
 
-function JobCaseDraftCardsView({ block, zh, reviews, onOpenSystemAccess, onRunMatching, onPreviewJobCaseDeletion, onDeleteJobCase }: {
+function JobCaseDraftCardsView({ block, zh, reviews, onOpenSystemAccess, onRunMatching, matchingBusy, onPreviewJobCaseDeletion, onDeleteJobCase }: {
   block: Extract<AiConversationBlock, { type: 'job-case-draft-cards' }>
   zh: boolean
   reviews: ReadonlyArray<JobCaseReviewSnapshot>
   onOpenSystemAccess?(access: AgentSystemAccessBlock): void
+  matchingBusy?: boolean
   onRunMatching?(card: AgentJobCaseDraftCard): void
   onPreviewJobCaseDeletion?(reviewId: string): Promise<JobCaseDeletionPreview>
   onDeleteJobCase?(input: DeleteJobCaseDataInput): Promise<DeleteJobCaseDataResult>
@@ -646,7 +674,7 @@ function JobCaseDraftCardsView({ block, zh, reviews, onOpenSystemAccess, onRunMa
         {deleted ? null : <footer>
           <div className="agent-draft-actions">
             <button disabled={!onOpenSystemAccess} onClick={() => onOpenSystemAccess?.({ type: 'system-access', destination: 'case-review', reviewId: card.reviewId })} type="button">{card.reviewStatus === 'completed' ? (zh ? '查看 / 修改' : '表示・編集') : (zh ? '补充并生效' : '補完して有効化')}</button>
-            {card.jobCase && card.lifecycle === 'active' && onRunMatching ? <button className="is-primary" onClick={() => onRunMatching(card)} type="button"><Icon name="sparkles" size={12} />{zh ? '跑匹配' : '候補者を探す'}</button> : null}
+            {card.jobCase && card.lifecycle === 'active' && onRunMatching ? <button className="is-primary" disabled={matchingBusy} aria-busy={matchingBusy} onClick={() => onRunMatching(card)} type="button"><Icon name="sparkles" size={12} />{zh ? '跑匹配' : '候補者を探す'}</button> : null}
             {onPreviewJobCaseDeletion && onDeleteJobCase ? <button className="is-danger" disabled={Boolean(deletion?.busy) || Boolean(pendingDeletion)} onClick={() => void startDeletion(card)} type="button">{zh ? '删除' : '削除'}</button> : null}
           </div>
         </footer>}
@@ -677,9 +705,9 @@ function broadcastStatusLabel(status: AgentJobCaseBroadcastCard['status'], zh: b
 
 /**
  * One drafted message. The text is a snapshot of what the tool wrote: it is
- * copied and recorded exactly as generated, so the box is read-only and editing
- * happens in the 案件配信 screen, where a redraw re-runs the checks. Copying is
- * the whole action - where the operator pastes it is never asked or recorded.
+ * copied or handed to the default mail composer exactly as generated, so the
+ * box is read-only and editing happens in the 案件配信 screen, where a redraw
+ * re-runs the checks. Opening a composer never claims the message was sent.
  */
 function BroadcastCardView({ card, zh, onOpenSystemAccess }: {
   card: AgentJobCaseBroadcastCard
@@ -708,6 +736,29 @@ function BroadcastCardView({ card, zh, onOpenSystemAccess }: {
         text
       })
       setNotice(zh ? '已复制，可以去微信粘贴了。' : 'コピーしました。微信に貼り付けてください。')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const openEmail = async () => {
+    if (busy || forbidden.length > 0) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await window.sesAgent.openCaseBroadcastEmail({
+        reviewId: card.reviewId,
+        templateId: card.templateId,
+        lang,
+        kind: 'new',
+        text
+      })
+      setNotice(zh
+        ? '已打开默认邮件客户端。请确认收件人和正文后手动发送。'
+        : '既定のメールアプリを開きました。宛先と本文を確認して送信してください。')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -746,6 +797,11 @@ function BroadcastCardView({ card, zh, onOpenSystemAccess }: {
         onClick={() => void copy()}
         type="button"
       ><Icon name="copy" size={12} />{zh ? '复制' : 'コピーする'}</button>
+      <button
+        disabled={busy || forbidden.length > 0}
+        onClick={() => void openEmail()}
+        type="button"
+      ><Icon name="mail" size={12} />{zh ? '打开邮件' : 'メールを開く'}</button>
       <button
         disabled={!onOpenSystemAccess}
         onClick={() => onOpenSystemAccess?.({ type: 'system-access', destination: 'broadcast', reviewId: card.reviewId })}
@@ -938,7 +994,7 @@ function SystemAccessView({ block, zh, onOpen, onOpenCandidate }: {
   </article>
 }
 
-function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMatching, onOpenOriginalDocument, onOpenReviews, onOpenSystemAccess, onRunMatching, jobCaseReviews, onPreviewJobCaseDeletion, onDeleteJobCase, currentCaseId }: {
+function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMatching, onOpenOriginalDocument, onOpenReviews, onOpenSystemAccess, onRunMatching, matchingBusy, jobCaseReviews, onPreviewJobCaseDeletion, onDeleteJobCase, currentCaseId }: {
   block: AiConversationBlock
   locale: string
   zh: boolean
@@ -948,6 +1004,7 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
   onOpenOriginalDocument?(sourceDocumentId: string): void
   onOpenReviews?(): void
   onOpenSystemAccess?(access: AgentSystemAccessBlock): void
+  matchingBusy?: boolean
   onRunMatching?(card: AgentJobCaseDraftCard): void
   jobCaseReviews: ReadonlyArray<JobCaseReviewSnapshot>
   onPreviewJobCaseDeletion?(reviewId: string): Promise<JobCaseDeletionPreview>
@@ -955,7 +1012,7 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
   currentCaseId: string | null
 }) {
   if (block.type === 'text') return <p className="agent-block-text">{block.text}</p>
-  if (block.type === 'job-case-cards') return <div className="agent-card-stack">{block.cards.map((card) => <JobCaseCardView card={card} key={card.reference.objectId} onOpenMatching={onOpenMatching} onSelect={onSelectCase} zh={zh} />)}</div>
+  if (block.type === 'job-case-cards') return <div className="agent-card-stack">{block.cards.slice(0, 3).map((card) => <JobCaseCardView card={card} key={card.reference.objectId} onOpenMatching={onOpenMatching} onSelect={onSelectCase} zh={zh} />)}{block.cards.length > 3 ? <details><summary>{zh ? `展开其余 ${block.cards.length - 3} 个案件` : `残り ${block.cards.length - 3} 件を表示`}</summary>{block.cards.slice(3).map((card) => <JobCaseCardView card={card} key={card.reference.objectId} onOpenMatching={onOpenMatching} onSelect={onSelectCase} zh={zh} />)}</details> : null}</div>
   if (block.type === 'candidate-match-cards') return <CandidateMatchCardsView block={block} currentCaseId={currentCaseId} onOpenCandidate={onOpenCandidate ? (sourceDocumentId) => onOpenCandidate(sourceDocumentId, 'overview') : undefined} onOpenMatching={onOpenMatching} zh={zh} />
   if (block.type === 'candidate-profile-evidence') return <CandidateProfileEvidenceView block={block} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} zh={zh} />
   if (block.type === 'candidate-interview-evidence') return <CandidateInterviewEvidenceView block={block} locale={locale} onOpenCandidate={onOpenCandidate} zh={zh} />
@@ -966,7 +1023,7 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
   }
   if (block.type === 'resume-import') return <ResumeImportView block={block} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} onOpenReviews={onOpenReviews} zh={zh} />
   if (block.type === 'candidate-draft-facts') return <CandidateDraftFactsView facts={block.facts} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} onOpenReviews={onOpenReviews} zh={zh} />
-  if (block.type === 'job-case-draft-cards') return <JobCaseDraftCardsView block={block} onDeleteJobCase={onDeleteJobCase} onOpenSystemAccess={onOpenSystemAccess} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onRunMatching={onRunMatching} reviews={jobCaseReviews} zh={zh} />
+  if (block.type === 'job-case-draft-cards') return <JobCaseDraftCardsView matchingBusy={matchingBusy} block={block} onDeleteJobCase={onDeleteJobCase} onOpenSystemAccess={onOpenSystemAccess} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onRunMatching={onRunMatching} reviews={jobCaseReviews} zh={zh} />
   if (block.type === 'job-case-broadcast-cards') return <BroadcastCardsView block={block} onOpenSystemAccess={onOpenSystemAccess} zh={zh} />
   if (block.type === 'system-access') return <SystemAccessView block={block} onOpen={onOpenSystemAccess} onOpenCandidate={onOpenCandidate} zh={zh} />
   return <div className="agent-error-block" role="alert"><Icon name="alert" size={15} /><span>{userFacingAgentError(block.message, zh)}</span></div>
@@ -974,6 +1031,8 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
 
 interface AgentEmptyStateProps {
   cloudConnected: boolean
+  /** 今日新着案件, above everything else: it is what the operator opened the app for. */
+  lead?: ReactNode
   pendingReviewCount: number
   selectedCase: TypedAiConversationReference | null
   suggestions: string[]
@@ -989,6 +1048,7 @@ interface AgentEmptyStateProps {
 
 function AgentEmptyState({
   cloudConnected,
+  lead = null,
   pendingReviewCount,
   selectedCase,
   suggestions,
@@ -1020,6 +1080,7 @@ function AgentEmptyState({
           : '案件・人材・面談から始められます。AI は依頼を理解し、事実・実行・業務状態は制御済みローカル Tool と人のレビューが決定します。')
 
   return <div className="agent-empty-state">
+    {lead}
     <span className="agent-empty-mark"><Icon name={cloudConnected ? 'sparkles' : 'shield'} size={24} /></span>
     <h2>{title}</h2>
     <p>{description}</p>
@@ -1065,10 +1126,18 @@ function AgentEmptyState({
 }
 
 export function AgentWorkspace({
+  composerObject,
+  latestContent,
+  homeRequestToken = 0,
+  contextPanelOpen,
+  focusRequest,
+  onOpenBatch,
   activeSystemAccess = null,
   composerDraft,
   contextPanel,
   contextPanelLabel,
+  newCaseUnseenCount = 0,
+  onOpenNewCaseBoard,
   onCloseContextPanel,
   onComposerDraftChange,
   onOpenMatching,
@@ -1091,12 +1160,18 @@ export function AgentWorkspace({
   onOpenOperatorProfile,
   operatorLabel = 'SES',
   onLocalDataChanged,
+  candidateReviews = [],
   jobCaseReviews = [],
   onPreviewJobCaseDeletion,
-  onDeleteJobCase
+  onDeleteJobCase,
 }: AgentWorkspaceProps) {
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
+  const [surface, setSurface] = useState<'latest' | 'conversation'>(latestContent ? 'latest' : 'conversation')
+  const showContextPanel = contextPanelOpen ?? Boolean(contextPanel)
+  const contextualComposer = showContextPanel && surface === 'conversation' ? composerObject : undefined
+  const compactComposer = surface === 'latest'
+  useEffect(() => { if (latestContent) setSurface('latest') }, [homeRequestToken])
   const context = useMemo(() => ({
     assistant: 'sales-agent' as const,
     candidateDocumentId: null,
@@ -1135,6 +1210,30 @@ export function AgentWorkspace({
     conversationId: string
     reference: TypedAiConversationReference | null
   } | null>(null)
+  const candidateNames = useMemo(() => {
+    const sorted = [...candidateReviews].sort((a, b) => a.documentId.localeCompare(b.documentId))
+    const counts = new Map<string, number>()
+    for (const review of sorted) { const name = review.localIdentity?.displayName || review.fileName; counts.set(name, (counts.get(name) ?? 0) + 1) }
+    const ordinals = new Map<string, number>()
+    return new Map(sorted.map((review) => {
+      const name = review.localIdentity?.displayName || review.fileName
+      const ordinal = (ordinals.get(name) ?? 0) + 1; ordinals.set(name, ordinal)
+      return [review.documentId, (counts.get(name) ?? 0) > 1 ? `${name} · ${zh ? '资料' : '資料'} ${ordinal}` : name]
+    }))
+  }, [candidateReviews, zh])
+  const [candidateSelection, setCandidateSelection] = useState<{ conversationId: string; documentId: string | null } | null>(null)
+  const selectedCandidateDocumentId = candidateSelection?.conversationId === currentConversationId
+    ? candidateSelection.documentId : activeConversation?.salesAgentState?.selectedCandidateDocumentId ?? null
+  const selectedCandidateLabel = selectedCandidateDocumentId ? candidateNames.get(selectedCandidateDocumentId) ?? (zh ? '所选人员' : '選択中の人材') : null
+  const clearSelectedCandidate = () => {
+    setCandidateSelection({ conversationId: currentConversationId, documentId: null })
+    if (activeConversation?.salesAgentState) void history.persistSalesAgentState({ ...activeConversation.salesAgentState, selectedCandidateDocumentId: null })
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+  }
+  useEffect(() => {
+    if (focusRequest?.candidateDocumentId) setCandidateSelection({ conversationId: currentConversationId, documentId: focusRequest.candidateDocumentId })
+    if (focusRequest) setCaseSelection({ conversationId: currentConversationId, reference: focusRequest.caseReference })
+  }, [focusRequest])
   const persistedSelectedCase = typedReference(activeConversation?.salesAgentState?.selectedJobCaseRef)
   const selectedCase = caseSelection?.conversationId === currentConversationId
     ? caseSelection.reference
@@ -1177,6 +1276,7 @@ export function AgentWorkspace({
   const activeRequestRef = useRef<{ conversationId: string; requestId: string; sequence: number; stopRequested: boolean } | null>(null)
   const copyResetTimerRef = useRef<number | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const messageScrollRef = useRef<HTMLDivElement>(null)
   const currentConversationIdRef = useRef(currentConversationId)
   currentConversationIdRef.current = currentConversationId
@@ -1210,7 +1310,7 @@ export function AgentWorkspace({
   }, [])
 
   useEffect(() => {
-    if (!contextPanel || !onCloseContextPanel) return undefined
+    if (!showContextPanel || !onCloseContextPanel) return undefined
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
@@ -1218,7 +1318,7 @@ export function AgentWorkspace({
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [contextPanel, onCloseContextPanel])
+  }, [showContextPanel, onCloseContextPanel])
 
   const clampContextPanelWidth = (value: number): number => {
     const available = typeof window === 'undefined' ? 720 : Math.max(380, window.innerWidth - 690)
@@ -1432,7 +1532,7 @@ export function AgentWorkspace({
    * selection, so no separate state save races the turn's revision check.
    */
   const runMatchingForCase = (card: AgentJobCaseDraftCard) => {
-    if (!card.jobCase) return
+    if (!card.jobCase || activeRequestRef.current || pendingMessage || history.saving || attaching || importing) return
     const reference: TypedAiConversationReference = {
       kind: 'job-case',
       objectId: card.jobCase.id,
@@ -1460,7 +1560,7 @@ export function AgentWorkspace({
     clearComposer: boolean
     branchFrom?: ExecuteAgentTurnInput['branchFrom']
   }) => {
-    if (!message || pendingMessage || history.saving || attaching || importing) return
+    if (!message || activeRequestRef.current || pendingMessage || history.saving || attaching || importing) return
     const conversationId = options.conversationId
     const currentRequestId = newId()
     const lockedModelKey = selectedModelKey
@@ -1491,7 +1591,7 @@ export function AgentWorkspace({
         requestId: currentRequestId,
         modelKey: lockedModelKey,
         selectedJobCaseRef: options.selectedJobCaseRef,
-        ...(!options.branchFrom ? { activeSystemAccess } : {}),
+        ...(!options.branchFrom ? { activeSystemAccess, selectedCandidateDocumentId } : {}),
         attachmentFileTokens: options.attachmentFileTokens,
         ...(options.branchFrom ? { branchFrom: options.branchFrom } : {})
       })
@@ -1551,6 +1651,7 @@ export function AgentWorkspace({
         : `4,000文字を超えています（現在${message.length}文字）。1回の送信は案件または要員1件分だけにしてください。長い案件は「案件を取り込む」の専用貼り付けをご利用ください。`)
       return
     }
+    setSurface('conversation')
     await executeMessage(message, {
       conversationId: currentConversationId,
       expectedConversationRevision: activeConversation?.revision ?? null,
@@ -1644,9 +1745,9 @@ export function AgentWorkspace({
 
   useEffect(() => {
     const container = messageScrollRef.current
-    if (!container) return
+    if (!container || surface !== 'conversation') return
     container.scrollTop = container.scrollHeight
-  }, [history.messages.length, branchPreviewMessages?.length, pendingMessage, streamState?.content])
+  }, [history.messages.length, branchPreviewMessages?.length, pendingMessage, streamState?.content, surface])
 
   // Every suggestion maps to a capability the current allowlist can resolve.
   // A selected case unlocks matching-specific prompts; without one, the Agent
@@ -1670,7 +1771,7 @@ export function AgentWorkspace({
       : selectedCase
         ? selectedCase.label
         : activeConversation?.title ?? (zh ? '新任务' : '新しいタスク')
-  const hasBusinessContext = Boolean(selectedCase || workspaceContext.candidateLabel || workspaceContext.resultLabel)
+  const hasBusinessContext = Boolean(selectedCase || selectedCandidateDocumentId)
   const deleteConversationThreads = async (conversationIds: string[]) => {
     const selectedRoots = new Set(conversationIds.map((conversationId) => {
       const conversation = history.conversations.find((item) => item.id === conversationId)
@@ -1687,13 +1788,13 @@ export function AgentWorkspace({
   const workspaceClassName = [
     'agent-workspace',
     historyOpen ? 'is-history-open' : '',
-    contextPanel ? 'has-context-panel' : ''
+    showContextPanel ? 'has-context-panel' : ''
   ].filter(Boolean).join(' ')
-  const workspaceStyle = contextPanel
+  const workspaceStyle = showContextPanel
     ? { '--agent-context-panel-width': `${contextPanelWidth}px` } as CSSProperties
     : undefined
 
-  return <main aria-label="SES Agent" className={workspaceClassName} style={workspaceStyle}>
+  return <CandidateNamesContext.Provider value={candidateNames}><main aria-label="SES Agent" className={workspaceClassName} style={workspaceStyle}>
     <aside className={historyOpen ? 'agent-workspace-history is-open' : 'agent-workspace-history'}>
       <AiConversationHistoryPanel
         activeConversationId={history.activeConversationId}
@@ -1703,6 +1804,7 @@ export function AgentWorkspace({
         loading={history.loading}
         onDelete={deleteConversationThreads}
         onNew={() => {
+          setSurface('conversation')
           onCloseContextPanel?.()
           const nextConversationId = newId()
           currentConversationIdRef.current = nextConversationId
@@ -1716,6 +1818,7 @@ export function AgentWorkspace({
           setHistoryOpen(false)
         }}
         onSelect={(id) => {
+          setSurface('conversation')
           onCloseContextPanel?.()
           currentConversationIdRef.current = id
           history.selectConversation(id)
@@ -1749,23 +1852,29 @@ export function AgentWorkspace({
         <button aria-label={zh ? '打开任务列表' : 'タスク一覧を開く'} className="agent-history-toggle" onClick={() => setHistoryOpen(true)} type="button"><Icon name="tasks" size={16} /></button>
         <div className="agent-thread-title">
           <h1>SES Agent</h1>
-          <strong>{threadTitle}</strong>
+          <strong>{surface === 'latest' ? (zh ? '最新动态' : '最新情報') : selectedCase ? (selectedCandidateDocumentId ? (zh ? '人员与案件评估' : '人材と案件の評価') : (zh ? '案件助手' : '案件アシスタント')) : threadTitle}</strong>
         </div>
         <span className="agent-privacy-badge" title={zh ? 'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态' : 'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'}><Icon name="shield" size={13} />{zh ? '仅发送脱敏内容' : '脱敏済みのみ送信'}</span>
+        {!latestContent && !showContextPanel && onOpenNewCaseBoard ? <button className="agent-open-board" onClick={onOpenNewCaseBoard} type="button"><Icon name="briefcase" size={13} /><span>{zh ? '今日新案件' : '今日の新着案件'}</span>{newCaseUnseenCount > 0 ? <b>{newCaseUnseenCount}</b> : null}</button> : null}
       </header>
-      {hasBusinessContext ? <nav aria-label={zh ? '当前任务上下文' : '現在のタスクコンテキスト'} className="agent-context-bar">
+      {latestContent ? <nav className="agent-surface-tabs" aria-label={zh ? 'Agent 工作区' : 'Agentワークスペース'}>
+        <button aria-pressed={surface === 'latest'} onClick={() => setSurface('latest')} type="button"><Icon name="clock" size={14} />{zh ? '最新动态' : '最新情報'}</button>
+        <button aria-pressed={surface === 'conversation'} onClick={() => setSurface('conversation')} type="button"><Icon name="sparkles" size={14} />{zh ? '当前对话' : '現在の会話'}</button>
+        {onOpenBatch ? <button onClick={() => onOpenBatch()} type="button"><Icon name="upload" size={14} />{zh ? '批量整理' : '一括整理'}</button> : null}
+      </nav> : null}
+      {hasBusinessContext && surface === 'conversation' ? <nav aria-label={zh ? '当前任务上下文' : '現在のタスクコンテキスト'} className="agent-context-bar">
         <div className="agent-context-entities">
           {selectedCase ? <span><Icon name="briefcase" size={16} /><small>{zh ? '案件' : '案件'}</small><strong>{selectedCase.label}{selectedCase.objectVersion ? ` v${selectedCase.objectVersion}` : ''}</strong><button aria-label={zh ? '清除当前案件' : '現在の案件を解除'} disabled={history.saving} onClick={clearSelectedCase} type="button">×</button></span> : null}
-          {workspaceContext.candidateLabel ? <span><Icon name="users" size={16} /><small>{zh ? '候选人' : '候補者'}</small><strong>{workspaceContext.candidateLabel}</strong></span> : null}
-          {workspaceContext.resultLabel ? <span><Icon name="check" size={16} /><strong>{workspaceContext.resultLabel}</strong></span> : null}
+          {selectedCandidateDocumentId ? <span><Icon name="users" size={16} /><small>{zh ? '人员' : '人材'}</small><strong>{selectedCandidateLabel}</strong><button aria-label={zh ? '清除当前人员' : '現在の人材を解除'} disabled={history.saving} onClick={clearSelectedCandidate} type="button">×</button></span> : <small>{zh ? '匹配范围：全部可匹配人员' : '対象：マッチング可能な全人材'}</small>}
         </div>
         <div className="agent-context-links">
           {selectedCase && onOpenCases ? <button onClick={onOpenCases} type="button">{zh ? '打开案件' : '案件を開く'}</button> : null}
-          {workspaceContext.candidateDocumentId && onOpenCandidate ? <button onClick={() => onOpenCandidate(workspaceContext.candidateDocumentId!, 'resume')} type="button">{zh ? '打开简历' : '履歴書を開く'}</button> : null}
+          {selectedCandidateDocumentId && onOpenCandidate ? <button onClick={() => onOpenCandidate(selectedCandidateDocumentId, 'resume')} type="button">{zh ? '打开简历' : '履歴書を開く'}</button> : null}
           {!workspaceContext.candidateDocumentId && workspaceContext.latestAccess && onOpenSystemAccess ? <button onClick={() => onOpenSystemAccess(workspaceContext.latestAccess!)} type="button">{zh ? '打开结果' : '結果を開く'}</button> : null}
         </div>
       </nav> : null}
-      <div className="agent-message-scroll" aria-live="polite" ref={messageScrollRef}>
+      {latestContent ? <div className="agent-latest-scroll" hidden={surface !== 'latest'}>{latestContent}</div> : null}
+      <div className="agent-message-scroll" hidden={surface !== 'conversation'} aria-live="polite" ref={messageScrollRef}>
         {messages.length === 0 ? <AgentEmptyState
           atsImportNotice={atsImportNotice}
           cloudConnected={cloudConnected}
@@ -1797,7 +1906,7 @@ export function AgentWorkspace({
                     value={editingMessage.value}
                     zh={zh}
                   />
-                : <>{structuredErrorRepeatsContent ? null : <MessageText message={message} />}{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} locale={locale} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} onOpenOriginalDocument={onOpenOriginalDocument ? openOriginalFile : undefined} onOpenReviews={onOpenReviews} onOpenSystemAccess={onOpenSystemAccess} onRunMatching={runMatchingForCase} jobCaseReviews={jobCaseReviews} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onDeleteJobCase={onDeleteJobCase} onSelectCase={selectCase} zh={zh} />)}</>}
+                : <>{structuredErrorRepeatsContent ? null : <MessageText message={message} />}{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} locale={locale} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} onOpenOriginalDocument={onOpenOriginalDocument ? openOriginalFile : undefined} onOpenReviews={onOpenReviews} onOpenSystemAccess={onOpenSystemAccess} onRunMatching={runMatchingForCase} matchingBusy={mutationBusy} jobCaseReviews={jobCaseReviews} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onDeleteJobCase={onDeleteJobCase} onSelectCase={selectCase} zh={zh} />)}</>}
             </div>
             {hasUserActions && !isEditing ? <div aria-label={zh ? '输入消息操作' : '入力メッセージ操作'} className="agent-message-actions" role="group">
               <time dateTime={message.createdAt}>{messageTimeFormatter.format(new Date(message.createdAt))}</time>
@@ -1818,7 +1927,19 @@ export function AgentWorkspace({
         {onOpenReviews ? <button onClick={() => onOpenReviews()} type="button">{zh ? '打开审核中心' : 'レビューセンターを開く'}</button> : null}
       </p> : null}
       {attaching ? <p className="agent-attachment-progress">{zh ? '正在安全暂存附件…' : '添付ファイルを安全に保存しています…'}</p> : null}
-      <div className="agent-composer-shell">
+      {compactComposer ? <div className="agent-quick-bar" role="group" aria-label={zh ? '最新动态操作栏' : '最新情報の操作'}>
+        <button className="agent-quick-prompt" onClick={() => { setSurface('conversation'); window.requestAnimationFrame(() => composerInputRef.current?.focus()) }} type="button"><Icon name="sparkles" size={16} /><span>{pendingMessage ? (zh ? '查看正在处理的对话' : '処理中の会話を表示') : draft.trim() || attachments.length ? (zh ? '继续未发送的草稿' : '未送信の下書きを続ける') : (zh ? '告诉 Agent 想处理什么…' : 'Agentに依頼したいことを入力…')}</span></button>
+        {onOpenBatch ? <button className="agent-quick-paste" onClick={() => onOpenBatch()} type="button"><Icon name="upload" size={14} />{zh ? '粘贴消息' : 'メッセージを貼り付け'}</button> : null}
+      </div> : null}
+      <div className={`agent-composer-shell${surface === 'latest' ? ' is-contextual' : ''}`} hidden={compactComposer}>
+        {contextualComposer ? <div className="agent-composer-object" role="group" aria-label={zh ? '当前处理对象' : '現在の処理対象'}>
+          <div><Icon name={contextualComposer.kind === 'case' ? 'briefcase' : 'users'} size={15} /><span>{zh ? '正在处理：' : '処理対象：'}</span><strong title={contextualComposer.label}>{contextualComposer.label}</strong></div>
+          <div className="agent-composer-object-actions">
+            {contextualComposer.onMatch ? <button onClick={contextualComposer.onMatch} type="button">{contextualComposer.kind === 'case' ? (zh ? '找人' : '要員を探す') : (zh ? '找案件' : '案件を探す')}</button> : null}
+            {contextualComposer.onPromote ? <button onClick={contextualComposer.onPromote} type="button">{zh ? '生成介绍' : '紹介文を作成'}</button> : null}
+          </div>
+        </div> : null}
+        {onOpenBatch && surface === 'conversation' ? <button className="agent-batch-handoff" onClick={() => onOpenBatch(draft || undefined)} type="button"><Icon name="upload" size={13} />{zh ? '粘贴多条信息？转到批量整理' : '複数の情報は一括整理へ'}</button> : null}
         {!cloudConnected ? <div className="agent-connect-bar">
           <Icon name="lock" size={14} />
           <span>{zh
@@ -1826,7 +1947,6 @@ export function AgentWorkspace({
             : 'Cloud AI 未接続：現在は案件・要員テキストのローカル取込などのローカル操作のみ利用できます。自然言語での質問はできません。'}</span>
           <button onClick={() => onConnectCloud?.()} type="button">{zh ? '连接受管账号' : '受管アカウントに接続'}</button>
         </div> : null}
-        <div className="agent-composer-context">{zh ? '发送到：' : '送信先：'}<strong>{threadTitle}</strong>{activeSystemAccess ? <em><Icon name="sparkles" size={11} />{zh ? '读取右侧工作区' : '右ワークスペースを参照'}</em> : null}<span>⌄</span></div>
         <form aria-label={zh ? 'SES Agent 输入区' : 'SES Agent 入力欄'} className="agent-composer" onSubmit={send}>
         <input
           accept=".xls,.xlsx,.xlsb,.docx,.pdf"
@@ -1851,12 +1971,13 @@ export function AgentWorkspace({
           <button aria-label={zh ? `移除 ${file.name}` : `${file.name} を外す`} onClick={() => setAttachments((current) => current.filter((item) => item.token !== file.token))} type="button">×</button>
         </span>)}</div> : null}
         <textarea
+          ref={composerInputRef}
           aria-label={zh ? '输入 SES Agent 指令' : 'SES Agent への指示'}
           disabled={workspaceBusy}
           onChange={(event) => updateDraft(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={cloudConnected
-            ? (zh ? '继续询问当前案件、候选人或面试…' : '現在の案件、候補者、面談について続けて質問…')
+            ? (contextualComposer ? (zh ? '补充要求，例如：优先远程，介绍简短一些…' : '条件を追加：リモート優先、紹介文は短めに…') : (zh ? '继续询问当前案件、候选人或面试…' : '現在の案件、候補者、面談について続けて質問…'))
             : (zh ? '粘贴一条案件或人员信息进行本地导入…' : '案件または要員の情報を1件貼り付けてローカル取込…')}
           rows={2}
           value={draft}
@@ -1886,7 +2007,7 @@ export function AgentWorkspace({
         </form>
       </div>
     </section>
-    {contextPanel ? <aside aria-label={contextPanelLabel} className="agent-context-workspace">
+    {contextPanel ? <aside hidden={!showContextPanel} aria-label={contextPanelLabel} className="agent-context-workspace">
       <div
         aria-label={zh ? '调整右侧工作区宽度' : '右ワークスペースの幅を調整'}
         aria-orientation="vertical"
@@ -1911,5 +2032,5 @@ export function AgentWorkspace({
       ><span /></div>
       {contextPanel}
     </aside> : null}
-  </main>
+  </main></CandidateNamesContext.Provider>
 }

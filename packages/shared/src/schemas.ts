@@ -22,6 +22,12 @@ import {
   type BroadcastTemplateLine
 } from './contracts'
 
+export const setCandidateOwnCompanyInputSchema = z.object({
+  documentId: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+  isOwnCompany: z.boolean().nullable()
+}).strict()
+
 const taskStepSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -48,7 +54,7 @@ const privacyPolicySchema = z.object({
 })
 
 const contextBindingSchema = z.object({
-  objectType: z.enum(['staged-file', 'candidate-pool', 'gmail-message', 'job-case']),
+  objectType: z.enum(['staged-file', 'candidate-pool', 'candidate-profile', 'gmail-message', 'job-case']),
   objectId: z.string().min(1),
   version: z.string().min(1)
 })
@@ -285,6 +291,7 @@ export const candidateProjectReviewSnapshotSchema = z.object({
 })
 
 export const candidateProfileSummarySchema = z.object({
+  isOwnCompany: z.boolean().nullable().default(null),
   id: z.string().uuid(),
   sourceDocumentId: z.string().uuid(),
   version: z.number().int().positive(),
@@ -314,6 +321,7 @@ export const localCandidateIdentitySummarySchema = localCandidatePersonalDetails
 })
 
 export const candidateReviewSnapshotSchema = z.object({
+  isOwnCompany: z.boolean().nullable().default(null),
   documentId: z.string().uuid(),
   fileName: z.string().min(1).max(180),
   reviewRevision: z.number().int().positive(),
@@ -577,6 +585,7 @@ export const submitCandidateReviewInputSchema = z.object({
 
 export const searchCandidateProfilesInputSchema = z.object({
   query: z.string().trim().max(200).default(''),
+  sourceDocumentId: z.string().uuid().optional(),
   maxResults: z.number().int().min(1).max(100).default(30)
 })
 
@@ -1072,6 +1081,7 @@ const agentCandidateMatchCardSchema = z.object({
 const agentSystemAccessBlockSchema = z.discriminatedUnion('destination', [
   z.object({ type: z.literal('system-access'), destination: z.literal('job-cases') }),
   z.object({ type: z.literal('system-access'), destination: z.literal('case-import') }),
+  z.object({ type: z.literal('system-access'), destination: z.literal('new-cases') }),
   z.object({
     type: z.literal('system-access'),
     destination: z.literal('case-review'),
@@ -1145,6 +1155,7 @@ const agentBlocksSchema = z.union([
   }),
   z.object({
     type: z.literal('candidate-match-cards'),
+    scope: z.literal('selected-person').optional(),
     runId: z.string().uuid(),
     resultHash: z.string().regex(/^[a-f0-9]{64}$/u),
     cards: z.array(agentCandidateMatchCardSchema).max(5),
@@ -1345,6 +1356,7 @@ const agentBlocksSchema = z.union([
 ])
 
 const salesAgentStateSchema = z.object({
+  selectedCandidateDocumentId: z.string().uuid().nullable().optional(),
   selectedJobCaseRef: typedAiConversationReferenceSchema.nullable(),
   lastMatchRunId: z.string().uuid().nullable(),
   lastSearchMessageId: z.string().min(1).max(128).nullable(),
@@ -1404,11 +1416,13 @@ export const saveAiConversationInputSchema = z.object({
 })
 
 export const executeAgentTurnInputSchema = z.object({
+  intakeOnly: z.boolean().optional(),
   conversationId: z.string().uuid(),
   message: z.string().trim().min(1).max(4_000),
   expectedConversationRevision: z.number().int().positive().nullable(),
   requestId: z.string().uuid(),
   modelKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u).default('gpt-5.6-luna'),
+  selectedCandidateDocumentId: z.string().uuid().nullable().optional(),
   selectedJobCaseRef: typedAiConversationReferenceSchema.nullable().optional(),
   activeSystemAccess: agentSystemAccessBlockSchema.nullable().optional(),
   /**
@@ -1431,6 +1445,9 @@ export const executeAgentTurnInputSchema = z.object({
   }
   if (value.expectedConversationRevision !== null) {
     context.addIssue({ code: 'custom', path: ['expectedConversationRevision'], message: '编辑分支的目标会话必须是新会话。' })
+  }
+  if (value.selectedCandidateDocumentId != null) {
+    context.addIssue({ code: 'custom', path: ['selectedCandidateDocumentId'], message: '编辑分支不能继承当前人员。' })
   }
   if (value.selectedJobCaseRef != null) {
     context.addIssue({ code: 'custom', path: ['selectedJobCaseRef'], message: '编辑分支的案件上下文由主进程从历史恢复。' })
@@ -1493,7 +1510,6 @@ export const deleteAiConversationsInputSchema = z.object({
 const googleWorkspaceAdminConfigurationFields = {
   version: z.literal('google-workspace-admin-config-v1'),
   clientId: googleWorkspaceOAuthClientIdSchema,
-  workspaceDomain: googleWorkspaceDomainSchema,
   labelIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u)).min(1).max(10),
   query: z.string().trim().min(2).max(200),
   lookbackDays: z.number().int().min(1).max(365),
@@ -1507,12 +1523,14 @@ export const googleWorkspaceAdminConfigurationSchema = z.discriminatedUnion('sou
     ...googleWorkspaceAdminConfigurationFields,
     source: z.literal('local-admin'),
     editable: z.literal(true),
+    workspaceDomain: googleWorkspaceDomainSchema,
     revision: z.number().int().positive()
   }),
   z.object({
     ...googleWorkspaceAdminConfigurationFields,
     source: z.literal('managed-environment'),
     editable: z.literal(false),
+    workspaceDomain: googleWorkspaceDomainSchema.nullable(),
     revision: z.null()
   })
 ])
@@ -1553,6 +1571,7 @@ export const googleWorkspaceOnlineAcceptanceReportSchema = z.object({
     id: z.enum([
       'live-profile',
       'readonly-scope',
+      'account-identity',
       'company-domain',
       'credential-protection',
       'bounded-sync',
@@ -1589,6 +1608,7 @@ export const googleWorkspaceOnlineAcceptanceReportSchema = z.object({
 export const candidateProfileSourceInputSchema = z.string().uuid()
 
 export const updateCandidateProfileInputSchema = z.object({
+  isOwnCompany: z.boolean().nullable().optional(),
   sourceDocumentId: z.string().uuid(),
   expectedVersion: z.number().int().positive(),
   identity: z.object({
@@ -1715,6 +1735,7 @@ export const jobCaseReviewSnapshotSchema = z.object({
   reviewerDisplayName: z.string().min(1).max(120).nullable(),
   jobCase: jobCaseSummarySchema.nullable(),
   lifecycle: z.enum(['active', 'archived']),
+  intakeAt: z.string().datetime().nullable().optional(),
   intakeBatchId: z.string().uuid().nullable().optional(),
   cloudEligible: z.literal(false)
 })
@@ -1821,6 +1842,14 @@ export const draftCaseBroadcastInputSchema = z.object({
 export const draftCaseUpdateNoticeInputSchema = z.object({ reviewId: jobCaseReviewIdSchema })
 
 export const recordCaseBroadcastCopyInputSchema = z.object({
+  reviewId: jobCaseReviewIdSchema,
+  templateId: z.string().uuid(),
+  lang: z.enum(broadcastLanguages),
+  kind: z.enum(caseBroadcastKinds),
+  text: z.string().trim().min(1).max(4_000)
+})
+
+export const openCaseBroadcastEmailInputSchema = z.object({
   reviewId: jobCaseReviewIdSchema,
   templateId: z.string().uuid(),
   lang: z.enum(broadcastLanguages),

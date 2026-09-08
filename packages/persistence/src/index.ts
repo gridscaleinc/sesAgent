@@ -1,3 +1,4 @@
+import type { PersonnelTemplate, PersonnelMessageInput, SetCandidateBusinessStateInput } from '@shared'
 import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import Database from 'better-sqlite3-multiple-ciphers'
@@ -162,6 +163,7 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
         databaseKey: options.databaseKey,
         mappingKey: options.mappingKey
       })
+      this.stores.candidates.prepareImportedPersonnel()
       this.stores.proposals.recoverInterruptedProposalExports()
     } catch (error) {
       this.database.close()
@@ -560,6 +562,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.candidates.countEligibleTalentProfiles()
   }
 
+  getCurrentCandidateProfile(documentId: string) {
+    return this.stores.candidates.getCurrentCandidateProfile(documentId)
+  }
+
   getCandidateProfileHistory(sourceDocumentId: string): CandidateProfileVersionDetail[] {
     return this.stores.candidates.getCandidateProfileHistory(sourceDocumentId)
   }
@@ -587,6 +593,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     now = new Date()
   ): CandidateReviewSnapshot {
     return this.stores.candidates.confirmCandidateReview(input, reviewerId, reviewerDisplayName, now)
+  }
+
+  setCandidateOwnCompany(input: import('@shared').SetCandidateOwnCompanyInput, reviewerDisplayName: string, now = new Date()) {
+    return this.stores.candidates.setCandidateOwnCompany(input, reviewerDisplayName, now)
   }
 
   updateCandidateProfile(
@@ -776,6 +786,23 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   getJobCaseHistory(reviewId: string): JobCaseVersionDetail[] {
     return this.stores.jobCases.getJobCaseHistory(reviewId)
   }
+
+  /** 今日新着案件: idempotent, so opening the same case twice changes nothing. */
+  markJobCaseReviewSeen(reviewId: string, seenAt: string): void {
+    this.stores.jobCaseSeen.markJobCaseReviewSeen(reviewId, seenAt)
+  }
+
+  listSeenJobCaseReviewIds(): string[] {
+    return this.stores.jobCaseSeen.listSeenJobCaseReviewIds()
+  }
+
+  getBusinessFeed() { return this.stores.personnel.feed() }
+  markBusinessFeed(input: import('@shared').MarkBusinessFeedInput) { return this.stores.personnel.markFeed(input) }
+  getPersonnelWorkspace() { return this.stores.personnel.workspace() }
+  savePersonnelTemplate(input: PersonnelTemplate) { return this.stores.personnel.saveTemplate(input) }
+  setCandidateBusinessState(input: SetCandidateBusinessStateInput, actorId: string) { return this.stores.personnel.setState(input, actorId) }
+  validatePersonnelMessage(input: PersonnelMessageInput) { return this.stores.personnel.validateMessage(input) }
+  recordPersonnelCopy(input: PersonnelMessageInput, actorId: string) { return this.stores.personnel.recordCopy(input, actorId) }
 
   listBroadcastTemplates(): BroadcastTemplate[] {
     return this.stores.broadcast.listBroadcastTemplates()

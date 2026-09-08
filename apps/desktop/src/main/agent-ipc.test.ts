@@ -111,6 +111,7 @@ const searchPlanningResult = {
 function input(message: string, id = requestId, options: {
   conversationId?: string
   expectedConversationRevision?: number | null
+  selectedCandidateDocumentId?: string | null
   selectedJobCaseRef?: ExecuteAgentTurnInput['selectedJobCaseRef']
   activeSystemAccess?: ExecuteAgentTurnInput['activeSystemAccess']
   attachmentFileTokens?: string[]
@@ -120,6 +121,7 @@ function input(message: string, id = requestId, options: {
     message,
     expectedConversationRevision: options.expectedConversationRevision ?? null,
     requestId: id,
+    selectedCandidateDocumentId: options.selectedCandidateDocumentId,
     selectedJobCaseRef: options.selectedJobCaseRef ?? null,
     ...(options.activeSystemAccess ? { activeSystemAccess: options.activeSystemAccess } : {}),
     ...(options.attachmentFileTokens ? { attachmentFileTokens: options.attachmentFileTokens } : {})
@@ -201,6 +203,7 @@ function createDependencies(options: {
     listCandidateReviews: vi.fn(() => []),
     listCandidateInterviews: vi.fn(() => []),
     listJobCaseReviews: vi.fn(() => options.jobCaseReviews ?? []),
+    listSeenJobCaseReviewIds: vi.fn((): string[] => []),
     getJobCaseReview: vi.fn((reviewId: string) =>
       (options.jobCaseReviews ?? []).find((review) => review.reviewId === reviewId) ?? jobCaseReviewFixture(reviewId)),
     listBroadcastTemplates: vi.fn(() => [builtInBroadcastTemplate()]),
@@ -237,6 +240,9 @@ function createDependencies(options: {
     plan: vi.fn(async (planInput) => {
       if (/日语|日本語/u.test(planInput.userMessage)) {
         return { kind: 'tool' as const, action: { toolName: 'candidate.profile.read.local' as const, arguments: { rank: null } } }
+      }
+      if (/记录成案件|案件として登録/u.test(planInput.userMessage)) {
+        return { kind: 'tool' as const, action: { toolName: 'job-case.conversation-import.local' as const, arguments: {} as Record<string, never> } }
       }
       if (/詳細|详情/u.test(planInput.userMessage)) {
         return { kind: 'tool' as const, action: { toolName: 'job-case.search.local' as const, arguments: { operation: 'detail' as const, ordinal: null } } }
@@ -411,6 +417,81 @@ describe('agent IPC boundary', () => {
     stop()
   })
 
+  it('records earlier pasted text as a case through the intake pipeline, never through an answer', async () => {
+    const pastedCase = '【案件】SAP FIコンサル募集。役割：SE、必須：SAP S/4 FI、日本語流暢、単価～70万円、東京、9月開始長期。'
+    const initialConversation: AiConversationSnapshot = {
+      id: conversationId,
+      context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+      title: '案件贴文',
+      messages: [
+        { id: 'user-paste', role: 'user', content: pastedCase, mode: 'cloud', createdAt: '2026-09-02T00:00:00.000Z' },
+        { id: 'assistant-summary', role: 'assistant', content: '这是一则 SAP FI 招聘需求，尚未作为案件记录确认。', mode: 'cloud', createdAt: '2026-09-02T00:00:01.000Z' }
+      ],
+      salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
+      revision: 1,
+      createdAt: '2026-09-02T00:00:00.000Z',
+      updatedAt: '2026-09-02T00:00:01.000Z'
+    }
+    const executeBusinessTextIntake = vi.fn<NonNullable<AgentIpcDependencies['executeBusinessTextIntake']>>(async (useCase, turnInput) =>
+      useCase.saveDirectAnswer(turnInput, '已导入 1 条案件草稿。', undefined, 'completed'))
+    const dependencies = createDependencies({ initialConversation, executeBusinessTextIntake })
+    const stop = registerAgentIpcHandlers(dependencies)
+
+    const result = await invoke(ipcChannels.executeAgentTurn, input('记录成案件啊', requestId, {
+      expectedConversationRevision: 1
+    })) as { status: string; conversation: AiConversationSnapshot }
+    expect(result.status).toBe('completed')
+    expect(executeBusinessTextIntake).toHaveBeenCalledTimes(1)
+    const decision = executeBusinessTextIntake.mock.calls[0]![2] as { route: string; businessText: string }
+    // The operator's request is the declaration: the earlier paste imports as a
+    // job case even where the router alone would have left it alone.
+    expect(decision.route).toBe('job-case')
+    expect(decision.businessText).toContain('SAP FIコンサル募集')
+    stop()
+  })
+
+  it('says plainly that nothing is importable instead of inventing a recorded case', async () => {
+    const initialConversation: AiConversationSnapshot = {
+      id: conversationId,
+      context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+      title: '空对话',
+      messages: [
+        { id: 'user-short', role: 'user', content: '你好', mode: 'cloud', createdAt: '2026-09-02T00:00:00.000Z' },
+        { id: 'assistant-short', role: 'assistant', content: '您好。', mode: 'cloud', createdAt: '2026-09-02T00:00:01.000Z' }
+      ],
+      salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
+      revision: 1,
+      createdAt: '2026-09-02T00:00:00.000Z',
+      updatedAt: '2026-09-02T00:00:01.000Z'
+    }
+    const executeBusinessTextIntake = vi.fn()
+    const dependencies = createDependencies({ initialConversation, executeBusinessTextIntake })
+    const stop = registerAgentIpcHandlers(dependencies)
+
+    const result = await invoke(ipcChannels.executeAgentTurn, input('记录成案件啊', requestId, {
+      expectedConversationRevision: 1
+    })) as { status: string; conversation: AiConversationSnapshot }
+    expect(result.status).toBe('completed')
+    expect(executeBusinessTextIntake).not.toHaveBeenCalled()
+    expect(result.conversation.messages.at(-1)?.content).toContain('登録できる業務テキストが見つかりませんでした')
+    stop()
+  })
+
+  it('projects the 今日新着 board to the planner when it is the open workspace', async () => {
+    const dependencies = createDependencies()
+    const stop = registerAgentIpcHandlers(dependencies)
+    const result = await invoke(ipcChannels.executeAgentTurn, input('最近の案件は？', requestId, {
+      activeSystemAccess: { type: 'system-access', destination: 'new-cases' }
+    })) as { status: string }
+    expect(result.status).toBe('completed')
+    const planCalls = vi.mocked(dependencies.narrativeStreamer!.plan).mock.calls
+    expect(planCalls.at(-1)?.[0]?.activeWorkspaceEvidence).toMatchObject({
+      destination: 'new-cases',
+      data: { newCasesToday: 0, unseenCount: 0, cases: [] }
+    })
+    stop()
+  })
+
   it('rejects a non-sales conversation and a cross-conversation requestId reuse', async () => {
     const nonSalesConversation: AiConversationSnapshot = {
       id: conversationId,
@@ -500,6 +581,59 @@ describe('agent IPC boundary', () => {
     }
   }
   type MatchCardsResult = { status: string; timings?: { cloudCalls: number; cloudReviewMs: number | null; planningMs: number | null; totalMs: number }; assistantMessage: { blocks?: Array<{ type: string; cards?: Array<{ assessment?: unknown }>; cloudReview?: unknown }> } }
+
+  it('clarifies a pronoun without a selected person instead of searching the pool', async () => {
+    const dependencies = createDependencies()
+    const stop = registerAgentIpcHandlers(dependencies)
+    const result = await invoke(ipcChannels.executeAgentTurn, input('这个案件适合他吗', requestId, selectedJavaCase)) as { toolName: string | null; assistantMessage: { content: string } }
+    expect(result.toolName).toBeNull()
+    expect(dependencies.createMatchTask).not.toHaveBeenCalled()
+    expect(dependencies.narrativeStreamer!.plan).not.toHaveBeenCalled()
+    expect(result.assistantMessage.content).toContain('人材が指定されていません')
+    stop()
+  })
+
+  it('binds the selected person to a pair evaluation even when the planner chooses a generic case list', async () => {
+    const runCandidateMatchTask = vi.fn(async () => reviewedShortlist())
+    const dependencies = createDependencies({ runCandidateMatchTask })
+    const stop = registerAgentIpcHandlers(dependencies)
+    const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const result = await invoke(ipcChannels.executeAgentTurn, input('这个案件适合他吗', requestId, { ...selectedJavaCase, selectedCandidateDocumentId: documentId })) as { toolName: string; conversation: AiConversationSnapshot }
+    expect(result.toolName).toBe('candidate.match.local')
+    expect(dependencies.createMatchTask).toHaveBeenCalledWith(jobCaseId, 2, documentId)
+    expect(result.conversation.salesAgentState?.selectedCandidateDocumentId).toBe(documentId)
+    const next = await invoke(ipcChannels.executeAgentTurn, input('这个案件适合他吗', secondRequestId, { expectedConversationRevision: result.conversation.revision })) as { toolName: string }
+    expect(next.toolName).toBe('candidate.match.local')
+    expect(dependencies.createMatchTask).toHaveBeenLastCalledWith(jobCaseId, 2, documentId)
+    stop()
+  })
+
+  it('returns only the active cases supported by the selected person skills', async () => {
+    const dependencies = createDependencies()
+    const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const javaCase = dependencies.repository.listActiveJobCases()[0]!
+    Object.assign(dependencies.repository, {
+      listEligibleTalentProfiles: vi.fn(() => [{ id: candidateProfileId, sourceDocumentId: documentId, profileVersion: 1,
+        confirmedAt: '2026-08-18T00:00:00.000Z', fields: [{ key: 'skills', label: 'Skills', value: 'Java' }], projectExperiences: [] }]),
+      listActiveJobCases: vi.fn(() => [javaCase, { ...javaCase, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', fields: [{ key: 'title', value: 'Rust project' }, { key: 'required_skills', value: 'Rust' }] }])
+    })
+    const stop = registerAgentIpcHandlers(dependencies)
+    const result = await invoke(ipcChannels.executeAgentTurn, input('该名候选人适合哪些案件', requestId, { selectedCandidateDocumentId: documentId })) as { assistantMessage: { blocks?: Array<{ type: string; cards?: Array<{ title: string }> }> } }
+    const cards = result.assistantMessage.blocks?.find((block) => block.type === 'job-case-cards')?.cards
+    expect(cards?.map((card) => card.title)).toEqual(['Java 案件'])
+    stop()
+  })
+
+  it('never changes a person-to-case request into an unfiltered search', async () => {
+    const dependencies = createDependencies()
+    const stop = registerAgentIpcHandlers(dependencies)
+    const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    Object.assign(dependencies.repository, { listEligibleTalentProfiles: vi.fn(() => []) })
+    const result = await invoke(ipcChannels.executeAgentTurn, input('该名候选人适合哪些案件', requestId, { selectedCandidateDocumentId: documentId })) as { assistantMessage: { blocks?: Array<{ type: string }> } }
+    expect(result.assistantMessage.blocks?.some((block) => block.type === 'job-case-cards')).not.toBe(true)
+    expect(dependencies.actionOrchestrator.preflight).toHaveBeenCalledWith('job-case.search.local', expect.anything(), expect.objectContaining({ candidateDocumentId: documentId }), expect.anything(), expect.anything())
+    stop()
+  })
 
   it('attaches the cloud review to the shortlist cards and stores it with the run', async () => {
     const runCandidateMatchTask = vi.fn(async () => reviewedShortlist())
@@ -1200,6 +1334,25 @@ describe('business-text intake gate', () => {
     expect(dependencies.narrativeStreamer?.streamAnswer).not.toHaveBeenCalled()
 
     stop()
+  })
+
+  it('keeps forced bulk intake out of planning even when text looks like a normal question', async () => {
+    const { dependencies } = withRealIntakeExecutor()
+    const stop = registerAgentIpcHandlers(dependencies)
+    try {
+      await invoke(ipcChannels.executeAgentTurn, { ...input('この情報を整理してください'), intakeOnly: true })
+      expect(dependencies.narrativeStreamer?.plan).not.toHaveBeenCalled()
+      expect(dependencies.narrativeStreamer?.streamAnswer).not.toHaveBeenCalled()
+    } finally { stop() }
+  })
+
+  it('fails closed for bulk intake when its intake service is unavailable', async () => {
+    const dependencies = createDependencies()
+    const stop = registerAgentIpcHandlers(dependencies)
+    try {
+      await expect(invoke(ipcChannels.executeAgentTurn, { ...input('raw business message'), intakeOnly: true })).rejects.toThrow('业务信息整理服务')
+      expect(dependencies.narrativeStreamer?.plan).not.toHaveBeenCalled()
+    } finally { stop() }
   })
 
   it('imports a pasted case locally even when the cloud streamer is unavailable', async () => {

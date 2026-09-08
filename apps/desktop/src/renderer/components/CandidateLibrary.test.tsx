@@ -111,6 +111,16 @@ function renderLibrary(overrides: Partial<Parameters<typeof CandidateLibrary>[0]
 }
 
 describe('CandidateLibrary eligible talent pool', () => {
+  it('opens the exact personnel record for editing even when it is outside the default results', async () => {
+    const onSearch = vi.fn().mockImplementation(async (input) => input.sourceDocumentId === candidate.sourceDocumentId ? [candidate] : [])
+    const props = renderLibrary({ profileRequest: { id: 1, documentId: candidate.sourceDocumentId }, onSearch })
+    fireEvent.click(await screen.findByRole('button', { name: 'プロフィールを編集' }))
+    expect(onSearch).toHaveBeenCalledWith({ query: '', sourceDocumentId: candidate.sourceDocumentId, maxResults: 1 })
+    expect(props.onLoadHistory).toHaveBeenCalledWith(candidate.sourceDocumentId)
+    expect(screen.getByRole('button', { name: '変更を保存' })).toBeEnabled()
+    expect(screen.getByRole('textbox', { name: 'スキル' })).toBeEnabled()
+  })
+
   it('opens the encrypted original in a full comparison workspace and system application', async () => {
     const sourceCandidate: CandidateProfileSearchResult = {
       ...candidate,
@@ -267,12 +277,20 @@ describe('CandidateLibrary eligible talent pool', () => {
     fireEvent.click(screen.getByRole('button', { name: 'プロフィールを編集' }))
     fireEvent.change(screen.getByRole('textbox', { name: '姓名' }), { target: { value: '山田 花子（更新）' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'メールアドレス' }), { target: { value: 'updated@example.jp' } })
+    const ownCompany = screen.getByRole('combobox', { name: '自社所属' })
+    expect(ownCompany).toHaveValue('')
+    fireEvent.change(ownCompany, { target: { value: 'false' } })
+    expect(ownCompany).toHaveValue('false')
+    fireEvent.change(ownCompany, { target: { value: '' } })
+    expect(ownCompany).toHaveValue('')
+    fireEvent.change(ownCompany, { target: { value: 'true' } })
     fireEvent.click(screen.getByRole('button', { name: '変更を保存' }))
 
     await waitFor(() => expect(onUpdateCandidate).toHaveBeenCalledTimes(1))
     expect(onUpdateCandidate).toHaveBeenCalledWith(expect.objectContaining({
       sourceDocumentId: candidate.sourceDocumentId,
       expectedVersion: 1,
+      isOwnCompany: true,
       identity: expect.objectContaining({ displayName: '山田 花子（更新）', email: 'updated@example.jp', phone: '090-1111-2222' }),
       fields: expect.arrayContaining([expect.objectContaining({ key: 'skills', value: 'Java, AWS' })])
     }))

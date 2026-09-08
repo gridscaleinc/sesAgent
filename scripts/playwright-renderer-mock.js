@@ -404,7 +404,7 @@
     checks: [
       { id: 'live-profile', status: 'passed', label: 'Gmail Profile のオンライン確認', detail: '保存済み Token で Profile を再取得しました。メール本文は取得していません。' },
       { id: 'readonly-scope', status: 'passed', label: '読取専用 Scope', detail: '付与 Scope は gmail.readonly のみです。' },
-      { id: 'company-domain', status: 'passed', label: '会社 Workspace ドメイン', detail: '所属ドメインが管理設定と一致しました。アドレスは報告に保存しません。' },
+      { id: 'account-identity', status: 'passed', label: 'Google アカウント本人確認', detail: '接続先とオンラインアカウントが一致しました。アドレスは報告に保存しません。' },
       { id: 'credential-protection', status: 'passed', label: 'OAuth Token の端末保護', detail: 'macos-keychain で保護されています。' },
       { id: 'bounded-sync', status: 'passed', label: '管理者指定の同期範囲', detail: '最近の同期は現在の Label・期間・件数上限と一致します。' },
       { id: 'successful-sync', status: 'passed', label: 'Gmail の有界同期', detail: '最終同期: 取得候補 8件、保存 6件、失敗 0件。' },

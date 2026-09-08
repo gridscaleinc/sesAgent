@@ -298,6 +298,17 @@ describe('Gmail read-only synchronization primitives', () => {
     expect(tokenProvider).toHaveBeenNthCalledWith(2, true)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+
+  it('bounds every Gmail API request with an abort signal', async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal)
+      return Response.json({ emailAddress: 'hr@example.co.jp', historyId: '200' })
+    }) as typeof fetch
+    const client = new GmailReadClient(async () => 'readonly-access-token', fetchMock, 5_000)
+
+    await expect(client.getProfile()).resolves.toMatchObject({ emailAddress: 'hr@example.co.jp' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 class MemoryGmailSyncStore {
@@ -548,7 +559,7 @@ describe('Google Workspace desktop OAuth', () => {
       live: {
         checkedAt: '2026-07-20T00:05:00.000Z',
         grantedScopes: [gmailReadonlyScope],
-        companyDomainVerified: true,
+        accountIdentityVerified: true,
         mailboxMetadataAccessed: true,
         messageContentAccessed: false
       },
@@ -589,7 +600,7 @@ describe('Google Workspace desktop OAuth', () => {
       },
       live: {
         checkedAt: '2026-07-20T00:05:00.000Z', grantedScopes: [gmailReadonlyScope],
-        companyDomainVerified: true, mailboxMetadataAccessed: true, messageContentAccessed: false
+        accountIdentityVerified: true, mailboxMetadataAccessed: true, messageContentAccessed: false
       },
       credentialProtection: 'windows-dpapi',
       sync: { configHash: null, status: 'never', lastSyncedAt: null, lastRun: null },
@@ -618,13 +629,106 @@ describe('Google Workspace desktop OAuth', () => {
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
     expect(url.searchParams.get('state')).toBe('csrf-state')
     expect(url.searchParams.get('access_type')).toBe('offline')
+    expect(url.searchParams.get('hd')).toBe('example.co.jp')
+    const publicUrl = new URL(buildGoogleAuthorizationUrl(
+      { ...request, workspaceDomain: null },
+      'http://127.0.0.1:43123/oauth2/callback'
+    ))
+    expect(publicUrl.searchParams.has('hd')).toBe(false)
     expect(() => buildGoogleAuthorizationUrl(
       { ...request, scopes: [gmailComposeScope] as never },
       'http://127.0.0.1:43123/oauth2/callback'
     )).toThrow('write scope')
   })
 
-  it('connects only a Workspace-domain account and stores a read-only credential', async () => {
+  it.each([
+    ['personal Gmail', 'hr.personal@gmail.com', 'gmail.com'],
+    ['customer Workspace', 'hr@customer.example', 'customer.example']
+  ])('uses one public OAuth client for a %s account', async (_kind, emailAddress, expectedDomain) => {
+    const store = new MemoryCredentialStore()
+    let authorizationRequest: AuthorizationCodeRequest | null = null
+    let tokenRequestBody: URLSearchParams | null = null
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url === 'https://oauth2.googleapis.com/token') {
+        tokenRequestBody = new URLSearchParams(String(init?.body ?? ''))
+        return Response.json({
+          access_token: 'access-token-with-enough-length-001',
+          refresh_token: 'refresh-token-001',
+          expires_in: 3600,
+          scope: gmailReadonlyScope,
+          token_type: 'Bearer'
+        })
+      }
+      if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/profile') {
+        return Response.json({ emailAddress, historyId: '100' })
+      }
+      throw new Error(`Unexpected URL: ${url}`)
+    }) as typeof fetch
+    const client = new GoogleWorkspaceOAuthClient(
+      {
+        clientId: '1234567890-product.apps.googleusercontent.com',
+        clientSecret: 'desktop-client-secret-001',
+        workspaceDomain: null
+      },
+      {
+        credentialStore: store,
+        authorizationCodeProvider: {
+          async requestAuthorization(request) {
+            authorizationRequest = request
+            return { code: 'authorization-code', redirectUri: 'http://127.0.0.1:43123/oauth2/callback' }
+          }
+        },
+        fetch: fetchMock,
+        now: () => new Date('2026-09-01T00:00:00.000Z')
+      }
+    )
+
+    await expect(client.connectReadonly()).resolves.toMatchObject({
+      status: 'readonly',
+      accountEmail: emailAddress,
+      workspaceDomain: expectedDomain,
+      readAccess: true,
+      draftAccess: 'not-requested',
+      sendMethod: 'not-implemented'
+    })
+    expect((authorizationRequest as unknown as AuthorizationCodeRequest).workspaceDomain).toBeNull()
+    expect((tokenRequestBody as unknown as URLSearchParams).get('client_secret')).toBe('desktop-client-secret-001')
+    expect(store.value).toMatchObject({ accountEmail: emailAddress, workspaceDomain: expectedDomain })
+    await expect(client.verifyReadonlyProfile()).resolves.toMatchObject({
+      grantedScopes: [gmailReadonlyScope],
+      accountIdentityVerified: true,
+      mailboxMetadataAccessed: true,
+      messageContentAccessed: false
+    })
+  })
+
+  it('surfaces only the bounded OAuth error code when authorization-code exchange fails', async () => {
+    const store = new MemoryCredentialStore()
+    const client = new GoogleWorkspaceOAuthClient(
+      { clientId: '1234567890-product.apps.googleusercontent.com', workspaceDomain: null },
+      {
+        credentialStore: store,
+        authorizationCodeProvider: {
+          async requestAuthorization() {
+            return { code: 'authorization-code', redirectUri: 'http://127.0.0.1:43123/oauth2/callback' }
+          }
+        },
+        fetch: vi.fn(async () => Response.json({
+          error: 'invalid_grant',
+          error_description: 'The code_verifier parameter contains sensitive provider detail that must not be surfaced'
+        }, { status: 400 })) as typeof fetch
+      }
+    )
+
+    await expect(client.connectReadonly()).rejects.toThrow(
+      'Google authorization code exchange failed (400: invalid_grant/code_verifier).'
+    )
+    await expect(client.connectReadonly()).rejects.not.toThrow('sensitive provider detail')
+    expect(store.value).toBeNull()
+  })
+
+  it('keeps an optional Workspace-domain restriction for private deployments', async () => {
     const store = new MemoryCredentialStore()
     let authorizationRequest: AuthorizationCodeRequest | null = null
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -675,11 +779,38 @@ describe('Google Workspace desktop OAuth', () => {
     const live = await client.verifyReadonlyProfile()
     expect(live).toMatchObject({
       grantedScopes: [gmailReadonlyScope],
-      companyDomainVerified: true,
+      accountIdentityVerified: true,
       mailboxMetadataAccessed: true,
       messageContentAccessed: false
     })
     expect(live).not.toHaveProperty('accountEmail')
+  })
+
+  it('explains a non-Gmail account or Workspace administrator block', async () => {
+    const store = new MemoryCredentialStore()
+    const client = new GoogleWorkspaceOAuthClient(
+      { clientId: '1234567890-product.apps.googleusercontent.com', workspaceDomain: null },
+      {
+        credentialStore: store,
+        authorizationCodeProvider: {
+          async requestAuthorization() {
+            return { code: 'authorization-code', redirectUri: 'http://127.0.0.1:43123/oauth2/callback' }
+          }
+        },
+        fetch: vi.fn(async (input) => String(input) === 'https://oauth2.googleapis.com/token'
+          ? Response.json({
+              access_token: 'access-token-with-enough-length-001',
+              refresh_token: 'refresh-token-001',
+              expires_in: 3600,
+              scope: gmailReadonlyScope,
+              token_type: 'Bearer'
+            })
+          : new Response('', { status: 403 })) as typeof fetch
+      }
+    )
+
+    await expect(client.connectReadonly()).rejects.toThrow(/Gmail が有効|Workspace 管理者/u)
+    expect(store.value).toBeNull()
   })
 
   it('rejects a write scope before storing credentials', async () => {

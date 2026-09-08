@@ -14,6 +14,8 @@ import type {
   JobCaseSourceText,
   JobCaseVersionDetail,
   ImportEmlJobCaseDraftsResult,
+  NewJobCaseDigest,
+  NewJobCaseDigestDay,
   ExecuteWechatVisibleReadResult,
   ReopenJobCaseReviewInput,
   ReopenJobCaseReviewResult,
@@ -54,6 +56,9 @@ interface JobCaseInboxProps {
   onSelectedReviewRequestHandled?(): void
   onSubmit(input: SubmitJobCaseReviewInput): Promise<SubmitJobCaseReviewResult>
   wechatVisibleMessage?: WechatVisibleMessageFeasibility
+  /** 今日新着案件, so the list groups and the home card agree on what is new. */
+  newCaseDigest?: NewJobCaseDigest | null
+  onMarkSeen?(reviewId: string): void
   /** Operator aliases; a confirmed value written under an unknown label can become one. */
   fieldAliases?: JobCaseFieldAliases
   onSaveFieldAliases?(input: SaveJobCaseFieldAliasesInput): Promise<JobCaseFieldAliases>
@@ -802,6 +807,8 @@ export function JobCaseInbox({
   onReopen,
   onSetLifecycle,
   onSubmit,
+  newCaseDigest = null,
+  onMarkSeen,
   reviews,
   selectedReviewRequestId = null,
   wechatVisibleMessage = {
@@ -815,6 +822,7 @@ export function JobCaseInbox({
 }: JobCaseInboxProps) {
   useRendererUiRefresh()
   const locale = useUiLocale()
+  const zh = locale === 'zh-CN'
   const [filter, setFilter] = useState<'all' | 'awaiting-review' | 'completed'>('all')
   const [aliasSuggestions, setAliasSuggestions] = useState<AliasSuggestion[]>([])
   const [aliasBusy, setAliasBusy] = useState(false)
@@ -859,6 +867,19 @@ export function JobCaseInbox({
       ?? reviews.find((review) => review.lifecycle === 'active')?.reviewId
       ?? null
   )
+  // Day bucket and unread flag both come from the digest Main derived, so the
+  // list cannot disagree with the home card. A case outside its window is
+  // simply older news and never carries the 新 mark.
+  const digestEntries = new Map((newCaseDigest?.groups ?? []).flatMap((group) =>
+    group.entries.map((entry) => [entry.reviewId, { day: group.day, unseen: entry.unseen }] as const)
+  ))
+  const openReview = (reviewId: string) => {
+    setSelectedId(reviewId)
+    onMarkSeen?.(reviewId)
+  }
+  const dayLabel = (day: NewJobCaseDigestDay) => day === 'today'
+    ? (zh ? '今天' : '本日')
+    : day === 'yesterday' ? (zh ? '昨天' : '昨日') : (zh ? '更早' : 'それ以前')
   const lifecycleReviews = reviews.filter((review) => review.lifecycle === lifecycleView)
   const filtered = filter === 'all' ? lifecycleReviews : lifecycleReviews.filter((review) => review.status === filter)
   const selected = filtered.find((review) => review.reviewId === selectedId) ?? filtered[0] ?? null
@@ -1102,23 +1123,28 @@ export function JobCaseInbox({
               ))}
             </div>
             <div className="job-case-list">
-              {filtered.map((review) => {
-                const title = review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject
-                const skills = review.fields.find((field) => field.key === 'required_skills')?.value
-                return (
-                  <button
-                    aria-current={selected?.reviewId === review.reviewId ? 'true' : undefined}
-                    className={selected?.reviewId === review.reviewId ? 'is-selected' : ''}
-                    key={review.reviewId}
-                    onClick={() => setSelectedId(review.reviewId)}
-                    type="button"
-                  >
-                    <div><span className={`job-case-list-status ${review.status}`} /> <small>{review.status === 'completed' ? '確認済み' : '確認待ち'}</small><time>{displayDate(review.messageDate, locale)}</time></div>
-                    <strong>{title}</strong>
-                    <p>{skills ?? '必須スキル未抽出'}</p>
-                    <footer><span>{review.sourceType === 'manual' ? '営業入力' : review.fromDomain ?? '送信元非表示'}</span><span>{review.warningCodes.includes('BUSINESS_DUPLICATE') ? '類似あり' : sourceTypeLabel(review.sourceType)}</span></footer>
-                  </button>
-                )
+              {(['today', 'yesterday', 'earlier'] as const).flatMap((day) => {
+                const group = filtered.filter((review) => (digestEntries.get(review.reviewId)?.day ?? 'earlier') === day)
+                if (group.length === 0) return []
+                return [<h4 className="job-case-list-day" key={`day-${day}`}>{dayLabel(day)}<small>{group.length}</small></h4>,
+                  ...group.map((review) => {
+                    const title = review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject
+                    const skills = review.fields.find((field) => field.key === 'required_skills')?.value
+                    return (
+                      <button
+                        aria-current={selected?.reviewId === review.reviewId ? 'true' : undefined}
+                        className={selected?.reviewId === review.reviewId ? 'is-selected' : ''}
+                        key={review.reviewId}
+                        onClick={() => openReview(review.reviewId)}
+                        type="button"
+                      >
+                        <div><span className={`job-case-list-status ${review.status}`} /> <small>{review.status === 'completed' ? '確認済み' : '確認待ち'}</small>{digestEntries.get(review.reviewId)?.unseen ? <span className="job-case-list-new">{zh ? '新' : '新'}</span> : null}<time>{displayDate(review.messageDate, locale)}</time></div>
+                        <strong>{title}</strong>
+                        <p>{skills ?? '必須スキル未抽出'}</p>
+                        <footer><span>{review.sourceType === 'manual' ? '営業入力' : review.fromDomain ?? '送信元非表示'}</span><span>{review.warningCodes.includes('BUSINESS_DUPLICATE') ? '類似あり' : sourceTypeLabel(review.sourceType)}</span></footer>
+                      </button>
+                    )
+                  })]
               })}
               {filtered.length === 0 ? <p className="job-case-filter-empty">この状態の案件はありません。</p> : null}
             </div>

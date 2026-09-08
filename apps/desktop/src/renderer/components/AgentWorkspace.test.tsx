@@ -29,6 +29,44 @@ describe('AgentWorkspace', () => {
     window.sessionStorage.clear()
   })
 
+  it('keeps the latest feed compact and restores a draft when the operator opens conversation', async () => {
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } })
+    const onOpenBatch = vi.fn()
+    render(<AgentWorkspace latestContent={<div>Today feed</div>} onOpenBatch={onOpenBatch} onOpenMatching={vi.fn()} />)
+    expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
+    const bar = screen.getByRole('group', { name: '最新情報の操作' })
+    fireEvent.click(within(bar).getByRole('button', { name: 'メッセージを貼り付け' }))
+    expect(onOpenBatch).toHaveBeenCalledWith()
+    fireEvent.click(within(bar).getByRole('button', { name: 'Agentに依頼したいことを入力…' }))
+    const composer = screen.getByRole('textbox', { name: 'SES Agent への指示' })
+    fireEvent.change(composer, { target: { value: 'Remote candidates only' } })
+    fireEvent.click(screen.getByRole('button', { name: '最新情報' }))
+    expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '未送信の下書きを続ける' }))
+    expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toHaveValue('Remote candidates only')
+  })
+
+  it('keeps latest information compact even with a selected record and shows its composer only in conversation', async () => {
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } })
+    const onMatch = vi.fn(), onPromote = vi.fn()
+    const base = { latestContent: <div>Today feed</div>, onOpenMatching: vi.fn() }
+    const object = { kind: 'person' as const, label: 'TEST Java Engineer', onMatch, onPromote }
+    const view = render(<AgentWorkspace {...base} contextPanelOpen composerObject={object} />)
+    expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '最新情報の操作' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '現在の会話' }))
+    const scope = screen.getByRole('group', { name: '現在の処理対象' })
+    expect(within(scope).getByText('TEST Java Engineer')).toBeVisible()
+    expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toBeVisible()
+    fireEvent.click(within(scope).getByRole('button', { name: '案件を探す' }))
+    fireEvent.click(within(scope).getByRole('button', { name: '紹介文を作成' }))
+    expect(onMatch).toHaveBeenCalledTimes(1); expect(onPromote).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '最新情報' }))
+    view.rerender(<AgentWorkspace {...base} contextPanelOpen={false} composerObject={object} />)
+    expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '最新情報の操作' })).toBeVisible()
+  })
+
   it('acts as the primary SES task surface without duplicating dashboard metrics', async () => {
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
@@ -53,6 +91,17 @@ describe('AgentWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '面談を設定できる候補者は？' }))
     expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toHaveValue('面談を設定できる候補者は？')
+  })
+
+  it('offers a way back to the 今日新着 board while the workspace panel is closed', async () => {
+    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } as DesktopApi
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
+    const onOpenNewCaseBoard = vi.fn()
+    render(<AgentWorkspace newCaseUnseenCount={2} onOpenMatching={vi.fn()} onOpenNewCaseBoard={onOpenNewCaseBoard} />)
+    const pill = await screen.findByRole('button', { name: /本日の新規案件|今日の新着案件/u })
+    expect(pill.textContent).toContain('2')
+    fireEvent.click(pill)
+    expect(onOpenNewCaseBoard).toHaveBeenCalledTimes(1)
   })
 
   it('copies a sent user message without invoking Main or the model', async () => {
@@ -197,6 +246,20 @@ describe('AgentWorkspace', () => {
     expect(onCloseContextPanel).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps a selected person while opening a case and sends both references', async () => {
+    const executeAgentTurn = vi.fn().mockResolvedValue({ status: 'completed', toolName: null, conversation: snapshot([]) })
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn } })
+    const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const { rerender } = render(<AgentWorkspace onOpenMatching={vi.fn()} focusRequest={{ id: 1, caseReference: null, candidateDocumentId: documentId }} />)
+    const reference = { kind: 'job-case' as const, objectId: jobCaseId, objectVersion: 1, resultHash: null, ordinal: null, label: 'Java 案件', target: `job-case:${jobCaseId}` }
+    rerender(<AgentWorkspace onOpenMatching={vi.fn()} focusRequest={{ id: 2, caseReference: reference }} />)
+    expect(await screen.findByRole('button', { name: '現在の人材を解除' })).toBeInTheDocument()
+    const field = screen.getByRole('textbox', { name: 'SES Agent への指示' })
+    fireEvent.change(field, { target: { value: '这个案件适合他吗' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledWith(expect.objectContaining({ selectedCandidateDocumentId: documentId, selectedJobCaseRef: reference })))
+  })
+
   it('sends the active right workspace reference with the next normal turn', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({
       status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
@@ -220,12 +283,32 @@ describe('AgentWorkspace', () => {
       onOpenMatching={vi.fn()}
     />)
 
-    expect(await screen.findByText('右ワークスペースを参照')).toBeInTheDocument()
+    expect(screen.queryByText('右ワークスペースを参照')).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: 'SES Agent への指示' }), { target: { value: '总结右侧案件' } })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
 
     await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
     expect(executeAgentTurn.mock.calls[0]?.[0]).toMatchObject({ activeSystemAccess })
+  })
+
+  it('clears the previous case when a latest-person card supplies the next workspace context', async () => {
+    const executeAgentTurn = vi.fn().mockResolvedValue({
+      status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
+      conversation: snapshot([])
+    })
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
+      ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn
+    } as unknown as DesktopApi })
+    const onOpenMatching = vi.fn()
+    const caseReference = { kind: 'job-case' as const, objectId: 'case-before', objectVersion: 1, resultHash: null, ordinal: null, label: 'Prior Java case', target: 'job-case:case-before' }
+    const view = render(<AgentWorkspace onOpenMatching={onOpenMatching} focusRequest={{ id: 1, caseReference }} />)
+    await screen.findByRole('textbox', { name: 'SES Agent への指示' })
+    const access = { type: 'system-access' as const, destination: 'candidate' as const, sourceDocumentId: '11111111-1111-4111-8111-111111111111', view: 'overview' as const }
+    view.rerender(<AgentWorkspace onOpenMatching={onOpenMatching} focusRequest={{ id: 2, caseReference: null }} activeSystemAccess={access} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'SES Agent への指示' }), { target: { value: '总结这位人员' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
+    expect(executeAgentTurn.mock.calls[0]?.[0]).toMatchObject({ selectedJobCaseRef: null, activeSystemAccess: access })
   })
 
   it('ties an import made before the first message to the conversation it will become', async () => {
@@ -689,7 +772,8 @@ describe('AgentWorkspace', () => {
         }]
       }
     ])
-    const executeAgentTurn = vi.fn().mockResolvedValue({ status: 'completed', toolName: 'candidate.match.local', actionRunId: null, assistantMessage: null, conversation })
+    let finish!: (value: unknown) => void
+    const executeAgentTurn = vi.fn().mockImplementation(() => new Promise((resolve) => { finish = resolve }))
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onOpenSystemAccess = vi.fn()
@@ -711,11 +795,16 @@ describe('AgentWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'レビューセンターで一括処理' }))
     expect(onOpenSystemAccess).toHaveBeenCalledWith({ type: 'system-access', destination: 'review-center', intakeBatchId, reviewIds: [reviewId] })
     fireEvent.click(screen.getByRole('button', { name: '候補者を探す' }))
+    const matchButton = screen.getByRole('button', { name: '候補者を探す' })
+    expect(matchButton).toBeDisabled()
+    fireEvent.click(matchButton)
     await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
     expect(executeAgentTurn.mock.calls[0]?.[0]).toMatchObject({
       message: '現在の案件に合う候補者を探して',
       selectedJobCaseRef: { kind: 'job-case', objectId: jobCaseId, objectVersion: 3, ordinal: 1 }
     })
+    finish({ status: 'completed', toolName: 'candidate.match.local', actionRunId: null, assistantMessage: null, conversation })
+    await waitFor(() => expect(matchButton).toBeEnabled())
   })
 
   it('shows an unexcluded-but-unmatched candidate as not assessable instead of ranked #1', async () => {
@@ -776,14 +865,13 @@ describe('AgentWorkspace', () => {
 
     expect(await screen.findByText('候補者 DA67E874')).toBeInTheDocument()
     // The local fit and rank stay; the review is a labelled level, not a number.
-    expect(screen.getByText('Fit 72')).toBeInTheDocument()
+    expect(screen.getByText('ローカル関連度 72')).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()
-    expect(screen.getByText('クラウド評価')).toBeInTheDocument()
-    expect(screen.getByText('適合度：可能性あり')).toBeInTheDocument()
+    expect(screen.getByText('補足評価')).toBeInTheDocument()
+    expect(screen.getByText('適合度：情報不足')).toBeInTheDocument()
     expect(screen.getByText('Java ← Java 5年')).toBeInTheDocument()
-    expect(screen.getByText('AWS')).toBeInTheDocument()
-    expect(screen.getByText('日本語レベル')).toBeInTheDocument()
-    expect(screen.getByText('主要スキルは一致。')).toBeInTheDocument()
+    expect(screen.getByText(/日本語レベル · AWS/u)).toBeInTheDocument()
+    expect(screen.queryByText('主要スキルは一致。')).not.toBeInTheDocument()
   })
 
   it('says why the cloud review did not run and that the case set no hard condition', async () => {
@@ -872,10 +960,12 @@ describe('AgentWorkspace', () => {
       }
     ])
     const recordCaseBroadcastCopy = vi.fn().mockResolvedValue({ copy: { id: 'copy-1' } })
+    const openCaseBroadcastEmail = vi.fn().mockResolvedValue({ opened: true })
     const api = {
       ...originalApi,
       listAiConversations: vi.fn().mockResolvedValue([conversation]),
-      recordCaseBroadcastCopy
+      recordCaseBroadcastCopy,
+      openCaseBroadcastEmail
     } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const previousClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
@@ -897,6 +987,12 @@ describe('AgentWorkspace', () => {
         reviewId, lang: 'ja', kind: 'new', templateId, text: '【案件】Java 案件\n必須：Java'
       })
       expect(await within(first).findByRole('status')).toHaveTextContent('コピーしました。微信に貼り付けてください。')
+
+      fireEvent.click(within(first).getByRole('button', { name: 'メールを開く' }))
+      await waitFor(() => expect(openCaseBroadcastEmail).toHaveBeenCalledWith({
+        reviewId, lang: 'ja', kind: 'new', templateId, text: '【案件】Java 案件\n必須：Java'
+      }))
+      expect(await within(first).findByRole('status')).toHaveTextContent('宛先と本文を確認して送信してください。')
 
       // Switching the tab switches which version is copied and recorded.
       recordCaseBroadcastCopy.mockClear()

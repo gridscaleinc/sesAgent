@@ -318,7 +318,7 @@ try {
   )
   assert.equal(confirmedReview.status, 'completed')
   assert.equal(confirmedReview.profile?.status, 'current')
-  assert.equal(repository.listEligibleTalentProfiles().length, 0, 'confirmed profile entered matching before recruiting approval')
+  assert.equal(repository.listEligibleTalentProfiles().length, 1, 'imported personnel must not wait for recruiting approval')
   assert.equal(confirmedReview.profile?.containsDirectIdentifiers, false)
   assert.equal(confirmedReview.piiReviewed, false, 'local candidate admission unexpectedly required a cloud privacy review')
   assert.equal(confirmedReview.localIdentity?.displayName, mappingSentinel)
@@ -367,7 +367,7 @@ try {
     interviewer: '検証担当者'
   }, '検証担当者', new Date('2026-07-17T00:02:00.050Z'))
   assert.equal(preConfirmationInterview.stage, 'scheduled', 'imported candidate could not enter recruiting before profile confirmation')
-  assert.equal(rejectedReview.profile, null, 'pre-confirmation recruiting unexpectedly created a candidate profile')
+  assert.equal(rejectedReview.profile?.confirmedBy, '本机导入', 'imported profile must not be attributed to an HR reviewer')
   repository.confirmCandidateReview({
     documentId: rejectedDocumentId,
     reviewRevision: rejectedReview.reviewRevision,
@@ -408,9 +408,12 @@ try {
   }, '検証担当者', new Date('2026-07-17T00:02:00.500Z'))
   const retainedRejectedCandidate = repository.getCandidateReview(rejectedDocumentId)
   assert.equal(retainedRejectedCandidate?.recruitingStatus, 'rejected', 'failed recruiting decision did not enter candidate history')
-  assert.equal(retainedRejectedCandidate?.talentPoolStatus, 'none', 'failed recruiting decision granted talent-pool eligibility')
+  assert.equal(retainedRejectedCandidate?.talentPoolStatus, 'eligible', 'a recruiting result must not add a separate promotion gate')
   assert.equal(retainedRejectedCandidate?.profile?.status, 'current', 'failed recruiting decision discarded the candidate profile')
-  assert.equal(repository.listEligibleTalentProfiles().length, 0, 'rejected candidate entered matching')
+  assert.equal(repository.listEligibleTalentProfiles().length, 2, 'both active personnel remain available for business')
+  repository.setCandidateBusinessState({ documentId: rejectedDocumentId, profileVersion: retainedRejectedCandidate!.profile!.version,
+    reviewRevision: retainedRejectedCandidate!.reviewRevision, status: 'paused', confirmed: true }, 'verification-user')
+  assert.equal(repository.listEligibleTalentProfiles().length, 1, 'an explicit pause excludes personnel from matching')
 
   assert.throws(
     () => repository.confirmCandidateReview(reviewSubmission, 'verification-user', '検証担当者'),
@@ -419,9 +422,11 @@ try {
   )
   const initialCandidateVersion = repository.getCandidateProfileHistory(documentId)[0]
   assert.ok(initialCandidateVersion)
+  assert.equal(initialCandidateVersion.isOwnCompany, null, 'imported personnel must default to unset affiliation')
   const updatedCandidateProfile = repository.updateCandidateProfile({
     sourceDocumentId: documentId,
     expectedVersion: initialCandidateVersion.version,
+    isOwnCompany: true,
     identity: {
       displayName: '山田 更新後',
       gender: '女性',
@@ -448,7 +453,11 @@ try {
       summary: `${project.summary}。性能改善も担当`
     }))
   }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:10.000Z'))
-  assert.equal(updatedCandidateProfile.profileVersion, 2)
+  assert.equal(updatedCandidateProfile.isOwnCompany, true)
+  assert.equal(repository.getCandidateReview(documentId)?.isOwnCompany, true)
+  assert.equal(repository.getCandidateProfileHistory(documentId)[0]?.isOwnCompany, true)
+  assert.equal(searchConfirmedCandidateProfiles(repository.listEligibleTalentProfiles(), '自社限定')[0]?.isOwnCompany, true)
+  assert.equal(updatedCandidateProfile.profileVersion, initialCandidateVersion.version + 1)
   assert.equal(repository.getCandidateLocalIdentity(documentId).displayName, '山田 更新後')
   assert.equal(repository.getCandidateLocalIdentity(documentId).phone, '080-2222-3333')
   assert.equal(repository.getCandidateLocalIdentity(documentId).email, 'candidate@example.jp')
@@ -460,7 +469,7 @@ try {
   assert.equal(repository.getCandidateLocalIdentity(documentId).major, '情報工学')
   assert.equal(repository.getCandidateLocalIdentity(documentId).graduationDate, '2013年3月')
   assert.equal(repository.getCandidateLocalIdentity(documentId).degree, '学士')
-  assert.equal(repository.getCandidateProfileHistory(documentId).length, 2)
+  assert.equal(repository.getCandidateProfileHistory(documentId).length, 3)
   assert.equal(repository.getCandidateReview(documentId)?.fields.find((field) => field.key === 'skills')?.value, 'Java, AWS, Spring Boot, PostgreSQL')
   assert.throws(
     () => repository.updateCandidateProfile({
@@ -605,6 +614,7 @@ try {
     new Date('2026-07-17T00:02:45.000Z')
   )
   assert.equal(confirmedJobCase.status, 'completed')
+  assert.equal(repository.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'created', 'initial confirmation is a new case, not a lifecycle change')
   assert.equal(confirmedJobCase.jobCase?.containsDirectIdentifiers, false)
   const manualSource = createRedactedManualJobCaseSource({
     subject: `${manualCaseNameSentinel}様 Python案件`,
@@ -696,6 +706,7 @@ try {
   assert.equal((await stat(databasePath)).mode & 0o777, 0o600, 'database permissions are not owner-only')
 
   let reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
+  assert.equal(reopened.getCurrentCandidateProfile(documentId)?.isOwnCompany, true, 'HR affiliation did not survive reopening')
   assert.equal(reopened.listWorkTasks().some((item) => item.instruction === taskSentinel), true, 'task did not recover after reopening')
   const recoveredWorkTask = reopened.getWorkTask(task.id)
   assert.equal(recoveredWorkTask?.messages.length, 3, 'work task messages did not recover after reopening')
@@ -1020,7 +1031,7 @@ try {
     checks: [
       { id: 'live-profile', status: 'passed', label: 'Live profile', detail: 'Profile metadata only.' },
       { id: 'readonly-scope', status: 'passed', label: 'Readonly scope', detail: 'gmail.readonly only.' },
-      { id: 'company-domain', status: 'passed', label: 'Company domain', detail: 'Domain verified without storing the address.' },
+      { id: 'account-identity', status: 'passed', label: 'Google account identity', detail: 'Account verified without storing the address.' },
       { id: 'credential-protection', status: 'passed', label: 'Credential protection', detail: 'Protected by Keychain.' },
       { id: 'bounded-sync', status: 'passed', label: 'Bounded sync', detail: 'Configuration fingerprint matched.' },
       { id: 'successful-sync', status: 'passed', label: 'Successful sync', detail: 'One bounded record.' },
@@ -1105,7 +1116,9 @@ try {
     'task-bound-match-verification',
     '2026-07-17T00:02:46.600Z'
   )
+  boundMatchTask.contextBindings.push({ objectType: 'candidate-profile', objectId: documentId, version: '1' })
   reopened.saveWorkTask(boundMatchTask)
+  assert.ok(reopened.getWorkTask(boundMatchTask.id)?.contextBindings.some((binding) => binding.objectType === 'candidate-profile' && binding.objectId === documentId && binding.version === '1'))
   const runtimeIdentity = {
     algorithmVersion: 'hard-filter-bm25-v1' as const,
     hardFilterPolicyVersion: 'tri-state-v3' as const,
@@ -1299,7 +1312,7 @@ try {
   )
   assert.equal(reopened.getCandidateReview(documentId)?.status, 'completed', 'completed review did not recover')
   assert.equal(reopened.getCandidateReview(documentId)?.profile?.status, 'current', 'candidate profile did not recover')
-  assert.equal(reopened.getCandidateProfileHistory(documentId).length, 2, 'candidate profile edit history did not recover')
+  assert.equal(reopened.getCandidateProfileHistory(documentId).length, 3, 'candidate profile edit history did not recover')
   assert.equal(reopened.getCandidateLocalIdentity(documentId).email, 'candidate@example.jp', 'edited candidate contact did not recover')
   assert.equal(reopened.getCandidateLocalIdentity(documentId).birthDate, '1990年4月', 'edited candidate birth date did not recover')
   assert.equal(reopened.getCandidateLocalIdentity(documentId).education, '東京工科大学', 'edited candidate education did not recover')
@@ -1348,6 +1361,7 @@ try {
     reason: '検証用案件アーカイブ'
   }, 'verification-user', new Date('2026-07-17T00:02:56.000Z'))
   assert.equal(archivedCase.lifecycle, 'archived')
+  assert.equal(reopened.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'archived')
   assert.equal(reopened.listActiveJobCases().length, 1, 'archived job case remained active')
   assert.equal(reopened.getJobCaseHistory(jobCaseReviewId)[0]?.status, 'archived')
   const restoredCase = reopened.setJobCaseLifecycle({
@@ -1356,12 +1370,14 @@ try {
     reason: '検証後に案件を復元'
   }, 'verification-user', new Date('2026-07-17T00:02:57.000Z'))
   assert.equal(restoredCase.lifecycle, 'active')
+  assert.equal(reopened.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'status-changed')
   assert.equal(reopened.listActiveJobCases().length, 2, 'restored job case did not become active')
   const reopenedCaseReview = reopened.reopenJobCaseReview({
     reviewId: jobCaseReviewId,
     reason: '単価条件を更新するため'
   }, 'verification-user', new Date('2026-07-17T00:02:58.000Z'))
   assert.equal(reopenedCaseReview.status, 'awaiting-review')
+  assert.equal(reopened.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'updated')
   assert.equal(reopenedCaseReview.reviewRevision, 2)
   assert.equal(reopenedCaseReview.fields.find((field) => field.key === 'rate')?.value, '80万円/月')
   const revisedCase = reopened.confirmJobCaseReview({
@@ -1470,10 +1486,11 @@ try {
         }]
       }
     ],
-    salesAgentState: { selectedJobCaseRef: salesAgentJobCaseReference, lastMatchRunId: persistedMatchRun.run.id, lastSearchMessageId: 'sales-agent-assistant-1' },
+    salesAgentState: { selectedCandidateDocumentId: documentId, selectedJobCaseRef: salesAgentJobCaseReference, lastMatchRunId: persistedMatchRun.run.id, lastSearchMessageId: 'sales-agent-assistant-1' },
     expectedRevision: null
   }, new Date('2026-07-17T00:02:59.700Z'))
   assert.equal(savedSalesAgentConversation.context.candidateDocumentId, null)
+  assert.equal(reopened.getAiConversation(salesAgentConversationId)?.salesAgentState?.selectedCandidateDocumentId, documentId)
   const persistedModelMessage = reopened.getAiConversation(salesAgentConversationId)?.messages.find((message) => message.id === 'sales-agent-assistant-1')
   assert.deepEqual({
     mode: persistedModelMessage?.mode,
@@ -1699,6 +1716,19 @@ try {
     'the last remaining broadcast template was deletable'
   )
 
+  reopened.markJobCaseReviewSeen(jobCaseReviewId, '2026-07-17T00:02:59.950Z')
+  reopened.markJobCaseReviewSeen(jobCaseReviewId, '2026-07-17T00:02:59.960Z')
+  assert.deepEqual(
+    reopened.listSeenJobCaseReviewIds(), [jobCaseReviewId],
+    'marking the same case seen twice did not stay one row'
+  )
+  reopened.close()
+  reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
+  assert.deepEqual(
+    reopened.listSeenJobCaseReviewIds(), [jobCaseReviewId],
+    'the seen mark did not survive a reopen'
+  )
+
   const jobCaseDeletionPreview = reopened.previewJobCaseDeletion(jobCaseReviewId)
   assert.equal(jobCaseDeletionPreview.counts.caseVersions, 2)
   assert.equal(jobCaseDeletionPreview.counts.gmailMessages, 1)
@@ -1725,6 +1755,10 @@ try {
   assert.equal(
     reopened.listCaseBroadcastCopies(jobCaseReviewId).length, 0,
     'broadcast copy rows survived the controlled deletion of their case'
+  )
+  assert.deepEqual(
+    reopened.listSeenJobCaseReviewIds(), [],
+    'the seen mark survived the controlled deletion of its case'
   )
   const jobCaseDeletionReportId = '3f15a899-b863-48ec-acb6-e033b3c04658'
   reopened.saveDataDeletionReport({
@@ -1830,9 +1864,9 @@ try {
   const staleReview = reopened.getCandidateReview(documentId)
   assert.equal(staleReview?.status, 'awaiting-review', 'new extraction did not reopen review')
   assert.equal(staleReview?.reviewRevision, 2, 'review revision did not advance')
-  assert.equal(staleReview?.profile?.status, 'stale', 'previous profile was not marked stale')
+  assert.equal(staleReview?.profile?.status, 'current', 'new extraction must immediately provide a current business profile')
   assert.equal(reopened.listCandidateInterviews().some((item) => item.sourceDocumentId === documentId), true, 'resume refresh discarded recruiting history')
-  assert.equal(reopened.getCandidateProfileHistory(documentId)[0]?.status, 'stale', 'profile history did not expose stale status')
+  assert.equal(reopened.getCandidateProfileHistory(documentId)[1]?.status, 'stale', 'previous profile history must still expose stale status')
   assert.equal(reopened.getCandidateEvaluationDraft()?.cases[0]?.status, 'candidate-stale', 'a stale candidate profile did not invalidate its expert label')
   assert.throws(
     () => reopened.confirmCandidateReview(reviewSubmission, 'verification-user', '検証担当者'),
@@ -1840,7 +1874,7 @@ try {
     'an outdated review revision was unexpectedly accepted'
   )
   const deletionPreview = reopened.previewCandidateDeletion(documentId)
-  assert.equal(deletionPreview.counts.profileVersions, 2)
+  assert.equal(deletionPreview.counts.profileVersions, 4)
   assert.equal(deletionPreview.counts.matchRecords, 1)
   assert.equal(deletionPreview.counts.evaluationRecords, 3)
   assert.equal(deletionPreview.counts.piiMappings, 6)
@@ -1910,6 +1944,38 @@ try {
   assert.equal(afterDeletion.hasGmailMessage('hr@example.co.jp', 'gmail_msg_001'), true, 'Gmail tombstone did not recover')
   assert.equal(afterDeletion.getJobCaseReview(manualDraft.reviewId)?.status, 'completed', 'unrelated manual job case was deleted')
   assert.equal(afterDeletion.getRecoveryState().lastBackupAt, '2026-07-17T00:02:49.000Z', 'backup audit event did not recover')
+  // Use the unrelated paused fixture for nullable affiliation update compatibility.
+  let affiliationProfile = afterDeletion.getCurrentCandidateProfile(rejectedDocumentId)!
+  assert.ok(affiliationProfile)
+  for (const value of [true, false, undefined, null]) {
+    affiliationProfile = afterDeletion.updateCandidateProfile({ sourceDocumentId: rejectedDocumentId,
+      expectedVersion: affiliationProfile.profileVersion, ...(value === undefined ? {} : { isOwnCompany: value }),
+      identity: affiliationProfile.localPersonalDetails,
+      fields: affiliationProfile.fields.map(({ key, value }) => ({ key, value })),
+      projectExperiences: affiliationProfile.projectExperiences }, 'verification-user', '検証担当者')
+    assert.equal(affiliationProfile.isOwnCompany, value === undefined ? false : value,
+      'explicit null must clear affiliation; omitted values must preserve the HR selection')
+  }
+  const affiliationOriginal = affiliationProfile
+  for (const value of [true, false, null]) {
+    affiliationProfile = afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
+      expectedVersion: affiliationProfile.profileVersion, isOwnCompany: value }, '検証担当者')
+    assert.equal(affiliationProfile.isOwnCompany, value)
+    assert.deepEqual(affiliationProfile.fields, affiliationOriginal.fields)
+    assert.deepEqual(affiliationProfile.projectExperiences, affiliationOriginal.projectExperiences)
+    assert.deepEqual(affiliationProfile.localPersonalDetails, affiliationOriginal.localPersonalDetails)
+    assert.equal(afterDeletion.getCandidateReview(rejectedDocumentId)?.isOwnCompany, value)
+    assert.equal(afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
+      expectedVersion: affiliationProfile.profileVersion, isOwnCompany: value }, '検証担当者').profileVersion,
+      affiliationProfile.profileVersion, 'same-value saves must not create another version')
+  }
+  assert.equal(affiliationProfile.profileVersion, affiliationOriginal.profileVersion + 3)
+  assert.throws(() => afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
+    expectedVersion: affiliationOriginal.profileVersion, isOwnCompany: true }, '検証担当者'), /再読み込み/)
+  assert.throws(() => afterDeletion.setCandidateOwnCompany({ documentId,
+    expectedVersion: 1, isOwnCompany: true }, '検証担当者'), /アーカイブ/)
+  assert.throws(() => afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
+    expectedVersion: affiliationProfile.profileVersion, isOwnCompany: 'true' as unknown as boolean }, '検証担当者'))
   afterDeletion.close()
 
   const actionAssociationInspection = new Database(databasePath)
@@ -2004,6 +2070,8 @@ try {
       broadcastCopyRoundTripVerified: true,
       broadcastCopyLogAppendOnlyVerified: broadcastCopyLogAppendOnly,
       broadcastCopyDeletionCascadeVerified: true,
+      jobCaseSeenIdempotentVerified: true,
+      jobCaseSeenDeletionCascadeVerified: true,
       pendingJobCaseDeletionVerified: true,
       proposalApprovalHashVerified: true,
       proposalExportStateVerified: true,

@@ -4,6 +4,7 @@ import type { LocalOperatorProfile } from '@shared'
 import { useRendererUiRefresh, useUiLocale, useUiText } from '../i18n'
 
 export type SidebarView =
+  | 'business'
   | 'home'
   | 'candidate-management'
   | 'interview-schedule'
@@ -31,6 +32,7 @@ interface SidebarProps {
   interviewDecisionCount: number
   operatorProfile: LocalOperatorProfile
   reviewCount: number
+  onBusiness?(): void
   onHome(): void
   onResumeImport(): void
   onCandidateManagement(): void
@@ -77,6 +79,7 @@ export function Sidebar({
   interviewDecisionCount,
   operatorProfile,
   reviewCount,
+  onBusiness,
   onHome,
   onResumeImport,
   onCandidateManagement,
@@ -159,6 +162,7 @@ export function Sidebar({
     </button>
 
     <nav aria-label={t('メインナビゲーション')} className="sidebar-nav sidebar-tree-nav">
+      {onBusiness ? <button aria-current={active === 'business' ? 'page' : undefined} className={active === 'business' ? 'nav-item is-active' : 'nav-item'} onClick={onBusiness} type="button"><Icon name="upload" size={18} /><span>{zh ? '信息整理与推广' : '情報整理・紹介'}</span></button> : null}
       <button aria-current={active === 'home' ? 'page' : undefined} className={active === 'home' ? 'nav-item is-active' : 'nav-item'} onClick={onHome} type="button"><Icon name="home" size={18} /><span>{agentEnabled ? (zh ? '业务概览' : '業務概要') : (zh ? '工作台' : 'ワークベンチ')}</span></button>
       {groups.map((group) => {
         const open = expanded.has(group.id)

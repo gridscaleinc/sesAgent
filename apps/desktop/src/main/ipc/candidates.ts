@@ -28,6 +28,12 @@ export function registerCandidateHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.searchCandidateProfiles, async (event, rawInput) => {
     assertTrustedSender(event)
     const input = searchCandidateProfilesInputSchema.parse(rawInput)
+    if (input.sourceDocumentId) {
+      const profile = repository.getCurrentCandidateProfile(input.sourceDocumentId)
+      return searchConfirmedCandidateProfiles(profile ? [profile] : [], '', 1).map((candidate) => ({
+        ...candidate, localIdentity: repository.getCandidateLocalIdentity(input.sourceDocumentId!)
+      }))
+    }
     return searchCandidates(input.query, input.maxResults)
   })
 

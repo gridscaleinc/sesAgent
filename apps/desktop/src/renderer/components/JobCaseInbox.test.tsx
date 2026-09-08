@@ -507,4 +507,42 @@ describe('JobCaseInbox', () => {
     expect(screen.queryByRole('dialog', { name: 'すべての案件データを永久削除' })).not.toBeInTheDocument()
   })
 
+  it('groups the list by arrival day, marks the unread cases and clears one when it is opened', () => {
+    const older: JobCaseReviewSnapshot = {
+      ...completedReview,
+      reviewId: 'c1f5d0d4-2c5f-4c2c-9d21-6f4dbb1a4e91',
+      redactedSubject: 'C# 保守案件',
+      fields: completedReview.fields.map((field) => field.key === 'title'
+        ? { ...field, value: 'C# 保守案件', originalValue: 'C# 保守案件' }
+        : field)
+    }
+    const onMarkSeen = vi.fn()
+    render(<JobCaseInbox
+      {...governanceProps}
+      newCaseDigest={{
+        newCasesToday: 1,
+        unseenCount: 1,
+        groups: [{
+          day: 'today', count: 1, unseenCount: 1,
+          entries: [{
+            reviewId: completedReview.reviewId, jobCaseId: completedReview.jobCase?.id ?? null,
+            title: 'Java 決済基盤案件', sourceType: 'gmail', arrivedAt: '2026-07-17T01:00:00.000Z',
+            unseen: true, status: 'ready', missingFieldKeys: [], highlights: []
+          }]
+        }]
+      }}
+      onCreateManual={vi.fn()}
+      onMarkSeen={onMarkSeen}
+      onSubmit={vi.fn()}
+      reviews={[completedReview, older]}
+    />)
+
+    // A case the digest does not carry is simply older news, never marked 新.
+    expect(screen.getByText('本日')).toBeInTheDocument()
+    expect(screen.getByText('それ以前')).toBeInTheDocument()
+    expect(screen.getAllByText('新')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: /C# 保守案件/u }))
+    expect(onMarkSeen).toHaveBeenCalledWith(older.reviewId)
+  })
+
 })

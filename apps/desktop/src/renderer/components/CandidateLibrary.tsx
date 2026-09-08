@@ -21,6 +21,7 @@ import { useRendererUiRefresh, useUiLocale } from '../i18n'
 import { summarizeSourceLabels } from '../source-evidence'
 
 interface CandidateLibraryProps {
+  profileRequest?: { id: number; documentId: string }
   aiCommerce?: AiCommerceMembershipState
   analyses?: ResumeAnalysisSummary[]
   onImportResume?(): void
@@ -40,6 +41,7 @@ function confirmedDate(value: string, locale: 'ja-JP' | 'zh-CN'): string {
 }
 
 export function CandidateLibrary({
+  profileRequest,
   aiCommerce,
   analyses = [],
   onImportResume,
@@ -115,6 +117,17 @@ export function CandidateLibrary({
     setHistory(null)
   }
 
+  useEffect(() => {
+    if (!profileRequest) return
+    let active = true
+    void onSearch({ query: '', sourceDocumentId: profileRequest.documentId, maxResults: 1 }).then((candidates) => {
+      if (!active) return
+      if (candidates[0]) void openHistory(candidates[0])
+      else setError(locale === 'zh-CN' ? '人员资料不存在或已停用。' : '要員情報が見つからないか無効です。')
+    }).catch((cause) => { if (active) setError(String(cause)) })
+    return () => { active = false; historyRequest.current += 1 }
+  }, [profileRequest])
+
   if (history) {
     return <CandidateProfileDetail
       aiCommerce={aiCommerce}
@@ -151,7 +164,7 @@ export function CandidateLibrary({
         <div>
           <span className="eyebrow">TALENT POOL</span>
           <h1>{locale === 'zh-CN' ? '人才池' : '人材プール'}</h1>
-          <p>{locale === 'zh-CN' ? '仅显示招聘通过并取得推荐资格的人才。本人信息在本机加密，发送到 Cloud AI 前会在本地脱敏。' : '採用通過後に推薦資格を取得した人材だけを表示します。本人情報は端末内で暗号化し、Cloud AI送信前にローカルで匿名化します。'}</p>
+          <p>{locale === 'zh-CN' ? '导入的人员可直接用于推广和案件匹配。需要修正资料时，打开人员档案编辑。' : '取り込んだ要員はすぐに紹介と案件マッチングに利用できます。情報の修正はプロフィールを開いて行います。'}</p>
         </div>
         <div className="candidate-library-header-actions">
           {onImportResume ? <button onClick={onImportResume} type="button"><Icon name="upload" size={16} />履歴書をインポート</button> : null}
@@ -181,7 +194,7 @@ export function CandidateLibrary({
           <Icon name="lock" size={15} />
           <span>硬条件三態（不明は除外しない）→ BM25 + Profile/Project Vector → RRF → Local AI Rerank</span>
           <span>本人情報は端末内で暗号化</span>
-          <span>{locale === 'zh-CN' ? '招聘通过，可参与案件推荐的人才' : '採用通過済み・案件推薦可能な人材'}</span>
+          <span>{locale === 'zh-CN' ? '已确认可参与案件推荐的人员' : '紹介可能と確認済みの要員'}</span>
         </div>
       </section>
 
@@ -191,7 +204,7 @@ export function CandidateLibrary({
         <section className="candidate-library-empty">
           <span><Icon name="users" size={24} /></span>
           <h2>{submittedQuery ? (locale === 'zh-CN' ? '没有找到匹配的人才' : '一致する人材が見つかりません') : (locale === 'zh-CN' ? '人才池中还没有可推荐人才' : '人材プールにはまだ推薦可能な人材がいません')}</h2>
-          <p>{submittedQuery ? (locale === 'zh-CN' ? '请减少条件或更换关键词后重试。' : '条件を減らすか、表記を変えて再検索してください。') : (locale === 'zh-CN' ? '导入简历、确认候选人资料并通过招聘面试后，才会显示在这里。' : '履歴書を取り込み、候補者プロフィールを確認して採用面談に通過すると、ここに表示されます。')}</p>
+          <p>{submittedQuery ? (locale === 'zh-CN' ? '请减少条件或更换关键词后重试。' : '条件を減らすか、表記を変えて再検索してください。') : (locale === 'zh-CN' ? '请在人员推广页面确认资料和可推广状态，也可通过原有招聘流程取得推荐资格。' : '要員紹介画面で情報と紹介可否を確認すると表示されます。従来の採用通過でも推薦資格を取得できます。')}</p>
           {!submittedQuery && onImportResume ? <button className="candidate-library-empty-action" onClick={onImportResume} type="button"><Icon name="upload" size={15} />最初の履歴書をインポート</button> : null}
         </section>
       ) : null}

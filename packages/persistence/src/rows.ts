@@ -446,6 +446,7 @@ export interface JobCaseReviewStateRow {
 
 export interface JobCaseReviewJoinRow extends JobCaseReviewStateRow {
   draft_json: string
+  intake_at: string
   source_id: string
   source_type: JobCaseSourceType
   provider_message_id: string | null
@@ -569,6 +570,11 @@ export interface CaseBroadcastRow {
   text_sha256: string
   actor_id: string
   created_at: string
+}
+
+export interface JobCaseSeenRow {
+  review_id: string
+  seen_at: string
 }
 
 export interface CaseBroadcastCopyRow {

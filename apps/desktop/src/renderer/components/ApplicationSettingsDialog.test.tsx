@@ -40,7 +40,6 @@ const integrationProps = {
   onDisconnectGoogleWorkspace: vi.fn(),
   onOpenAiCommerce: vi.fn(),
   onOpenDataSecurity: vi.fn(),
-  onOpenGoogleWorkspace: vi.fn(),
   onOpenOperatorProfile: vi.fn(),
   onSyncGoogleWorkspace: vi.fn()
 }
@@ -71,9 +70,35 @@ describe('ApplicationSettingsDialog', () => {
   it('keeps every external connection under the integrations section', () => {
     render(<ApplicationSettingsDialog {...integrationProps} initialSection="integrations" onClose={vi.fn()} onSave={vi.fn()} preferences={preferences} />)
     expect(screen.getByRole('heading', { name: '外部システム' })).toBeInTheDocument()
-    expect(screen.getByText('Google Workspace')).toBeInTheDocument()
+    expect(screen.getByText('Google メール')).toBeInTheDocument()
     expect(screen.getByText('AICommerce Cloud AI')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '接続設定' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '接続設定' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Google メール接続が組み込まれていません/)).toBeInTheDocument()
+    expect(screen.queryByText('Desktop OAuth Client ID')).not.toBeInTheDocument()
+  })
+
+  it('lets HR start the product-managed Gmail authorization with one button', async () => {
+    const onConnectGoogleWorkspace = vi.fn().mockResolvedValue(undefined)
+    render(<ApplicationSettingsDialog
+      {...integrationProps}
+      bootstrap={{
+        ...bootstrap,
+        gmail: { ...bootstrap.gmail, configuration: 'ready', workspaceDomain: null },
+        gmailSync: { ...bootstrap.gmailSync, configuration: 'ready', labelIds: ['INBOX'], query: '案件 OR 募集' }
+      } as unknown as BootstrapPayload}
+      initialSection="integrations"
+      onClose={vi.fn()}
+      onConnectGoogleWorkspace={onConnectGoogleWorkspace}
+      onSave={vi.fn()}
+      preferences={preferences}
+    />)
+
+    expect(screen.getByRole('note')).toHaveTextContent(/件名・送信者・本文・日時・Label/u)
+    expect(screen.getByRole('note')).toHaveTextContent(/添付ファイルは取得しません/u)
+    expect(screen.getByRole('note')).toHaveTextContent(/gmail.readonly 同意画面/u)
+    fireEvent.click(screen.getByRole('button', { name: 'Google メールを接続' }))
+    await waitFor(() => expect(onConnectGoogleWorkspace).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText('Desktop OAuth Client ID')).not.toBeInTheDocument()
   })
 
   it('saves partner labels as aliases of the built-in case fields with an optimistic revision', async () => {

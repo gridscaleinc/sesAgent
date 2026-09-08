@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { DocumentBlock, DocumentIR } from '@parsers'
 import {
   candidateFieldKeys,
+  requiresOwnCompany,
   candidateWorkAuthorizationValues,
   candidateProjectExperienceSchema,
   localCandidatePersonalDetailsSchema,
@@ -57,6 +58,7 @@ export interface CandidateProjectExperienceDraft {
 }
 
 export interface CandidateProfile {
+  isOwnCompany?: boolean | null
   schemaVersion: 'candidate-profile-v1'
   id: string
   sourceDocumentId: string
@@ -126,6 +128,7 @@ export const candidateExtractionDraftSchema: z.ZodType<CandidateExtractionDraft>
 
 export const candidateProfileSchema: z.ZodType<CandidateProfile> = z.object({
   schemaVersion: z.literal('candidate-profile-v1'),
+  isOwnCompany: z.boolean().nullable().default(null),
   id: z.string().uuid(),
   sourceDocumentId: z.string().uuid(),
   profileVersion: z.number().int().positive(),
@@ -176,7 +179,8 @@ function queryTerms(query: string): string[] {
 
 /** The must-have terms: everything except the 尚可 tokens. */
 export function candidateSearchTerms(query: string): string[] {
-  return queryTerms(query).filter((term) => !term.startsWith(preferredSearchTermPrefix))
+  const terms = queryTerms(query).filter((term) => !term.startsWith(preferredSearchTermPrefix) && !/(?:自社|貴社|御社|自己公司|本公司)/u.test(term))
+  return requiresOwnCompany(query) ? [...terms, '自社限定'] : terms
 }
 
 /**
@@ -608,11 +612,14 @@ function isHardFilterTerm(term: string): boolean {
     /^(?:週\d日(?:リモート|在宅)|フルリモート|リモート可|常駐)$/u.test(normalized) ||
     japaneseLevelRequirement(normalized) !== null ||
     locationRequirement(normalized) !== null ||
-    workAuthorizationRequirement(normalized) !== null
+    workAuthorizationRequirement(normalized) !== null || normalized === '自社限定'
 }
 
 function hardFilterForTerm(profile: CandidateProfile, term: string): CandidateHardFilter | null {
   const normalized = term.normalize('NFKC').trim()
+  if (normalized === '自社限定') return { type: 'own-company', requested: term,
+    actual: profile.isOwnCompany === true ? '自社' : profile.isOwnCompany === false ? '非自社' : null,
+    outcome: profile.isOwnCompany === true ? 'passed' : 'failed' }
   const requestedYears = normalized.match(/^(\d+(?:\.\d+)?)年以上$/u)?.[1]
   if (requestedYears) {
     const actual = candidateFieldValue(profile, 'experience_years')
@@ -758,7 +765,8 @@ export function searchConfirmedCandidateProfiles(
   query: string,
   maxResults = 30,
   vectorScores?: ReadonlyMap<string, number>,
-  vectorProjectEvidence?: ReadonlyMap<string, CandidateProjectMatchEvidence>
+  vectorProjectEvidence?: ReadonlyMap<string, CandidateProjectMatchEvidence>,
+  includeNonMatches = false
 ): CandidateProfileSearchResult[] {
   const terms = candidateSearchTerms(query)
   const documents = buildCandidateBm25Documents(profiles)
@@ -767,7 +775,8 @@ export function searchConfirmedCandidateProfiles(
   const candidates = documents
     .flatMap((document) => {
       const hardFilters = hardFilterEvidence(document.profile, terms)
-      if (hardFilters.some((filter) => filter.outcome === 'failed')) return []
+      if (hardFilters.some((filter) => filter.type === 'own-company' && filter.outcome !== 'passed')) return []
+      if (!includeNonMatches && hardFilters.some((filter) => filter.outcome === 'failed')) return []
       const evidence = document.profile.fields.filter((field) =>
         field.value && terms.some((term) => fieldMatchesTermLexically(document, field, term))
       )
@@ -809,6 +818,7 @@ export function searchConfirmedCandidateProfiles(
         id: document.profile.id,
         sourceDocumentId: document.profile.sourceDocumentId,
         version: document.profile.profileVersion,
+        isOwnCompany: document.profile.isOwnCompany ?? null,
         status: 'current' as const,
         confirmedAt: document.profile.confirmedAt,
         confirmedBy: document.profile.confirmedBy,
@@ -850,7 +860,7 @@ export function searchConfirmedCandidateProfiles(
   }
   const structuredOnlyQuery = terms.length > 0 && terms.every(isHardFilterTerm)
   const lexicalRanking = candidates
-    .filter((result) => result.matchedTerms.some((term) => !term.startsWith(preferredSearchTermPrefix)) || structuredOnlyQuery)
+    .filter((result) => includeNonMatches || result.matchedTerms.some((term) => !term.startsWith(preferredSearchTermPrefix)) || structuredOnlyQuery)
     .toSorted((a, b) =>
       a.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length -
         b.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length ||
@@ -1993,7 +2003,7 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
   // running text somewhere else in the document.
   const labeledAvailability = firstMatchingBlock(
     blocks,
-    /(?:開始日|稼働開始日?|開始可能日|参画可能日|开始日)\s*[:：]\s*([^\n|｜]{1,40})/u
+    /(?:開始日|稼働開始日?|稼働(?:可能時期)?|稼動(?:可能時期)?|開始可能日|参画可能日|开始日|可上岗(?:时间)?|可入场(?:时间)?)\s*[:：]\s*([^\n|｜]{1,40})/u
   )
   const availability = labeledAvailability ?? firstMatchingBlock(
     blocks,

@@ -589,6 +589,8 @@ interface SegmentImportOutcome {
   candidate: CandidateTextImportResult | null
   validity?: JobCaseTextImportResult['validity']
   attentionReason?: string | null
+  startLine?: number
+  endLine?: number
 }
 
 /** Narrows the lane's loosely typed field map to one importer's known keys. */
@@ -741,6 +743,8 @@ async function tryCloudAssistedIntake(
     const segmentText = lines.slice(record.startLine - 1, record.endLine).join('\n').trim()
     if (!segmentText) continue
     const outcome = await importOneSegment(deps, input, record.kind, segmentText, record.fields, intakeBatchId)
+    outcome.startLine = record.startLine
+    outcome.endLine = record.endLine
     outcomes.push(outcome)
     if (outcome.candidate?.outcome === 'created' && outcome.candidate.facts) {
       deps.registerConversationImport?.(input.conversationId, outcome.candidate.review.documentId)
@@ -801,6 +805,7 @@ async function tryCloudAssistedIntake(
     intake: {
       route: decisiveKind ?? (decision.route === 'multiple' ? 'multiple' : 'ambiguous-sensitive'),
       reason: 'cloud-assisted-extraction',
+      records: outcomes.map((item) => ({ kind: item.kind, status: item.status, outcome: item.outcome, reviewId: item.jobCaseReviewId, sourceDocumentId: item.candidate?.review.documentId ?? null, startLine: item.startLine, endLine: item.endLine })),
       restoreComposerText: !anySuccess
     }
   }
@@ -932,7 +937,7 @@ export async function executeBusinessTextIntakeTurn(
       ...saved,
       toolName: intakeToolName,
       actionRunId: preflight.actionRunId,
-      intake: { route: kind, reason: decision.reason, restoreComposerText: false }
+      intake: { route: kind, reason: decision.reason, restoreComposerText: false, records: [{ kind, status: 'succeeded', outcome: imported.outcome, reviewId: imported.review.reviewId, sourceDocumentId: null }] }
     }
   }
 
@@ -999,6 +1004,6 @@ export async function executeBusinessTextIntakeTurn(
     ...saved,
     toolName: intakeToolName,
     actionRunId: preflight.actionRunId,
-    intake: { route: kind, reason: decision.reason, restoreComposerText: false }
+    intake: { route: kind, reason: decision.reason, restoreComposerText: false, records: [{ kind, status: 'succeeded', outcome: imported.outcome, reviewId: null, sourceDocumentId: imported.review.documentId }] }
   }
 }

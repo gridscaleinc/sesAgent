@@ -277,6 +277,7 @@ export type AgentPlannedToolAction =
   | { toolName: 'resume.analyze.local'; arguments: { attachmentOrdinal: number | null } }
   | { toolName: 'candidate.draft.read.local'; arguments: { draftOrdinal: number | null } }
   | { toolName: 'job-case.draft.read.local'; arguments: { draftOrdinal: number | null } }
+  | { toolName: 'job-case.conversation-import.local'; arguments: Record<string, never> }
   | {
       toolName: 'job-case.broadcast.draft.local'
       arguments: { target: 'new-cases' | 'uncopied-cases' | 'case'; ordinal: number | null }
@@ -397,6 +398,10 @@ const agentPlannedToolActionSchema = z.discriminatedUnion('toolName', [
     arguments: planningBroadcastDraftArgumentsSchema
   }).strict(),
   z.object({
+    toolName: z.literal('job-case.conversation-import.local'),
+    arguments: z.object({}).strict()
+  }).strict(),
+  z.object({
     toolName: z.literal('candidate.interview.schedule.local'),
     arguments: planningInterviewArgumentsSchema
   }).strict()
@@ -491,6 +496,13 @@ export const agentPlanningToolCatalog: readonly AgentPlanningToolCatalogEntry[] 
     argumentsShape: '{"draftOrdinal":number|null}',
     effect: 'read', approval: 'none',
     parse: (value) => ({ toolName: 'job-case.draft.read.local', arguments: planningDraftArgumentsSchema.parse(value) })
+  },
+  {
+    name: 'import_case_from_conversation',
+    description: 'Record as job cases the business text the operator pasted in an earlier message of this conversation - 记录成案件, 案件として登録して, 把刚才的案件录入. Use it whenever the operator asks to record, register, or import text pasted before, even when an earlier turn only summarized that text. Main re-reads the earlier message locally, so nothing needs to be pasted again. Such a request must never become a direct answer, and nothing may ever be described as recorded unless this tool ran.',
+    argumentsShape: '{}',
+    effect: 'write', approval: 'none',
+    parse: () => ({ toolName: 'job-case.conversation-import.local', arguments: {} })
   },
   {
     name: 'schedule_interview',
@@ -973,9 +985,16 @@ export class LocalAgentUseCase {
             rank: null, date: null, time: null, method: null, durationMinutes: null, kind: null, note: null
           } }
         : requestedAction
+    if (plannedAction.toolName === 'job-case.conversation-import.local') {
+      // Main intercepts this plan before execute: the intake pipeline owns the
+      // write and stamps business-text.import.local on its ActionRuns.
+      throw new AgentExecutionError('AGENT_PLAN_INVALID', '会话导入必须由 Main 预处理执行。')
+    }
     const turnId = randomUUID()
     const previousMessages = current?.messages ?? []
-    const previousState = current?.salesAgentState ?? defaultState()
+    const previousState = { ...(current?.salesAgentState ?? defaultState()),
+      ...(input.selectedCandidateDocumentId !== undefined ? { selectedCandidateDocumentId: input.selectedCandidateDocumentId } : {})
+    }
     const inputMessage = userMessage(input, turnId)
     const messages = [...previousMessages, inputMessage].slice(-200)
     const locale = this.port.locale?.() ?? 'ja-JP'
@@ -1003,7 +1022,8 @@ export class LocalAgentUseCase {
           : { updatedAfter: '1970-01-01T00:00:00.000Z', updatedBefore: '9999-12-31T23:59:59.999Z' }
         const tool = await this.port.executeTool('job-case.search.local', {
           mode: 'recent', query: plannedAction.arguments.query, updatedAfter: range.updatedAfter, updatedBefore: range.updatedBefore,
-          lifecycle: 'active', limit: 20
+          lifecycle: 'active', limit: 20,
+          ...(previousState.selectedCandidateDocumentId && isCandidateCaseRequest(input.message) ? { candidateDocumentId: previousState.selectedCandidateDocumentId } : {})
         }, { conversationId: input.conversationId, turnId, requestId: input.requestId })
         if (tool.toolName !== 'job-case.search.local') throw new AgentExecutionError('TOOL_RESULT_INVALID', '案件查询结果无效。')
         const cards = tool.output.cases.map((record, index) => jobCaseCard(record, index + 1))
@@ -1076,18 +1096,22 @@ export class LocalAgentUseCase {
           return save(assistantMessage(content, [access], turnId), { ...previousState, selectedJobCaseRef: resolved.reference }, 'clarifying', null, null)
         }
         const tool = await this.port.executeTool('candidate.match.local', {
-          jobCaseId: resolved.reference.objectId, jobCaseVersion: resolved.reference.objectVersion
+          jobCaseId: resolved.reference.objectId, jobCaseVersion: resolved.reference.objectVersion,
+          ...(previousState.selectedCandidateDocumentId ? { candidateDocumentId: previousState.selectedCandidateDocumentId } : {})
         }, { conversationId: input.conversationId, turnId, requestId: input.requestId })
         if (tool.toolName !== 'candidate.match.local') throw new AgentExecutionError('TOOL_RESULT_INVALID', '候选人匹配结果无效。')
         const cards = tool.output.cards.slice(0, 5).map((record, index) => candidateCard(record, index + 1))
         const block: AgentCandidateMatchCardsBlock = {
           type: 'candidate-match-cards', runId: tool.output.runId, resultHash: tool.output.resultHash, cards,
+          ...(previousState.selectedCandidateDocumentId ? { scope: 'selected-person' as const } : {}),
           ...(tool.output.cloudReview ? { cloudReview: tool.output.cloudReview } : {})
         }
         // Rows that matched nothing are not results; say there is no candidate
         // and let the cards explain why on request.
         const noneAssessable = cards.length > 0 && cards.every(isUnassessableMatchCard)
-        const content = noneAssessable
+        const content = previousState.selectedCandidateDocumentId
+          ? textFor(locale, '選択中の人材と案件だけを照合しました。未記載の条件は確認が必要です。', '已仅评估所选人员与当前案件。资料未记载的条件需要核对。')
+          : noneAssessable
           ? textFor(locale, '現在の案件に確認できる候補者はいません。検索された人材はいずれも要件に一致しませんでした。', '当前案件暂无可确认的匹配候选人；检索到的人选均不满足案件要求。')
           : cards.length > 0
             ? textFor(locale, `現在の案件と確認済み人材プールでローカルマッチングを実行し、上位${cards.length}名を表示します。`, `已使用当前案件和确认人才池完成本地匹配，显示前 ${cards.length} 名。`)
@@ -1602,7 +1626,9 @@ export class LocalAgentUseCase {
       ...(branchRootConversationId ? { branchRootConversationId } : {}),
       context: current?.context ?? salesAgentContext(),
       messages: [...(current?.messages ?? []), inputMessage, assistant].slice(-200),
-      salesAgentState: current?.salesAgentState ?? defaultState(),
+      salesAgentState: { ...(current?.salesAgentState ?? defaultState()),
+        ...(input.selectedCandidateDocumentId !== undefined ? { selectedCandidateDocumentId: input.selectedCandidateDocumentId } : {})
+      },
       expectedRevision: input.expectedConversationRevision
     })
     const persisted = conversation.messages.find((message) => message.id === assistant.id)
@@ -1652,4 +1678,13 @@ export function createAgentReference(
   objectVersion: number | null = null, resultHash: string | null = null, ordinal: number | null = null
 ): TypedAiConversationReference {
   return typedReference(kind, objectId, label, objectVersion, resultHash, ordinal)
+}
+
+/** A person-to-case request must never degrade into an unfiltered case listing. */
+export function isCandidateCaseRequest(message: string): boolean {
+  return /他|她|该名|改名|这个人|人员|候选人|人材|候補者/u.test(message)
+    && /(?:适合|匹配|找|推荐).{0,20}(?:案件|项目)|(?:合う|適した).{0,8}案件|案件.{0,8}(?:探|紹介)/u.test(message)
+}
+export function isSpecificCandidateFitRequest(message: string): boolean {
+  return /(?:案件|项目).{0,20}(?:适合|匹配).{0,8}(?:他|她|这个人|该人|(?:这个|这名|这位|该名|当前)(?:候选人|人员))|(?:他|她|这个人|该人|候选人|人员).{0,15}(?:适合|匹配).{0,8}(?:这个|该|当前).{0,5}(?:案件|项目)|この案件.{0,12}(?:彼|彼女|候補者|人材).{0,8}(?:合う|適合)/u.test(message)
 }

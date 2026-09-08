@@ -29,8 +29,27 @@ const alias = {
   '@renderer': resolve(rootDir, 'apps/desktop/src/renderer')
 }
 
+// Desktop OAuth Client IDs are public identifiers. Capture product-managed
+// Gmail settings in the Main bundle when they are present during packaging so
+// a Finder-launched app does not depend on shell environment inheritance.
+const googleWorkspaceBuildVariables = [
+  'SES_GOOGLE_OAUTH_CLIENT_ID',
+  'SES_GOOGLE_OAUTH_CLIENT_SECRET',
+  'SES_GOOGLE_WORKSPACE_DOMAIN',
+  'SES_GMAIL_LABEL_IDS',
+  'SES_GMAIL_QUERY',
+  'SES_GMAIL_LOOKBACK_DAYS',
+  'SES_GMAIL_MAX_MESSAGES_PER_RUN'
+] as const
+const mainBuildDefinitions = Object.fromEntries(
+  googleWorkspaceBuildVariables.flatMap((name) => process.env[name] === undefined
+    ? []
+    : [[`process.env.${name}`, JSON.stringify(process.env[name])]])
+) as Record<string, string>
+
 export default defineConfig({
   main: {
+    define: mainBuildDefinitions,
     plugins: [externalizeDepsPlugin()],
     resolve: { alias },
     build: {

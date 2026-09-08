@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   googleWorkspaceAdminConfigurationSchema,
+  googleWorkspaceOnlineAcceptanceReportSchema,
   executeAiCommerceCloudPromptInputSchema,
   localApplicationPreferencesSchema,
   localOperatorProfileSchema,
@@ -65,6 +66,49 @@ describe('Google Workspace administrator configuration schemas', () => {
       configuredBy: 'ローカル管理者',
       updatedAt: '2026-07-20T05:00:00.000Z'
     }).success).toBe(false)
+  })
+
+  it('accepts a product-managed public connector without a fixed customer domain', () => {
+    expect(googleWorkspaceAdminConfigurationSchema.parse({
+      version: 'google-workspace-admin-config-v1',
+      source: 'managed-environment',
+      editable: false,
+      clientId: validInput.clientId,
+      workspaceDomain: null,
+      labelIds: ['INBOX'],
+      query: '案件 OR 募集',
+      lookbackDays: 30,
+      maxMessagesPerRun: 200,
+      revision: null,
+      configuredBy: 'product',
+      updatedAt: '2026-09-01T00:00:00.000Z'
+    }).workspaceDomain).toBeNull()
+  })
+
+  it('continues to read acceptance reports written before account identity replaced company domain', () => {
+    const check = (id: string) => ({ id, status: 'passed' as const, label: id, detail: 'verified' })
+    expect(googleWorkspaceOnlineAcceptanceReportSchema.safeParse({
+      version: 'google-workspace-online-acceptance-v1',
+      id: '59d99a84-c5ea-4474-b08a-ddfd8f5eca73',
+      checkedAt: '2026-07-20T00:05:00.000Z',
+      overall: 'passed',
+      configurationFingerprint: 'a'.repeat(64),
+      credentialProtection: 'macos-keychain',
+      mailboxMetadataAccessed: true,
+      messageContentAccessedDuringCheck: false,
+      cloudModelUsed: false,
+      directIdentifierCloudSent: false,
+      checks: [
+        check('live-profile'), check('readonly-scope'), check('company-domain'),
+        check('credential-protection'), check('bounded-sync'), check('successful-sync'),
+        check('local-redaction'), check('no-cloud-model'), check('no-send-path')
+      ],
+      evidence: {
+        grantedScopeCount: 1,
+        sync: { status: 'idle', lastSyncedAt: '2026-07-20T00:04:00.000Z', mode: 'baseline', discovered: 1, imported: 1, duplicates: 0, filtered: 0, failed: 0 },
+        redaction: { storedMessages: 1, passed: 1, uncertain: 0, blocked: 0 }
+      }
+    }).success).toBe(true)
   })
 })
 

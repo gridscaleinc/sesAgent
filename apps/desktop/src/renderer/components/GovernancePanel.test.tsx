@@ -116,7 +116,7 @@ function callbacks() {
       checks: [
         { id: 'live-profile', status: 'passed', label: 'Gmail Profile のオンライン確認', detail: '本文は取得していません。' },
         { id: 'readonly-scope', status: 'passed', label: '読取専用 Scope', detail: 'gmail.readonly のみです。' },
-        { id: 'company-domain', status: 'passed', label: '会社 Workspace ドメイン', detail: '管理設定と一致しました。' },
+        { id: 'account-identity', status: 'passed', label: 'Google アカウント本人確認', detail: '接続先と一致しました。' },
         { id: 'credential-protection', status: 'passed', label: 'OAuth Token の端末保護', detail: 'Keychain で保護されています。' },
         { id: 'bounded-sync', status: 'passed', label: '管理者指定の同期範囲', detail: '現在の設定と一致します。' },
         { id: 'successful-sync', status: 'passed', label: 'Gmail の有界同期', detail: '保存 2件、失敗 0件。' },
@@ -240,7 +240,7 @@ describe('GovernancePanel recovery controls', () => {
       responsiveOpen={false}
       {...callbacks()}
     />)
-    expect(screen.getByText(/認証が失効しました。会社アカウントを再接続/)).toBeInTheDocument()
+    expect(screen.getByText(/認証が失効しました。Google メールアカウントを再接続/)).toBeInTheDocument()
     expect(screen.queryByText('GOOGLE_REAUTH_REQUIRED')).not.toBeInTheDocument()
   })
 
