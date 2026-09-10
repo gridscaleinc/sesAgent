@@ -1,3 +1,5 @@
+import { agentDraftFactsFromResumeAnalysis } from '../resume-agent-facts'
+import { analyzeStagedResumeLocally } from '../local-resume-analysis'
 import { createHash, randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { BrowserWindow, type OpenDialogOptions, dialog, ipcMain } from 'electron'
@@ -55,43 +57,7 @@ function documentTextForLocalPrivacy(document: Awaited<ReturnType<ParserWorkerCl
     .join('\n')
 }
 
-function bounded(value: string, maximum: number): string {
-  return value.length <= maximum ? value : `${value.slice(0, Math.max(1, maximum - 1))}…`
-}
-
-/**
- * Converts the committed local analysis into the only resume representation a
- * Sales Agent conversation may persist or project to Cloud AI. Direct identity,
- * the original file name and local document identifiers are excluded upstream
- * when the conversation projection is serialized.
- */
-export function agentDraftFactsFromResumeAnalysis(
-  analysis: ResumeAnalysisSummary,
-  label: string
-): AgentCandidateDraftFacts {
-  return {
-    documentId: analysis.fileToken,
-    label: bounded(label, 60),
-    confirmed: false,
-    reviewStatus: 'awaiting-review',
-    fields: analysis.extractedFields.slice(0, 20).map((field) => ({
-      label: bounded(field.label, 80),
-      value: field.value === null ? null : bounded(field.value, 600),
-      confidence: field.confidence,
-      status: field.status,
-      sources: [...new Set(field.sourceLabels)].slice(0, 12).map((source) => bounded(source, 180))
-    })),
-    projects: (analysis.extractedProjectExperiences ?? []).slice(0, 30).map((project) => ({
-      title: bounded(project.title, 300),
-      period: project.period === null ? null : bounded(project.period, 120),
-      role: project.role === null ? null : bounded(project.role, 180),
-      technologies: project.technologies.slice(0, 40).map((technology) => bounded(technology, 120)),
-      summary: bounded(project.summary, 2_000),
-      confidence: project.confidence,
-      sources: [...new Set(project.sourceLabels)].slice(0, 12).map((source) => bounded(source, 180))
-    }))
-  }
-}
+export { agentDraftFactsFromResumeAnalysis } from '../resume-agent-facts'
 
 /** Backfills legacy import cards with their already-committed local draft. */
 export function hydrateConversationResumeFacts(
@@ -181,8 +147,8 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
       id: randomUUID(),
       role: 'assistant',
       content: zh
-        ? `已在本机导入 ${label}，并将简历内容加入当前会话。共识别 ${knownFieldCount} 个字段、${facts.projects.length} 段项目经历，现在可以直接针对这份简历继续提问。抽取结果仍需逐项审核。`
-        : `${label}を端末内に取り込み、履歴書の内容をこの会話に追加しました。識別済み${knownFieldCount}項目、プロジェクト${facts.projects.length}件です。この履歴書についてそのまま質問できます。抽出結果は項目ごとの確認が必要です。`,
+        ? `已在本机导入 ${label}，并将简历内容加入当前会话。共识别 ${knownFieldCount} 个字段、${facts.projects.length} 段项目经历，现在可以直接针对这份简历继续提问。`
+        : `${label}を端末内に取り込み、履歴書の内容をこの会話に追加しました。識別済み${knownFieldCount}項目、プロジェクト${facts.projects.length}件です。この履歴書についてそのまま質問できます。`,
       mode: 'local',
       narrativeStatus: 'local',
       turnId: null,
@@ -192,8 +158,7 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
           imported: [{ documentId, label, ordinal }],
           failedCount: 0
         }]),
-        ...(hasDraftFacts ? [] : [{ type: 'candidate-draft-facts' as const, facts }]),
-        { type: 'system-access' as const, destination: 'review-center' as const }
+        ...(hasDraftFacts ? [] : [{ type: 'candidate-draft-facts' as const, facts }])
       ],
       createdAt: new Date().toISOString()
     }
@@ -292,60 +257,7 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
    * second copy would let the redaction policy drift between what gets shown and
    * what gets stored.
    */
-  const analyzeStagedFileLocally = async (
-    record: ReturnType<EncryptedApplicationRepository['getStagedFileRecords']>[number],
-    onParsed: () => void = () => undefined
-  ) => {
-    const bytes = await fileVault.decryptForLocalProcessing(record)
-    let document
-    try {
-      document = await parserWorker.parse(rendererSafeFile(record), bytes)
-      if (document.requiresLocalOcr && record.format === 'pdf' && localOcr) {
-        try {
-          document = mergeLocalOcr(document, await localOcr.ocrPdf(bytes))
-        } catch {
-          document = documentIrSchema.parse({
-            ...document,
-            warnings: [
-              ...document.warnings,
-              {
-                code: 'LOCAL_OCR_FAILED',
-                message: 'Apple Vision OCR was unavailable or could not reliably process the scanned page.'
-              }
-            ]
-          })
-        }
-      }
-    } finally {
-      bytes.fill(0)
-    }
-    onParsed()
-    const localText = documentTextForLocalPrivacy(document)
-    let localNameDetection
-    try {
-      localNameDetection = await localNer?.detectNames(localText)
-    } catch {
-      localNameDetection = undefined
-    }
-    const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
-    const mediaRisks: Array<'face_or_photo' | 'signature' | 'identifying_qr_code'> = []
-    if (document.requiresLocalOcr || (document.ocr?.faceRegions ?? 0) > 0) mediaRisks.push('face_or_photo')
-    if (document.requiresLocalOcr || document.ocr?.signatureReviewRequired) mediaRisks.push('signature')
-    if (document.requiresLocalOcr || (document.ocr?.barcodeRegions ?? 0) > 0) mediaRisks.push('identifying_qr_code')
-    const redaction = redactTextForCloud(localText, {
-      sourceVersion: record.sha256,
-      policyVersion: 'cloud-redaction-v2',
-      knownPersonNames,
-      mediaRisks
-    })
-    const identifierCounts = new Map<string, number>()
-    for (const mapping of redaction.mappings) {
-      identifierCounts.set(mapping.identifierType, (identifierCounts.get(mapping.identifierType) ?? 0) + 1)
-    }
-    const analyzedAt = new Date().toISOString()
-    const extraction = extractCandidateDraft(document, new Date(analyzedAt))
-    return { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt }
-  }
+  const analyzeStagedFileLocally = (record: Parameters<typeof analyzeStagedResumeLocally>[1], onParsed?: () => void) => analyzeStagedResumeLocally(context, record, onParsed)
 
   ipcMain.handle(ipcChannels.previewStagedResumeFile, async (event, rawInput): Promise<AgentCandidateDraftFacts> => {
     assertTrustedSender(event)

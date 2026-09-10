@@ -23,8 +23,15 @@ function sortConversations(conversations: AiConversationSnapshot[]): AiConversat
   return [...conversations].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
 
+function scopeKey(context: AiConversationContext) {
+  return JSON.stringify([context.assistant, context.candidateDocumentId, context.interviewId, context.interviewKind, context.roundNumber, context.businessObject?.kind ?? null, context.businessObject?.id ?? null])
+}
+
 export function useAiConversationHistory(context: AiConversationContext, reloadToken = 0) {
-  const contextKey = JSON.stringify(context)
+  const contextKey = scopeKey(context)
+  const scopeRef = useRef(contextKey)
+  scopeRef.current = contextKey
+  const loadedScopeRef = useRef(contextKey)
   const stableContext = useMemo(() => context, [contextKey])
   const [conversations, setConversations] = useState<AiConversationSnapshot[]>([])
   const [messages, setMessages] = useState<AiConversationMessage[]>([])
@@ -39,13 +46,21 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
 
   useEffect(() => {
     let active = true
+    if (loadedScopeRef.current !== contextKey) {
+      loadedScopeRef.current = contextKey
+      latestMessageSequenceRef.current += 1
+      activeConversationRef.current = null
+      setActiveConversationId(null)
+      setConversations([])
+      setMessages([])
+    }
     const messageSequenceAtLoad = latestMessageSequenceRef.current
     setLoading(true)
     setError(null)
     void window.sesAgent.listAiConversations(stableContext).then((items) => {
       if (!active) return
       const ordered = sortConversations(items)
-      const latest = ordered[0] ?? null
+      const latest = ordered.find((item) => item.id === activeConversationRef.current?.id) ?? ordered[0] ?? null
       if (latestMessageSequenceRef.current === messageSequenceAtLoad) {
         setConversations(ordered)
         latestMessageSequenceRef.current += 1
@@ -102,8 +117,9 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
     pendingSaveCountRef.current += 1
     setSaving(true)
     setError(null)
+    const baseAtRequest = baseConversation === undefined ? activeConversationRef.current : baseConversation
     const operation = saveQueueRef.current.then(async () => {
-      const base = baseConversation === undefined ? activeConversationRef.current : baseConversation
+      const base = baseConversation === undefined && scopeRef.current === contextKey ? activeConversationRef.current : baseAtRequest
       try {
         const saved = await window.sesAgent.saveAiConversation({
           conversationId: options.conversationId ?? base?.id ?? createConversationId(),
@@ -112,6 +128,7 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
           ...(options.salesAgentState ? { salesAgentState: options.salesAgentState } : {}),
           expectedRevision: base?.revision ?? null
         })
+        if (scopeRef.current !== contextKey) return saved
         activeConversationRef.current = saved
         setActiveConversationId(saved.id)
         if (messageSequence === latestMessageSequenceRef.current) setMessages(saved.messages)
@@ -121,7 +138,7 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
         ]))
         return saved
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause))
+        if (scopeRef.current === contextKey) setError(cause instanceof Error ? cause.message : String(cause))
         throw cause
       } finally {
         pendingSaveCountRef.current -= 1
@@ -148,6 +165,7 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
     setError(null)
     try {
       const result = await window.sesAgent.deleteAiConversations({ conversationIds })
+      if (scopeRef.current !== contextKey) return
       const deleted = new Set(result.deletedConversationIds)
       const remaining = conversations.filter((item) => !deleted.has(item.id))
       if (activeConversationRef.current && deleted.has(activeConversationRef.current.id)) {
@@ -159,12 +177,13 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
       }
       setConversations(remaining)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      if (scopeRef.current === contextKey) setError(cause instanceof Error ? cause.message : String(cause))
       throw cause
     }
-  }, [conversations])
+  }, [conversations, contextKey])
 
   const acceptConversation = useCallback((saved: AiConversationSnapshot) => {
+    if (scopeKey(saved.context) !== scopeRef.current) return
     // A late initial-history read must never overwrite a conversation that the
     // Main process has just completed and returned to this renderer.
     latestMessageSequenceRef.current += 1

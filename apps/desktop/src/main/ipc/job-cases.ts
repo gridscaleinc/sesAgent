@@ -470,8 +470,9 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.getJobCaseSourceText, (event, rawReviewId): JobCaseSourceText => {
     assertTrustedSender(event)
     const reviewId = jobCaseReviewIdSchema.parse(rawReviewId)
-    // Only the stored REDACTED subject and body exist to return; the raw mail was never persisted.
-    const sourceText = repository.getJobCaseSourceText(reviewId)
+    // HR reads the complete source on this device. Cloud projections use the
+    // separate redacted repository read, never this display-only result.
+    const sourceText = repository.getJobCaseSourceTextForDisplay(reviewId)
     if (!sourceText) throw new Error('案件の取込元本文が見つかりませんでした。')
     return sourceText
   })

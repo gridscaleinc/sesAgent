@@ -453,14 +453,15 @@ export const openInterviewMeetingInputSchema = z.object({
 })
 
 const candidateInterviewMeetingDetailsSchema = z.object({
-  phoneNumber: z.string().trim().min(1).max(120).optional(),
-  phoneNote: z.string().trim().max(1_000).optional(),
-  onsiteAddress: z.string().trim().min(1).max(500).optional(),
-  onsiteMeetingPoint: z.string().trim().max(500).optional(),
-  onsiteReceptionContact: z.string().trim().max(300).optional()
+  phoneNumber: z.string().optional(),
+  phoneNote: z.string().optional(),
+  onsiteAddress: z.string().optional(),
+  onsiteMeetingPoint: z.string().optional(),
+  onsiteReceptionContact: z.string().optional()
 }).strict()
 
 export const candidateInterviewSnapshotSchema = z.object({
+  businessFollowUpId: z.string().uuid().nullable().optional(),
   id: z.string().uuid(),
   sourceDocumentId: z.string().uuid(),
   kind: candidateInterviewKindSchema,
@@ -470,10 +471,10 @@ export const candidateInterviewSnapshotSchema = z.object({
   scheduledAt: z.string().datetime().nullable(),
   durationMinutes: candidateInterviewDurationSchema,
   meetingMethod: candidateInterviewMethodSchema,
-  meetingUrl: meetingUrlSchema.nullable(),
+  meetingUrl: z.string().nullable(),
   meetingDetails: candidateInterviewMeetingDetailsSchema.optional(),
-  interviewer: z.string().trim().min(1).max(120).nullable(),
-  contactNote: z.string().trim().max(1_500).nullable(),
+  interviewer: z.string().nullable(),
+  contactNote: z.string().nullable(),
   interviewGoal: z.string().trim().max(1_000).nullable(),
   questionPlan: z.array(candidateInterviewQuestionSchema).max(40),
   interviewNotes: z.string().trim().max(8_000).nullable(),
@@ -486,16 +487,6 @@ export const candidateInterviewSnapshotSchema = z.object({
   updatedAt: z.string().datetime(),
   updatedBy: z.string().trim().min(1).max(120),
   cloudEligible: z.literal(false)
-}).superRefine((input, context) => {
-  if (input.meetingMethod === 'zoom' && input.meetingUrl && !isAllowedZoomMeetingUrl(input.meetingUrl)) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: 'Zoom 会议链接必须使用 zoom.us 的 HTTPS 地址。' })
-  }
-  if (input.meetingMethod === 'google-meet' && input.meetingUrl && !isAllowedGoogleMeetUrl(input.meetingUrl)) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: 'Google Meet 链接必须使用 meet.google.com 的 HTTPS 地址。' })
-  }
-  if ((input.meetingMethod === 'phone' || input.meetingMethod === 'onsite') && input.meetingUrl) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: '电话或现场面试不能保存会议链接。' })
-  }
 })
 
 export const saveCandidateInterviewScheduleInputSchema = z.object({
@@ -507,26 +498,10 @@ export const saveCandidateInterviewScheduleInputSchema = z.object({
   scheduledAt: z.string().datetime(),
   durationMinutes: candidateInterviewDurationSchema,
   meetingMethod: candidateInterviewMethodSchema,
-  meetingUrl: meetingUrlSchema.optional(),
+  meetingUrl: z.string().optional(),
   meetingDetails: candidateInterviewMeetingDetailsSchema.optional(),
-  interviewer: z.string().trim().min(1).max(120),
-  contactNote: z.string().trim().max(1_500).optional()
-}).superRefine((input, context) => {
-  if (input.meetingMethod === 'zoom' && !input.meetingUrl) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: '安排 Zoom 面试时必须填写会议链接。' })
-  }
-  if (input.meetingMethod === 'zoom' && input.meetingUrl && !isAllowedZoomMeetingUrl(input.meetingUrl)) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: 'Zoom 会议链接必须使用 zoom.us 的 HTTPS 地址。' })
-  }
-  if (input.meetingMethod === 'google-meet' && !input.meetingUrl) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: '安排 Google Meet 面试时必须填写会议链接。' })
-  }
-  if (input.meetingMethod === 'google-meet' && input.meetingUrl && !isAllowedGoogleMeetUrl(input.meetingUrl)) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: 'Google Meet 链接必须使用 meet.google.com 的 HTTPS 地址。' })
-  }
-  if ((input.meetingMethod === 'phone' || input.meetingMethod === 'onsite') && input.meetingUrl) {
-    context.addIssue({ code: 'custom', path: ['meetingUrl'], message: '电话或现场面试不能保存会议链接。' })
-  }
+  interviewer: z.string(),
+  contactNote: z.string().optional()
 })
 
 export const createCandidateInterviewRoundInputSchema = z.object({
@@ -989,13 +964,17 @@ export const executeAiCommerceCloudPromptInputSchema = z.object({
   reviewTicket: z.string().uuid()
 }).strict()
 
+export const businessConversationObjectSchema = z.object({ kind: z.enum(['case', 'person']), id: z.string().uuid() }).strict()
+
 export const aiConversationContextSchema = z.object({
+  businessObject: businessConversationObjectSchema.optional(),
   assistant: z.enum(['candidate-profile', 'interview', 'sales-agent']),
   candidateDocumentId: z.string().uuid().nullable(),
   interviewId: z.string().uuid().nullable(),
   interviewKind: z.enum(['recruiting', 'client']).nullable(),
   roundNumber: z.number().int().min(1).max(20).nullable()
 }).superRefine((value, context) => {
+  if (value.businessObject && value.assistant !== 'sales-agent') context.addIssue({ code: 'custom', message: '业务对象只适用于 Agent 会话。' })
   if (value.assistant === 'sales-agent' && (
     value.candidateDocumentId !== null || value.interviewId !== null ||
     value.interviewKind !== null || value.roundNumber !== null
@@ -1406,7 +1385,7 @@ export const saveAiConversationInputSchema = z.object({
   conversationId: z.string().uuid(),
   branchRootConversationId: z.string().uuid().optional(),
   context: aiConversationContextSchema,
-  messages: z.array(aiConversationMessageSchema).min(1).max(200),
+  messages: z.array(aiConversationMessageSchema).max(200),
   salesAgentState: salesAgentStateSchema.optional(),
   expectedRevision: z.number().int().positive().nullable()
 }).superRefine((value, context) => {
@@ -1416,6 +1395,7 @@ export const saveAiConversationInputSchema = z.object({
 })
 
 export const executeAgentTurnInputSchema = z.object({
+  businessObject: businessConversationObjectSchema.optional(),
   intakeOnly: z.boolean().optional(),
   conversationId: z.string().uuid(),
   message: z.string().trim().min(1).max(4_000),
@@ -1650,6 +1630,7 @@ export const candidateDeletionPreviewSchema = z.object({
   anonymousLabel: z.string().min(1).max(80),
   localFileName: z.string().min(1).max(180),
   counts: z.object({
+    businessFollowUps: z.number().int().nonnegative().optional(),
     profileVersions: z.number().int().nonnegative(),
     reviewAudits: z.number().int().nonnegative(),
     taskRecords: z.number().int().nonnegative(),
@@ -1839,9 +1820,16 @@ export const draftCaseBroadcastInputSchema = z.object({
   templateId: z.string().uuid().optional()
 })
 
+export const prepareCaseIntroductionInputSchema = z.object({
+  reviewId: jobCaseReviewIdSchema,
+  expectedReviewRevision: z.number().int().positive()
+})
+
 export const draftCaseUpdateNoticeInputSchema = z.object({ reviewId: jobCaseReviewIdSchema })
 
 export const recordCaseBroadcastCopyInputSchema = z.object({
+  expectedJobCaseVersion: z.number().int().positive().optional(),
+  expectedTemplateRevision: z.number().int().positive().optional(),
   reviewId: jobCaseReviewIdSchema,
   templateId: z.string().uuid(),
   lang: z.enum(broadcastLanguages),
@@ -1850,6 +1838,8 @@ export const recordCaseBroadcastCopyInputSchema = z.object({
 })
 
 export const openCaseBroadcastEmailInputSchema = z.object({
+  expectedJobCaseVersion: z.number().int().positive().optional(),
+  expectedTemplateRevision: z.number().int().positive().optional(),
   reviewId: jobCaseReviewIdSchema,
   templateId: z.string().uuid(),
   lang: z.enum(broadcastLanguages),
@@ -1869,6 +1859,7 @@ export const jobCaseDeletionPreviewSchema = z.object({
   title: z.string().min(1).max(500),
   sourceType: jobCaseSourceTypeSchema,
   counts: z.object({
+    businessFollowUps: z.number().int().nonnegative().optional(),
     caseVersions: z.number().int().nonnegative(),
     reviewAudits: z.number().int().nonnegative(),
     taskRecords: z.number().int().nonnegative(),

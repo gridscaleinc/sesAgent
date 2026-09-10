@@ -1,3 +1,4 @@
+import { introductionIdentifierCheckText, saveBusinessFollowUpSchema, type SaveBusinessFollowUpInput, type BusinessFollowUp } from '@shared'
 import { changedBusinessFields, markBusinessFeedSchema, type BusinessFeedEntry, type MarkBusinessFeedInput } from '@shared'
 import { createHash, randomUUID } from 'node:crypto'
 import { builtInPersonnelTemplates, candidateBusinessStateInputSchema, personnelMessageInputSchema, savePersonnelTemplateSchema,
@@ -7,6 +8,31 @@ import { detectDirectIdentifiers } from '@privacy'
 import { DomainStore } from './base'
 
 export class PersonnelStore extends DomainStore {
+  followUps(): BusinessFollowUp[] {
+    return this.stores.businessProgress.list()
+  }
+
+  saveFollowUp(raw: SaveBusinessFollowUpInput, recordedBy: string): BusinessFollowUp {
+    const input = saveBusinessFollowUpSchema.parse(raw)
+    return this.database.transaction(() => {
+      const person = this.stores.candidates.getCandidateReview(input.documentId)
+      const job = this.stores.jobCases.getJobCaseReview(input.reviewId)
+      if (!person || person.recordStatus === 'deleted' || !job) throw new Error('关联资料已删除。 / 関連情報が削除されています。')
+      const row = this.database.prepare<[string, string], { payload: string }>('SELECT payload FROM business_followups WHERE document_id=? AND review_id=?')
+        .get(input.documentId, input.reviewId)
+      const current = row ? JSON.parse(row.payload) as BusinessFollowUp : null
+      if ((current?.revision ?? 0) !== input.expectedRevision) throw new Error('跟进记录已更新，请重新打开。 / 対応記録が更新されました。開き直してください。')
+      const timestamp = new Date().toISOString()
+      const value: BusinessFollowUp = { ...current, id: current?.id ?? randomUUID(), documentId: input.documentId, reviewId: input.reviewId,
+        status: current?.progress ? current.status : input.status, note: input.note, nextStep: input.nextStep, revision: input.expectedRevision + 1, updatedAt: timestamp, recordedBy,
+        events: [...(current?.events ?? []), { status: input.status, note: input.note, nextStep: input.nextStep, recordedAt: timestamp, recordedBy }] }
+      this.database.prepare(`INSERT INTO business_followups(id,document_id,review_id,revision,updated_at,payload) VALUES (?,?,?,?,?,?)
+        ON CONFLICT(document_id,review_id) DO UPDATE SET revision=excluded.revision,updated_at=excluded.updated_at,payload=excluded.payload`)
+        .run(value.id, value.documentId, value.reviewId, value.revision, timestamp, JSON.stringify(value))
+      return value
+    })()
+  }
+
   feed(): BusinessFeedEntry[] {
     const marks = new Map(this.database.prepare<[], { id: string; revision: string; deferred: number }>('SELECT id,revision,deferred FROM business_feed_marks').all().map((row) => [row.id, row]))
     const caseTimes = new Map(this.database.prepare<[], { review_id: string; updated_at: string; lifecycle_at: string | null }>(
@@ -40,6 +66,9 @@ export class PersonnelStore extends DomainStore {
         changes: previous ? changedBusinessFields(previous.fields, review.fields) : []
       }, [review.reviewRevision, review.lifecycle, times?.lifecycle_at])
     }
+    const mailSources = new Map(this.database.prepare<[], { document_id: string; internal_date: string }>(`SELECT part.value AS document_id, MIN(m.internal_date) AS internal_date
+      FROM gmail_business_intake intake JOIN gmail_messages m ON m.account_email=intake.account_email AND m.gmail_message_id=intake.gmail_message_id,
+      json_each(intake.parts_json) part GROUP BY part.value`).all().map((row) => [row.document_id, row.internal_date]))
     for (const review of this.stores.candidates.listCandidateReviews()) {
       if (review.recordStatus === 'deleted') continue
       const times = personTimes.get(review.documentId)
@@ -50,7 +79,7 @@ export class PersonnelStore extends DomainStore {
       add({ kind: 'person', objectId: review.documentId,
         title: review.localIdentity?.displayName ?? review.fileName,
         event: review.recordStatus === 'archived' ? 'archived' : stateLatest ? 'status-changed' : previous ? 'updated' : 'created',
-        occurredAt: [times.updated_at, state?.confirmedAt ?? ''].sort().at(-1)!, sourceAt: times.created_at, source: 'local-personnel',
+        occurredAt: [times.updated_at, state?.confirmedAt ?? ''].sort().at(-1)!, sourceAt: mailSources.get(review.documentId) ?? times.created_at, source: mailSources.has(review.documentId) ? 'gmail' : 'local-personnel',
         archived: review.recordStatus === 'archived', businessStatus: state?.status ?? 'available', needsReview: false,
         fields: review.fields.filter((f) => ['skills','experience_years','rate','availability','work_style'].includes(f.key) && f.value).map((f) => ({ key: f.key, value: f.value! })),
         changes: stateLatest ? [{ key: 'business_status', before: null, after: state.status }] : previous ? changedBusinessFields(previous.fields, review.fields) : []
@@ -125,13 +154,19 @@ export class PersonnelStore extends DomainStore {
     }
     const state = this.database.prepare<[string], { status: string }>('SELECT status FROM candidate_business_states WHERE document_id = ?').get(input.documentId)
     if (state && !['available', 'soon'].includes(state.status)) throw new Error('此人员已入场或暂停营业。 / この要員は参画中または営業停止中です。')
+    if (input.caseContext) {
+      const job = this.stores.jobCases.getJobCaseReview(input.caseContext.reviewId)
+      if (!job?.jobCase || job.lifecycle !== 'active' || job.jobCase.version !== input.caseContext.version) {
+        throw new Error('案件资料已更新，请重新匹配后准备介绍。 / 案件情報が更新されました。再マッチングしてください。')
+      }
+    }
     const template = this.templates().find((item) => item.id === input.templateId)
     if (!template || template.revision !== input.templateRevision) throw new Error('模板已更新，请重新生成文案。 / テンプレート更新後の文面を確認してください。')
     const localIdentity = review.localIdentity
     if ([localIdentity?.displayName, localIdentity?.phone, localIdentity?.email, localIdentity?.address].some((value) => value && input.text.includes(value))) {
       throw new Error('文案包含本地个人身份信息，请使用匿名介绍。 / 匿名の紹介文を使用してください。')
     }
-    if (detectDirectIdentifiers(input.text).length) throw new Error('文案中含有联系方式，请检查后重试。 / 文面内の直接識別子を確認してください。')
+    if (detectDirectIdentifiers(introductionIdentifierCheckText(input.text)).length) throw new Error('文案中含有联系方式，请检查后重试。 / 文面内の直接識別子を確認してください。')
     return input
   }
 

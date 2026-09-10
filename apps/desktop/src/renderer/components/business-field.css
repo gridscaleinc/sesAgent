@@ -1,0 +1,9 @@
+.business-field { display: inline-flex; flex-direction: column; min-width: 0; max-width: 100%; vertical-align: top; }
+.business-field .business-field-value { display: inline; min-height: 0; padding: 3px 5px; margin: -3px -5px; border: 1px solid transparent; border-radius: 5px; color: inherit; font: inherit; line-height: inherit; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; background: transparent; box-shadow: none; }
+.business-field .business-field-value:hover, .business-field .business-field-value:focus-visible { background: #eef5ff; border-color: #b9cce5; }
+.business-field-pencil { margin-left: 6px; color: #577495; opacity: 0; font-size: 12px; }
+.business-field-value:hover .business-field-pencil, .business-field-value:focus-visible .business-field-pencil { opacity: 1; }
+.business-field textarea { width: 100%; min-width: min(220px, 100%); box-sizing: border-box; padding: 8px; border: 1px solid #5e88bc; border-radius: 6px; background: #fff; color: #24364c; font: inherit; line-height: 1.6; resize: vertical; }
+.business-field > small { font-size: 11px; color: #426e56; font-weight: 400; }
+.business-field.is-failed > small { color: #a03932; }
+.business-field.is-failed > small button { margin-left: 8px; }

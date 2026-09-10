@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { JobCaseReviewSnapshot, JobCaseSourceText } from '@shared'
 import { useUiLocale } from '../i18n'
-import { Icon } from './Icon'
 
 /**
  * Local redaction stores PII as <PERSON_NAME_001>-style tokens. The reader
@@ -28,9 +27,8 @@ export function maskPiiPlaceholders(text: string, zh: boolean): string {
 }
 
 /**
- * The stored, device-redacted original behind an imported case (Gmail / EML).
- * Collapsed by default; the body is fetched from Main only on first expand
- * and never contains raw identifiers - placeholders render as masked chips.
+ * Local source behind an imported case (Gmail / EML). Main restores the
+ * encrypted local mappings only for this reader, on first expand.
  */
 export function JobCaseSourceTextSection({ review, onLoad }: {
   review: Pick<JobCaseReviewSnapshot, 'reviewId' | 'sourceType'>
@@ -63,17 +61,16 @@ export function JobCaseSourceTextSection({ review, onLoad }: {
     )
   }
   return <details className="job-case-source-text" onToggle={(event) => { if (event.currentTarget.open) load() }}>
-    <summary>{zh ? '来源原文（本机已脱敏）' : '取込元の本文（端末内で脱敏済み）'}</summary>
-    <p className="job-case-source-text-hint"><Icon name="shield" size={12} />{zh ? '姓名与联系方式已在本机替换为遮蔽标记，原文未离开本机。' : '氏名・連絡先はこの端末内で遮蔽済みです。原文は端末外に出ていません。'}</p>
-    {loading ? <p className="job-case-source-text-state">{zh ? '正在读取本机脱敏原文…' : '端末内の脱敏済み本文を読込中…'}</p> : null}
+    <summary>{zh ? '来源原文' : '取込元の本文'}</summary>
+    {loading ? <p className="job-case-source-text-state">{zh ? '正在读取原文…' : '本文を読込中…'}</p> : null}
     {error ? <p className="job-case-source-text-state is-error" role="alert">{error}</p> : null}
     {sourceText ? <>
       <dl className="job-case-source-text-meta">
-        <div><dt>{zh ? '主题' : '件名'}</dt><dd>{maskPiiPlaceholders(sourceText.redactedSubject, zh)}</dd></div>
+        <div><dt>{zh ? '主题' : '件名'}</dt><dd>{sourceText.localDisplay?.subject ?? maskPiiPlaceholders(sourceText.redactedSubject, zh)}</dd></div>
         <div><dt>{zh ? '发件域名' : '送信元ドメイン'}</dt><dd>{sourceText.fromDomain ?? (zh ? '未记录' : '記録なし')}</dd></div>
         <div><dt>{zh ? '日期' : '日付'}</dt><dd>{new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sourceText.messageDate))}</dd></div>
       </dl>
-      <pre className="job-case-source-text-body">{maskPiiPlaceholders(sourceText.redactedBody, zh)}</pre>
+      <pre className="job-case-source-text-body">{sourceText.localDisplay?.body ?? maskPiiPlaceholders(sourceText.redactedBody, zh)}</pre>
     </> : null}
   </details>
 }

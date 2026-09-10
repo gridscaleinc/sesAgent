@@ -6,5 +6,8 @@ export * from './match-cards'
 export * from './business-workbench'
 export * from './business-feed'
 export * from './match-assessment-evidence'
+export * from './matching-requirements'
 
 export { requiresOwnCompany } from './own-company'
+
+export * from './business-progress'

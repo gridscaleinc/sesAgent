@@ -6,7 +6,7 @@ const job = { reviewId: 'review-a', jobCase: { id: 'case-a', version: 1 }, lifec
 const other = { ...job, reviewId: 'review-b', jobCase: { ...job.jobCase!, id: 'case-b' }, redactedSubject: 'Other project' }
 const person = { documentId: 'person-a', fileName: 'Engineer A.pdf', recordStatus: 'active', profile: { version: 1 } } as CandidateReviewSnapshot
 const result: CasePersonnelMatchResult = { jobCaseId: 'case-a', jobCaseVersion: 1, localMatchCount: 1, cloud: { status: 'failed', reviewedCount: 0, modelName: null },
-  items: [{ documentId: 'person-a', profileVersion: 1, score: 5, matched: ['Java'], missing: [], hardFilters: [] }] }
+  items: [{ documentId: 'person-a', profileVersion: 1, score: 5, matched: ['Java'], missing: [], hardFilters: [], qualification: { policyVersion: 'mandatory-evidence-v1', status: 'recommended', requirements: [] } }] }
 const props = { reviews: [job, other], candidates: [person], onOpenPerson: vi.fn() }
 describe('case matching workspace', () => {
   it('shows only the current case, discards repeat requests and permits retry after failure', async () => {

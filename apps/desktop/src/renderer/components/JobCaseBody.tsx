@@ -31,8 +31,8 @@ function bodyBlocks(text: string): BodyBlock[] {
   return blocks
 }
 
-export function FormattedCaseBody({ text, zh }: { text: string; zh: boolean }) {
-  return <div className="case-body-text">{bodyBlocks(maskPiiPlaceholders(text, zh)).map((block, index) => {
+export function FormattedCaseBody({ text, zh, original = false }: { text: string; zh: boolean; original?: boolean }) {
+  return <div className="case-body-text">{bodyBlocks(original ? text : maskPiiPlaceholders(text, zh)).map((block, index) => {
     if (block.kind === 'rule') return <hr key={index} />
     if (block.kind === 'heading') return <h4 key={index}>{block.lines[0]}</h4>
     if (block.kind === 'list') return <ul key={index}>{block.lines.map((line, item) => <li key={item}>{line}</li>)}</ul>
@@ -40,7 +40,7 @@ export function FormattedCaseBody({ text, zh }: { text: string; zh: boolean }) {
   })}</div>
 }
 
-/** Fetch the complete local, redacted body instead of the 4,000-character inbox preview. */
+/** Fetch the complete local source instead of the 4,000-character inbox preview. */
 export function JobCaseBody({ review, onLoad, zh }: {
   review: Pick<JobCaseReviewSnapshot, 'reviewId' | 'redactedPreview'>
   onLoad?(reviewId: string): Promise<JobCaseSourceText>
@@ -65,9 +65,10 @@ export function JobCaseBody({ review, onLoad, zh }: {
     })()
     return () => { active = false }
   }, [review.reviewId, canLoad, attempt])
+  const body = source?.localDisplay?.body ?? source?.redactedBody ?? ''
   return <section className="case-body-reader" aria-label={zh ? '案件正文' : '案件本文'}>
-    <header><h3>{zh ? '案件正文' : '案件本文'}</h3><small>{zh ? '已脱敏' : '脱敏済み'}</small></header>
-    {source ? (source.redactedBody.trim() ? <FormattedCaseBody text={source.redactedBody} zh={zh} /> : <p>{zh ? '此案件没有正文内容。' : 'この案件には本文がありません。'}</p>) : error ? <div role="alert" className="case-body-load-state">
+    <header><h3>{zh ? '案件正文' : '案件本文'}</h3></header>
+    {source ? (body.trim() ? <FormattedCaseBody text={body} zh={zh} original={Boolean(source.localDisplay)} /> : <p>{zh ? '此案件没有正文内容。' : 'この案件には本文がありません。'}</p>) : error ? <div role="alert" className="case-body-load-state">
       <span>{zh ? '案件正文读取失败，请重试。' : '案件本文の読込に失敗しました。再試行してください。'}</span>
       <button onClick={() => setAttempt((value) => value + 1)} type="button">{zh ? '重试' : '再試行'}</button>
     </div> : canLoad ? <p role="status">{zh ? '正在读取案件正文…' : '案件本文を読込中…'}</p> : <>

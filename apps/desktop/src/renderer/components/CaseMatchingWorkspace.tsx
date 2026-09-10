@@ -26,7 +26,7 @@ export function CaseMatchingWorkspace({ jobCaseId, request, reviews, candidates,
   const review = reviews.find((review) => review.jobCase?.id === jobCaseId)
   const cached = jobCaseId ? cache[jobCaseId] : undefined
   const result = review?.lifecycle === 'active' && cached?.jobCaseVersion === review?.jobCase?.version ? cached : undefined
-  const items = result?.items.filter((item) => candidates.some((candidate) => candidate.documentId === item.documentId && candidate.recordStatus === 'active' && candidate.profile?.version === item.profileVersion)) ?? []
+  const items = result?.items.filter((item) => item.qualification?.status === 'recommended' && candidates.some((candidate) => candidate.documentId === item.documentId && candidate.recordStatus === 'active' && candidate.profile?.version === item.profileVersion)) ?? []
   const available = review?.lifecycle === 'active' && Boolean(review.jobCase)
   const focus = () => { if (body.current && !body.current.closest('[hidden]')) { body.current.scrollTop = 0; body.current.focus({ preventScroll: true }) } }
   const find = async (id: string) => {

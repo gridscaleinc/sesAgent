@@ -129,6 +129,8 @@ try {
   for (const trigger of triggerNames) legacy.exec(`DROP TRIGGER "${trigger.name}"`)
   legacy.exec(`
     BEGIN IMMEDIATE;
+    DROP TABLE gmail_business_intake;
+    DROP TABLE business_followups;
     DROP TABLE business_feed_marks;
     DROP TABLE personnel_copies;
     DROP TABLE personnel_templates;
@@ -173,7 +175,7 @@ try {
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_hash;
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_status;
     ALTER TABLE cloud_call_audits DROP COLUMN gate_policy_version;
-    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46);
+    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48);
     COMMIT;
   `)
   assert.equal(legacy.prepare<{ version: number }>('SELECT max(version) AS version FROM schema_migrations').get()?.version, 13)
@@ -280,7 +282,7 @@ try {
     .get()?.count ?? 0
   const violations = inspected.pragma('foreign_key_check') as unknown[]
   inspected.close()
-  assert.equal(triggerCount, 172)
+  assert.equal(triggerCount, 178)
   assert.equal(recoveryColumns.some((column) => column.name === 'data_revision'), true)
   assert.equal(embeddingColumns.some((column) => column.name === 'vector_blob'), true)
   assert.equal(projectEmbeddingColumns.some((column) => column.name === 'project_id'), true)

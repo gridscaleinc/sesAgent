@@ -19,6 +19,7 @@ import type { MatchRuntimeIdentity } from '@matching'
 import type { AiCommerceResponsesStreamResult } from '@aicommerce'
 import type { CandidateReviewSnapshot } from '@shared'
 import type { AgentMatchAssessmentInput, AgentNarrativeStreamer } from './agent-cloud-narrative'
+import { buildAgentDirectAnswerProjection, buildAgentPlanningProjection } from './agent-cloud-narrative'
 import { registerAgentIpcHandlers, type AgentIpcDependencies } from './agent-ipc'
 import { executeBusinessTextIntakeTurn, type BusinessTextIntakeTurnDependencies } from './business-text-intake'
 
@@ -828,6 +829,49 @@ describe('agent IPC boundary', () => {
     expect(serialized).not.toContain('reviewId')
     expect(serialized).not.toContain('aaaaaaaa-aaaa')
     stop()
+  })
+
+  it.each([9, 20])('passes every one of %i selected candidate projects to both cloud steps', async (count) => {
+    const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+    const plan = vi.fn(async (_input: Parameters<AgentNarrativeStreamer['plan']>[0]) => ({ kind: 'answer' as const }))
+    const streamAnswer = vi.fn(async (streamInput: Parameters<AgentNarrativeStreamer['streamAnswer']>[0]) => {
+      streamInput.onDelta(`共 ${count} 个项目。`)
+      streamInput.onRemoteSettled()
+      return { clientRequestId: 'projects-request', responseId: 'projects-response', content: `共 ${count} 个项目。`, billingModeUsed: 'subscription' as const }
+    })
+    const dependencies = createDependencies({ narrativeStreamer: { plan, streamAnswer, stream: vi.fn(), cancel: vi.fn() } })
+    vi.mocked(dependencies.repository.listCandidateReviews).mockReturnValue([{
+      documentId, fileName: 'private-name.xlsx', reviewRevision: 1, status: 'completed', piiReviewed: true,
+      fields: [], profile: null, completedAt: null, reviewerDisplayName: null,
+      recruitingStatus: 'ready-for-recruiting', talentPoolStatus: 'eligible', recordStatus: 'active', isOwnCompany: null,
+      projectExperiences: Array.from({ length: count }, (_, index) => ({
+        draftId: `local-project-${index}`, title: `项目 ${index + 1}`, period: '2020/01–2021/01', role: 'SE',
+        confidence: 0.9, changed: false, changeReason: null,
+        technologies: ['Java'], summary: '系统设计与开发'.repeat(count === 20 ? 300 : 1), sourceLabels: ['private-name.xlsx!A1']
+      }))
+    }])
+    const stop = registerAgentIpcHandlers(dependencies)
+    try {
+      const result = await invoke(ipcChannels.executeAgentTurn, input('总结此人的技能和项目经历', requestId, {
+        selectedCandidateDocumentId: documentId
+      })) as { status: string }
+      expect(result.status).toBe('completed')
+      const planningInput = plan.mock.calls[0]![0]
+      const answerInput = streamAnswer.mock.calls[0]![0]
+      expect(answerInput.activeWorkspaceEvidence).toEqual(planningInput.activeWorkspaceEvidence)
+      for (const projection of [buildAgentPlanningProjection(planningInput), buildAgentDirectAnswerProjection(answerInput)]) {
+        const history = JSON.parse(projection).activeWorkspace.data.candidate
+        expect(history).toMatchObject({ projectCount: count, includedProjectCount: count, omittedProjectCount: 0 })
+        expect(history.projects).toHaveLength(count)
+        expect(history.projects.at(-1).title).toBe(`项目 ${count}`)
+        expect(projection.length).toBeLessThanOrEqual(20_000)
+        expect(projection).not.toContain(documentId)
+        expect(projection).not.toContain('local-project-')
+        expect(projection).not.toContain('private-name.xlsx')
+      }
+    } finally {
+      stop()
+    }
   })
 
   it('passes a validated meeting link only to local persistence and binds ActionRun with its hash', async () => {

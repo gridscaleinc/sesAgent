@@ -36,7 +36,7 @@ describe('loadManagedGoogleWorkspaceConfiguration', () => {
       clientId: '1234567890-product.apps.googleusercontent.com',
       workspaceDomain: null,
       labelIds: ['INBOX'],
-      query: '案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画',
+      query: '案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画 OR 要員 OR 人材 OR スキルシート OR 経歴書 OR 履歴書 OR 人员 OR 简历 OR 面談 OR 面接 OR 日程調整 OR 入場 OR 面试 OR 进场',
       lookbackDays: 30,
       maxMessagesPerRun: 200
     })

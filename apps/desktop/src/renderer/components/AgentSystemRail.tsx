@@ -2,6 +2,11 @@ import { Icon, type IconName } from './Icon'
 import { useUiLocale } from '../i18n'
 
 interface AgentSystemRailProps {
+  followActive?: boolean
+  onFollowUps?(): void
+  businessKind?: 'case' | 'person'
+  onBusinessCases?(): void
+  onBusinessPeople?(): void
   /** Unread 新着案件; the badge is withheld at zero rather than showing "0". */
   caseUnseenCount?: number
   onBusiness?(): void
@@ -22,6 +27,7 @@ interface RailItem {
 }
 
 export function AgentSystemRail({
+  businessKind, onBusinessCases, onBusinessPeople, followActive, onFollowUps,
   caseUnseenCount = 0,
   onBusiness,
   onAgent,
@@ -42,7 +48,12 @@ export function AgentSystemRail({
 
   return <aside aria-label={zh ? '系统导航' : 'システムナビゲーション'} className="agent-system-rail">
     <strong aria-label="SES" className="agent-system-rail-brand">SES</strong>
-    <nav>
+    {businessKind ? <nav className="hr-business-nav">
+      <button type="button" aria-current={businessKind === 'case' && !followActive ? 'page' : undefined} className={businessKind === 'case' && !followActive ? 'is-active' : ''} onClick={onBusinessCases}><Icon name="briefcase" size={21} /><span>{zh ? '案件' : '案件'}</span></button>
+      <button type="button" aria-current={businessKind === 'person' && !followActive ? 'page' : undefined} className={businessKind === 'person' && !followActive ? 'is-active' : ''} onClick={onBusinessPeople}><Icon name="users" size={21} /><span>{zh ? '人员' : '要員'}</span></button>
+      {onFollowUps ? <button type="button" aria-current={followActive ? 'page' : undefined} className={followActive ? 'is-active' : ''} onClick={onFollowUps}><Icon name="clock" size={21} /><span>{zh ? '跟进' : '対応記録'}</span></button> : null}
+      <button type="button" onClick={onAgent}><Icon name="sparkles" size={21} /><span>Agent</span></button>
+    </nav> : <nav>
       {onBusiness ? <button aria-label={zh ? '信息整理与推广' : '情報整理・紹介'} onClick={onBusiness} type="button"><Icon name="upload" size={21} /><span>{zh ? '整理' : '整理'}</span></button> : null}
       {items.map((item) => <button
         aria-current={item.id === 'agent' ? 'page' : undefined}
@@ -53,7 +64,7 @@ export function AgentSystemRail({
         title={item.label}
         type="button"
       ><Icon name={item.icon} size={21} /><span>{item.label}</span>{item.badge && item.badge > 0 ? <span aria-label={zh ? `${item.badge} 件未读` : `未読 ${item.badge} 件`} className="agent-system-rail-badge">{item.badge}</span> : null}</button>)}
-    </nav>
+    </nav>}
     <button aria-label={zh ? '设置' : '設定'} className="agent-system-rail-settings" onClick={onSettings} title={zh ? '设置' : '設定'} type="button"><Icon name="settings" size={21} /><span>{zh ? '设置' : '設定'}</span></button>
   </aside>
 }

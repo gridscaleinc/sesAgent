@@ -105,24 +105,24 @@ export function AiConversationHistoryPanel({
   })
 
   return (
-    <section className="ai-conversation-history" aria-label={zh ? '任务' : 'タスク'}>
+    <section className="ai-conversation-history" aria-label={zh ? '会话' : '会話'}>
       <div className="ai-conversation-history-toolbar">
         <div>
-          <strong>{zh ? '任务' : 'タスク'}</strong>
+          <strong>{zh ? '会话' : '会話'}</strong>
           <small>{zh ? '对话与业务上下文一起保存在本机' : '会話と業務コンテキストを端末内に保存'}</small>
         </div>
         <button className="ai-conversation-new" disabled={busy} onClick={onNew} type="button">
-          <Icon name="plus" size={14} />{zh ? '新建任务' : '新しいタスク'}
+          <Icon name="plus" size={14} />{zh ? '新建会话' : '新しい会話'}
         </button>
       </div>
 
       {error ? <p className="ai-conversation-history-error"><Icon name="alert" size={13} />{error}</p> : null}
-      {loading ? <p className="ai-conversation-history-empty">{zh ? '正在读取任务…' : 'タスクを読み込み中…'}</p> : null}
+      {loading ? <p className="ai-conversation-history-empty">{zh ? '正在读取会话…' : '会話を読み込み中…'}</p> : null}
       {!loading && conversations.length === 0 ? (
         <div className="ai-conversation-history-empty">
           <Icon name="database" size={24} />
-          <strong>{zh ? '还没有任务' : 'タスクはまだありません'}</strong>
-          <span>{zh ? '发送第一条消息后会自动建立任务。' : '最初のメッセージ送信後にタスクが作成されます。'}</span>
+          <strong>{zh ? '还没有会话' : '会話はまだありません'}</strong>
+          <span>{zh ? '可以新建会话，或直接发送第一条消息。' : '新しい会話を作成するか、そのままメッセージを送信できます。'}</span>
         </div>
       ) : null}
 
@@ -152,7 +152,7 @@ export function AiConversationHistoryPanel({
 
       {selectedIds.size > 0 ? (
         <div className={deleteConfirmation ? 'ai-conversation-delete is-confirming' : 'ai-conversation-delete'}>
-          <span>{zh ? `已选择 ${selectedIds.size} 个任务` : `${selectedIds.size}件を選択中`}</span>
+          <span>{zh ? `已选择 ${selectedIds.size} 个会话` : `${selectedIds.size}件を選択中`}</span>
           {deleteConfirmation ? (
             <button onClick={() => setDeleteConfirmation(false)} type="button">{zh ? '取消' : 'キャンセル'}</button>
           ) : null}

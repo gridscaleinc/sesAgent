@@ -26,7 +26,7 @@ import type {
 } from '@shared'
 import { candidateFieldKeys, jobCaseFieldKeys, type JobCaseFieldAliasMap } from '@shared/contracts'
 import type { AgentBusinessTextExtractionResult } from './agent-cloud-narrative'
-import { agentDraftFactsFromResumeAnalysis } from './ipc/resume-import'
+import { agentDraftFactsFromResumeAnalysis } from './resume-agent-facts'
 
 /**
  * Business-text intake: the Main-only execution path behind the local gate.
@@ -70,7 +70,13 @@ export function autoConfirmJobCaseDraft(
       reviewId: review.reviewId,
       reviewRevision: review.reviewRevision,
       privacyReviewed: true,
-      fields: review.fields.map((field) => ({ key: field.key, value: field.value, confirmed: true }))
+      fields: review.fields.map((field) => {
+        // A field consisting only of redaction tokens contains no business fact.
+        // Keep the redacted source, and leave that structured field empty.
+        const emptyRedaction = /^(?:\s*<[A-Z_]+_\d{3,}>\s*)+$/u.test(field.value ?? '')
+        return { key: field.key, value: emptyRedaction ? null : field.value, confirmed: true,
+          ...(emptyRedaction ? { changeReason: 'Remove placeholder-only field after local redaction' } : {}) }
+      })
     }, operator.operatorId, operator.displayName, now)
     return { review: confirmed, reason: null }
   } catch (error) {

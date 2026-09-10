@@ -7,7 +7,7 @@ const mock = vi.hoisted(() => ({ handlers: new Map<string, (e: IpcMainInvokeEven
 vi.mock('electron', () => ({ ipcMain: { handle: (key: string, handler: (e: IpcMainInvokeEvent, raw?: unknown) => unknown) => mock.handlers.set(key, handler) }, shell: { openExternal: mock.open } }))
 vi.mock('./context', () => ({ assertTrustedSender: vi.fn() }))
 const valid = { documentId: '11111111-1111-4111-8111-111111111111', profileVersion: 1, templateId: '22222222-2222-4222-8222-222222222222', templateRevision: 1, lang: 'ja', text: 'Java & AWS\n?cc=someone@example.test #紹介' }
-const invoke = (channel: string, input?: unknown) => mock.handlers.get(channel)!({} as IpcMainInvokeEvent, input)
+const invoke = (channel: string, input?: unknown) => mock.handlers.get(channel)!({ sender: { id: 1, isDestroyed: () => false, send: vi.fn() } } as unknown as IpcMainInvokeEvent, input)
 describe('personnel IPC', () => {
   beforeEach(() => { mock.handlers.clear(); mock.open.mockClear(); vi.mocked(assertTrustedSender).mockReset() })
   it('saves only affiliation with the current operator and rejects untrusted senders', () => {
@@ -46,4 +46,16 @@ describe('personnel IPC', () => {
     await expect(invoke(ipcChannels.findCasesForPersonnel, valid.documentId)).rejects.toThrow('已停用')
     expect(listCases).not.toHaveBeenCalled()
   })
+})
+
+it('fills the case partner reply address from Main and still opens a manual-send draft', async () => {
+  mock.handlers.clear(); mock.open.mockClear(); vi.mocked(assertTrustedSender).mockReset()
+  const context = { repository: { validatePersonnelMessage: (input: unknown) => personnelMessageInputSchema.parse(input), getCaseReplyRecipient: vi.fn(() => 'partner@example.co.jp') } } as unknown as MainIpcContext
+  registerPersonnelHandlers(context)
+  const result = await invoke(ipcChannels.openPersonnelEmail, { ...valid, caseContext: { reviewId: '33333333-3333-4333-8333-333333333333', version: 2 } })
+  expect(result).toEqual({ opened: true, recipientPrefilled: true })
+  const url = new URL(mock.open.mock.calls[0]![0])
+  expect(decodeURIComponent(url.pathname)).toBe('partner@example.co.jp')
+  expect([...url.searchParams.keys()]).toEqual(['subject', 'body'])
+  expect(url.searchParams.get('body')).toBe(valid.text)
 })

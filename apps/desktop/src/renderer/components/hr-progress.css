@@ -1,0 +1,82 @@
+.hr-progress { padding: 22px 26px; }
+.hr-progress-round-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.hr-progress .hr-progress-round-heading h4 { margin:0; }
+.hr-progress-layout { display:grid; grid-template-columns: minmax(270px, .65fr) minmax(0, 1.55fr); min-height:0; flex:1; gap:20px; }
+.hr-progress-detail { min-width:0; min-height:0; display:flex; flex-direction:column; border:1px solid #dce5df; border-radius:12px; overflow:hidden; background:#fff; }
+.hr-progress-detail > header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:20px 22px 16px; }
+.hr-progress-detail > header h3 { font-size:21px; margin:5px 0; color:#244c38; }
+.hr-progress-detail > header p { font-size:14px; line-height:1.6; overflow-wrap:anywhere; }
+.hr-progress-detail > header small { color:#6b7e70; font-size:12px; }
+.hr-progress-detail > header > div:last-child { display:flex; flex-wrap:wrap; flex-shrink:0; gap:6px; }
+.hr-progress-track { display:flex; gap:6px; padding:0 22px 18px; }
+.hr-progress-track span { flex:1; padding:7px 3px; text-align:center; font-size:11px; background:#f3f5f2; color:#8b978e; border-radius:4px; }
+.hr-progress-track span.is-reached { color:#3c634b; background:#eaf3ed; }
+.hr-progress-tabs { display:flex; gap:6px; padding:0 22px 12px; border-bottom:1px solid #e0e8e2; flex-wrap:wrap; }
+.hr-progress-tabs button { border-color:transparent; }
+.hr-progress-tabs button[aria-pressed=true], .hr-progress-message button[aria-pressed=true] { color:#2d5a42; background:#e8f1eb; border-color:#b6cebd; }
+.hr-progress-content { overflow:auto; flex:1; min-height:0; padding:22px; scrollbar-gutter:stable; }
+.hr-progress h4 { font-size:15px; margin:0 0 14px; color:#345641; }
+.hr-progress-content h4:not(:first-child), .hr-progress-content > form, .hr-progress-content > section { margin-top:24px; }
+.hr-progress-content p, .hr-progress-content li { font-size:13px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
+.hr-progress label { display:flex; flex-direction:column; gap:7px; color:#5c7162; font-size:12px; min-width:0; }
+.hr-progress input:not([type=checkbox]), .hr-progress textarea, .hr-progress select { width:100%; min-width:0; padding:10px 11px; color:#283f31; font:inherit; font-size:13px; line-height:1.5; border:1px solid #d3e0d7; border-radius:7px; background:#fff; box-sizing:border-box; }
+.hr-progress textarea { resize:vertical; }
+.hr-progress input:disabled, .hr-progress select:disabled, .hr-progress textarea:disabled { background:#f7f8f6; }
+.hr-progress-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 16px; margin:14px 0; }
+.hr-progress-form-grid .full { grid-column:1/-1; }
+.hr-progress-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:14px 0; }
+.hr-progress details { margin:12px 0; }
+.hr-progress summary { cursor:pointer; color:#5e7367; font-size:12px; line-height:1.7; }
+.hr-progress details textarea { margin-top:10px; }
+.hr-progress-next-line { display:flex; justify-content:space-between; gap:12px; font-size:12px; align-items:center; }
+.hr-progress-next-line time { font-size:11px; color:#77887c; }
+.hr-progress .hr-followup-item { gap:10px; padding:14px 16px; }
+.hr-progress .hr-followup-item > span:not(:first-child) { line-height:1.6; font-size:12px; }
+.hr-progress .hr-followup-item-top { flex-wrap:wrap; gap:5px; }
+.hr-progress .hr-followup-badge.stage-started { background:#e1f1e4; color:#2f6d41; }
+.hr-progress-analysis { background:#f2f6fc; border:1px solid #dbe5f3; padding:14px; border-radius:8px; margin:0 0 20px; }
+.hr-progress-analysis strong { font-size:13px; color:#3a5978; }
+.hr-progress-analysis blockquote { margin:10px 0; padding-left:10px; border-left:2px solid #b8cbe3; color:#677b93; font-size:12px; }
+.hr-progress-analysis small, .hr-progress-message small, .hr-progress-arrival small { display:block; font-size:11px; color:#6b7e70; line-height:1.7; }
+.hr-progress-checks { display:flex; gap:14px; flex-wrap:wrap; margin:16px 0; }
+.hr-progress-checks label { flex-direction:row; align-items:center; }
+.hr-progress-arrival { padding:16px; background:#f2f7f3; border:1px solid #dce8df; border-radius:8px; }
+.hr-progress-arrival label { margin-bottom:12px; max-width:260px; }
+.hr-progress-arrival small { margin-top:10px; }
+.hr-progress-round { padding:12px 14px; border:1px solid #e0e8e2; border-radius:7px; }
+.hr-progress-round summary { font-weight:600; }
+.hr-progress-round p { margin-top:10px; }
+.hr-progress-timeline { list-style:none; padding:0 0 0 12px; margin:14px 0 22px; border-left:2px solid #dce8e0; }
+.hr-progress-timeline li { padding:0 0 18px 10px; }
+.hr-progress-timeline time { font-size:11px; color:#77857a; }
+.hr-progress-timeline small { color:#728075; }
+.hr-progress-other { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 0; border-bottom:1px solid #e3eae5; font-size:12px; }
+.hr-progress-other > span { flex:1; min-width:140px; }
+.hr-progress-message { padding:16px; border:1px solid #d7e4da; border-radius:8px; background:#f9fcf9; }
+.hr-progress-message textarea { margin-top:10px; }
+.hr-progress-pagination { display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:10px 0; }
+.hr-progress-mail-toggle { margin-left:auto; }
+.hr-progress-inbox { max-height:300px; overflow:auto; padding:10px 14px; margin-bottom:14px; border:1px solid #dce5df; border-radius:8px; }
+.hr-progress-inbox article { padding:10px 0; font-size:12px; }
+.hr-progress-inbox strong { display:block; }
+.hr-progress-inbox article > small { color:#798b7c; }
+.hr-progress-inbox p { white-space:pre-wrap; line-height:1.7; }
+.hr-progress-inbox select { max-width:65%; margin-right:8px; }
+@container followups (max-width:860px) {
+ .hr-progress-layout { grid-template-columns:minmax(225px,.7fr) minmax(0,1.3fr); gap:12px; }
+ .hr-progress-detail > header { flex-direction:column; gap:10px; }
+ .hr-progress-content { padding:16px; }
+ .hr-progress-form-grid { grid-template-columns:minmax(0,1fr); }
+}
+@container followups (max-width:650px) {
+ .hr-progress-layout { display:flex; flex-direction:column; overflow:auto; }
+ .hr-progress-layout > aside { max-height:230px; flex-shrink:0; }
+ .hr-progress-detail { min-height:540px; overflow:visible; flex:none; }
+ .hr-progress-content { overflow:visible; }
+ .hr-progress-track { padding:0 12px 12px; }
+ .hr-progress-tabs { padding:0 12px 10px; }
+}
+
+.hr-progress .hr-followup-search input { border:0; padding:9px 0; background:transparent; }
+.hr-progress-preparation { background:#f8faf7; border:1px solid #e1e9de; border-radius:7px; padding:10px 14px; }
+.hr-progress-preparation[open] > h4 { margin:16px 0 8px; }

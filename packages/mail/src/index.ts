@@ -28,6 +28,7 @@ const allowedGmailMethods: ReadonlyArray<{ method: GmailHttpMethod; path: RegExp
   { method: 'GET', path: /^\/gmail\/v1\/users\/me\/profile$/ },
   { method: 'GET', path: /^\/gmail\/v1\/users\/me\/messages(?:\?.*)?$/ },
   { method: 'GET', path: /^\/gmail\/v1\/users\/me\/messages\/[^/?]+(?:\?.*)?$/ },
+  { method: 'GET', path: /^\/gmail\/v1\/users\/me\/messages\/[A-Za-z0-9_-]+\/attachments\/[A-Za-z0-9_-]+$/ },
   { method: 'GET', path: /^\/gmail\/v1\/users\/me\/history(?:\?.*)?$/ }
 ]
 
@@ -667,7 +668,18 @@ export interface GmailDiscoveryResult {
   truncated: boolean
 }
 
+export interface GmailResumeAttachment { id: string; name: string; size: number; data?: string }
+
+/** Header-derived, single mailbox only; never accepts mailto query/header injection. */
+export function gmailReplyMailbox(value: string): string | null {
+  if (/[\r\n\u0000]/u.test(value)) return null
+  const match = value.trim().match(/^(?:[^<>]*<)?([A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?:>)?$/iu)
+  return match?.[1] ?? null
+}
+
 export interface GmailMessageEnvelope {
+  replyTo?: string | null
+  resumeAttachments?: GmailResumeAttachment[]
   id: string
   threadId: string
   historyId: string
@@ -775,14 +787,19 @@ function collectMessageContent(part: z.infer<typeof messagePartSchema>): {
   plain: string[]
   html: string[]
   attachments: number
+  resumeAttachments: GmailResumeAttachment[]
 } {
-  const collected = { plain: [] as string[], html: [] as string[], attachments: 0 }
+  const collected = { plain: [] as string[], html: [] as string[], attachments: 0, resumeAttachments: [] as GmailResumeAttachment[] }
   let visitedParts = 0
   let decodedTextBytes = 0
   const visit = (current: z.infer<typeof messagePartSchema>, depth: number): void => {
     visitedParts += 1
     if (depth > 20 || visitedParts > 1_000) throw new Error('Gmail MIME structure exceeds the local complexity limit.')
     if (current.body?.attachmentId || current.filename) collected.attachments += 1
+    if (current.filename && /\.(pdf|docx|xlsx|xls|xlsb)$/iu.test(current.filename)) {
+      collected.resumeAttachments.push({ id: current.body?.attachmentId ?? `inline-${visitedParts}`, name: current.filename, size: current.body?.size ?? 0,
+        ...(current.body?.data ? { data: current.body.data } : {}) })
+    }
     if (current.body?.data && (current.mimeType === 'text/plain' || current.mimeType === 'text/html')) {
       const decoded = decodeBase64UrlText(current.body.data)
       decodedTextBytes += decoded.bytes
@@ -834,6 +851,8 @@ export function decodeGmailMessage(input: unknown): GmailMessageEnvelope {
     subject,
     from,
     fromDomain: domainFromMailbox(from),
+    replyTo: gmailReplyMailbox(messageHeader(message.payload.headers, 'Reply-To') ?? '') ?? gmailReplyMailbox(from),
+    resumeAttachments: content.resumeAttachments,
     body,
     attachmentCount: content.attachments,
     warnings: [...new Set(warnings)]
@@ -859,7 +878,11 @@ export function messageMatchesSyncScope(message: GmailMessageEnvelope, config: G
 }
 
 export function classifyGmailMessage(message: GmailMessageEnvelope): 'job-case' | 'candidate-proposal' | 'unclassified' {
-  return classifyEmailText(message.subject, message.body)
+  const classification = classifyEmailText(message.subject, message.body)
+  if (classification === 'unclassified') {
+    return classifyEmailText((message.resumeAttachments ?? []).map((item) => item.name).join(' '), message.body)
+  }
+  return classification
 }
 
 export function minimizeGmailBodyForLocalProcessing(body: string): string {
@@ -1015,6 +1038,19 @@ export class GmailReadClient {
     const id = messageReferenceSchema.shape.id.parse(messageId)
     const query = new URLSearchParams({ format: 'full' })
     return decodeGmailMessage(await this.request(`/gmail/v1/users/me/messages/${encodeURIComponent(id)}?${query}`))
+  }
+
+  async getAttachment(messageId: string, attachment: GmailResumeAttachment): Promise<Buffer> {
+    const maximum = 25 * 1024 * 1024
+    if (attachment.size > maximum) throw new Error('GMAIL_ATTACHMENT_TOO_LARGE')
+    const id = messageReferenceSchema.shape.id.parse(messageId)
+    const body = attachment.data ? { data: attachment.data, size: attachment.size } : z.object({
+      data: z.string().max(Math.ceil(maximum * 4 / 3) + 4), size: z.number().int().min(0).max(maximum)
+    }).parse(await this.request(`/gmail/v1/users/me/messages/${id}/attachments/${z.string().regex(/^[A-Za-z0-9_-]{1,2048}$/u).parse(attachment.id)}`))
+    if (!/^[A-Za-z0-9_-]*={0,2}$/u.test(body.data) || body.data.length > Math.ceil(maximum * 4 / 3) + 4) throw new Error('GMAIL_ATTACHMENT_INVALID')
+    const bytes = Buffer.from(body.data, 'base64url')
+    if (!bytes.length || bytes.length > maximum || (body.size > 0 && bytes.length !== body.size)) throw new Error('GMAIL_ATTACHMENT_SIZE_MISMATCH')
+    return bytes
   }
 
   private async request(path: string): Promise<unknown> {

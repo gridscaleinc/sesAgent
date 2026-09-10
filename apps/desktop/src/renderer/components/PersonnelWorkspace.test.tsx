@@ -140,7 +140,7 @@ describe('personnel workbench', () => {
     expect(await screen.findByText('案件を絞り込み、Cloud AIで適合性を評価しています…')).toBeVisible()
     view.rerender(<PersonnelWorkspace {...callbacks} compact initialDocumentId={other.documentId} reviews={[review, other]} />)
     finish({ documentId, profileVersion: 1, localMatchCount: 1, cloud: { status: 'failed', reviewedCount: 0, modelName: null },
-      items: [{ reviewId: 'case-review', jobCaseId: 'case', jobCaseVersion: 1, title: 'First person Java case', score: 90, matched: ['Java'], missing: [], hardFilters: [] }] })
+      items: [{ reviewId: 'case-review', jobCaseId: 'case', jobCaseVersion: 1, title: 'First person Java case', score: 90, matched: ['Java'], missing: [], hardFilters: [], qualification: { policyVersion: 'mandatory-evidence-v1', status: 'recommended', requirements: [] } }] })
     await waitFor(() => expect(screen.queryByText('マッチング中…')).not.toBeInTheDocument())
     expect(screen.queryByText('First person Java case')).not.toBeInTheDocument()
     view.rerender(<PersonnelWorkspace {...callbacks} compact initialDocumentId={documentId} reviews={[review, other]} />)

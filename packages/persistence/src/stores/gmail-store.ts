@@ -19,7 +19,50 @@ import {
 } from '../rows'
 import { DomainStore } from './base'
 
+export interface GmailBusinessIntake { accountEmail: string; messageId: string; replyTo: string | null; status: 'pending' | 'completed' | 'error'; parts: Record<string, string>; warnings: string[] }
+
 export class GmailStore extends DomainStore {
+  getGmailPersonnelIntakeStatus(accountEmail: string): { failed: number; warnings: number } {
+    const rows = this.database.prepare<[string], { status: string; warning_codes_json: string }>('SELECT status,warning_codes_json FROM gmail_business_intake WHERE account_email=?').all(accountEmail)
+    return { failed: rows.filter((row) => row.status === 'error').length, warnings: rows.filter((row) => row.warning_codes_json !== '[]').length }
+  }
+  listPendingGmailBusinessIntake(accountEmail: string): Array<{ messageId: string; classification: string }> {
+    return this.database.prepare<[string], { messageId: string; classification: string }>(`
+      SELECT m.gmail_message_id AS messageId, m.classification FROM gmail_messages m
+      LEFT JOIN gmail_business_intake i ON i.account_email=m.account_email AND i.gmail_message_id=m.gmail_message_id
+      WHERE m.account_email=? AND (i.status IS NULL OR i.status!='completed')
+      ORDER BY COALESCE(i.updated_at, '') ASC, m.internal_date DESC LIMIT 50`).all(accountEmail)
+  }
+
+  getGmailBusinessIntake(accountEmail: string, messageId: string): GmailBusinessIntake | null {
+    const row = this.database.prepare<[string,string], { reply_to: string | null; status: GmailBusinessIntake['status']; parts_json: string; warning_codes_json: string }>(
+      'SELECT * FROM gmail_business_intake WHERE account_email=? AND gmail_message_id=?').get(accountEmail,messageId)
+    return row ? { accountEmail, messageId, replyTo: row.reply_to, status: row.status, parts: JSON.parse(row.parts_json), warnings: JSON.parse(row.warning_codes_json) } : null
+  }
+
+  saveGmailBusinessIntake(input: GmailBusinessIntake): void {
+    this.database.prepare(`INSERT INTO gmail_business_intake(account_email,gmail_message_id,reply_to,status,parts_json,warning_codes_json,updated_at)
+      VALUES(?,?,?,?,?,?,?) ON CONFLICT(account_email,gmail_message_id) DO UPDATE SET reply_to=excluded.reply_to,status=excluded.status,
+      parts_json=excluded.parts_json,warning_codes_json=excluded.warning_codes_json,updated_at=excluded.updated_at`)
+      .run(input.accountEmail,input.messageId,input.replyTo,input.status,JSON.stringify(input.parts),JSON.stringify(input.warnings),new Date().toISOString())
+  }
+
+  getCaseMailSource(reviewId: string): { accountEmail: string; messageId: string } | null {
+    return this.database.prepare<[string], { accountEmail: string; messageId: string }>(`SELECT s.provider_account AS accountEmail,s.provider_message_id AS messageId
+      FROM job_case_extractions e JOIN job_case_sources s ON s.id=e.source_id WHERE e.review_id=? AND s.source_type='gmail'`).get(reviewId) ?? null
+  }
+
+  getCaseReplyRecipient(reviewId: string): string | null {
+    return this.database.prepare<[string], { reply_to: string | null }>(`SELECT i.reply_to FROM job_case_extractions e
+      JOIN job_case_sources s ON s.id=e.source_id JOIN gmail_business_intake i
+      ON i.account_email=s.provider_account AND i.gmail_message_id=s.provider_message_id
+      WHERE e.review_id=? AND s.source_type='gmail'`).get(reviewId)?.reply_to ?? null
+  }
+
+  findResumeDocumentByHash(sha256: string): string | null {
+    return this.database.prepare<[string], { token: string }>('SELECT token FROM staged_files WHERE sha256=? ORDER BY created_at LIMIT 1').get(sha256)?.token ?? null
+  }
+
   getGoogleWorkspaceAdminConfiguration(): GoogleWorkspaceAdminConfiguration | null {
     const row = this.database
       .prepare<[], GoogleWorkspaceAdminConfigurationRow>(

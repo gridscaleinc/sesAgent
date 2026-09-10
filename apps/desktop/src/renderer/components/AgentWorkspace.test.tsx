@@ -76,11 +76,11 @@ describe('AgentWorkspace', () => {
       onImportResume={onImportResume}
       onOpenCaseImport={onOpenCaseImport}
       onOpenMatching={vi.fn()}
-      status={{ activeCaseCount: 2, eligibleCandidateCount: 3, pendingReviewCount: 1, runningJobCount: 1, backupReminder: 'due' }}
+      status={{ activeCaseCount: 2, eligibleCandidateCount: 3, runningJobCount: 1, backupReminder: 'due' }}
     />)
 
     expect(await screen.findByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'タスク' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '会話' })).toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: '業務ステータス' })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /履歴書を取り込む/u }))
@@ -91,6 +91,66 @@ describe('AgentWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '面談を設定できる候補者は？' }))
     expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toHaveValue('面談を設定できる候補者は？')
+  })
+
+  it('shares the right column between details and Agent and keeps history inside Agent', async () => {
+    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([snapshot([])]), executeAgentTurn: vi.fn() }
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
+    const onCloseContextPanel = vi.fn()
+    const props = {
+      businessTitle: '案件', latestContent: <div>Business list</div>, onOpenMatching: vi.fn(),
+      contextPanel: <div>Selected case details</div>, contextPanelOpen: true, onCloseContextPanel
+    }
+    const view = render(<AgentWorkspace {...props} />)
+    const workspace = screen.getByRole('main', { name: 'SES Agent' })
+    expect(screen.getByText('Selected case details')).toBeVisible()
+    expect(screen.queryByRole('region', { name: '会話' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'タスク一覧を開く' })).not.toBeInTheDocument()
+
+    const trigger = screen.getByRole('button', { name: 'Agentに質問' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const agent = screen.getByRole('complementary', { name: 'SES Agent' })
+    const composer = within(agent).getByRole('textbox', { name: 'SES Agent への指示' })
+    await waitFor(() => expect(composer).toHaveFocus())
+    fireEvent.change(composer, { target: { value: 'Keep this draft' } })
+    expect(agent.parentElement).toBe(workspace)
+    expect(screen.getByText('Business list')).toBeVisible()
+    expect(screen.getByText('Selected case details')).not.toBeVisible()
+
+    fireEvent.click(within(agent).getByRole('button', { name: '会話管理' }))
+    expect(within(agent).getByRole('region', { name: '会話' })).toBeVisible()
+    expect(composer).not.toBeVisible()
+    expect(workspace).not.toHaveClass('is-history-open')
+    fireEvent.keyDown(within(agent).getByRole('button', { name: '会話に戻る' }), { key: 'Escape' })
+    expect(composer).toBeVisible()
+    expect(composer).toHaveValue('Keep this draft')
+    expect(onCloseContextPanel).not.toHaveBeenCalled()
+    fireEvent.keyDown(composer, { key: 'Escape' })
+    expect(agent).not.toBeVisible()
+    expect(screen.getByText('Selected case details')).toBeVisible()
+    expect(trigger).toHaveFocus()
+    expect(onCloseContextPanel).not.toHaveBeenCalled()
+
+    fireEvent.click(trigger)
+    expect(composer).toHaveValue('Keep this draft')
+    view.rerender(<AgentWorkspace {...props} homeRequestToken={1} />)
+    expect(agent).not.toBeVisible()
+    expect(screen.getByText('Selected case details')).toBeVisible()
+    expect(api.executeAgentTurn).not.toHaveBeenCalled()
+  })
+
+  it('does not let a previous home request override opening Agent on mount', async () => {
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } })
+    const props = { businessTitle: '案件', latestContent: <div>Business list</div>, onOpenMatching: vi.fn(), chatRequest: 1 }
+    const view = render(<AgentWorkspace {...props} homeRequestToken={3} />)
+    const composer = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
+    expect(composer).toBeVisible()
+    view.rerender(<AgentWorkspace {...props} homeRequestToken={4} />)
+    expect(composer).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Agentに質問' }))
+    view.rerender(<AgentWorkspace {...props} homeRequestToken={4} />)
+    expect(composer).toBeVisible()
   })
 
   it('offers a way back to the 今日新着 board while the workspace panel is closed', async () => {
@@ -361,10 +421,10 @@ describe('AgentWorkspace', () => {
       })
     } as unknown as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
-    render(<AgentWorkspace onOpenMatching={vi.fn()} />)
-
+    render(<AgentWorkspace businessTitle="案件" latestContent={<div>Business list</div>} onOpenMatching={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Agentに質問' }))
     const composer = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
-    fireEvent.drop(composer.closest('section')!, { dataTransfer: { files: [new File(['x'], 'candidate.pdf')] } })
+    fireEvent.drop(composer, { dataTransfer: { files: [new File(['x'], 'candidate.pdf')] } })
     await screen.findByText('candidate.pdf')
     fireEvent.click(screen.getByRole('button', { name: 'そのまま取込' }))
     await waitFor(() => expect(analyzeResumeFile).toHaveBeenCalled())
@@ -439,6 +499,28 @@ describe('AgentWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
 
     await waitFor(() => expect(onLocalDataChanged).toHaveBeenCalledTimes(1))
+  })
+
+  it('keeps timing and cloud call diagnostics collapsed after an answer', async () => {
+    const conversation = snapshot([{ id: 'answer-timings', role: 'assistant', content: 'Java の案件を確認できます。', mode: 'cloud', createdAt: '2026-09-09T00:00:00Z' }])
+    conversation.title = '案件の説明'
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
+      ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), cancelAgentTurn: vi.fn(),
+      executeAgentTurn: vi.fn().mockResolvedValue({ status: 'completed', toolName: null, actionRunId: null, assistantMessage: conversation.messages[0], conversation,
+        timings: { totalMs: 9700, planningMs: 3600, localToolMs: null, cloudReviewMs: null, narrativeFirstTokenMs: 3900, narrativeMs: 6000, cloudCalls: 2 } })
+    } })
+    render(<AgentWorkspace onOpenMatching={vi.fn()} />)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'SES Agent への指示' }), { target: { value: '案件を説明して' } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    expect(await screen.findByText('Java の案件を確認できます。')).toBeVisible()
+    const details = await screen.findByTestId('agent-turn-timings')
+    expect(details).not.toBeVisible()
+    fireEvent.click(screen.getByText('実行の詳細'))
+    expect(details).toBeVisible()
+    expect(details).toHaveTextContent('9.7s')
+    expect(details).toHaveTextContent('クラウド呼び出し 2 回')
+    fireEvent.click(screen.getByText('実行の詳細'))
+    expect(details).not.toBeVisible()
   })
 
   it('does not refresh the local snapshot for a read-only turn', async () => {
@@ -750,6 +832,37 @@ describe('AgentWorkspace', () => {
     expect(onOpenCandidate).toHaveBeenCalledWith(sourceDocumentId, 'prepare', interviewId, 'recruiting')
     fireEvent.click(screen.getAllByRole('button', { name: /元ファイルを開く|ファイルを開く/u })[0]!)
     await waitFor(() => expect(onOpenOriginalDocument).toHaveBeenCalledWith(sourceDocumentId))
+  })
+
+  it('opens imported resume facts directly without adding review warnings or review actions', async () => {
+    const documentId = '77777777-7777-4777-8777-777777777777'
+    const conversation = snapshot([{
+      id: 'assistant-imported-facts', role: 'assistant', content: '履歴書を取り込みました。', mode: 'local',
+      createdAt: '2026-08-18T00:00:00.000Z',
+      blocks: [
+        { type: 'system-access', destination: 'review-center' },
+        { type: 'resume-import', imported: [{ documentId, label: 'RESUME_1', ordinal: 1 }], failedCount: 1 },
+        { type: 'candidate-draft-facts', facts: {
+          documentId, label: 'RESUME_1', confirmed: false, reviewStatus: 'awaiting-review',
+          fields: [{ label: 'Skills', value: 'Java / SQL', confidence: 0.8, status: 'needs_review', sources: ['Sheet1'] }],
+          projects: [{ title: 'Payment system', period: '2024–2026', role: 'SE', technologies: ['Java'], summary: 'Backend development', confidence: 0.8, sources: ['Sheet1'] }]
+        } }
+      ]
+    }])
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
+      ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation])
+    } })
+    const onOpenCandidate = vi.fn()
+    render(<AgentWorkspace onOpenMatching={vi.fn()} onOpenCandidate={onOpenCandidate} />)
+    expect(await screen.findByText('Java / SQL')).toBeVisible()
+    expect(screen.getByText('Payment system')).toBeVisible()
+    expect(screen.getByText('1件の取込に失敗')).toBeVisible()
+    expect(screen.queryByText(/機械抽出|未確認下書き|確認するまで候補者/u)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /レビューセンターへ|レビューする|レビューセンターを開く/u })).not.toBeInTheDocument()
+    const openButtons = screen.getAllByRole('button', { name: '資料を見る' })
+    expect(openButtons).toHaveLength(2)
+    fireEvent.click(openButtons[1]!)
+    expect(onOpenCandidate).toHaveBeenCalledWith(documentId, 'resume')
   })
 
   it('keeps intake draft cards live and runs matching for a draft confirmed after the paste', async () => {

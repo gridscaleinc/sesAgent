@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent } from 'electron'
 import { jobCaseFieldKeys, ipcChannels, type JobCaseFieldKey, type JobCaseReviewSnapshot } from '@shared'
 import { registerJobCaseHandlers } from './job-cases'
+import { assertTrustedSender } from './context'
 
 const electronMock = vi.hoisted(() => {
   type Handler = (event: IpcMainInvokeEvent, rawInput: unknown) => unknown
@@ -74,6 +75,21 @@ function invoke(channel: string, input?: unknown) {
 describe('今日新着案件 IPC handlers', () => {
   beforeEach(() => {
     electronMock.handlers.clear()
+  })
+
+  it('uses the display-only repository read behind the trusted local source IPC', () => {
+    const source = { redactedSubject: 'SAP', redactedBody: 'BTP or <PERSON_NAME_001> or Cdsview',
+      localDisplay: { subject: 'SAP', body: 'BTP or Fiori or Cdsview' } }
+    const getJobCaseSourceTextForDisplay = vi.fn(() => source)
+    const getJobCaseSourceText = vi.fn()
+    const deps = context()
+    registerJobCaseHandlers({ ...deps, repository: { ...deps.repository, getJobCaseSourceTextForDisplay, getJobCaseSourceText } } as never)
+    expect(invoke(ipcChannels.getJobCaseSourceText, todayReviewId)).toEqual(source)
+    expect(assertTrustedSender).toHaveBeenCalledWith(event)
+    expect(getJobCaseSourceTextForDisplay).toHaveBeenCalledWith(todayReviewId)
+    expect(getJobCaseSourceText).not.toHaveBeenCalled()
+    expect(() => invoke(ipcChannels.getJobCaseSourceText, 'invalid-id')).toThrow()
+    expect(getJobCaseSourceTextForDisplay).toHaveBeenCalledTimes(1)
   })
 
   it('groups the arrivals by Tokyo day and counts every one of them as unseen', () => {

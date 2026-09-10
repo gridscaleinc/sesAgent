@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { candidateFieldKeys, type CandidateFieldKey, type CandidateProfileSearchResult, type CandidateReviewSnapshot, type CandidateMatchAssessment } from './contracts'
+import type { BusinessMatchQualification } from './matching-requirements'
 
 export const businessBatchCharacterLimit = 100_000
 export const businessIntakeSegmentLimit = 3_900
@@ -68,6 +69,7 @@ export type SetCandidateBusinessStateInput = z.infer<typeof candidateBusinessSta
 export const personnelMessageInputSchema = z.object({
   documentId: z.string().uuid(), profileVersion: z.number().int().positive(), templateId: z.string().uuid(),
   reviewRevision: z.number().int().positive().optional(),
+  caseContext: z.object({ reviewId: z.string().uuid(), version: z.number().int().positive() }).strict().optional(),
   templateRevision: z.number().int().positive(), lang: z.enum(['ja', 'zh']), text: z.string().trim().min(1).max(4_000)
 }).strict()
 export type PersonnelMessageInput = z.infer<typeof personnelMessageInputSchema>
@@ -83,12 +85,17 @@ export interface PersonnelCaseMatch {
   matched: string[]; missing: string[]; hardFilters: CandidateProfileSearchResult['retrieval']['hardFilters']
   jobCaseVersion: number
   assessment?: CandidateMatchAssessment
+  qualification?: BusinessMatchQualification
 }
 export interface PersonnelCaseMatchResult {
   documentId: string
   profileVersion: number
   items: PersonnelCaseMatch[]
   localMatchCount: number
+  ownCompanyExcludedCount?: number
+  searchedCount?: number
+  excludedCount?: number
+  excludedRequirements?: string[]
   cloud: { status: 'reviewed' | 'partial' | 'unavailable' | 'failed' | 'not-needed'; reviewedCount: number; modelName: string | null }
 }
 
@@ -101,6 +108,10 @@ export interface CasePersonnelMatchResult {
   jobCaseVersion: number
   items: CasePersonnelMatch[]
   localMatchCount: number
+  ownCompanyExcludedCount?: number
+  searchedCount?: number
+  excludedCount?: number
+  excludedRequirements?: string[]
   cloud: PersonnelCaseMatchResult['cloud']
 }
 
@@ -127,4 +138,37 @@ export const personnelFieldLabels: Record<CandidateFieldKey, readonly [string, s
   skills: ['技能', 'スキル'], experience_years: ['经验', '経験'], availability: ['可上岗', '稼働'],
   rate: ['单价', '単価'], japanese_level: ['日语', '日本語'], work_style: ['工作方式', '勤務形態'],
   role: ['职种', '職種'], location: ['区域', 'エリア'], work_authorization: ['工作资格', '就労資格']
+}
+
+/** Lightweight HR-authored follow-up; independent of formal proposal approval. */
+export const saveBusinessFollowUpSchema = z.object({
+  documentId: z.string().uuid(), reviewId: z.string().uuid(), expectedRevision: z.number().int().nonnegative(),
+  status: z.enum(['contacted', 'replied', 'interview', 'closed']),
+  note: z.string().trim().max(2000), nextStep: z.string().trim().max(500)
+}).strict()
+export type SaveBusinessFollowUpInput = z.infer<typeof saveBusinessFollowUpSchema>
+export interface BusinessFollowUp extends Omit<SaveBusinessFollowUpInput, 'expectedRevision'> {
+  progress?: import('./business-progress').BusinessProgress
+  id: string; revision: number; updatedAt: string; recordedBy: string
+  events: Array<{ status: SaveBusinessFollowUpInput['status']; note: string; nextStep: string; recordedAt: string; recordedBy: string; action?: string; mutationId?: string; stage?: import('./business-progress').BusinessProgressStage; roundNumber?: number }>
+}
+
+export const regenerateIntroductionInputSchema = z.object({
+ kind: z.enum(['case','person']), id: z.string().uuid(), version: z.number().int().positive(),
+ lang: z.enum(['zh','ja']), style: z.enum(['standard','brief']),
+ caseContext: z.object({ reviewId: z.string().uuid(), version: z.number().int().positive() }).optional()
+}).strict()
+export type RegenerateIntroductionInput = z.infer<typeof regenerateIntroductionInputSchema>
+
+export const saveBusinessFieldInputSchema = z.object({
+ kind: z.enum(['case','person']), id: z.string().uuid(), version: z.number().int().positive(),
+ field: z.string().min(1).max(100), value: z.string().max(4000).nullable(),
+ previousValue: z.string().nullable(),
+ projectId: z.string().max(100).optional()
+}).strict()
+export type SaveBusinessFieldInput = z.infer<typeof saveBusinessFieldInputSchema>
+
+/** An explicitly unknown eligibility value identifies nobody; keep real values subject to the existing identifier checks. */
+export function introductionIdentifierCheckText(text: string): string {
+  return text.replace(/^[ \t　]*(?:[-・*][ \t　]*)?(?:就労資格|就労可否|就労制限|在留資格|国籍|Work authori[sz]ation|Residence status|Nationality)[ \t　]*[:：][ \t　]*(?:要確認|未確認|不明|未設定|待确认|待补充|未设置|未知|unknown|not provided)[ \t　]*[。.]?[ \t　]*$/gimu, '')
 }

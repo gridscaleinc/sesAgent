@@ -7,7 +7,6 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, session, shell } from 'electron'
 
 import {
-  createSampleTasks,
   SafeLocalProcessingDispatcher,
   recordCandidateMatchRetryScheduled,
   recordResumeAnalysisRetryScheduled,
@@ -257,7 +256,7 @@ async function registerOriginalDocumentProtocol(
   })
 }
 
-async function initializeServices(options: { restoring?: boolean } = {}): Promise<{
+async function initializeServices(): Promise<{
   repository: EncryptedApplicationRepository
   fileVault: EncryptedFileVault
   parserWorker: ParserWorkerClient
@@ -291,9 +290,6 @@ async function initializeServices(options: { restoring?: boolean } = {}): Promis
       databaseKey: keys.databaseKey,
       mappingKey: keys.mappingKey
     })
-    if (!options.restoring && repository.countWorkTasks() === 0) {
-      for (const task of createSampleTasks(new Date().toISOString())) repository.saveWorkTask(task)
-    }
     const processingJobRecovery = repository.recoverExpiredProcessingJobs(new Date(), true)
     for (const task of repository.listWorkTasks()) {
       const reconciled = recoverInterruptedWorkTask(reconcileWorkTaskPlan(task))
@@ -561,7 +557,7 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
       // HR may not be looking at the app when mail lands. Counts only - case
       // content never enters an OS notification.
       if (counts.imported > 0 && BrowserWindow.getFocusedWindow() === null && Notification.isSupported()) {
-        const notice = new Notification({ title: 'SES Agent', body: `新着案件 ${counts.imported}件` })
+        const notice = new Notification({ title: 'SES Agent', body: `メール ${counts.imported}件・人材取込 ${counts.personnelImported ?? 0}件` })
         notice.on('click', () => {
           const window = BrowserWindow.getAllWindows()[0]
           if (!window) return
@@ -986,7 +982,7 @@ async function startApplication(): Promise<void> {
     if (!activation) {
       await rm(join(userDataPath, 'recovery', 'previews'), { recursive: true, force: true })
     }
-    const services = await initializeServices({ restoring: Boolean(activation) })
+    const services = await initializeServices()
     startingServices = services
     if (aiCommerceProductionProbeMode) {
       if (!services.aiCommerce) throw new Error('AICommerce production configuration is unavailable.')

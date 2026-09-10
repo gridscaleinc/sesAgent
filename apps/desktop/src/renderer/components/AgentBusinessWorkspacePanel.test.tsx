@@ -93,13 +93,10 @@ describe('AgentBusinessWorkspacePanel', () => {
       expect(screen.getByText('查看全部字段').closest('details')).not.toHaveAttribute('open')
     }
   })
-  it('shows resume skills in bounded tags and expands the remainder on demand', () => {
+  it('shows all resume skills together in the field that can be edited', () => {
     const skills = Array.from({ length: 12 }, (_, index) => `Skill ${index + 1}`)
     renderPanel({ type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'resume' }, { candidateReviews: [{ ...candidate, fields: [{ ...candidate.fields[0]!, value: skills.join(', ') }, candidate.fields[1]!] }] })
-    expect(screen.getByText('Skill 1')).toBeVisible()
-    expect(screen.getByText('Skill 12')).not.toBeVisible()
-    fireEvent.click(screen.getByText('展开其余 4 项技能'))
-    expect(screen.getByText('Skill 12')).toBeVisible()
+    expect(screen.getByText(skills.join(', '))).toBeVisible()
     expect(screen.getByText('Sheet1!A1')).not.toBeVisible()
   })
   it('renders original spreadsheets as cells with sheet selection and zoom', async () => {
@@ -281,7 +278,7 @@ describe('AgentBusinessWorkspacePanel', () => {
     })
   })
 
-  it('loads the complete Gmail body directly and masks PII placeholders', async () => {
+  it('loads the complete Gmail original for HR without masking local business information', async () => {
     const gmailReview: JobCaseReviewSnapshot = {
       ...jobCase,
       reviewId: '88888888-8888-4888-8888-888888888888',
@@ -293,6 +290,7 @@ describe('AgentBusinessWorkspacePanel', () => {
       sourceType: 'gmail' as const,
       redactedSubject: 'Java 案件のご紹介',
       redactedBody: '担当: <PERSON_NAME_001>\n連絡先: <PHONE_001>\n単価: 70万円\n<UNKNOWN_KIND_001>',
+      localDisplay: { subject: 'Java 案件のご紹介', body: '担当: TEST CONTACT\n連絡先: 090-0000-0000\n単価: 70万円\nBTP or Fiori or Cdsview' },
       messageDate: '2026-08-24T00:00:00.000Z',
       fromDomain: 'partner.example.co.jp'
     })
@@ -304,9 +302,10 @@ describe('AgentBusinessWorkspacePanel', () => {
     expect(screen.getByRole('heading', { name: '案件正文' })).toBeVisible()
     expect(screen.queryByText('查看消息摘要')).not.toBeInTheDocument()
     await waitFor(() => expect(onLoadJobCaseSourceText).toHaveBeenCalledWith(gmailReview.reviewId))
-    const body = await screen.findByText(/〔人名·已遮蔽〕/)
-    expect(body.textContent).toContain('〔电话·已遮蔽〕')
-    expect(body.textContent).toContain('〔已遮蔽〕')
+    const body = await screen.findByText(/TEST CONTACT/)
+    expect(body.textContent).toContain('090-0000-0000')
+    expect(body.textContent).toContain('BTP or Fiori or Cdsview')
+    expect(screen.queryByText(/已遮蔽|已脱敏/)).not.toBeInTheDocument()
     expect(body.textContent).not.toContain('<PERSON_NAME_001>')
     expect(body.textContent).not.toContain('<PHONE_001>')
   })

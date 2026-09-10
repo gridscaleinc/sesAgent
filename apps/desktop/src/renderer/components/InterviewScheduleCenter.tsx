@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import type { CandidateInterviewSnapshot, CandidateReviewSnapshot } from '@shared'
+import { useEffect, useMemo, useState } from 'react'
+import type { BusinessFollowUp, CandidateInterviewSnapshot, CandidateReviewSnapshot, JobCaseReviewSnapshot } from '@shared'
 import { Icon } from './Icon'
 import { useRendererUiRefresh, useUiLocale } from '../i18n'
 import type { PipelineView } from './CandidatePipeline'
@@ -9,6 +9,7 @@ type ScheduleKindFilter = 'all' | CandidateInterviewSnapshot['kind']
 type ScheduleStatus = 'unbooked' | 'preparing' | 'ready' | 'decision' | 'finished'
 
 export type InterviewScheduleRoute = {
+  businessFollowUpId?: string | null
   sourceDocumentId: string
   interviewId: string | null
   kind: CandidateInterviewSnapshot['kind']
@@ -159,6 +160,7 @@ function statusLabel(status: ScheduleStatus, zh: boolean): string {
 }
 
 function nextActionLabel(row: ScheduleRow, zh: boolean): string {
+  if (row.interview?.businessFollowUpId) return zh ? '打开案件推进' : '案件の進行を開く'
   if (row.status === 'unbooked') return row.interview?.roundNumber && row.interview.roundNumber > 1
     ? (zh ? '预约复试' : '再面談を予約')
     : (zh ? '预约面试' : '面談を予約')
@@ -170,6 +172,7 @@ function nextActionLabel(row: ScheduleRow, zh: boolean): string {
 
 function routeFor(review: CandidateReviewSnapshot, interview: CandidateInterviewSnapshot | null, kind: CandidateInterviewSnapshot['kind']): InterviewScheduleRoute {
   return {
+    businessFollowUpId: interview?.businessFollowUpId,
     sourceDocumentId: review.documentId,
     interviewId: interview?.id ?? null,
     kind,
@@ -180,10 +183,12 @@ function routeFor(review: CandidateReviewSnapshot, interview: CandidateInterview
 export function InterviewScheduleCenter({
   interviews,
   reviews,
+  cases = [],
   onOpenInterview
 }: {
   interviews: CandidateInterviewSnapshot[]
   reviews: CandidateReviewSnapshot[]
+  cases?: JobCaseReviewSnapshot[]
   onOpenInterview(route: InterviewScheduleRoute): void
 }) {
   useRendererUiRefresh()
@@ -196,23 +201,30 @@ export function InterviewScheduleCenter({
   const [interviewerFilter, setInterviewerFilter] = useState('all')
   const [query, setQuery] = useState('')
 
+  const [followUps,setFollowUps] = useState<BusinessFollowUp[]>([])
+  useEffect(() => { let alive=true; void window.sesAgent.listBusinessFollowUps().then((rows) => { if(alive)setFollowUps(rows) }).catch(() => {}); return () => {alive=false} }, [interviews])
   const reviewByDocumentId = useMemo(() => new Map(reviews.map((review) => [review.documentId, review])), [reviews])
   const rows = useMemo(() => {
     const liveRows = interviews.flatMap((interview): ScheduleRow[] => {
       const review = reviewByDocumentId.get(interview.sourceDocumentId)
       if (!review) return []
-      const status = statusFor(interview)
+      const follow = followUps.find((row) => row.id === interview.businessFollowUpId)
+      const job = cases.find((row) => row.reviewId === follow?.reviewId)
+      const caseTitle = job?.fields.find((field) => field.key === 'title')?.value ?? job?.redactedSubject
+      const inactive = ['closed','paused','started'].includes(follow?.progress?.stage ?? '')
+      const unscheduled = follow?.progress?.stage === 'coordinating'
+      const status = inactive ? 'finished' : unscheduled ? 'unbooked' : statusFor(interview)
       return [{
         id: interview.id,
         interview,
         review,
         kind: interview.kind,
         status,
-        scheduledAt: interview.scheduledAt,
+        scheduledAt: unscheduled ? null : interview.scheduledAt,
         interviewer: interview.interviewer,
-        label: interviewLabel(interview, zh),
+        label: [caseTitle,interviewLabel(interview, zh)].filter(Boolean).join(' · '),
         route: routeFor(review, interview, interview.kind),
-        conflict: interviews.some((other) => overlaps(interview, other))
+        conflict: !inactive && !interview.decision && interviews.some((other) => !other.decision && !followUps.some((row) => row.id === other.businessFollowUpId && ['closed','paused','started'].includes(row.progress?.stage ?? '')) && overlaps(interview, other))
       }]
     })
     // A reviewed resume without a recruiting session is still actionable. It
@@ -238,7 +250,7 @@ export function InterviewScheduleCenter({
     const actionPriority: Record<ScheduleStatus, number> = { unbooked: 0, decision: 1, preparing: 2, ready: 3, finished: 4 }
     return [...liveRows, ...withoutRecruitingSession]
       .toSorted((left, right) => actionPriority[left.status] - actionPriority[right.status] || (left.scheduledAt ?? '9999').localeCompare(right.scheduledAt ?? '9999') || left.label.localeCompare(right.label, locale))
-  }, [interviews, locale, reviewByDocumentId, reviews, zh])
+  }, [interviews, locale, reviewByDocumentId, reviews, zh, cases, followUps])
   const interviewers = useMemo(() => [...new Set(rows.map((row) => row.interviewer).filter((value): value is string => Boolean(value)))].toSorted(), [rows])
   const filteredRows = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase(locale)

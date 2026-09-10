@@ -797,7 +797,10 @@ export class CandidateStore extends DomainStore {
       matchRunIds: new Set(agentMatchRows.map((row) => row.run_id)),
       matchResultIds: new Set(agentMatchRows.map((row) => row.result_id))
     })
+    const followUps = this.database.prepare<[string], { id: string; revision: number }>('SELECT id,revision FROM business_followups WHERE document_id=? ORDER BY id').all(sourceDocumentId)
+    const progressMail = this.database.prepare<[string], {id:string;payload:string}>('SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.document_id=? ORDER BY mail.id').all(sourceDocumentId)
     const counts = {
+      ...(followUps.length ? { businessFollowUps: followUps.length } : {}),
       profileVersions: history.length,
       reviewAudits,
       taskRecords,
@@ -814,6 +817,8 @@ export class CandidateStore extends DomainStore {
       fileSha256: file.sha256,
       latestProfileId: history[0]?.id,
       latestVersion: history[0]?.version,
+      followUps,
+      progressMail,
       counts
     })).digest('hex')
     return candidateDeletionPreviewSchema.parse({

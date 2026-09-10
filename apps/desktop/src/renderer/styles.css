@@ -16006,7 +16006,10 @@ body,
 .agent-cloud-review-note { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 0 0 8px; padding: 6px 9px; color: #8a6d3b; font-size: 9px; line-height: 1.45; background: #fff8ea; border: 1px solid #f1e2c2; border-radius: 8px; }
 .agent-no-match-summary { display: flex; align-items: center; gap: 6px; margin: 0; color: #55708f; font-size: 10px; line-height: 1.5; }
 .agent-no-match-toggle { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 24px; margin-top: 4px; padding: 3px 8px; color: #49657f; font-size: 9px; background: #f6f9fd; border: 1px solid #dfe8f3; border-radius: 999px; }
-.agent-turn-timings { margin: 4px 0 0; color: #9aa9bb; font-size: 8px; line-height: 1.4; letter-spacing: .01em; }
+.agent-turn-details { margin-top: 8px; color: #64766a; font-size: 11px; }
+.agent-turn-details > summary { cursor: pointer; width: fit-content; padding: 4px 0; }
+.agent-turn-details > summary:focus-visible { outline: 2px solid #659977; outline-offset: 2px; }
+.agent-turn-timings { margin: 6px 0 0; padding: 10px 12px; background: #f3f6f4; border-radius: 6px; color: #53665b; font-size: 12px; line-height: 1.7; }
 .agent-cloud-review-note small { flex-basis: 100%; color: #a3927a; font-size: 8px; word-break: break-all; }
 .agent-clarification, .agent-explanation, .agent-error-block { margin-top: 11px; padding: 10px; font-size: 10px; line-height: 1.55; background: #f8fbff; border: 1px solid #dce8f5; border-radius: 8px; }
 .agent-clarification > strong { display: block; color: #49657f; }

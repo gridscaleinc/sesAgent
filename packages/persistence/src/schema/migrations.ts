@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 46
+export const currentSchemaVersion = 49
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2125,5 +2125,137 @@ BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strft
 CREATE TRIGGER backup_revision_business_feed_marks_delete AFTER DELETE ON business_feed_marks
 BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton = 1; END;
 INSERT INTO schema_migrations(version,applied_at) VALUES(46,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+/** v47: explicit HR-authored case/person follow-up, without a formal proposal gate. */
+export const migrationV47 = `
+BEGIN IMMEDIATE;
+CREATE TABLE business_followups (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES staged_files(token) ON DELETE CASCADE,
+  review_id TEXT NOT NULL REFERENCES job_case_extractions(review_id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  UNIQUE(document_id, review_id)
+);
+CREATE INDEX idx_business_followups_updated ON business_followups(updated_at DESC);
+CREATE TRIGGER backup_revision_business_followups_insert AFTER INSERT ON business_followups
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_business_followups_update AFTER UPDATE ON business_followups
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_business_followups_delete AFTER DELETE ON business_followups
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+INSERT INTO schema_migrations(version, applied_at) VALUES (47, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+COMMIT;
+`
+
+/** Local-only mail headers and resumable attachment import ledger. */
+export const migrationV48 = `
+BEGIN IMMEDIATE;
+CREATE TABLE gmail_business_intake (
+ account_email TEXT NOT NULL, gmail_message_id TEXT NOT NULL,
+ reply_to TEXT, status TEXT NOT NULL CHECK(status IN ('pending','completed','error')),
+ parts_json TEXT NOT NULL DEFAULT '{}', warning_codes_json TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL,
+ PRIMARY KEY(account_email,gmail_message_id),
+ FOREIGN KEY(account_email,gmail_message_id) REFERENCES gmail_messages(account_email,gmail_message_id) ON DELETE CASCADE
+);
+CREATE TRIGGER backup_revision_gmail_business_intake_insert AFTER INSERT ON gmail_business_intake
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;
+CREATE TRIGGER backup_revision_gmail_business_intake_update AFTER UPDATE ON gmail_business_intake
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;
+CREATE TRIGGER backup_revision_gmail_business_intake_delete AFTER DELETE ON gmail_business_intake
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;
+INSERT INTO schema_migrations(version,applied_at) VALUES(48,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// Pair-scoped interview rounds preserve existing unlinked interview history.
+export const migrationV49 = `
+BEGIN IMMEDIATE;
+
+DROP TRIGGER IF EXISTS backup_revision_candidate_interview_sessions_insert;
+DROP TRIGGER IF EXISTS backup_revision_candidate_interview_sessions_update;
+DROP TRIGGER IF EXISTS backup_revision_candidate_interview_sessions_delete;
+
+CREATE TABLE candidate_interview_sessions_v49 (
+  id TEXT PRIMARY KEY,
+  source_document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'recruiting' CHECK (kind IN ('recruiting', 'client')),
+  round_number INTEGER NOT NULL DEFAULT 1 CHECK (round_number > 0 AND round_number <= 20),
+  parent_interview_id TEXT REFERENCES candidate_interview_sessions_v49(id) ON DELETE SET NULL,
+  stage TEXT NOT NULL CHECK (stage IN (
+    'new', 'contacting', 'scheduled', 'prepared', 'interviewing', 'awaiting-decision', 'on-hold', 'passed', 'closed'
+  )),
+  scheduled_at TEXT,
+  duration_minutes INTEGER NOT NULL DEFAULT 60 CHECK (
+    typeof(duration_minutes) = 'integer' AND duration_minutes BETWEEN 5 AND 480
+  ),
+  meeting_method TEXT NOT NULL DEFAULT 'zoom' CHECK (meeting_method IN ('zoom', 'google-meet', 'phone', 'onsite')),
+  meeting_url TEXT,
+  meeting_details_json TEXT NOT NULL DEFAULT '{}',
+  interviewer TEXT,
+  contact_note TEXT,
+  interview_goal TEXT,
+  question_plan_json TEXT NOT NULL DEFAULT '[]',
+  interview_notes TEXT,
+  unresolved_items_json TEXT NOT NULL DEFAULT '[]',
+  decision TEXT CHECK (decision IN ('passed', 'next-round', 'on-hold', 'failed', 'no-show', 'withdrawn')),
+  decision_reason TEXT,
+  decided_at TEXT,
+  decided_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  cloud_eligible INTEGER NOT NULL DEFAULT 0 CHECK (cloud_eligible = 0),
+  business_followup_id TEXT REFERENCES business_followups(id) ON DELETE CASCADE,
+  CHECK ((decision IS NULL AND decision_reason IS NULL AND decided_at IS NULL AND decided_by IS NULL) OR
+         (decision IS NOT NULL AND decision_reason IS NOT NULL AND decided_at IS NOT NULL AND decided_by IS NOT NULL))
+);
+
+INSERT INTO candidate_interview_sessions_v49(
+  id, source_document_id, kind, round_number, parent_interview_id, stage,
+  scheduled_at, duration_minutes, meeting_method, meeting_url, meeting_details_json, interviewer,
+  contact_note, interview_goal, question_plan_json, interview_notes, unresolved_items_json,
+  decision, decision_reason, decided_at, decided_by, created_at, updated_at, updated_by, cloud_eligible
+)
+SELECT id, source_document_id, kind, round_number, parent_interview_id, stage,
+       scheduled_at, duration_minutes, meeting_method, meeting_url, meeting_details_json, interviewer,
+       contact_note, interview_goal, question_plan_json, interview_notes, unresolved_items_json,
+       decision, decision_reason, decided_at, decided_by, created_at, updated_at, updated_by, cloud_eligible
+FROM candidate_interview_sessions
+ORDER BY source_document_id, kind, round_number;
+
+DROP TABLE candidate_interview_sessions;
+ALTER TABLE candidate_interview_sessions_v49 RENAME TO candidate_interview_sessions;
+
+CREATE UNIQUE INDEX candidate_interview_legacy_round_idx ON candidate_interview_sessions(source_document_id,kind,round_number) WHERE business_followup_id IS NULL;
+CREATE UNIQUE INDEX candidate_interview_business_round_idx ON candidate_interview_sessions(business_followup_id,round_number) WHERE business_followup_id IS NOT NULL;
+CREATE TABLE business_progress_mail (
+ id TEXT PRIMARY KEY, followup_id TEXT REFERENCES business_followups(id) ON DELETE CASCADE,
+ received_at TEXT NOT NULL, payload TEXT NOT NULL
+);
+CREATE TRIGGER backup_revision_business_progress_mail_insert AFTER INSERT ON business_progress_mail
+BEGIN UPDATE local_data_revision SET revision = revision + 1 WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_business_progress_mail_update AFTER UPDATE ON business_progress_mail
+BEGIN UPDATE local_data_revision SET revision = revision + 1 WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_business_progress_mail_delete AFTER DELETE ON business_progress_mail
+BEGIN UPDATE local_data_revision SET revision = revision + 1 WHERE singleton = 1; END;
+CREATE INDEX candidate_interview_sessions_candidate_idx
+  ON candidate_interview_sessions(source_document_id, kind, round_number DESC);
+CREATE INDEX candidate_interview_sessions_stage_schedule_idx
+  ON candidate_interview_sessions(stage, scheduled_at ASC, updated_at DESC);
+
+CREATE TRIGGER backup_revision_candidate_interview_sessions_insert AFTER INSERT ON candidate_interview_sessions
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_interview_sessions_update AFTER UPDATE ON candidate_interview_sessions
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+CREATE TRIGGER backup_revision_candidate_interview_sessions_delete AFTER DELETE ON candidate_interview_sessions
+BEGIN UPDATE local_data_revision SET revision = revision + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE singleton = 1; END;
+
+INSERT INTO schema_migrations(version, applied_at)
+VALUES (49, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
 COMMIT;
 `

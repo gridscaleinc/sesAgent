@@ -13,7 +13,7 @@ import type { AiConversationRow } from './rows'
 
 export function aiConversationContextKey(context: AiConversationContext): string {
   const immutableContext = context.assistant === 'sales-agent'
-    ? { assistant: 'sales-agent' as const }
+    ? { assistant: 'sales-agent' as const, ...(context.businessObject ? { businessObject: context.businessObject } : {}) }
     : {
         assistant: context.assistant,
         candidateDocumentId: context.candidateDocumentId,

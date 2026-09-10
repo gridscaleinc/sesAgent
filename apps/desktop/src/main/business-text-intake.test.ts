@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { EncryptedFileVault, type StagedFileRecord } from '@files'
 import type { EncryptedApplicationRepository } from '@persistence'
 import { resumeAnalysisSummarySchema, type CandidateReviewSnapshot, type JobCaseReviewSnapshot } from '@shared'
-import { importChatPastedJobCaseText, importPastedCandidateText } from './business-text-intake'
+import { autoConfirmJobCaseDraft, importChatPastedJobCaseText, importPastedCandidateText } from './business-text-intake'
 
 const anonymizedCaseText = [
   '案件概要：物流系Webシステムの追加開発',
@@ -35,6 +35,25 @@ function jobCaseRepository(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 describe('importChatPastedJobCaseText', () => {
+  it('clears only placeholder-only extracted fields and leaves mixed business content for normal validation', () => {
+    const fields = [
+      { key: 'title', value: 'COBOL 案件' },
+      { key: 'notes', value: ' <NATIONALITY_001>\n<PERSON_NAME_002> ' },
+      { key: 'required_skills', value: 'ホストCOBOL開発経験3年以上' },
+      { key: 'preferred_skills', value: 'Java、<PERSON_NAME_003>' }
+    ]
+    const draft = { reviewId: 'review-1', reviewRevision: 1, fields } as JobCaseReviewSnapshot
+    const confirmJobCaseReview = vi.fn<EncryptedApplicationRepository['confirmJobCaseReview']>(() => ({ ...draft, status: 'completed' as const }))
+    autoConfirmJobCaseDraft({ confirmJobCaseReview }, draft, { operatorId: 'op-1', displayName: 'HR' })
+    expect(confirmJobCaseReview.mock.calls[0]![0].fields).toEqual([
+      { key: 'title', value: 'COBOL 案件', confirmed: true },
+      { key: 'notes', value: null, confirmed: true, changeReason: 'Remove placeholder-only field after local redaction' },
+      { key: 'required_skills', value: 'ホストCOBOL開発経験3年以上', confirmed: true },
+      { key: 'preferred_skills', value: 'Java、<PERSON_NAME_003>', confirmed: true }
+    ])
+    expect(draft.fields).toEqual(fields)
+  })
+
   it('creates one review draft for new text', async () => {
     const repository = jobCaseRepository()
     const result = await importChatPastedJobCaseText({ repository, localNer: null }, anonymizedCaseText)

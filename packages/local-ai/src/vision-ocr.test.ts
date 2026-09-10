@@ -152,6 +152,15 @@ describe('collectLocalPersonNameCandidates', () => {
       'クラウド基盤の設計・構築を担当'
     ].join('\n'))).toEqual([])
   })
+
+  it('preserves SAP technology names in mixed Chinese/Japanese requirements while still finding the contact', () => {
+    const text = '日语流畅的FI 中上级SE+会BTP或者Fiori或者Cdsview 至少一个熟悉\nBTP or Fiori or Cdsviewの活用を前提とした設計経験\nABAP開発\n担当：山田太郎'
+    const appleResult = nameDetectionResultSchema.parse({
+      version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false, requiresHumanConfirmation: true,
+      entities: ['BTP', 'Fiori', 'Cdsview', 'ABAP'].map(name => ({ text: name, startUtf16: text.indexOf(name), endUtf16: text.indexOf(name) + name.length, tag: 'personalName' }))
+    })
+    expect(collectLocalPersonNameCandidates(text, appleResult)).toEqual(['山田太郎'])
+  })
 })
 
 describe('parseLocalHelperJson', () => {

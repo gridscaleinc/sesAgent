@@ -400,6 +400,22 @@ export class JobCaseStore extends DomainStore {
     }
   }
 
+  /** Local reader only. Cloud callers continue to use getJobCaseSourceText. */
+  getJobCaseSourceTextForDisplay(reviewId: string): JobCaseSourceText | null {
+    const sourceText = this.getJobCaseSourceText(reviewId)
+    if (!sourceText) return null
+    const source = this.database.prepare<[string], { redaction_session_id: string }>(
+      `SELECT source.redaction_session_id FROM job_case_sources source
+       JOIN job_case_extractions extraction ON extraction.source_id = source.id
+       WHERE extraction.review_id = ?`
+    ).get(reviewId)!
+    const mappings = new Map(this.stores.privacy.getLocalPiiMappings(source.redaction_session_id)
+      .map(mapping => [mapping.placeholder, mapping.originalValue]))
+    // One pass only: a literal placeholder in an original value is not a new lookup.
+    const restore = (text: string) => text.replace(/<[A-Z][A-Z0-9_]*?_\d{3,}>/gu, token => mappings.get(token) ?? token)
+    return { ...sourceText, localDisplay: { subject: restore(sourceText.redactedSubject), body: restore(sourceText.redactedBody) } }
+  }
+
   setJobCaseLifecycle(
     input: SetJobCaseLifecycleInput,
     changedBy: string,
@@ -548,7 +564,10 @@ export class JobCaseStore extends DomainStore {
       matchRunIds: agentRunIds,
       matchResultIds: new Set(agentResultRows.map((row) => row.id))
     })
+    const followUps = this.database.prepare<[string], { id: string; revision: number }>('SELECT id,revision FROM business_followups WHERE review_id=? ORDER BY id').all(reviewId)
+    const progressMail = this.database.prepare<[string], {id:string;payload:string}>('SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.review_id=? ORDER BY mail.id').all(reviewId)
     const counts = {
+      ...(followUps.length ? { businessFollowUps: followUps.length } : {}),
       caseVersions: history.length,
       reviewAudits,
       taskRecords,
@@ -565,6 +584,8 @@ export class JobCaseStore extends DomainStore {
       providerMessageId: source.providerMessageId,
       latestCaseId: history[0]?.id,
       latestVersion: history[0]?.version,
+      followUps,
+      progressMail,
       counts
     })).digest('hex')
     const title = history[0]?.fields.find((field) => field.key === 'title')?.value ?? source.redactedSubject
@@ -667,6 +688,25 @@ export class JobCaseStore extends DomainStore {
     })
     remove()
     return preview
+  }
+
+  saveBusinessCaseField(input: import('@shared').SaveBusinessFieldInput, reviewerId: string, reviewerName: string): { version: number } {
+    return this.database.transaction(() => {
+      const review = this.getJobCaseReview(input.id)
+      if (!review || review.lifecycle !== 'active') throw new Error('案件不存在或已归档。')
+      const field = review.fields.find((item) => item.key === input.field)
+      if (!field || input.projectId) throw new Error('无效的案件字段。')
+      if (review.reviewRevision !== input.version && field.value !== input.previousValue) throw new Error('这一项已被更新，输入内容已保留，请核对后重试。')
+      const value = input.value?.trim() || null
+      if (field.value === value) return { version: review.reviewRevision }
+      const current = review.status === 'completed'
+        ? this.reopenJobCaseReview({ reviewId: input.id, reason: 'HR直接编辑并自动保存' }, reviewerName)
+        : review
+      const saved = this.confirmJobCaseReview({ reviewId: input.id, reviewRevision: current.reviewRevision, privacyReviewed: true,
+        fields: review.fields.map((item) => ({ key: item.key, value: item.key === input.field ? value : item.value,
+          confirmed: true, changeReason: 'HR直接编辑并自动保存' })) }, reviewerId, reviewerName)
+      return { version: saved.reviewRevision }
+    })()
   }
 
   confirmJobCaseReview(

@@ -21,7 +21,8 @@ import {
   buildPersonnelCasesAssessmentProjection,
   parsePersonnelCasesAssessmentResponse,
   matchAssessmentInstructions,
-  parseAgentMatchAssessmentResponse
+  parseAgentMatchAssessmentResponse,
+  projectCandidateProjectHistory
 } from './agent-cloud-narrative'
 
 const conversationId = '11111111-1111-4111-8111-111111111111'
@@ -349,15 +350,24 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).not.toContain(intakeBatchId)
   })
 
-  it('permits answering from an attachment draft while keeping the unconfirmed caveat', () => {
+  it('answers from imported records and attachments without a blanket review disclaimer', () => {
     // Putting the drafts in the context is not enough: the answer step used to be
     // told to treat only the evidence array as fact and to use "verified" data,
     // so it refused to summarise a parsed file that was sitting right there.
     expect(directAnswerInstructions).toContain('attachmentDrafts')
     expect(directAnswerInstructions).toContain('do not claim you lack information while it is present')
-    expect(directAnswerInstructions).toContain('still need the operator to confirm each field')
-    // The narrower guarantee has to survive: conversation text is still not fact.
-    expect(directAnswerInstructions).toContain('verified facts only when present in the evidence array')
+    for (const instructions of [planningInstructions, directAnswerInstructions, fixedInstructions]) {
+      expect(instructions).toContain('without an extra field-review step')
+      expect(instructions).toContain('never claim human verification unless it is evidenced')
+      expect(instructions).toContain('Mention only specific missing or conflicting information')
+      expect(instructions).toContain('including ones copied from older assistant messages')
+      expect(instructions).not.toContain('still need the operator to confirm each field')
+      expect(instructions).not.toContain('unconfirmed fields await review')
+      expect(instructions).not.toContain('confirm it before it is a job case')
+    }
+    // Source provenance, current evidence and actual import outcomes remain truthful.
+    expect(directAnswerInstructions).toContain('never in an unsupported earlier assistant answer')
+    expect(directAnswerInstructions).toContain('merely attaching a file does not mean it was imported')
     expect(directAnswerInstructions).toContain('answer about that one case only')
     expect(directAnswerInstructions).toContain('never state that a case, candidate, draft, or booking has been recorded')
   })
@@ -385,6 +395,7 @@ describe('Agent Cloud narrative boundary', () => {
       resume: 'RESUME_1',
       confirmed: false,
       fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
+      projectCount: 0, includedProjectCount: 0, omittedProjectCount: 0, projectDetailsTruncated: false,
       projects: []
     }])
     expect(JSON.stringify(answer)).not.toContain('楊凱')
@@ -415,6 +426,7 @@ describe('Agent Cloud narrative boundary', () => {
       resume: 'RESUME_1',
       confirmed: false,
       fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
+      projectCount: 1, includedProjectCount: 1, omittedProjectCount: 0, projectDetailsTruncated: false,
       projects: [{ title: '決済基盤', period: null, role: 'SE', technologies: ['Java'], summary: '設計' }]
     }])
     expect(projection).not.toContain('楊凱')
@@ -511,6 +523,48 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection.contextWindow).toMatchObject({ includedMessageCount: 12, omittedMessageCount: 4 })
   })
 
+  it.each([9, 30])('keeps all %i attachment projects in both planning and answer contexts', (count) => {
+    const projects = Array.from({ length: count }, (_, index) => ({
+      title: `项目 ${index + 1}`, period: '2020/01–2021/01', role: 'SE', technologies: ['Java'],
+      summary: '系统设计与开发'.repeat(count === 30 ? 300 : 1), confidence: 0.9, sources: ['private.xlsx!B2']
+    }))
+    const attachmentDrafts = [{
+      documentId: '66666666-6666-4666-8666-666666666666', label: 'private.xlsx',
+      confirmed: false as const, reviewStatus: 'awaiting-review' as const, fields: [], projects
+    }]
+    const base = { locale: 'zh-CN' as const, userMessage: '总结全部项目经历', selectedJobCaseRef: null, attachmentDrafts, conversation: null }
+    for (const serialized of [
+      buildAgentPlanningProjection({ ...base, attachmentCount: 1, schedulableCandidateCount: 0 }),
+      buildAgentDirectAnswerProjection(base),
+      buildAgentCloudProjection('zh-CN', 'resume.analyze.local', {
+        id: 'draft', role: 'assistant', content: '', createdAt: '2026-08-18T00:00:00.000Z',
+        blocks: [{ type: 'candidate-draft-facts', facts: attachmentDrafts[0]! }]
+      })
+    ]) {
+      const parsed = JSON.parse(serialized)
+      const history = parsed.attachmentDrafts?.[0] ?? parsed.evidence[0]
+      expect(history).toMatchObject({ projectCount: count, includedProjectCount: count, omittedProjectCount: 0 })
+      expect(history.projects).toHaveLength(count)
+      expect(history.projects.at(-1).title).toBe(`项目 ${count}`)
+      expect(serialized.length).toBeLessThanOrEqual(20_000)
+      expect(serialized).not.toContain('private.xlsx!B2')
+      expect(serialized).not.toContain(attachmentDrafts[0]!.documentId)
+    }
+  })
+
+  it('shortens long project details while retaining every project and explicit coverage', () => {
+    const projects = Array.from({ length: 20 }, (_, index) => ({
+      title: `项目 ${index + 1} ${'标题'.repeat(100)}`, period: '期间'.repeat(100), role: '角色'.repeat(100),
+      technologies: Array(20).fill('技术'.repeat(80)), summary: '项目描述'.repeat(500)
+    }))
+    const history = projectCandidateProjectHistory(projects)
+    expect(history).toMatchObject({ projectCount: 20, includedProjectCount: 20, omittedProjectCount: 0, projectDetailsTruncated: true })
+    expect(history.projects).toHaveLength(20)
+    expect(history.projects.at(-1)?.title).toContain('项目 20')
+    expect(JSON.stringify(history.projects).length).toBeLessThanOrEqual(9_000)
+    expect(projects[19]!.summary.length).toBe(2_000)
+  })
+
   it('keeps a many-attachment planning projection under the enforced local limit', () => {
     const attachmentDrafts = Array.from({ length: 10 }, (_, draftIndex) => ({
       documentId: `${String(draftIndex + 1).padStart(8, '0')}-2222-4222-8222-222222222222`,
@@ -532,6 +586,12 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection.length).toBeLessThanOrEqual(20_000)
     expect(parsed.attachmentDrafts.length).toBeGreaterThan(0)
     expect(parsed.state.attachmentCount).toBe(10)
+    for (const draft of parsed.attachmentDrafts) {
+      expect(draft).toMatchObject({ projectCount: 8, includedProjectCount: 8, omittedProjectCount: 0, projectDetailsTruncated: true })
+      expect(draft.projects).toHaveLength(8)
+      expect(draft.projects.at(-1).title).toBe('项目 7')
+    }
+    expect(parsed.attachmentDrafts.length + parsed.contextWindow.omittedAttachmentCount).toBe(10)
     expect(projection).not.toContain('private-file')
     expect(projection).not.toContain('private.xlsx')
   })
@@ -713,7 +773,9 @@ describe('Agent Cloud narrative boundary', () => {
           profile: {
             profileVersion: 3, skills: 'Java', experienceYears: '8年', availability: '即日', rate: '90万円',
             japaneseLevel: 'N1', workStyle: 'リモート', role: 'バックエンド', location: '東京',
-            workAuthorization: '就労制限なし', projectExperiences: []
+            workAuthorization: '就労制限なし', projectExperiences: Array.from({ length: 9 }, (_, index) => ({
+              title: `项目 ${index + 1}`, period: null, role: 'SE', technologies: ['Java'], summary: '設計'
+            }))
           }
         }
       }]
@@ -724,6 +786,11 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).toContain('"candidate":"CANDIDATE_1"')
     expect(projection).not.toContain(candidateProfileId)
     expect(projection).not.toContain(sourceDocumentId)
+    expect(JSON.parse(projection).evidence[0].profile).toMatchObject({
+      projectCount: 9, includedProjectCount: 9, omittedProjectCount: 0, projectDetailsTruncated: false
+    })
+    expect(JSON.parse(projection).evidence[0].profile.projects).toHaveLength(9)
+    expect(projection).toContain('项目 9')
   })
 
   it('falls back to segmentation-only extraction when the field-rich response is incomplete or malformed', async () => {
@@ -1207,6 +1274,42 @@ describe('match assessment protocol', () => {
     expect(built.requirementsText).toBe('Java 3年以上、Spring Boot\nN2以上')
     expect(built.candidateTexts[0]).toEqual({ label: 'CANDIDATE_1', text: expect.stringContaining('Spring Boot で決済 API を開発') })
     expect(built.projection).not.toContain('sourceDocumentId')
+  })
+
+  it('selects relevant evidence from the ninth project in both matching directions', () => {
+    const projects = Array.from({ length: 9 }, (_, index) => ({ title: `Project ${index + 1}`, period: '2020/01〜2023/12', role: 'SE',
+      technologies: index === 8 ? ['Scala', 'Spark'] : ['Java'], summary: index === 8 ? 'Scala と Spark でバッチ処理を開発' : 'Java API 開発' }))
+    const requirements = [{ key: 'required_skills', label: '必須', value: 'Scala、Spark' }]
+    const forward = buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase: { title: 'Data', requirements }, candidates: [{ label: 'CANDIDATE_1', facts: [], hardFilters: [], projects }] })
+    const candidate = JSON.parse(forward.projection).candidates[0]
+    expect(candidate.projectCount).toBe(9)
+    expect(candidate.projects).toHaveLength(9)
+    expect(candidate.projects[0]).toMatchObject({ projectNumber: 9, title: 'Project 9', technologies: ['Scala', 'Spark'] })
+    expect(forward.candidateTexts[0]!.text).toContain('Scala と Spark でバッチ処理を開発')
+    const reverse = buildPersonnelCasesAssessmentProjection({ locale: 'zh-CN', person: { facts: [], projects }, cases: [{ label: 'CASE_1', title: 'Data', requirements, hardFilters: [] }] })
+    expect(JSON.parse(reverse.projection).person.projects).toHaveLength(9)
+    expect(reverse.personText).toContain('Scala と Spark でバッチ処理を開発')
+  })
+
+  it('never lets the requested hard-filter text masquerade as personnel evidence', () => {
+    const built = buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates: [{ label: 'CANDIDATE_1', facts: [], projects: [],
+      hardFilters: [{ requirement: 'N2以上', actual: null, outcome: 'unknown' }] }] })
+    expect(built.candidateTexts[0]!.text).not.toContain('N2以上')
+    const parsed = parseAgentMatchAssessmentResponse(JSON.stringify({ assessments: [{ candidate: 'CANDIDATE_1', fit: 'strong',
+      requirements: [{ requirement: 'N2以上', outcome: 'met', evidence: 'N2以上' }] }] }), [{ label: 'CANDIDATE_1', redactedText: built.candidateTexts[0]!.text }], built.requirementsText)
+    expect(parsed.assessments[0]!.requirements).toBeUndefined()
+  })
+
+  it('bounds large batches without discarding career coverage for included people', () => {
+    const many = Array.from({ length: 5 }, (_, index) => ({ label: `CANDIDATE_${index + 1}`, hardFilters: [],
+      facts: Array.from({ length: 12 }, (_, index) => ({ label: `Fact ${index}`, value: 'Java, Scala, Spark project evidence '.repeat(20) })),
+      projects: Array.from({ length: 20 }, (_, index) => ({ title: `Project ${index}`, period: '2020/01〜2023/12', role: 'SE', technologies: ['Scala', 'Spark'], summary: 'Scala and Spark '.repeat(100) })) }))
+    const built = buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates: many })
+    expect(built.projection.length).toBeLessThanOrEqual(20_000)
+    const shown = JSON.parse(built.projection)
+    expect(shown.includedCandidateCount).toBeLessThan(5)
+    expect(shown.candidates.every((candidate: { projects: unknown[] }) => candidate.projects.length === 20)).toBe(true)
+    expect(built.candidateTexts).toHaveLength(shown.includedCandidateCount)
   })
 
   it('keeps only verbatim evidence, known labels, and protocol fits from the review', () => {

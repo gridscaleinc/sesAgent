@@ -4,6 +4,8 @@ import type { CandidateInterviewSnapshot, CandidateReviewSnapshot } from '@share
 import { UiLocaleProvider } from '../i18n'
 import { InterviewScheduleCenter } from './InterviewScheduleCenter'
 
+beforeEach(() => { Object.defineProperty(window, 'sesAgent', { configurable:true, value:{ listBusinessFollowUps:vi.fn(async()=>[]) } }) })
+
 const review = (documentId: string, name: string): CandidateReviewSnapshot => ({
   documentId,
   fileName: `${name}.xlsx`,

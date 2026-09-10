@@ -1,3 +1,4 @@
+import { importPendingGmailPersonnel } from '../gmail-personnel-intake'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app, ipcMain, net } from 'electron'
@@ -32,7 +33,8 @@ async function runGmailSync(
   googleWorkspace: GoogleWorkspaceOAuthClient,
   localNer: LocalPersonNameDetectorPort | null,
   config: GmailSyncConfiguration,
-  operator: { operatorId: string; displayName: string }
+  operator: { operatorId: string; displayName: string },
+  context: MainIpcContext
 ): Promise<GmailSyncState> {
   const googleState = await googleWorkspace.getState()
   if (googleState.status !== 'readonly' || !googleState.accountEmail) {
@@ -53,7 +55,9 @@ async function runGmailSync(
     const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
     const processed = redactGmailMessageForLocalStorage(message, accountEmail, knownPersonNames)
     repository.saveRedactionSession(processed.redaction.session, processed.redaction.mappings)
-    return processed.message
+    const progressMessage = repository.captureBusinessProgressMail({ accountEmail, messageId: message.id, threadId: message.threadId,
+      subject: message.subject, body: message.body, receivedAt: new Date(message.internalDate).toISOString() })
+    return progressMessage ? { ...processed.message, classification: 'unclassified' as const } : processed.message
   })
   await coordinator.synchronize(accountEmail, config)
   // Imported mail becomes cases immediately, like every other intake route:
@@ -66,7 +70,8 @@ async function runGmailSync(
     operator,
     effectiveJobCaseFieldAliases(repository).aliases
   )
-  return gmailSyncState(repository, googleState, config)
+  const intake = await importPendingGmailPersonnel(context, gmail, accountEmail)
+  return { ...gmailSyncState(repository, googleState, config), personnelImported: intake.personnel }
 }
 
 /** Google Workspace OAuth connection, readiness diagnosis and Gmail read-only sync. */
@@ -168,7 +173,7 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
       scopeFingerprint: configurationFingerprint, actorId: currentOperator().operatorId, contentRevision: null
     }, { configurationFingerprint }, '管理者が固定した Gmail 読取範囲を端末内へ同期します。', `gmail-sync:${randomUUID()}`)
     repository.updateActionRun(actionRunId, 'running')
-    gmailSyncInFlight = runGmailSync(repository, googleWorkspace, localNer, gmailSyncConfig, currentOperator())
+    gmailSyncInFlight = runGmailSync(repository, googleWorkspace, localNer, gmailSyncConfig, currentOperator(), context)
       .then((state) => {
         repository.updateActionRun(actionRunId, 'succeeded', { resultHash: configurationFingerprint })
         return state

@@ -523,6 +523,7 @@ const technologyNamesMistakenForPeople = new Set([
   'slack', 'zoom', 'sinatra', 'laravel', 'symfony', 'lumen', 'lambda', 'athena', 'kinesis', 'glue', 'redshift', 'fargate',
   'cognito', 'amplify', 'vue', 'react', 'nuxt', 'next', 'svelte', 'ember', 'backbone', 'electron', 'ionic', 'flutter',
   'dart', 'unity', 'unreal', 'blender', 'figma', 'sketch', 'zeplin', 'photoshop', 'illustrator', 'sap', 'dynamics',
+  'fiori', 'abap', 'btp', 'cdsview',
   'azure', 'gcp', 'bigquery', 'looker', 'vertex', 'bedrock', 'claude', 'gemini', 'copilot', 'watson', 'alexa', 'siri',
   'cortana', 'selenium', 'cypress', 'playwright', 'puppeteer', 'postman', 'swagger', 'graphql', 'prisma', 'sequelize',
   'hibernate', 'struts', 'spring', 'grails', 'groovy', 'scala', 'akka', 'play', 'elixir', 'phoenix', 'erlang', 'haskell',

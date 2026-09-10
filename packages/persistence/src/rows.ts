@@ -273,6 +273,7 @@ export interface CandidateReviewJoinRow extends CandidateReviewStateRow {
 }
 
 export interface CandidateInterviewRow {
+  business_followup_id?: string | null
   id: string
   source_document_id: string
   kind: CandidateInterviewSnapshot['kind']

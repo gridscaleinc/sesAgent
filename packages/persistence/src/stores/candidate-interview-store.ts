@@ -23,6 +23,7 @@ export class CandidateInterviewStore extends DomainStore {
     if (row.cloud_eligible !== 0) throw new Error('Candidate interview cloud boundary is invalid.')
     return candidateInterviewSnapshotSchema.parse({
       id: row.id,
+      businessFollowUpId: row.business_followup_id ?? null,
       sourceDocumentId: row.source_document_id,
       kind: row.kind,
       roundNumber: row.round_number,
@@ -65,7 +66,7 @@ export class CandidateInterviewStore extends DomainStore {
     return this.database
       .prepare<[string, string], CandidateInterviewRow>(
         `SELECT * FROM candidate_interview_sessions
-         WHERE source_document_id = ? AND kind = ?
+         WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL
          ORDER BY round_number DESC, updated_at DESC
          LIMIT 1`
       )
@@ -97,19 +98,20 @@ export class CandidateInterviewStore extends DomainStore {
     const validated = createCandidateInterviewRoundInputSchema.parse(input)
     this.assertCandidateInterviewSubject(validated.sourceDocumentId)
     const parent = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.parentInterviewId)
+    if (parent?.business_followup_id) throw new Error('请从对应案件的跟进记录安排下一轮。')
     if (!parent) throw new Error('The prior interview round was not found.')
     if (parent.decision !== 'next-round') throw new Error('Record a next-round decision before creating a follow-up interview.')
     const kind = validated.kind ?? parent.kind
     const round = this.database
       .prepare<[string, string], { next_round: number }>(
         `SELECT coalesce(max(round_number), 0) + 1 AS next_round
-         FROM candidate_interview_sessions WHERE source_document_id = ? AND kind = ?`
+         FROM candidate_interview_sessions WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL`
       )
       .get(validated.sourceDocumentId, kind)?.next_round ?? parent.round_number + 1
     const existing = this.database
       .prepare<[string, string, number], CandidateInterviewRow>(
         `SELECT * FROM candidate_interview_sessions
-         WHERE source_document_id = ? AND kind = ? AND round_number = ?`
+         WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL AND round_number = ?`
       )
       .get(validated.sourceDocumentId, kind, round)
     if (existing) return this.candidateInterviewFromRow(existing)
@@ -185,10 +187,11 @@ export class CandidateInterviewStore extends DomainStore {
       current = this.database
         .prepare<[string, string, number], CandidateInterviewRow>(
           `SELECT * FROM candidate_interview_sessions
-           WHERE source_document_id = ? AND kind = ? AND round_number = ?`
+           WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL AND round_number = ?`
         )
         .get(validated.sourceDocumentId, kind, validated.roundNumber) ?? null
     }
+    if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
     if (current?.decision) throw new Error('A final interview decision is already recorded. Create a follow-up round instead.')
     if (current && !['new', 'contacting', 'scheduled', 'prepared'].includes(current.stage)) {
       throw new Error('An interview already started or is awaiting a decision, so its schedule is locked.')
@@ -250,6 +253,7 @@ export class CandidateInterviewStore extends DomainStore {
       .prepare<[string], CandidateInterviewRow>('SELECT * FROM candidate_interview_sessions WHERE id = ?')
       .get(validated.interviewId)
     if (!row) throw new Error('Interview session was not found.')
+    if (row.business_followup_id) throw new Error('请在对应案件的跟进页面修改面试。')
     if (row.decision) throw new Error('A completed interview cannot be edited.')
     if (!['scheduled', 'prepared'].includes(row.stage)) {
       throw new Error('Interview questions can only be edited before the interview starts.')
@@ -282,6 +286,7 @@ export class CandidateInterviewStore extends DomainStore {
     const validated = saveCandidateInterviewNotesInputSchema.parse(input)
     this.assertCandidateInterviewSubject(validated.sourceDocumentId)
     const current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId)
+    if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
     if (!current) throw new Error('Interview session was not found.')
     if (current.decision) throw new Error('A final interview decision is already recorded. Reopen the candidate before editing interview notes.')
     if (!['prepared', 'interviewing'].includes(current.stage)) {
@@ -330,6 +335,7 @@ export class CandidateInterviewStore extends DomainStore {
     const validated = recordCandidateInterviewDecisionInputSchema.parse(input)
     this.assertCandidateInterviewSubject(validated.sourceDocumentId)
     const current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId)
+    if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
     if (!current) throw new Error('Interview session was not found.')
     if (current.stage !== 'awaiting-decision') {
       throw new Error('Complete the interview record before recording a decision.')

@@ -83,7 +83,24 @@ export function registerSettingsHandlers(context: MainIpcContext) {
       assertTrustedSender(event)
       const input = saveAiConversationInputSchema.parse(rawInput)
       if (input.context.assistant === 'sales-agent') {
-        throw new Error('Sales Agent 会话只能通过 executeAgentTurn 保存。')
+        // This endpoint only creates an empty conversation. Transcript writes remain Main-owned.
+        if (input.messages.length || input.expectedRevision !== null || repository.getAiConversation(input.conversationId)) {
+          throw new Error('Sales Agent 会话消息只能通过 executeAgentTurn 保存。')
+        }
+        const scope = input.context.businessObject
+        const job = scope?.kind === 'case' ? repository.getJobCaseReview(scope.id) : null
+        const person = scope?.kind === 'person' ? repository.getCandidateReview(scope.id) : null
+        if (scope?.kind === 'case' && (!job || job.lifecycle !== 'active')) throw new Error('案件不存在或已归档。')
+        if (scope?.kind === 'person' && (!person || person.recordStatus !== 'active')) throw new Error('人员不存在或已归档。')
+        input.salesAgentState = {
+          selectedJobCaseRef: job?.jobCase ? {
+            kind: 'job-case', objectId: job.jobCase.id, objectVersion: job.jobCase.version,
+            resultHash: null, ordinal: null, target: `job-case:${job.jobCase.id}`,
+            label: (job.fields.find((field) => field.key === 'title')?.value ?? job.redactedSubject).slice(0, 120)
+          } : null,
+          selectedCandidateDocumentId: person?.documentId ?? null,
+          lastMatchRunId: null, lastSearchMessageId: null
+        }
       }
       return repository.saveAiConversation(input)
     }

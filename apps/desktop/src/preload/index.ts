@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { ipcChannels, type AgentTurnEvent, type DesktopApi, type GmailScheduledSyncCompletion } from '@shared/contracts'
+import { ipcChannels, type AgentTurnEvent, type DesktopApi, type BusinessMatchingProgress, type GmailScheduledSyncCompletion } from '@shared/contracts'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const modelKeyPattern = /^[a-z0-9][a-z0-9._-]{2,119}$/u
@@ -58,6 +58,22 @@ const api: DesktopApi = {
   markBusinessFeed: (input) => ipcRenderer.invoke(ipcChannels.markBusinessFeed, input),
   getPersonnelWorkspace: () => ipcRenderer.invoke(ipcChannels.getPersonnelWorkspace),
   savePersonnelTemplate: (input) => ipcRenderer.invoke(ipcChannels.savePersonnelTemplate, input),
+  beginBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.beginBusinessProgress, input),
+  advanceBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.advanceBusinessProgress, input),
+  analyzeBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.analyzeBusinessProgress, input),
+  draftBusinessProgressMessage: (input) => ipcRenderer.invoke(ipcChannels.draftBusinessProgressMessage, input),
+  openBusinessProgressEmail: (input) => ipcRenderer.invoke(ipcChannels.openBusinessProgressEmail, input),
+  exportBusinessProgressCalendar: (input) => ipcRenderer.invoke(ipcChannels.exportBusinessProgressCalendar, input),
+  listBusinessProgressMail: () => ipcRenderer.invoke(ipcChannels.listBusinessProgressMail),
+  updateBusinessProgressMail: (input) => ipcRenderer.invoke(ipcChannels.updateBusinessProgressMail, input),
+  listBusinessFollowUps: () => ipcRenderer.invoke(ipcChannels.listBusinessFollowUps),
+  saveBusinessFollowUp: (input) => ipcRenderer.invoke(ipcChannels.saveBusinessFollowUp, input),
+  onBusinessMatchingProgress: (listener) => {
+    const handler = (_event: IpcRendererEvent, value: BusinessMatchingProgress) => listener(value)
+    ipcRenderer.on(ipcChannels.businessMatchingProgress, handler)
+    return () => ipcRenderer.removeListener(ipcChannels.businessMatchingProgress, handler)
+  },
+  cancelBusinessMatching: (input) => ipcRenderer.invoke(ipcChannels.cancelBusinessMatching, input),
   setCandidateOwnCompany: (input) => ipcRenderer.invoke(ipcChannels.setCandidateOwnCompany, input),
   setCandidateBusinessState: (input) => ipcRenderer.invoke(ipcChannels.setCandidateBusinessState, input),
   validatePersonnelMessage: (input) => ipcRenderer.invoke(ipcChannels.validatePersonnelMessage, input),
@@ -78,6 +94,8 @@ const api: DesktopApi = {
   openAiCommerceMemberCenter: () => ipcRenderer.invoke(ipcChannels.openAiCommerceMemberCenter),
   prepareAiCommerceCloudPrompt: (input) => ipcRenderer.invoke(ipcChannels.prepareAiCommerceCloudPrompt, input),
   executeAiCommerceCloudPrompt: (input) => ipcRenderer.invoke(ipcChannels.executeAiCommerceCloudPrompt, input),
+  regenerateIntroduction: (input) => ipcRenderer.invoke(ipcChannels.regenerateIntroduction, input),
+  saveBusinessField: (input) => ipcRenderer.invoke(ipcChannels.saveBusinessField, input),
   listAiConversations: (context) => ipcRenderer.invoke(ipcChannels.listAiConversations, context),
   saveAiConversation: (input) => ipcRenderer.invoke(ipcChannels.saveAiConversation, input),
   deleteAiConversations: (input) => ipcRenderer.invoke(ipcChannels.deleteAiConversations, input),
@@ -127,7 +145,9 @@ const api: DesktopApi = {
   markJobCaseSeen: (reviewId) => ipcRenderer.invoke(ipcChannels.markJobCaseSeen, reviewId),
   listBroadcastWorkspace: () => ipcRenderer.invoke(ipcChannels.listBroadcastWorkspace),
   draftCaseBroadcast: (input) => ipcRenderer.invoke(ipcChannels.draftCaseBroadcast, input),
+  prepareCaseIntroduction: (input) => ipcRenderer.invoke(ipcChannels.prepareCaseIntroduction, input),
   draftCaseUpdateNotice: (input) => ipcRenderer.invoke(ipcChannels.draftCaseUpdateNotice, input),
+  validateCaseBroadcastMessage: (input) => ipcRenderer.invoke(ipcChannels.validateCaseBroadcastMessage, input),
   recordCaseBroadcastCopy: (input) => ipcRenderer.invoke(ipcChannels.recordCaseBroadcastCopy, input),
   openCaseBroadcastEmail: (input) => ipcRenderer.invoke(ipcChannels.openCaseBroadcastEmail, input),
   copyTextToClipboard: (text) => ipcRenderer.invoke(ipcChannels.copyTextToClipboard, text),

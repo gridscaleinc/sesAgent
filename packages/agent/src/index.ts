@@ -478,21 +478,21 @@ export const agentPlanningToolCatalog: readonly AgentPlanningToolCatalogEntry[] 
   },
   {
     name: 'import_resume',
-    description: 'Import resume or skill-sheet files the operator attached to this turn. Only usable when the turn carries attachments. attachmentOrdinal may be null to import every attachment. The import produces drafts that still require the operator to confirm each field.',
+    description: 'Import resume or skill-sheet files the operator attached to this turn. Only usable when the turn carries attachments. attachmentOrdinal may be null to import every attachment. Imported information is available for business use; the operator can correct fields in personnel details when needed.',
     argumentsShape: '{"attachmentOrdinal":number|null}',
     effect: 'write', approval: 'none',
     parse: (value) => ({ toolName: 'resume.analyze.local', arguments: planningAttachmentArgumentsSchema.parse(value) })
   },
   {
     name: 'read_imported_draft',
-    description: 'Read the machine-extracted draft of a resume imported earlier in this conversation, to summarise or answer questions about that person. Everything it returns is unconfirmed until the operator reviews each field. draftOrdinal may be null when exactly one resume was imported.',
+    description: 'Read the extracted content of a resume imported earlier in this conversation, to summarise or answer questions about that person using its recorded values and project evidence. Mention specific missing information when relevant; do not require a blanket field review. draftOrdinal may be null when exactly one resume was imported.',
     argumentsShape: '{"draftOrdinal":number|null}',
     effect: 'read', approval: 'none',
     parse: (value) => ({ toolName: 'candidate.draft.read.local', arguments: planningDraftArgumentsSchema.parse(value) })
   },
   {
     name: 'read_imported_case_drafts',
-    description: 'Read the machine-extracted drafts of job cases imported from business text pasted earlier in this conversation: title, skills, rate, location, start date, Japanese level, interview and the other case fields, which fields are missing, and whether the operator has confirmed each draft. Use it for "these cases", "第N条", which drafts lack a field, or comparisons between the drafts. draftOrdinal null reads every draft of the latest paste. Only usable when state.intakeDraftCount is above zero.',
+    description: 'Read job cases imported from business text pasted earlier in this conversation: title, skills, rate, location, start date, Japanese level, interview and the other case fields, including specific missing values. Use it for "these cases", "第N条", which cases lack a field, or comparisons between cases. draftOrdinal null reads every case of the latest paste. Only usable when state.intakeDraftCount is above zero.',
     argumentsShape: '{"draftOrdinal":number|null}',
     effect: 'read', approval: 'none',
     parse: (value) => ({ toolName: 'job-case.draft.read.local', arguments: planningDraftArgumentsSchema.parse(value) })
@@ -569,9 +569,10 @@ export function recentJstWindow(now = new Date()): { updatedAfter: string; updat
   }
 }
 
-function salesAgentContext(): AiConversationContext {
+function salesAgentContext(input: ExecuteAgentTurnInput): AiConversationContext {
   return {
     assistant: 'sales-agent',
+    ...(input.businessObject ? { businessObject: input.businessObject } : {}),
     candidateDocumentId: null,
     interviewId: null,
     interviewKind: null,
@@ -1003,7 +1004,7 @@ export class LocalAgentUseCase {
       const saveInput: SaveAiConversationInput = {
         conversationId: input.conversationId,
         ...(branchRootConversationId ? { branchRootConversationId } : {}),
-        context: current?.context ?? salesAgentContext(),
+        context: current?.context ?? salesAgentContext(input),
         messages: [...messages, assistant].slice(-200),
         salesAgentState: state,
         expectedRevision: input.expectedConversationRevision
@@ -1331,8 +1332,8 @@ export class LocalAgentUseCase {
         const known = tool.output.facts.fields.filter((field) => field.status !== 'missing').length
         const content = textFor(
           locale,
-          `${target.label} の未確認下書きを読み取りました（記入済み ${known} 項目、プロジェクト ${tool.output.facts.projects.length} 件）。以下は機械抽出であり、担当者が各項目を確認するまで候補者プロフィールにはなりません。`,
-          `已读取 ${target.label} 的未确认草稿（已填写 ${known} 个字段，项目经历 ${tool.output.facts.projects.length} 段）。以下内容由机器抽取，需你逐项确认后才会成为候选人档案。`
+          `${target.label} の履歴書を読み取りました（記入済み ${known} 項目、プロジェクト ${tool.output.facts.projects.length} 件）。`,
+          `已读取 ${target.label} 的简历资料（已填写 ${known} 个字段，项目经历 ${tool.output.facts.projects.length} 段）。`
         )
         return save(assistantMessage(content, [
           block,
@@ -1369,12 +1370,11 @@ export class LocalAgentUseCase {
           const entry = targets.find((item) => item.reviewId === facts.reviewId) ?? targets[index]!
           return { ...facts, ordinal: entry.ordinal, outcome: entry.outcome }
         })
-        const confirmed = cards.filter((card) => card.reviewStatus === 'completed').length
         const missingByDraft = cards.map((card) => card.fields.filter((field) => !field.value).length)
         const content = textFor(
           locale,
-          `今回取り込んだ案件下書き${cards.length}件を読み取りました（確認済み${confirmed}件・確認待ち${cards.length - confirmed}件、未記入項目 合計${missingByDraft.reduce((sum, count) => sum + count, 0)}）。項目は端末内で匿名化した機械抽出であり、レビューセンターで確認するまで正式な案件ではありません。`,
-          `已读取本次导入的 ${cards.length} 条案件草稿（已确认 ${confirmed} 条、待审核 ${cards.length - confirmed} 条，缺失字段共 ${missingByDraft.reduce((sum, count) => sum + count, 0)} 项）。字段为本机脱敏后的机器抽取结果，经审核中心确认前不是正式案件。`
+          `今回取り込んだ案件${cards.length}件を読み取りました（未記入項目 合計${missingByDraft.reduce((sum, count) => sum + count, 0)}）。`,
+          `已读取本次导入的 ${cards.length} 条案件资料（未填写字段共 ${missingByDraft.reduce((sum, count) => sum + count, 0)} 项）。`
         )
         const reviewIds = cards.filter((card) => card.status !== 'deleted').map((card) => card.reviewId)
         return save(assistantMessage(content, [
@@ -1468,8 +1468,8 @@ export class LocalAgentUseCase {
         const content = imported.length > 0
           ? textFor(
               locale,
-              `${imported.length}件の履歴書（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}）を端末内に取り込み、抽出内容をこの会話に追加しました。このまま履歴書について質問できます。抽出項目は下書きのため、担当者が項目ごとに確認してください。${failed.length > 0 ? `${failed.length}件は取り込めませんでした。` : ''}`,
-              `已在本机导入 ${imported.length} 份简历（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}），并将抽取内容加入当前会话。现在可以直接针对这些简历继续提问。抽取结果仍是草稿，需要由你逐项确认。${failed.length > 0 ? `另有 ${failed.length} 份未能导入。` : ''}`
+              `${imported.length}件の履歴書（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}）を端末内に取り込み、内容をこの会話に追加しました。このまま履歴書について質問できます。${failed.length > 0 ? `${failed.length}件は取り込めませんでした。` : ''}`,
+              `已在本机导入 ${imported.length} 份简历（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}），并将资料加入当前会话。现在可以直接针对这些简历继续提问。${failed.length > 0 ? `另有 ${failed.length} 份未能导入。` : ''}`
             )
           : textFor(locale, '添付された履歴書を取り込めませんでした。', '附件中的简历未能导入。')
         const importBlock: AiConversationBlock = {
@@ -1488,7 +1488,7 @@ export class LocalAgentUseCase {
             }]
           : [])
         const assistant = assistantMessage(content, imported.length > 0
-          ? [importBlock, ...draftBlocks, { type: 'system-access', destination: 'review-center' }]
+          ? [importBlock, ...draftBlocks]
           : [], turnId)
         return save(assistant, previousState, imported.length > 0 ? 'completed' : 'failed', 'resume.analyze.local', tool.actionRunId ?? null)
       }
@@ -1571,7 +1571,7 @@ export class LocalAgentUseCase {
     const conversation = this.port.saveConversation({
       conversationId: input.conversationId,
       ...(branchRootConversationId ? { branchRootConversationId } : {}),
-      context: current?.context ?? salesAgentContext(),
+      context: current?.context ?? salesAgentContext(input),
       messages: [...(current?.messages ?? []), user, reply].slice(-200),
       salesAgentState: {
         ...(current?.salesAgentState ?? defaultState()),
@@ -1624,7 +1624,7 @@ export class LocalAgentUseCase {
     const conversation = this.port.saveConversation({
       conversationId: input.conversationId,
       ...(branchRootConversationId ? { branchRootConversationId } : {}),
-      context: current?.context ?? salesAgentContext(),
+      context: current?.context ?? salesAgentContext(input),
       messages: [...(current?.messages ?? []), inputMessage, assistant].slice(-200),
       salesAgentState: { ...(current?.salesAgentState ?? defaultState()),
         ...(input.selectedCandidateDocumentId !== undefined ? { selectedCandidateDocumentId: input.selectedCandidateDocumentId } : {})
@@ -1643,6 +1643,9 @@ export class LocalAgentUseCase {
     const current = this.port.loadConversation(input.conversationId)
     if (current && current.context.assistant !== 'sales-agent') {
       throw new AgentExecutionError('CONVERSATION_CONTEXT_MISMATCH', 'CONVERSATION_CONTEXT_MISMATCH: この会話は Sales Agent 会話ではありません。新しい案件マッチング会話を開始してください。')
+    }
+    if (current && JSON.stringify(current.context.businessObject ?? null) !== JSON.stringify(input.businessObject ?? null)) {
+      throw new AgentExecutionError('CONVERSATION_CONTEXT_MISMATCH', '当前会话属于其他业务对象，请重新打开会话。')
     }
     if (current && current.revision !== input.expectedConversationRevision) {
       throw new AgentExecutionError('CONVERSATION_REVISION_CONFLICT', '会话已在其他窗口更新，请重新加载历史后再发送。')

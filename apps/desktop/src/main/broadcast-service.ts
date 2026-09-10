@@ -183,6 +183,8 @@ export function recordCaseBroadcastCopy(
 ): RecordCaseBroadcastCopyResult {
   const review = requireSendableReview(repository, input.reviewId)
   const template = resolveBroadcastTemplate(repository, input.templateId)
+  if ((input.expectedJobCaseVersion !== undefined && input.expectedJobCaseVersion !== review.jobCase.version)
+    || (input.expectedTemplateRevision !== undefined && input.expectedTemplateRevision !== template.revision)) throw new Error('资料或模板已更新，请重新打开介绍。 / 情報またはテンプレートが更新されました。紹介画面を開き直してください。')
   const identifiers = detectDirectIdentifiers(input.text)
   if (identifiers.length > 0) {
     throw new Error(`本文に識別子が残っています（${identifiers.join('、')}）。削除してからもう一度操作してください。`)
@@ -227,7 +229,9 @@ export function prepareCaseBroadcastEmail(
   input: OpenCaseBroadcastEmailInput
 ): PreparedCaseBroadcastEmail {
   const review = requireSendableReview(repository, input.reviewId)
-  resolveBroadcastTemplate(repository, input.templateId)
+  const template = resolveBroadcastTemplate(repository, input.templateId)
+  if ((input.expectedJobCaseVersion !== undefined && input.expectedJobCaseVersion !== review.jobCase.version)
+    || (input.expectedTemplateRevision !== undefined && input.expectedTemplateRevision !== template.revision)) throw new Error('资料或模板已更新，请重新打开介绍。 / 情報またはテンプレートが更新されました。紹介画面を開き直してください。')
   const title = activeCaseTitle(review).replace(/[\r\n]+/gu, ' ').replace(/\s+/gu, ' ').trim()
   const subject = `${input.kind === 'update' ? '【案件更新】' : '【案件】'}${title}`
   const identifiers = detectDirectIdentifiers(`${subject}\n${input.text}`)

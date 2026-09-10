@@ -17,4 +17,8 @@ describe('matching evidence consistency', () => {
     expect(reviewMatchAssessmentEvidence({ fit: 'possible' as const, met: [{ requirement: 'C++, C#, Spring Boot', evidence: 'C++ / C# / Spring Boot' }], gaps: [], confirm: [], reason: 'cited' }).assessment.met.map((item) => item.requirement))
       .toEqual(['C++', 'C#', 'Spring Boot'])
   })
+  it('accepts PySpark for Spark but rejects negative technology mentions', () => {
+    expect(reviewMatchAssessmentEvidence({ fit: 'strong' as const, met: [{ requirement: 'Spark', evidence: 'PySpark' }], gaps: [], confirm: [], reason: '' }).assessment.met).toHaveLength(1)
+    expect(reviewMatchAssessmentEvidence({ fit: 'strong' as const, met: [{ requirement: 'Scala', evidence: 'Scala未経験' }], gaps: [], confirm: [], reason: '' }).assessment.met).toHaveLength(0)
+  })
 })

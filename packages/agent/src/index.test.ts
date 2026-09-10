@@ -700,7 +700,7 @@ describe('local conversational matching agent', () => {
   })
 
 
-  it('summarises an imported resume from its draft and marks it unconfirmed', async () => {
+  it('summarises imported resume facts without turning extraction provenance into a review gate', async () => {
     const token = '11111111-1111-4111-8111-111111111111'
     const harness = createHarness([token])
     const conversationId = '33333333-3333-4333-8333-333333333333'
@@ -718,7 +718,8 @@ describe('local conversational matching agent', () => {
       input: { sourceDocumentId: token, label: 'RESUME_1' }
     })
     expect(summary.status).toBe('completed')
-    expect(summary.assistantMessage.content).toContain('逐项确认')
+    expect(summary.assistantMessage.content).toContain('简历资料')
+    expect(summary.assistantMessage.content).not.toMatch(/逐项确认|待审核|未确认草稿/u)
     const block = summary.assistantMessage.blocks?.[0]
     expect(block).toMatchObject({ type: 'candidate-draft-facts', facts: { confirmed: false, reviewStatus: 'awaiting-review' } })
   })
@@ -769,7 +770,8 @@ describe('local conversational matching agent', () => {
       { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: null } }
     )
     expect(harness.calls.at(-1)).toEqual({ toolName: 'job-case.draft.read.local', input: { reviewIds, labels: ['DRAFT_1', 'DRAFT_2'] } })
-    expect(all.assistantMessage.content).toContain('2 条案件草稿')
+    expect(all.assistantMessage.content).toContain('2 条案件资料')
+    expect(all.assistantMessage.content).not.toMatch(/待审核|不是正式案件|审核中心确认/u)
 
     const missing = await harness.useCase.execute(
       { ...baseInput, message: '第9条', expectedConversationRevision: all.conversation.revision, requestId: '77777777-7777-4777-8777-777777777777' },
@@ -816,7 +818,7 @@ describe('local conversational matching agent', () => {
   })
 
 
-  it('imports only the files attached to the turn and says the drafts still need field confirmation', async () => {
+  it('imports only attached files and makes their content available without routing to a field review', async () => {
     const tokens = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222']
     const harness = createHarness(tokens)
     const conversationId = '33333333-3333-4333-8333-333333333333'
@@ -827,7 +829,9 @@ describe('local conversational matching agent', () => {
     )
     expect(harness.calls).toEqual([{ toolName: 'resume.analyze.local', input: { fileTokens: tokens } }])
     expect(result.status).toBe('completed')
-    expect(result.assistantMessage.content).toContain('逐项确认')
+    expect(result.assistantMessage.content).toContain('直接针对这些简历继续提问')
+    expect(result.assistantMessage.content).not.toContain('逐项确认')
+    expect(result.assistantMessage.blocks).not.toContainEqual({ type: 'system-access', destination: 'review-center' })
   })
 
   it('selects a single attachment by ordinal rather than importing everything', async () => {

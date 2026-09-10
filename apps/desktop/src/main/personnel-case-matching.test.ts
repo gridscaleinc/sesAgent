@@ -27,12 +27,40 @@ function setup(assess?: (input: PersonnelCasesAssessmentInput) => Promise<AgentM
 }
 afterEach(() => vi.useRealTimers())
 describe('personnel case matching', () => {
+  it('uses the same mandatory core gate when finding cases for a Java SE', async () => {
+    const fixture = setup()
+    fixture.setProfiles([{ ...profile, fields: [...profile.fields, { key: 'role', label: '角色', value: 'SE', sourceLabels: [] }] }])
+    fixture.setCases([makeCase('scala', 'Scala、Spark', [{ key: 'role', label: '役割', value: 'SE', sourceLabels: [] }]), makeCase('java', 'Java')])
+    const result = await createPersonnelCaseMatcher(fixture.context)(documentId)
+    expect(result.items.map((item) => item.jobCaseId)).toEqual(['java'])
+    expect(result.items[0]!.qualification?.status).toBe('recommended')
+    expect(result.excludedRequirements).toEqual(expect.arrayContaining(['Scala', 'Spark']))
+  })
   it.each([true, false, null])('applies case affiliation requirements when the selected personnel isOwnCompany is %s', async (isOwnCompany) => {
     const fixture = setup()
     fixture.setProfiles([{ ...profile, isOwnCompany }])
     fixture.setCases([makeCase('restricted', 'Java', [{ key: 'contract_chain', label: '商流', value: '自社限定', sourceLabels: [] }]), makeCase('open', 'Java')])
     const result = await createPersonnelCaseMatcher(fixture.context)(documentId)
     expect(result.items.map((item) => item.jobCaseId).sort()).toEqual(isOwnCompany ? ['open', 'restricted'] : ['open'])
+    expect(result.ownCompanyExcludedCount).toBe(isOwnCompany ? 0 : 1)
+  })
+  it('publishes real local results before cloud and cancels without consuming a late reply', async () => {
+    let finish!: (value: AgentMatchAssessmentResult) => void
+    const fixture = setup((input) => { input.onClientRequestId('cancel-test'); return new Promise((resolve) => { finish = resolve }) })
+    const controller = new AbortController()
+    const onLocal = vi.fn()
+    const match = createPersonnelCaseMatcher(fixture.context)
+    const pending = match(documentId, { signal: controller.signal, onLocal })
+    const cancelled = expect(pending).rejects.toThrow('已停止匹配')
+    expect(onLocal).toHaveBeenCalledTimes(1)
+    expect(onLocal.mock.calls[0]![0].items).toHaveLength(2)
+    expect(onLocal.mock.calls[0]![0].cloud.reviewedCount).toBe(0)
+    controller.abort()
+    await cancelled
+    expect(fixture.cloud!.assessPersonnelCases.mock.calls[0]![0].signal.aborted).toBe(true)
+    expect(fixture.cloud!.cancel).toHaveBeenCalledWith('cancel-test')
+    finish({ assessments: [] })
+    expect(onLocal).toHaveBeenCalledTimes(1)
   })
   it('excludes date-only matches and labels cloud-unavailable output as local', async () => {
     const fixture = setup()

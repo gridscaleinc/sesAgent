@@ -1,10 +1,19 @@
-import { LatestBusinessFeed } from './components/LatestBusinessFeed'
+import { BusinessProgressContext, useBusinessProgressData } from './business-progress-data'
+import { BusinessProgressOverview } from './components/BusinessProgressOverview'
+import { CaseIntroductionComposer, type CaseIntroductionTarget } from './components/CaseIntroductionComposer'
+import type { FollowUpTarget } from './components/HrFollowUps'
+import { HrProgressWorkbench } from './components/HrProgressWorkbench'
+import { ResumeImportHistory } from './components/ResumeImportHistory'
+import { HrObjectList } from './components/HrObjectList'
+import { readHrPosition, saveHrPosition, type HrBusinessKind } from './hr-business-navigation'
+import { HrMatchingWorkspace, type HrMatchSource, type IntroductionTarget } from './components/HrMatchingWorkspace'
+import { IntroductionComposer } from './components/IntroductionComposer'
 import { BusinessIntakeWorkspace } from './components/BusinessIntakeWorkspace'
 import { CaseMatchingWorkspace } from './components/CaseMatchingWorkspace'
 import { PersonnelWorkspace, type PersonnelEditorTarget } from './components/PersonnelWorkspace'
 import type { BusinessFeedEntry, TypedAiConversationReference } from '@shared'
 import { BusinessWorkbench } from './components/BusinessWorkbench'
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SignedWorkTaskPreview, WorkTask } from '@domain'
 import type {
   BootstrapPayload,
@@ -13,6 +22,7 @@ import type {
   CandidateMatchResult,
   CandidateMatchRunSummary,
   CreateWorkTaskInput,
+  JobCaseReviewSnapshot,
   NewJobCaseDigest,
   ProposalMutationResult,
   ProposalWorkspaceSnapshot,
@@ -47,16 +57,20 @@ import type { BroadcastPanelActions } from './components/BroadcastWorkspaceView'
 import type { BroadcastSettingsActions } from './components/BroadcastSettingsSection'
 import { AgentSystemRail } from './components/AgentSystemRail'
 import { StartupRecoveryScreen } from './components/StartupRecoveryScreen'
-import { localizedWorkDate, UiLocaleProvider, useLegacyRendererLocalization } from './i18n'
+import { localizedWorkDate, UiLocaleProvider, localizedTaskTitle, useLegacyRendererLocalization } from './i18n'
 
 /** What the right workspace shows when nothing else was opened: today's arrivals. */
 const defaultAgentContextTrail = (): AgentSystemAccessBlock[] => []
 
 export function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null)
+  const businessProgress = useBusinessProgressData(bootstrap)
+  const [sideProgressTarget, setSideProgressTarget] = useState<FollowUpTarget | null>(null)
+  const [progressFocus, setProgressFocus] = useState<{kind: HrBusinessKind; id: string; request: number} | null>(null)
   const [startupRecovery, setStartupRecovery] = useState<Extract<StartupStatus, { mode: 'recovery-required' }> | null>(null)
   const [selectedTask, setSelectedTask] = useState<WorkTask | null>(null)
   const [activeView, setActiveView] = useState<SidebarView>('home')
+  const [importHistoryOpen, setImportHistoryOpen] = useState(false)
   const [candidateWorkspaceDetail, setCandidateWorkspaceDetail] = useState<{
     scope: 'candidate' | 'recruiting' | 'client' | 'schedule' | 'entry'
     documentId: string
@@ -81,8 +95,26 @@ export function App() {
   // The right-hand workspace keeps a trail of the screens it opened, so a
   // sub-page can step back to where it came from instead of only closing.
   const [agentHomeRequest, setAgentHomeRequest] = useState(0)
+  const [hrKind, setHrKind] = useState<HrBusinessKind>(() => { try { return localStorage.getItem('ses-hr-kind-v2') === 'person' ? 'person' : 'case' } catch { return 'case' } })
+  const [hrFollowOpen, setHrFollowOpen] = useState(false)
+  const [hrFollowTarget, setHrFollowTarget] = useState<FollowUpTarget | null>(null)
+  const [hrSource, setHrSource] = useState<HrMatchSource | null>(null)
+  const [hrBusy, setHrBusy] = useState(false)
+  useEffect(() => {
+    const refresh = () => { void window.sesAgent.getBootstrap().then(setBootstrap) }
+    window.addEventListener('ses-business-data-changed', refresh)
+    return () => window.removeEventListener('ses-business-data-changed', refresh)
+  }, [])
+  const [hrChatRequest, setHrChatRequest] = useState(0)
+  const [caseIntroductionTarget, setCaseIntroductionTarget] = useState<CaseIntroductionTarget | null>(null)
+  const caseIntroductionPrepared = useCallback((review: JobCaseReviewSnapshot) => {
+    setBootstrap((current) => current ? { ...current, jobCaseReviews: current.jobCaseReviews.map((item) => item.reviewId === review.reviewId ? review : item) } : current)
+    setCaseIntroductionTarget((current) => current?.reviewId === review.reviewId && current.reviewRevision === review.reviewRevision
+      ? { reviewId: review.reviewId, reviewRevision: review.reviewRevision, jobCaseVersion: review.jobCase!.version } : current)
+  }, [])
+  const [introductionTarget, setIntroductionTarget] = useState<IntroductionTarget | null>(null)
   const [agentSideMode, setAgentSideMode] = useState<'intake' | 'personnel' | null>(null)
-  const [agentFeedSelection, setAgentFeedSelection] = useState<string | null>(null)
+  const [agentFeedSelection, setAgentFeedSelection] = useState<string | null>(() => readHrPosition(hrKind).selected)
   const [personnelEditorRequest, setPersonnelEditorRequest] = useState<PersonnelEditorTarget & { id: number }>()
   const [personnelProfileRequest, setPersonnelProfileRequest] = useState<{ id: number; documentId: string }>()
   const [personnelMessageEdits, setPersonnelMessageEdits] = useState<Record<string, string>>({})
@@ -262,18 +294,16 @@ export function App() {
           ...refreshed.gmailSync.lastRun
         })
       }
-      if (completion.imported > 0) {
+      if (completion.imported > 0 || (completion.personnelImported ?? 0) > 0) {
         showToast(refreshed.preferences.locale === 'zh-CN'
-          ? `Gmail 同步：新案件 ${completion.imported} 件`
-          : `Gmail 同期：新規案件 ${completion.imported} 件`)
+          ? `Gmail 同步：邮件 ${completion.imported} 封，人员 ${completion.personnelImported ?? 0} 名`
+          : `Gmail 同期：メール ${completion.imported}件、人材 ${completion.personnelImported ?? 0}名`)
       }
       refreshNewCaseDigest()
     }).catch(() => { /* The startup/bootstrap error path remains authoritative. */ })
   }), [])
 
-  useEffect(() => {
-    if (activeView !== 'agent') setAgentContextTrail(defaultAgentContextTrail())
-  }, [activeView])
+  // Preserve business context while visiting traditional management pages.
 
   useEffect(() => {
     // The recovery screen deliberately exposes only recovery-safe IPC methods.
@@ -860,6 +890,7 @@ export function App() {
   }
 
   const openTaskCenter = () => {
+    setImportHistoryOpen(false)
     setGovernanceOpen(false)
     setSelectedTask(null)
     setActiveView('tasks')
@@ -894,6 +925,16 @@ export function App() {
       interviewKind
     })
     setActiveView('candidate-management')
+  }
+
+  const startHrProgress = async (targets: FollowUpTarget[]) => {
+    const records = await window.sesAgent.beginBusinessProgress(targets)
+    businessProgress.publish(records)
+    const first = targets[0]
+    if (!first) return
+    setHrFollowTarget({ ...first }); setHrFollowOpen(true); setIntroductionTarget(null)
+    closeAgentPanel(); returnToHr(); setAgentHomeRequest((value) => value + 1)
+    setBootstrap((current) => current ? { ...current, candidateInterviews: [...current.candidateInterviews.filter((row) => !records.some((record) => record.id === row.businessFollowUpId)), ...records.flatMap((record) => record.progress?.rounds ?? [])] } : current)
   }
 
   const openInterviewSchedule = () => {
@@ -952,14 +993,33 @@ export function App() {
   }
 
   const openAgentSystemAccess = (access: AgentSystemAccessBlock) => {
-    if (access.destination === 'matching' && access.jobCaseId) {
-      if (caseMatchingId) return
-      setCaseMatchId(access.jobCaseId)
-      setCaseMatchRequest({ id: ++feedFocusSequence.current, jobCaseId: access.jobCaseId })
+    setSideProgressTarget(null); setProgressFocus(null)
+    if (access.destination === 'broadcast' && access.reviewId) {
+      const requestedReviewId = access.reviewId
+      const review = bootstrap.jobCaseReviews.find((item) => item.reviewId === requestedReviewId)
+      if (review && review.lifecycle === 'active') {
+        setCaseIntroductionTarget({ reviewId: review.reviewId, reviewRevision: review.reviewRevision,
+          jobCaseVersion: review.status === 'completed' ? review.jobCase?.version ?? null : null })
+        return
+      }
     }
+
+    if (access.destination === 'matching' && access.jobCaseId) {
+      if (hrBusy) return
+      const requestedCaseId = access.jobCaseId
+      const review = bootstrap.jobCaseReviews.find((item) => item.jobCase?.id === requestedCaseId)
+      if (!review) return
+      setHrFollowOpen(false)
+      setHrKind('case'); setAgentFeedSelection(`case:${review.reviewId}`); saveHrPosition('case', { selected: `case:${review.reviewId}` })
+      try { localStorage.setItem('ses-hr-kind-v2', 'case') } catch {}
+      setHrSource({ kind: 'case', id: access.jobCaseId, requestId: ++feedFocusSequence.current })
+      setAgentHomeRequest((value) => value + 1)
+      access = { type: 'system-access', destination: 'case-review', reviewId: review.reviewId }
+    }
+    setAgentHomeRequest((value) => value + 1)
     const personnel = access.destination === 'candidate' && access.view === 'overview'
     setAgentSideMode(personnel ? 'personnel' : null)
-    if (personnel) { setAgentPersonId(access.sourceDocumentId); setAgentPersonMatchRequest(undefined) }
+    if (access.destination === 'candidate' && access.view === 'overview') { setAgentPersonId(access.sourceDocumentId); setAgentPersonMatchRequest(undefined) }
     setGovernanceOpen(false)
     setSelectedTask(null)
     setAgentContextTrail((trail) => pushContextAccess(trail, access))
@@ -973,15 +1033,17 @@ export function App() {
       } : null })
     }
   }
-  const closeAgentPanel = () => { setAgentSideMode(null); setAgentContextTrail([]) }
+  const closeAgentPanel = () => { setSideProgressTarget(null); setAgentSideMode(null); setAgentContextTrail([]) }
   const openAgentBatch = (text?: string) => {
+    setAgentHomeRequest((value) => value + 1)
     if (text) setAgentBatchSeed({ id: Date.now(), text })
     setAgentSideMode('intake'); setAgentContextTrail([]); setActiveView('agent')
   }
   const openAgentPersonnel = (documentId: string, match = false) => {
     openAgentSystemAccess({ type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'overview' })
     setAgentPersonId(documentId); setAgentSideMode('personnel')
-    setAgentPersonMatchRequest(match ? { id: Date.now(), documentId } : undefined)
+    setAgentPersonMatchRequest(undefined)
+    if (match && !hrBusy) { setHrFollowOpen(false); setHrKind('person'); setAgentFeedSelection(`person:${documentId}`); saveHrPosition('person', { selected: `person:${documentId}` }); try { localStorage.setItem('ses-hr-kind-v2', 'person') } catch {}; setHrSource({ kind: 'person', id: documentId, requestId: ++feedFocusSequence.current }); setAgentHomeRequest((value) => value + 1) }
   }
   const openPersonnelEditor = (target: PersonnelEditorTarget) => {
     setPersonnelEditorRequest({ ...target, id: Date.now() })
@@ -996,19 +1058,21 @@ export function App() {
     setGovernanceOpen(false); setSelectedTask(null); setActiveView('candidates')
   }
   const openLatestEntry = (entry: BusinessFeedEntry, action: 'view' | 'match' | 'promote') => {
-    if (action === 'match' && (entry.kind === 'person' ? personnelMatchingId : caseMatchingId)) return
+    if (action === 'match' && hrBusy) return
     setAgentFeedSelection(`${entry.kind}:${entry.objectId}`)
+    saveHrPosition(entry.kind, { selected: `${entry.kind}:${entry.objectId}` })
     if (entry.kind === 'person') {
       openAgentPersonnel(entry.objectId, action === 'match')
+      if (action === 'promote') { const person = bootstrap.candidateReviews.find((item) => item.documentId === entry.objectId); if (person?.profile) setIntroductionTarget({ documentId: person.documentId, profileVersion: person.profile.version, matched: [] }) }
       setAgentPersonFocusRequest({ id: ++feedFocusSequence.current, documentId: entry.objectId, section: action })
       return
     }
-    setCaseFocusRequest(++feedFocusSequence.current)
+    if (action !== 'promote') setCaseFocusRequest(++feedFocusSequence.current)
     const review = bootstrap?.jobCaseReviews.find((item) => item.reviewId === entry.objectId)
     if (!review) return
     openAgentSystemAccess(action === 'match' && review.jobCase && review.lifecycle === 'active'
       ? { type: 'system-access', destination: 'matching', jobCaseId: review.jobCase.id }
-      : action === 'promote' && review.jobCase && review.lifecycle === 'active'
+      : action === 'promote' && review.lifecycle === 'active'
         ? { type: 'system-access', destination: 'broadcast', reviewId: entry.objectId }
         : { type: 'system-access', destination: 'case-review', reviewId: entry.objectId })
   }
@@ -1308,7 +1372,7 @@ export function App() {
     initialCandidateId={detail.documentId}
     initialInterviewId={detail.interviewId ?? null}
     interviewKind={detail.interviewKind ?? (detail.scope === 'client' ? 'client' : 'recruiting')}
-    interviews={bootstrap.candidateInterviews}
+    interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
     matchingHome={bootstrap.matchingHome}
     tasks={bootstrap.tasks}
     onBackToQueue={showBackToQueue ? () => setCandidateWorkspaceDetail(null) : undefined}
@@ -1364,6 +1428,13 @@ export function App() {
   />
 
   const openInterviewFromSchedule = (route: InterviewScheduleRoute) => {
+    if (route.businessFollowUpId) {
+      void window.sesAgent.listBusinessFollowUps().then((rows) => {
+        const item = rows.find((row) => row.id === route.businessFollowUpId)
+        if (item) { setHrFollowTarget({documentId:item.documentId,reviewId:item.reviewId}); setHrFollowOpen(true); returnToHr(); closeAgentPanel() }
+      }).catch((cause) => setLoadError(String(cause)))
+      return
+    }
     setCandidateWorkspaceDetail({
       scope: 'schedule',
       documentId: route.sourceDocumentId,
@@ -1372,7 +1443,27 @@ export function App() {
       view: route.view
     })
   }
-  const agentPrimary = activeView === 'agent' && bootstrap.featureFlags?.conversationalMatchingEnabled === true
+  const hrNavigation = bootstrap.featureFlags?.conversationalMatchingEnabled === true
+  const agentPrimary = activeView === 'agent' && hrNavigation
+  const pendingActionApprovals = reviewQueue.filter((item) => item.kind === 'action-approval')
+  const resumeImports = bootstrap.tasks.filter((task) => task.type === 'IMPORT_RESUME').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const failedImports = resumeImports.filter((task) => task.status === 'failed')
+  const navigationFollows = agentPrimary ? hrFollowOpen : ['interview-schedule', 'interview-workbench', 'client-interviews', 'entry-prep'].includes(activeView) || hrFollowOpen
+  const navigationKind = ['cases', 'case-import', 'matching'].includes(activeView) ? 'case'
+    : ['candidates', 'candidate-management', 'business'].includes(activeView) ? 'person' : hrKind
+  const openHrList = (kind: HrBusinessKind) => {
+    setActiveView('agent'); setSelectedTask(null); setGovernanceOpen(false); setHrFollowOpen(false); setHrKind(kind)
+    setAgentFeedSelection(readHrPosition(kind).selected); setHrSource(null); closeAgentPanel(); setAgentHomeRequest((value) => value + 1)
+    try { localStorage.setItem('ses-hr-kind-v2', kind) } catch {}
+  }
+  const returnToHr = () => { setActiveView('agent'); setSelectedTask(null); setGovernanceOpen(false) }
+  const openHrLibrary = () => {
+    const selected = readHrPosition(hrKind).selected?.split(':').slice(1).join(':')
+    if (hrKind === 'person') {
+      if (selected) openPersonnelProfile(selected)
+      else openCandidateManagement()
+    } else { setRequestedJobCaseReviewId(selected ?? null); setActiveView('cases') }
+  }
   const composerCase = agentContextAccess?.destination === 'case-review' || agentContextAccess?.destination === 'broadcast'
     ? bootstrap.jobCaseReviews.find((review) => review.reviewId === agentContextAccess.reviewId)
     : agentContextAccess?.destination === 'matching' && agentContextAccess.jobCaseId ? bootstrap.jobCaseReviews.find((review) => review.jobCase?.id === agentContextAccess.jobCaseId) : undefined
@@ -1391,9 +1482,12 @@ export function App() {
   } : undefined
 
 
+  const renderBusinessProgress = (kind: HrBusinessKind, id: string) => <BusinessProgressOverview key={`${kind}:${id}`} kind={kind} objectId={id} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onAdvance={setSideProgressTarget} focusRequest={progressFocus?.kind === kind && progressFocus.id === id ? progressFocus.request : undefined} />
+
   return (
     <UiLocaleProvider locale={locale}>
-      <div className={agentPrimary ? 'app-shell is-agent-primary' : 'app-shell'}>
+    <BusinessProgressContext.Provider value={businessProgress}>
+      <div className={hrNavigation ? 'app-shell is-agent-primary is-hr-navigation' : 'app-shell'}>
       {toasts.length > 0 ? <div className="app-toasts" role="status">
         {toasts.map((toast) => <button className="app-toast" key={toast.id} onClick={() => {
           setToasts((current) => current.filter((item) => item.id !== toast.id))
@@ -1401,13 +1495,14 @@ export function App() {
           setAgentContextTrail(defaultAgentContextTrail())
         }} type="button"><Icon name="mail" size={13} />{toast.message}</button>)}
       </div> : null}
-      {agentPrimary ? <AgentSystemRail
+      {hrNavigation ? <AgentSystemRail
+        businessKind={navigationKind}
+        followActive={navigationFollows}
+        onFollowUps={() => { returnToHr(); setHrFollowOpen(true); closeAgentPanel(); setAgentHomeRequest((value) => value + 1) }}
+        onBusinessCases={() => openHrList('case')}
+        onBusinessPeople={() => openHrList('person')}
         caseUnseenCount={newCaseDigest?.unseenCount ?? 0}
-        onAgent={() => {
-          closeAgentPanel()
-          setAgentHomeRequest((value) => value + 1)
-          setActiveView('agent')
-        }}
+        onAgent={() => { returnToHr(); setHrChatRequest((value) => value + 1) }}
         onBusiness={() => openAgentBatch()}
         onCandidates={openCandidateManagement}
         onCases={openCases}
@@ -1458,11 +1553,14 @@ export function App() {
         taskCount={bootstrap.tasks.length}
       />}
 
+      <CaseIntroductionComposer target={caseIntroductionTarget} cases={bootstrap.jobCaseReviews} onPrepared={caseIntroductionPrepared} onClose={() => setCaseIntroductionTarget(null)} />
+      <IntroductionComposer onFollowUp={(target) => startHrProgress([target])} target={introductionTarget} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onClose={() => setIntroductionTarget(null)} />
       <ResumeImportProgressDrawer
         onClose={() => setResumeImportProgress(null)}
         onOpenCandidates={() => {
           setResumeImportProgress(null)
-          openCandidateManagement()
+          if (hrNavigation) openHrList('person')
+          else openCandidateManagement()
         }}
         onOpenFailures={(taskId) => {
           setResumeImportProgress(null)
@@ -1477,6 +1575,8 @@ export function App() {
         progress={resumeImportProgress}
       />
 
+      <div className={hrNavigation ? 'hr-route-container' : 'legacy-route-container'}>
+      {hrNavigation && !agentPrimary ? <nav className="hr-return-bar" aria-label={locale === 'zh-CN' ? '返回业务列表' : '業務一覧へ戻る'}><button type="button" onClick={returnToHr}><Icon name="arrow-left" size={16} />{hrFollowOpen ? (locale === 'zh-CN' ? '返回跟进' : '対応記録に戻る') : hrKind === 'case' ? (locale === 'zh-CN' ? '返回案件列表' : '案件一覧に戻る') : (locale === 'zh-CN' ? '返回人员列表' : '要員一覧に戻る')}</button></nav> : null}
       <div className="business-route" hidden={activeView !== 'business'}>
         <BusinessWorkbench bootstrap={bootstrap} broadcastActions={broadcastActions} personnelRequest={personnelEditorRequest} personnelMessageDrafts={personnelMessageDrafts}
           onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
@@ -1488,25 +1588,42 @@ export function App() {
       <div className="agent-route" hidden={!agentPrimary}>
         {bootstrap.featureFlags?.conversationalMatchingEnabled === true ? (
         <AgentWorkspace
+          businessMatchingBusy={hrBusy}
+          businessTitle={hrFollowOpen ? (locale === 'zh-CN' ? '跟进' : '対応記録') : hrSource ? (locale === 'zh-CN' ? '匹配结果' : 'マッチング結果') : hrKind === 'case' ? (locale === 'zh-CN' ? '案件' : '案件') : (locale === 'zh-CN' ? '人员' : '要員')}
+          chatRequest={hrChatRequest}
+          businessObject={agentFeedSelection ? { kind: agentFeedSelection.startsWith('case:') ? 'case' : 'person', id: agentFeedSelection.slice(agentFeedSelection.indexOf(':') + 1) } : undefined}
           candidateReviews={bootstrap.candidateReviews}
           composerObject={composerObject}
           activeSystemAccess={agentContextAccess}
           cloudConnected={bootstrap.aiCommerce.connection === 'connected'}
           composerDraft={agentComposerDraft}
-          latestContent={<LatestBusinessFeed reloadToken={bootstrap} selectedEntryKey={agentFeedSelection} matchingPersonId={personnelMatchingId} matchingCaseReviewId={bootstrap.jobCaseReviews.find((review) => review.jobCase?.id === caseMatchingId)?.reviewId} onOpen={openLatestEntry} onIntake={() => openAgentBatch()} onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())} />}
+          latestContent={<div className="hr-board">
+            <div className="hr-list-surface" hidden={Boolean(hrSource) || hrFollowOpen}><HrObjectList onOpenProgress={(entry) => { openLatestEntry(entry, 'view'); setProgressFocus({kind: entry.kind, id: entry.objectId, request: ++feedFocusSequence.current}) }} cases={bootstrap.jobCaseReviews} kind={hrKind} reloadToken={bootstrap} candidates={bootstrap.candidateReviews} selectedKey={agentFeedSelection} busy={hrBusy} onOpen={openLatestEntry} onIntake={() => openAgentBatch()} onImportResume={() => void startResumeImport()} onOpenLibrary={openHrLibrary} onImportHistory={hrKind === 'case' ? openCaseImport : () => { openTaskCenter(); setImportHistoryOpen(true) }} onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())} /></div>
+            <div className="hr-match-surface" hidden={!hrSource || hrFollowOpen}><HrMatchingWorkspace source={hrSource} cases={bootstrap.jobCaseReviews} people={bootstrap.candidateReviews} onBusy={setHrBusy}
+              onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })}
+              onContinue={(target) => { if (hrSource?.kind === 'person') openAgentPersonnel(target.documentId); else openAgentSystemAccess({type: 'system-access', destination: 'case-review', reviewId: target.reviewId}); setSideProgressTarget(target) }} onFollowUp={(target) => startHrProgress([target])} onScheduleMany={startHrProgress}
+              onPrepare={setIntroductionTarget} onBack={() => { setHrSource(null); closeAgentPanel() }} /></div>
+            <div className="hr-follow-surface" hidden={!hrFollowOpen}><HrProgressWorkbench active={hrFollowOpen} onSchedule={openInterviewSchedule}
+              onBackToMatches={hrSource ? () => { setHrFollowOpen(false); closeAgentPanel(); setAgentHomeRequest((value) => value + 1) } : undefined}
+              onBrowse={openHrList}
+              interviews={bootstrap.candidateInterviews} onUpdated={() => { void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} target={hrFollowTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} /></div>
+          </div>}
+
           homeRequestToken={agentHomeRequest}
           focusRequest={agentFocusRequest}
           onOpenBatch={openAgentBatch}
-          contextPanelOpen={agentPrimary && Boolean(agentSideMode || agentContextAccess)}
+          contextPanelOpen={agentPrimary && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)}
           contextPanel={<>
+            {sideProgressTarget ? <HrProgressWorkbench embedded key={`${sideProgressTarget.documentId}:${sideProgressTarget.reviewId}`} onBack={() => setSideProgressTarget(null)} target={sideProgressTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} interviews={bootstrap.candidateInterviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} onUpdated={() => { void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} /> : null}
+            <div className="hr-object-context" hidden={Boolean(sideProgressTarget)}>
             <div className="agent-business-tools" hidden={agentSideMode === null}>
-              <header className="agent-tool-header">{agentSideMode === 'personnel' && agentContextBack ? <button aria-label={locale === 'zh-CN' ? '返回上一级' : '前の画面に戻る'} onClick={agentContextBack} type="button">←</button> : null}<strong>{agentSideMode === 'intake' ? (locale === 'zh-CN' ? '信息整理' : '情報整理') : (locale === 'zh-CN' ? '人员推广 / 找案件' : '要員紹介・案件検索')}</strong><button aria-label={locale === 'zh-CN' ? '关闭业务面板' : '業務パネルを閉じる'} onClick={closeAgentPanel} type="button">×</button></header>
+              <header className="agent-tool-header">{agentSideMode === 'personnel' && agentContextBack ? <button aria-label={locale === 'zh-CN' ? '返回上一级' : '前の画面に戻る'} onClick={agentContextBack} type="button">←</button> : null}<strong>{agentSideMode === 'intake' ? (locale === 'zh-CN' ? '信息整理' : '情報整理') : (locale === 'zh-CN' ? '人员资料' : '要員情報')}</strong><button aria-label={locale === 'zh-CN' ? '关闭业务面板' : '業務パネルを閉じる'} onClick={closeAgentPanel} type="button">×</button></header>
               <div className="business-workbench agent-tool-content">
-                <div hidden={agentSideMode !== 'intake'}><BusinessIntakeWorkspace inputSeed={agentBatchSeed} modelKey={bootstrap.defaultAgentChatModelKey ?? 'gpt-5.6-luna'} cases={bootstrap.jobCaseReviews} candidates={bootstrap.candidateReviews}
+                <div hidden={agentSideMode !== 'intake'}>{failedImports.length > 0 ? <details className="hr-intake-issues"><summary>{locale === 'zh-CN' ? '导入失败，需要处理' : '対応が必要な取込エラー'} ({failedImports.length})</summary>{failedImports.map((task) => <button key={task.id} type="button" onClick={() => selectTask(task)}>{localizedTaskTitle(locale, task)}<span>{locale === 'zh-CN' ? '查看失败原因' : '失敗理由を確認'}</span></button>)}</details> : null}<BusinessIntakeWorkspace inputSeed={agentBatchSeed} modelKey={bootstrap.defaultAgentChatModelKey ?? 'gpt-5.6-luna'} cases={bootstrap.jobCaseReviews} candidates={bootstrap.candidateReviews}
                   onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
                   onCase={(reviewId) => openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })}
                   onPerson={(documentId) => openAgentPersonnel(documentId)} onCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })} /></div>
-                <div hidden={agentSideMode !== 'personnel'}><PersonnelWorkspace compact messageDrafts={personnelMessageDrafts} onSelectPerson={(documentId) => openAgentPersonnel(documentId)} initialDocumentId={agentPersonId} matchRequest={agentPersonMatchRequest} focusRequest={agentPersonFocusRequest} onMatchingChange={setPersonnelMatchingId} reviews={bootstrap.candidateReviews}
+                <div hidden={agentSideMode !== 'personnel'}><PersonnelWorkspace renderBusinessProgress={renderBusinessProgress} compact businessOnly matchingBusy={hrBusy} onMatch={() => openAgentPersonnel(agentPersonId!, true)} onPrepare={() => { const person = bootstrap.candidateReviews.find((item) => item.documentId === agentPersonId); if (person?.profile) setIntroductionTarget({ documentId: person.documentId, profileVersion: person.profile.version, matched: [] }) }} messageDrafts={personnelMessageDrafts} onSelectPerson={(documentId) => openAgentPersonnel(documentId)} initialDocumentId={agentPersonId} matchRequest={agentPersonMatchRequest} focusRequest={agentPersonFocusRequest} onMatchingChange={setPersonnelMatchingId} reviews={bootstrap.candidateReviews}
                   onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
                   onOpenCase={(reviewId) => openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })}
                   onOpenProfile={openPersonnelProfile} onOpenEditor={openPersonnelEditor} /></div>
@@ -1520,18 +1637,20 @@ export function App() {
             ? agentContextAccess.destination === 'interview-schedule'
               ? <AgentInterviewSchedulePanel
                   access={agentContextAccess}
-                  interviews={bootstrap.candidateInterviews}
+                  interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
                   onBack={agentContextBack}
                   onClose={() => setAgentContextTrail([])}
                   onSave={saveCandidateInterviewSchedule}
                   reviews={bootstrap.candidateReviews}
                 />
               : <AgentBusinessWorkspacePanel
+                  renderBusinessProgress={renderBusinessProgress}
+                  matchingBusy={hrBusy}
                   access={agentContextAccess}
                   focusRequest={caseFocusRequest}
                   broadcastActions={broadcastActions}
                   candidateReviews={bootstrap.candidateReviews}
-                  interviews={bootstrap.candidateInterviews}
+                  interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
                   jobCaseReviews={bootstrap.jobCaseReviews}
                   matchingHome={bootstrap.matchingHome}
                   onBack={agentContextBack}
@@ -1546,10 +1665,11 @@ export function App() {
                   newCaseDigest={newCaseDigest}
                   gmailLastSyncedAt={bootstrap.gmail.status === 'readonly' ? bootstrap.gmailSync.lastSyncedAt : null}
                   onMarkSeen={markJobCaseSeen}
-                  reviewQueue={reviewQueue}
+                  reviewQueue={pendingActionApprovals}
                   tasks={bootstrap.tasks}
                 />
             : null}</div>
+            </div>
           </>}
           contextPanelLabel={locale === 'zh-CN' ? '业务工作区' : '業務ワークスペース'}
           newCaseUnseenCount={newCaseDigest?.unseenCount ?? 0}
@@ -1577,7 +1697,6 @@ export function App() {
             const refreshed = await window.sesAgent.getBootstrap()
             setBootstrap(refreshed)
           }}
-          onOpenReviews={() => openAgentSystemAccess({ type: 'system-access', destination: 'review-center' })}
           onOpenSystemAccess={openAgentSystemAccess}
           onOpenTasks={openTaskCenter}
           operatorLabel={bootstrap.operatorProfile.displayName || bootstrap.operatorProfile.operatorId}
@@ -1585,14 +1704,13 @@ export function App() {
           status={{
             activeCaseCount,
             eligibleCandidateCount,
-            pendingReviewCount: reviewQueue.length,
             runningJobCount: activeProcessingJobCount,
             backupReminder: bootstrap.recovery.reminder.status
           }}
         />
         ) : null}
       </div>
-      {activeView === 'business' ? null : activeView === 'task' && selectedTask ? (
+      {activeView === 'business' || agentPrimary ? null : activeView === 'task' && selectedTask ? (
         <TaskWorkspace
           aiCommerce={bootstrap.aiCommerce}
           analyses={bootstrap.resumeAnalyses.filter((analysis) =>
@@ -1632,6 +1750,8 @@ export function App() {
           processingJob={bootstrap.processingJobs.find((job) => job.workTaskId === selectedTask.id) ?? null}
           task={selectedTask}
         />
+      ) : activeView === 'tasks' && hrNavigation && importHistoryOpen ? (
+        <ResumeImportHistory tasks={resumeImports} onSelect={selectTask} onImport={() => void startResumeImport()} />
       ) : activeView === 'tasks' ? (
         <main className="task-center-page">
           <header className="task-center-header">
@@ -1765,7 +1885,7 @@ export function App() {
         candidateWorkspaceDetail?.scope === 'candidate'
           ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
           : <CandidateDirectoryWorkspace
-              interviews={bootstrap.candidateInterviews}
+              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
               onImportResume={() => void startResumeImport()}
               onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'candidate', documentId, view, interviewId, interviewKind })}
               reviews={bootstrap.candidateReviews}
@@ -1774,7 +1894,7 @@ export function App() {
         candidateWorkspaceDetail?.scope === 'recruiting'
           ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
           : <RecruitingInterviewWorkspace
-              interviews={bootstrap.candidateInterviews}
+              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
               onImportResume={() => void startResumeImport()}
               onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'recruiting', documentId, view, interviewId, interviewKind })}
               reviews={bootstrap.candidateReviews}
@@ -1783,7 +1903,7 @@ export function App() {
         candidateWorkspaceDetail?.scope === 'client'
           ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
           : <ClientInterviewWorkspace
-              interviews={bootstrap.candidateInterviews}
+              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
               onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'client', documentId, view, interviewId, interviewKind })}
               onOpenMatching={openMatching}
               reviews={bootstrap.candidateReviews}
@@ -1791,8 +1911,8 @@ export function App() {
       ) : activeView === 'interview-schedule' ? (
         candidateWorkspaceDetail?.scope === 'schedule'
           ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
-          : <InterviewScheduleCenter
-              interviews={bootstrap.candidateInterviews}
+          : <InterviewScheduleCenter cases={bootstrap.jobCaseReviews}
+              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
               onOpenInterview={openInterviewFromSchedule}
               reviews={bootstrap.candidateReviews}
             />
@@ -1800,7 +1920,7 @@ export function App() {
         candidateWorkspaceDetail?.scope === 'entry'
           ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
           : <ClientInterviewWorkspace
-              interviews={bootstrap.candidateInterviews}
+              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
               mode="entry-prep"
               onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'entry', documentId, view, interviewId, interviewKind })}
               onOpenMatching={openMatching}
@@ -1917,6 +2037,7 @@ export function App() {
           </main>
         </div>
       )}
+      </div>
       <GovernancePanel
         bootstrap={bootstrap}
         onConfirmRecovery={(input) => window.sesAgent.confirmRecovery(input)}
@@ -1990,6 +2111,7 @@ export function App() {
       ) : null}
       {commandPaletteOpen ? <CommandPalette commands={businessCommands} onClose={closeCommandPalette} /> : null}
       </div>
+    </BusinessProgressContext.Provider>
     </UiLocaleProvider>
   )
 }

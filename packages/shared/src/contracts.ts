@@ -276,6 +276,10 @@ export interface CandidateReviewFieldSnapshot {
   changeReason: string | null
 }
 
+export type BusinessMatchingProgress =
+  | { kind: 'case'; id: string; result: import('./business-workbench').CasePersonnelMatchResult }
+  | { kind: 'person'; id: string; result: import('./business-workbench').PersonnelCaseMatchResult }
+
 export interface SetCandidateOwnCompanyInput {
   documentId: string
   expectedVersion: number
@@ -511,9 +515,9 @@ export interface BusinessPriorityProjection {
 }
 
 /**
- * The cloud second opinion on one shortlisted match. The local run decides
- * who is shortlisted and how they rank; this reading sits next to the local
- * fit as advice and never changes ranking or hard filters.
+ * The source-grounded cloud assessment of one shortlisted match. The business
+ * workbench independently verifies mandatory coverage before recommending it;
+ * the model's fit label can never override that requirement policy.
  */
 export const candidateMatchAssessmentFits = ['strong', 'possible', 'weak', 'insufficient-info'] as const
 
@@ -661,6 +665,7 @@ export interface CandidateDeletionPreview {
   anonymousLabel: string
   localFileName: string
   counts: {
+    businessFollowUps?: number
     profileVersions: number
     reviewAudits: number
     taskRecords: number
@@ -997,6 +1002,7 @@ export interface CandidateInterviewMeetingDetails {
 }
 
 export interface CandidateInterviewSnapshot {
+  businessFollowUpId?: string | null
   id: string
   sourceDocumentId: string
   kind: CandidateInterviewKind
@@ -1173,8 +1179,9 @@ export interface JobCaseVersionDetail {
 }
 
 /**
- * The stored redacted original behind one job-case review. Only the redacted
- * subject and body ever leave the store - raw mail content is never persisted.
+ * Stored redacted source behind a job case. The display-only IPC additionally
+ * restores the subject/body from this source's encrypted local mappings.
+ * localDisplay must never be used as cloud context or persisted in chat.
  */
 export interface JobCaseSourceText {
   sourceType: JobCaseSourceType
@@ -1182,6 +1189,7 @@ export interface JobCaseSourceText {
   redactedBody: string
   messageDate: string
   fromDomain: string | null
+  localDisplay?: { subject: string; body: string }
 }
 
 export interface SetJobCaseLifecycleInput {
@@ -1244,6 +1252,7 @@ export interface JobCaseDeletionPreview {
   title: string
   sourceType: JobCaseSourceType
   counts: {
+    businessFollowUps?: number
     caseVersions: number
     reviewAudits: number
     taskRecords: number
@@ -1800,7 +1809,10 @@ export interface AiCommerceCloudPromptResult {
 
 export type AiConversationAssistant = 'candidate-profile' | 'interview' | 'sales-agent'
 
+export type BusinessConversationObject = { kind: 'case' | 'person'; id: string }
+
 export interface AiConversationContext {
+  businessObject?: BusinessConversationObject
   assistant: AiConversationAssistant
   candidateDocumentId: string | null
   interviewId: string | null
@@ -2008,10 +2020,10 @@ export interface AgentErrorBlock {
 }
 
 /**
- * A resume extraction draft, as the agent is allowed to see it. Everything here
- * is machine-extracted and unconfirmed: no value becomes a candidate profile
- * until the operator confirms each field, so `confirmed` is always false and
- * every field keeps the page/sheet/cell it came from.
+ * A resume extraction projection, as the agent is allowed to see it. The legacy
+ * `confirmed: false` and review metadata describe extraction provenance, not an
+ * additional business eligibility gate or a claim of human verification.
+ * Every field keeps the page/sheet/cell it came from.
  *
  * Direct identifiers and the original file name are deliberately absent - the
  * file name routinely contains the candidate's own name.
@@ -2238,6 +2250,7 @@ export interface AiConversationSnapshot {
 }
 
 export interface ExecuteAgentTurnInput {
+  businessObject?: BusinessConversationObject
   intakeOnly?: boolean
   conversationId: string
   message: string
@@ -2428,6 +2441,8 @@ export interface SaveGoogleWorkspaceAdminConfigurationResult {
 }
 
 export interface GmailSyncState {
+  personnelImported?: number
+  personnelIntake?: { failed: number; warnings: number }
   configuration: 'required' | 'ready'
   status: 'never' | 'idle' | 'error'
   labelIds: string[]
@@ -2452,6 +2467,7 @@ export interface GmailSyncState {
  * never subjects, bodies, or addresses.
  */
 export interface GmailScheduledSyncCompletion {
+  personnelImported?: number
   imported: number
   duplicates: number
   filtered: number
@@ -2669,6 +2685,11 @@ export interface DraftCaseBroadcastInput {
   templateId?: string
 }
 
+export interface PrepareCaseIntroductionInput {
+  reviewId: string
+  expectedReviewRevision: number
+}
+
 /**
  * Both language versions plus what the local identifier detector found in each.
  * Detection results are returned rather than silently blocking, so the operator
@@ -2697,6 +2718,8 @@ export type DraftCaseUpdateNoticeResult =
   | { status: 'no-changes' }
 
 export interface RecordCaseBroadcastCopyInput {
+  expectedJobCaseVersion?: number
+  expectedTemplateRevision?: number
   reviewId: string
   templateId: string
   lang: BroadcastLanguage
@@ -2715,6 +2738,8 @@ export interface RecordCaseBroadcastCopyResult {
  * opening a composer means the message was sent.
  */
 export interface OpenCaseBroadcastEmailInput {
+  expectedJobCaseVersion?: number
+  expectedTemplateRevision?: number
   reviewId: string
   templateId: string
   lang: BroadcastLanguage
@@ -2824,11 +2849,23 @@ export interface DesktopApi {
   markBusinessFeed(input: MarkBusinessFeedInput): Promise<BusinessFeedEntry[]>
   getPersonnelWorkspace(): Promise<PersonnelWorkspace>
   savePersonnelTemplate(input: PersonnelTemplate): Promise<PersonnelTemplate[]>
+  beginBusinessProgress(input: import('./business-progress').BeginBusinessProgressInput): Promise<import('./business-workbench').BusinessFollowUp[]>
+  advanceBusinessProgress(input: import('./business-progress').AdvanceBusinessProgressInput): Promise<import('./business-workbench').BusinessFollowUp>
+  analyzeBusinessProgress(input: import('./business-progress').AnalyzeBusinessProgressInput): Promise<import('./business-progress').ProgressAnalysis>
+  draftBusinessProgressMessage(input: import('./business-progress').ProgressMessageInput): Promise<{ text: string; recipient: string | null }>
+  openBusinessProgressEmail(input: import('./business-progress').ProgressMessageInput): Promise<{ opened: true; recipientPrefilled: boolean }>
+  exportBusinessProgressCalendar(input: { followUpId: string; expectedRevision: number }): Promise<{ cancelled: boolean }>
+  listBusinessProgressMail(): Promise<import('./business-progress').BusinessProgressMail[]>
+  updateBusinessProgressMail(input: { id: string; followUpId?: string; state?: 'applied' | 'dismissed' }): Promise<void>
+  listBusinessFollowUps(): Promise<import('./business-workbench').BusinessFollowUp[]>
+  saveBusinessFollowUp(input: import('./business-workbench').SaveBusinessFollowUpInput): Promise<import('./business-workbench').BusinessFollowUp>
+  onBusinessMatchingProgress(listener: (progress: BusinessMatchingProgress) => void): () => void
+  cancelBusinessMatching(input: { kind: 'case' | 'person'; id: string }): Promise<void>
   setCandidateOwnCompany(input: SetCandidateOwnCompanyInput): Promise<CandidateReviewSnapshot>
   setCandidateBusinessState(input: SetCandidateBusinessStateInput): Promise<CandidateBusinessState>
   validatePersonnelMessage(input: PersonnelMessageInput): Promise<PersonnelMessageInput>
   recordPersonnelCopy(input: PersonnelMessageInput): Promise<PersonnelCopy>
-  openPersonnelEmail(input: PersonnelMessageInput): Promise<{ opened: true }>
+  openPersonnelEmail(input: PersonnelMessageInput): Promise<{ opened: true; recipientPrefilled?: boolean }>
   findPersonnelForCase(jobCaseId: string): Promise<import('./business-workbench').CasePersonnelMatchResult>
   findCasesForPersonnel(documentId: string): Promise<import('./business-workbench').PersonnelCaseMatchResult>
   getStartupStatus(): Promise<StartupStatus>
@@ -2844,6 +2881,8 @@ export interface DesktopApi {
   openAiCommerceMemberCenter(): Promise<{ opened: true }>
   prepareAiCommerceCloudPrompt(input: PrepareAiCommerceCloudPromptInput): Promise<PrepareAiCommerceCloudPromptResult>
   executeAiCommerceCloudPrompt(input: ExecuteAiCommerceCloudPromptInput): Promise<AiCommerceCloudPromptResult>
+  regenerateIntroduction(input: import('./business-workbench').RegenerateIntroductionInput): Promise<{ text: string }>
+  saveBusinessField(input: import('./business-workbench').SaveBusinessFieldInput): Promise<{ version: number }>
   listAiConversations(context: AiConversationContext): Promise<AiConversationSnapshot[]>
   saveAiConversation(input: SaveAiConversationInput): Promise<AiConversationSnapshot>
   deleteAiConversations(input: DeleteAiConversationsInput): Promise<DeleteAiConversationsResult>
@@ -2883,7 +2922,9 @@ export interface DesktopApi {
   markJobCaseSeen(reviewId: string): Promise<MarkJobCaseSeenResult>
   listBroadcastWorkspace(): Promise<BroadcastWorkspace>
   draftCaseBroadcast(input: DraftCaseBroadcastInput): Promise<DraftCaseBroadcastResult>
+  prepareCaseIntroduction(input: PrepareCaseIntroductionInput): Promise<JobCaseReviewSnapshot>
   draftCaseUpdateNotice(input: DraftCaseUpdateNoticeInput): Promise<DraftCaseUpdateNoticeResult>
+  validateCaseBroadcastMessage(input: RecordCaseBroadcastCopyInput): Promise<RecordCaseBroadcastCopyInput>
   recordCaseBroadcastCopy(input: RecordCaseBroadcastCopyInput): Promise<RecordCaseBroadcastCopyResult>
   openCaseBroadcastEmail(input: OpenCaseBroadcastEmailInput): Promise<OpenCaseBroadcastEmailResult>
   /** Copies via Main's clipboard: the sandboxed renderer's permission set denies navigator.clipboard. */
@@ -2940,6 +2981,18 @@ export const ipcChannels = {
   markBusinessFeed: 'business-feed:mark',
   getPersonnelWorkspace: 'personnel:workspace',
   savePersonnelTemplate: 'personnel:template-save',
+  beginBusinessProgress: 'business:begin-progress',
+  advanceBusinessProgress: 'business:advance-progress',
+  analyzeBusinessProgress: 'business:analyze-progress',
+  draftBusinessProgressMessage: 'business:draft-progress-message',
+  openBusinessProgressEmail: 'business:open-progress-email',
+  exportBusinessProgressCalendar: 'business:export-progress-calendar',
+  listBusinessProgressMail: 'business:progress-mail',
+  updateBusinessProgressMail: 'business:update-progress-mail',
+  listBusinessFollowUps: 'business:followups',
+  saveBusinessFollowUp: 'business:save-followup',
+  businessMatchingProgress: 'business:matching-progress',
+  cancelBusinessMatching: 'business:cancel-matching',
   setCandidateOwnCompany: 'personnel:own-company',
   setCandidateBusinessState: 'personnel:business-state',
   validatePersonnelMessage: 'personnel:validate-message',
@@ -2960,6 +3013,8 @@ export const ipcChannels = {
   openAiCommerceMemberCenter: 'aicommerce:open-member-center',
   prepareAiCommerceCloudPrompt: 'aicommerce:prepare-cloud-prompt',
   executeAiCommerceCloudPrompt: 'aicommerce:execute-cloud-prompt',
+  regenerateIntroduction: 'business:introduction-regenerate',
+  saveBusinessField: 'business:field-save',
   listAiConversations: 'ai-conversations:list',
   saveAiConversation: 'ai-conversations:save',
   deleteAiConversations: 'ai-conversations:delete',
@@ -2998,7 +3053,9 @@ export const ipcChannels = {
   markJobCaseSeen: 'job-cases:mark-seen',
   listBroadcastWorkspace: 'broadcast:workspace',
   draftCaseBroadcast: 'broadcast:draft',
+  prepareCaseIntroduction: 'broadcast:prepare-case-introduction',
   draftCaseUpdateNotice: 'broadcast:draft-update-notice',
+  validateCaseBroadcastMessage: 'broadcast:validate-message',
   recordCaseBroadcastCopy: 'broadcast:record-copy',
   openCaseBroadcastEmail: 'broadcast:open-email',
   copyTextToClipboard: 'clipboard:write-text',

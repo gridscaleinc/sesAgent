@@ -98,7 +98,9 @@ export function unconfiguredGoogleWorkspaceState(workspaceDomain: string | null)
 }
 
 const defaultGmailLabelIds = 'INBOX'
-const defaultGmailBusinessQuery = '案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画'
+const legacyGmailBusinessQuery = '案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画'
+const personnelGmailBusinessQuery = `${legacyGmailBusinessQuery} OR 要員 OR 人材 OR スキルシート OR 経歴書 OR 履歴書 OR 人员 OR 简历`
+const defaultGmailBusinessQuery = `${personnelGmailBusinessQuery} OR 面談 OR 面接 OR 日程調整 OR 入場 OR 面试 OR 进场`
 
 /**
  * Product-managed Gmail connection settings. The public Desktop OAuth Client
@@ -153,7 +155,7 @@ export function gmailSyncConfigurationFromAdmin(
   return gmailSyncConfigurationSchema.parse({
     version: 'gmail-sync-config-v1',
     labelIds: configuration.labelIds,
-    query: configuration.query,
+    query: [legacyGmailBusinessQuery,personnelGmailBusinessQuery].includes(configuration.query) ? defaultGmailBusinessQuery : configuration.query,
     lookbackDays: configuration.lookbackDays,
     maxMessagesPerRun: configuration.maxMessagesPerRun
   })
@@ -168,6 +170,7 @@ export function gmailSyncState(
     ? repository.getGmailSyncCheckpoint(googleState.accountEmail)
     : null
   return {
+    personnelIntake: googleState.accountEmail ? repository.getGmailPersonnelIntakeStatus(googleState.accountEmail) : { failed: 0, warnings: 0 },
     configuration: config ? 'ready' : 'required',
     status: checkpoint?.status ?? 'never',
     labelIds: config?.labelIds ?? [],

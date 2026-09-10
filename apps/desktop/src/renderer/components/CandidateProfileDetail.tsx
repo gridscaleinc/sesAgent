@@ -1,3 +1,4 @@
+import { BusinessField } from './BusinessField'
 import { useMemo, useState, type FormEvent } from 'react'
 import type {
   PrepareAiCommerceCloudPromptInput,
@@ -418,6 +419,7 @@ export function CandidateProfileDetail({
     }
   }
 
+  const editable = (field: string, value: string | null, label: string, projectId?: string) => <BusinessField kind="person" id={candidate.sourceDocumentId} version={candidate.version} field={field} value={value} label={label} projectId={projectId} />
   const tabs: Array<{ id: CandidateDetailTab; label: string; count?: number }> = [
     { id: 'overview', label: t('プロフィール概要') },
     { id: 'skills', label: t('スキルマトリクス'), count: skills.length },
@@ -437,7 +439,7 @@ export function CandidateProfileDetail({
         <div className="resume-profile-identity">
           <button aria-label={t('人材プールへ戻る')} onClick={onBack} type="button"><Icon name="arrow-left" size={17} /></button>
           <span className="candidate-detail-avatar">{displayName.slice(-2)}</span>
-          <div><span>{t('人材プール')} / {t('人材プロフィール詳細')}</span><h1>{displayName}</h1></div>
+          <div><span>{t('人材プール')} / {t('人材プロフィール詳細')}</span><h1>{editable('identity.displayName', candidate.localIdentity?.displayName ?? null, t('氏名'))}</h1></div>
           <small>{candidate.anonymousLabel} · v{candidate.version}</small>
           <span className="local-identity-status"><Icon name="lock" size={13} />{t('本人情報は端末内で暗号化')}</span>
           <span className="local-parse-status"><Icon name="check" size={13} />{t('推薦資格あり')}</span>
@@ -455,10 +457,10 @@ export function CandidateProfileDetail({
       </header>
 
       {editMode ? <div className="candidate-profile-edit-banner"><Icon name="edit" size={16} /><div><strong>{t('人材プロフィールを編集中')}</strong><span>{t('姓名・連絡先・プロフィール項目・プロジェクト経験をまとめて保存します。')}</span></div><em>{t('端末内暗号化')}</em></div> : <div className="candidate-detail-summary-strip">
-        <div><span>{t('主力ポジション')}</span><strong>{valueFor('role')}</strong></div>
-        <div><span>{t('総経験')}</span><strong>{valueFor('experience_years')}</strong></div>
-        <div><span>{t('稼働時期')}</span><strong>{valueFor('availability')}</strong></div>
-        <div><span>{t('希望単価')}</span><strong>{valueFor('rate')}</strong></div>
+        <div><span>{t('主力ポジション')}</span><strong>{editable('role', fields.get('role')?.value ?? null, fields.get('role')?.label ?? 'role')}</strong></div>
+        <div><span>{t('総経験')}</span><strong>{editable('experience_years', fields.get('experience_years')?.value ?? null, fields.get('experience_years')?.label ?? 'experience_years')}</strong></div>
+        <div><span>{t('稼働時期')}</span><strong>{editable('availability', fields.get('availability')?.value ?? null, fields.get('availability')?.label ?? 'availability')}</strong></div>
+        <div><span>{t('希望単価')}</span><strong>{editable('rate', fields.get('rate')?.value ?? null, fields.get('rate')?.label ?? 'rate')}</strong></div>
         <div><span>{t('プロジェクト')}</span><strong>{candidate.projectExperiences.length}{t('件')}</strong></div>
       </div>}
 
@@ -520,25 +522,25 @@ export function CandidateProfileDetail({
               <h2>{t('候補者概要')}</h2>
               <div className="candidate-local-contact-card">
                 <div><span>{t('自社所属')}</span><strong>{candidate.isOwnCompany === true ? t('自社') : candidate.isOwnCompany === false ? t('非自社') : t('未設定')}</strong></div>
-                <div><span>{t('姓名')}</span><strong>{candidate.localIdentity?.displayName || t('未設定')}</strong></div>
-                <div><span>{t('性別')}</span><strong>{candidate.localIdentity?.gender || t('未設定')}</strong></div>
-                <div><span>{t('生年月')}</span><strong>{candidate.localIdentity?.birthDate || t('未設定')}</strong></div>
-                <div><span>{t('国籍')}</span><strong>{candidate.localIdentity?.nationality || t('未設定')}</strong></div>
-                <div><span>{t('電話番号')}</span><strong>{candidate.localIdentity?.phone || t('未設定')}</strong></div>
-                <div><span>{t('メールアドレス')}</span><strong>{candidate.localIdentity?.email || t('未設定')}</strong></div>
-                <div><span>{t('住所・最寄り駅')}</span><strong>{candidate.localIdentity?.address || t('未設定')}</strong></div>
-                <div><span>{t('学校名・最終学歴')}</span><strong>{candidate.localIdentity?.education || t('未設定')}</strong></div>
-                <div><span>{t('専攻')}</span><strong>{candidate.localIdentity?.major || t('未設定')}</strong></div>
-                <div><span>{t('卒業年月')}</span><strong>{candidate.localIdentity?.graduationDate || t('未設定')}</strong></div>
-                <div><span>{t('学位')}</span><strong>{candidate.localIdentity?.degree || t('未設定')}</strong></div>
+                <div><span>{t('姓名')}</span><strong>{editable('identity.displayName', candidate.localIdentity?.displayName ?? null, 'displayName')}</strong></div>
+                <div><span>{t('性別')}</span><strong>{editable('identity.gender', candidate.localIdentity?.gender ?? null, 'gender')}</strong></div>
+                <div><span>{t('生年月')}</span><strong>{editable('identity.birthDate', candidate.localIdentity?.birthDate ?? null, 'birthDate')}</strong></div>
+                <div><span>{t('国籍')}</span><strong>{editable('identity.nationality', candidate.localIdentity?.nationality ?? null, 'nationality')}</strong></div>
+                <div><span>{t('電話番号')}</span><strong>{editable('identity.phone', candidate.localIdentity?.phone ?? null, 'phone')}</strong></div>
+                <div><span>{t('メールアドレス')}</span><strong>{editable('identity.email', candidate.localIdentity?.email ?? null, 'email')}</strong></div>
+                <div><span>{t('住所・最寄り駅')}</span><strong>{editable('identity.address', candidate.localIdentity?.address ?? null, 'address')}</strong></div>
+                <div><span>{t('学校名・最終学歴')}</span><strong>{editable('identity.education', candidate.localIdentity?.education ?? null, 'education')}</strong></div>
+                <div><span>{t('専攻')}</span><strong>{editable('identity.major', candidate.localIdentity?.major ?? null, 'major')}</strong></div>
+                <div><span>{t('卒業年月')}</span><strong>{editable('identity.graduationDate', candidate.localIdentity?.graduationDate ?? null, 'graduationDate')}</strong></div>
+                <div><span>{t('学位')}</span><strong>{editable('identity.degree', candidate.localIdentity?.degree ?? null, 'degree')}</strong></div>
               </div>
               <div className="profile-overview-facts">
-                <div><Icon name="sparkles" size={18} /><span><small>{t('総経験')}</small><strong>{valueFor('experience_years')}</strong></span></div>
-                <div><Icon name="briefcase" size={18} /><span><small>{t('主力ポジション')}</small><strong>{valueFor('role')}</strong></span></div>
-                <div><Icon name="mail" size={18} /><span><small>{t('日本語力')}</small><strong>{valueFor('japanese_level')}</strong></span></div>
+                <div><Icon name="sparkles" size={18} /><span><small>{t('総経験')}</small><strong>{editable('experience_years', fields.get('experience_years')?.value ?? null, fields.get('experience_years')?.label ?? 'experience_years')}</strong></span></div>
+                <div><Icon name="briefcase" size={18} /><span><small>{t('主力ポジション')}</small><strong>{editable('role', fields.get('role')?.value ?? null, fields.get('role')?.label ?? 'role')}</strong></span></div>
+                <div><Icon name="mail" size={18} /><span><small>{t('日本語力')}</small><strong>{editable('japanese_level', fields.get('japanese_level')?.value ?? null, fields.get('japanese_level')?.label ?? 'japanese_level')}</strong></span></div>
                 <div><Icon name="file" size={18} /><span><small>{t('プロジェクト数')}</small><strong>{candidate.projectExperiences.length}{t('件')}</strong></span></div>
-                <div><Icon name="home" size={18} /><span><small>{t('希望勤務地')}</small><strong>{valueFor('location')}</strong></span></div>
-                <div><Icon name="clock" size={18} /><span><small>{t('稼働時期')}</small><strong>{valueFor('availability')}</strong></span></div>
+                <div><Icon name="home" size={18} /><span><small>{t('希望勤務地')}</small><strong>{editable('location', fields.get('location')?.value ?? null, fields.get('location')?.label ?? 'location')}</strong></span></div>
+                <div><Icon name="clock" size={18} /><span><small>{t('稼働時期')}</small><strong>{editable('availability', fields.get('availability')?.value ?? null, fields.get('availability')?.label ?? 'availability')}</strong></span></div>
               </div>
             </section>
             <section className="profile-overview-section">
@@ -547,7 +549,7 @@ export function CandidateProfileDetail({
             </section>
             <section className="profile-overview-section">
               <div className="profile-section-heading"><h2>{t('主要スキル')}</h2><button onClick={() => setActiveTab('skills')} type="button">{t('スキルマトリクスを開く')}</button></div>
-              <div className="profile-skill-table" role="table">
+              <p>{editable('skills', fields.get('skills')?.value ?? null, t('スキル'))}</p><div className="profile-skill-table" role="table">
                 <div className="profile-table-header" role="row"><span>{t('技術')}</span><span>{t('関連プロジェクト')}</span><span>{t('出典')}</span><span>{t('状態')}</span></div>
                 {skills.slice(0, 7).map((skill) => <div key={skill.name} role="row"><strong>{skill.name}</strong><span>{skill.projects.length}{t('件')}</span><span>{skill.sources}{t('件')}</span><em>{t('登録済み')}</em></div>)}
                 {skills.length === 0 ? <p>{t('スキルはまだ検出されていません。')}</p> : null}
@@ -557,14 +559,14 @@ export function CandidateProfileDetail({
               <div className="profile-section-heading"><h2>{t('最近のプロジェクト経験')}</h2><button onClick={() => setActiveTab('projects')} type="button">{t('すべてのプロジェクトを見る')}</button></div>
               <div className="profile-project-table" role="table">
                 <div className="profile-project-header" role="row"><span>{t('期間')}</span><span>{t('プロジェクト概要')}</span><span>{t('役割')}</span><span>{t('担当内容')}</span><span>{t('技術スタック')}</span></div>
-                {candidate.projectExperiences.slice(0, 4).map((project) => <div key={project.id} role="row"><span>{project.period ?? t('未設定')}</span><strong>{project.title}</strong><span>{project.role ?? t('未設定')}</span><p>{project.summary}</p><span>{project.technologies.slice(0, 6).join(' · ') || t('未設定')}</span></div>)}
+                {candidate.projectExperiences.slice(0, 4).map((project) => <div key={project.id} role="row"><span>{editable('period', project.period, t('期間'), project.id)}</span><strong>{editable('title', project.title, t('案件・プロジェクト名'), project.id)}</strong><span>{editable('role', project.role, t('役割'), project.id)}</span><p>{editable('summary', project.summary, t('担当内容'), project.id)}</p><span>{editable('technologies', project.technologies.join(', '), t('技術スタック'), project.id)}</span></div>)}
               </div>
             </section>
           </div> : null}
 
           {!editMode && activeTab === 'skills' ? <div className="profile-detail-view">
             <header><span>{t('STANDARD PROFILE')}</span><h2>{t('スキルマトリクス')}</h2><p>{t('登録済みの技能をプロジェクト経験と結び付けて表示します。')}</p></header>
-            <div className="profile-skill-table is-expanded" role="table">
+            <p>{editable('skills', fields.get('skills')?.value ?? null, t('スキル'))}</p><div className="profile-skill-table is-expanded" role="table">
               <div className="profile-table-header" role="row"><span>{t('技術')}</span><span>{t('関連プロジェクト')}</span><span>{t('出典')}</span><span>{t('状態')}</span></div>
               {skills.map((skill) => <div key={skill.name} role="row"><strong>{skill.name}</strong><span>{skill.projects.slice(0, 4).join('、') || t('プロジェクト未紐付け')}</span><span>{skill.sources}{t('件')}</span><em>{t('登録済み')}</em></div>)}
             </div>
@@ -574,10 +576,10 @@ export function CandidateProfileDetail({
             <header><span>{t('PROJECT HISTORY')}</span><h2>{t('プロジェクト経験')}</h2><p>{t('期間、役割、担当内容と技術を標準形式で表示します。')}</p></header>
             <div className="candidate-detail-project-list">
               {candidate.projectExperiences.map((project, index) => <article key={project.id}>
-                <header><span>PROJECT {String(index + 1).padStart(2, '0')}</span><strong>{project.title}</strong><small>{summarizeSourceLabels(project.sourceLabels, locale, { projectIndex: index + 1 })}</small></header>
-                <dl><div><dt>{t('期間')}</dt><dd>{project.period ?? t('未設定')}</dd></div><div><dt>{t('役割')}</dt><dd>{project.role ?? t('未設定')}</dd></div></dl>
-                <section><span>{t('担当内容')}</span><p>{project.summary || t('未設定')}</p></section>
-                <footer>{project.technologies.map((technology) => <span key={technology}>{technology}</span>)}</footer>
+                <header><span>PROJECT {String(index + 1).padStart(2, '0')}</span><strong>{editable('title', project.title, t('案件・プロジェクト名'), project.id)}</strong><small>{summarizeSourceLabels(project.sourceLabels, locale, { projectIndex: index + 1 })}</small></header>
+                <dl><div><dt>{t('期間')}</dt><dd>{editable('period', project.period, t('期間'), project.id)}</dd></div><div><dt>{t('役割')}</dt><dd>{editable('role', project.role, t('役割'), project.id)}</dd></div></dl>
+                <section><span>{t('担当内容')}</span><p>{editable('summary', project.summary, t('担当内容'), project.id)}</p></section>
+                <footer>{editable('technologies', project.technologies.join(', '), t('技術スタック'), project.id)}</footer>
               </article>)}
               {candidate.projectExperiences.length === 0 ? <div className="candidate-detail-empty-section"><Icon name="file" size={22} /><p>{t('プロジェクト経験はまだ登録されていません。')}</p></div> : null}
             </div>
@@ -587,7 +589,7 @@ export function CandidateProfileDetail({
             <header><span>{t('WORK CONDITIONS')}</span><h2>{t('商務条件')}</h2><p>{t('案件マッチングと営業判断に使う登録済み条件です。')}</p></header>
             <div className="candidate-detail-field-grid">{commercialKeys.map((key) => {
               const field = fields.get(key)
-              return <article key={key}><span>{t(field?.label ?? key)}</span><strong>{field?.value || t('未設定')}</strong><small>{field?.sourceLabels.length ? summarizeSourceLabels(field.sourceLabels, locale) : t('出典なし')}</small></article>
+              return <article key={key}><span>{t(field?.label ?? key)}</span><strong>{editable(key, field?.value ?? null, t(field?.label ?? key))}</strong><small>{field?.sourceLabels.length ? summarizeSourceLabels(field.sourceLabels, locale) : t('出典なし')}</small></article>
             })}</div>
           </div> : null}
 
@@ -600,7 +602,7 @@ export function CandidateProfileDetail({
             <div className="candidate-history-list candidate-detail-history-list">{versions.map((version) => <article key={version.id}><div className="candidate-history-version-heading"><div><strong>Version {version.version}</strong><span>Review r{version.reviewRevision}</span></div><span className={`candidate-version-status status-${version.status}`}>{version.status === 'current' ? 'CURRENT' : version.status === 'stale' ? t('要再確認') : t('更新済み')}</span></div><p>{dateLabel(version.confirmedAt, locale)} · {version.confirmedBy}</p><div className="candidate-history-fields">{version.fields.map((field) => <div key={field.key}><span>{t(field.label)}</span><strong>{field.value ?? t('未入力')}</strong><small>{summarizeSourceLabels(field.sourceLabels, locale)}</small></div>)}</div><div className="candidate-history-projects"><strong>{t('プロジェクト経験')} {version.projectExperiences.length}{t('件')}</strong>{version.projectExperiences.map((project, index) => <div key={project.id}><span>{project.title}</span><small>{project.period ?? t('期間未設定')} · {project.role ?? t('役割未設定')} · {summarizeSourceLabels(project.sourceLabels, locale, { projectIndex: index + 1 })}</small></div>)}</div></article>)}</div>
             {historyStatus === 'ready' ? <section className="candidate-lifecycle-actions candidate-detail-management">
               <div className="candidate-delete-zone"><h3>{t('候補者データを削除')}</h3><p>{t('暗号化原本ファイル、解析結果、プロフィール履歴、PII対応表と関連タスクを削除します。アプリ外へ書き出したコピーは対象外です。')}</p>
-                {!deletionPreview ? <button className="candidate-delete-preview-button" disabled={deletionStatus === 'loading'} onClick={() => void loadDeletionPreview()} type="button">{deletionStatus === 'loading' ? t('影響を確認中…') : t('削除前の影響を確認')}</button> : <div className="candidate-deletion-preview"><strong>{deletionPreview.anonymousLabel}</strong><span>{t('ローカルファイル')}：{deletionPreview.localFileName}</span><ul><li>Profile {deletionPreview.counts.profileVersions}{t('バージョン')}</li><li>{t('監査記録')} {deletionPreview.counts.reviewAudits}{t('件')}</li><li>{t('関連タスク')} {deletionPreview.counts.taskRecords}{t('件')}</li><li>{t('マッチ結果・評価')} {deletionPreview.counts.matchRecords}{t('件')}</li><li>{t('暗号化ファイル')} {deletionPreview.counts.encryptedFiles}{t('件')}</li>{deletionPreview.counts.agentReferences ? <li>Agent履歴参照 {deletionPreview.counts.agentReferences.conversations}会話 / {deletionPreview.counts.agentReferences.messages}メッセージ</li> : null}</ul><p>{t('続行するには「削除」と入力してください。')}</p><input aria-label={t('削除確認')} onChange={(event) => setDeletionConfirmation(event.target.value)} value={deletionConfirmation} /><button disabled={deletionConfirmation !== (locale === 'zh-CN' ? '删除' : '削除') || deletionStatus === 'deleting'} onClick={() => void deleteCandidate()} type="button">{deletionStatus === 'deleting' ? t('削除中…') : t('完全に削除')}</button></div>}
+                {!deletionPreview ? <button className="candidate-delete-preview-button" disabled={deletionStatus === 'loading'} onClick={() => void loadDeletionPreview()} type="button">{deletionStatus === 'loading' ? t('影響を確認中…') : t('削除前の影響を確認')}</button> : <div className="candidate-deletion-preview"><strong>{deletionPreview.anonymousLabel}</strong><span>{t('ローカルファイル')}：{deletionPreview.localFileName}</span><ul><li>Profile {deletionPreview.counts.profileVersions}{t('バージョン')}</li><li>{t('監査記録')} {deletionPreview.counts.reviewAudits}{t('件')}</li><li>{t('関連タスク')} {deletionPreview.counts.taskRecords}{t('件')}</li><li>{t('マッチ結果・評価')} {deletionPreview.counts.matchRecords}{t('件')}</li><li>{t('暗号化ファイル')} {deletionPreview.counts.encryptedFiles}{t('件')}</li>{deletionPreview.counts.businessFollowUps ? <li>{t('対応記録')} {deletionPreview.counts.businessFollowUps}{t('件')}</li> : null}{deletionPreview.counts.agentReferences ? <li>Agent履歴参照 {deletionPreview.counts.agentReferences.conversations}会話 / {deletionPreview.counts.agentReferences.messages}メッセージ</li> : null}</ul><p>{t('続行するには「削除」と入力してください。')}</p><input aria-label={t('削除確認')} onChange={(event) => setDeletionConfirmation(event.target.value)} value={deletionConfirmation} /><button disabled={deletionConfirmation !== (locale === 'zh-CN' ? '删除' : '削除') || deletionStatus === 'deleting'} onClick={() => void deleteCandidate()} type="button">{deletionStatus === 'deleting' ? t('削除中…') : t('完全に削除')}</button></div>}
                 {deletionError ? <p className="candidate-action-error" role="alert">{deletionError}</p> : null}
               </div>
             </section> : null}

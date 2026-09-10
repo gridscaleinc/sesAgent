@@ -49,6 +49,11 @@ import { useAiConversationHistory } from './useAiConversationHistory'
 const CandidateNamesContext = createContext<ReadonlyMap<string, string>>(new Map())
 
 interface AgentWorkspaceProps {
+  businessMatchingBusy?: boolean
+  businessTitle?: string
+  chatRequest?: number
+  businessObject?: import('@shared').BusinessConversationObject
+
   candidateReviews?: ReadonlyArray<CandidateReviewSnapshot>
   composerObject?: { kind: 'case' | 'person'; label: string; onMatch?(): void; onPromote?(): void }
   latestContent?: ReactNode
@@ -94,7 +99,6 @@ interface AgentWorkspaceProps {
    * so the two can never disagree.
    */
   status?: AgentWorkspaceStatus
-  onOpenReviews?(): void
   onOpenSettings?(): void
   onOpenOperatorProfile?(): void
   operatorLabel?: string
@@ -120,7 +124,6 @@ interface AgentWorkspaceProps {
 export interface AgentWorkspaceStatus {
   activeCaseCount: number
   eligibleCandidateCount: number
-  pendingReviewCount: number
   runningJobCount: number
   backupReminder: 'not-needed' | 'due' | 'snoozed'
 }
@@ -532,26 +535,24 @@ function CandidateInterviewEvidenceView({ block, locale, zh, onOpenCandidate }: 
   </article>
 }
 
-function ResumeImportView({ block, zh, onOpenCandidate, onOpenOriginalDocument, onOpenReviews }: {
+function ResumeImportView({ block, zh, onOpenCandidate, onOpenOriginalDocument }: {
   block: Extract<AiConversationBlock, { type: 'resume-import' }>
   zh: boolean
   onOpenCandidate?(sourceDocumentId: string, view?: CandidateRouteView): void
   onOpenOriginalDocument?(sourceDocumentId: string): void
-  onOpenReviews?(): void
 }) {
   return <article className="agent-import-card">
-    <header><span className="agent-import-icon"><Icon name="file" size={16} /></span><div><strong>{zh ? `已导入 ${block.imported.length} 份简历` : `${block.imported.length}件の履歴書を取り込みました`}</strong><small>{zh ? '机器抽取结果仍需人工逐项确认' : '機械抽出結果は項目ごとの確認が必要です'}</small></div></header>
-    <div>{block.imported.map((item) => <section key={item.documentId}><span><strong>{item.label}</strong><small>{zh ? '本地加密文件' : '端末内暗号化ファイル'}</small></span><div>{onOpenCandidate ? <button onClick={() => onOpenCandidate(item.documentId, 'resume')} type="button">{zh ? '查看草稿' : '下書きを見る'}</button> : null}{onOpenOriginalDocument ? <button onClick={() => onOpenOriginalDocument(item.documentId)} type="button"><Icon name="file" size={12} />{zh ? '打开文件' : 'ファイルを開く'}</button> : null}</div></section>)}</div>
-    <AgentBlockActions>{onOpenReviews ? <button onClick={onOpenReviews} type="button"><Icon name="shield" size={13} />{zh ? '前往审核中心' : 'レビューセンターへ'}</button> : null}{block.failedCount > 0 ? <span className="agent-import-failed">{zh ? `${block.failedCount} 份导入失败` : `${block.failedCount}件の取込に失敗`}</span> : null}</AgentBlockActions>
+    <header><span className="agent-import-icon"><Icon name="file" size={16} /></span><div><strong>{zh ? `已导入 ${block.imported.length} 份简历` : `${block.imported.length}件の履歴書を取り込みました`}</strong></div></header>
+    <div>{block.imported.map((item) => <section key={item.documentId}><span><strong>{item.label}</strong><small>{zh ? '本地加密文件' : '端末内暗号化ファイル'}</small></span><div>{onOpenCandidate ? <button onClick={() => onOpenCandidate(item.documentId, 'resume')} type="button">{zh ? '查看资料' : '資料を見る'}</button> : null}{onOpenOriginalDocument ? <button onClick={() => onOpenOriginalDocument(item.documentId)} type="button"><Icon name="file" size={12} />{zh ? '打开文件' : 'ファイルを開く'}</button> : null}</div></section>)}</div>
+    {block.failedCount > 0 ? <AgentBlockActions><span className="agent-import-failed">{zh ? `${block.failedCount} 份导入失败` : `${block.failedCount}件の取込に失敗`}</span></AgentBlockActions> : null}
   </article>
 }
 
-function CandidateDraftFactsView({ facts, zh, onOpenCandidate, onOpenOriginalDocument, onOpenReviews }: {
+function CandidateDraftFactsView({ facts, zh, onOpenCandidate, onOpenOriginalDocument }: {
   facts: AgentCandidateDraftFacts
   zh: boolean
   onOpenCandidate?(sourceDocumentId: string, view?: CandidateRouteView): void
   onOpenOriginalDocument?(sourceDocumentId: string): void
-  onOpenReviews?(): void
 }) {
   const visibleFields = facts.fields.filter((field) => field.status !== 'missing')
   const visibleProjects = facts.projects.slice(0, 5)
@@ -563,10 +564,6 @@ function CandidateDraftFactsView({ facts, zh, onOpenCandidate, onOpenOriginalDoc
         <small>{zh ? `${visibleFields.length} 个已识别字段 · ${facts.projects.length} 段项目经历` : `識別済み${visibleFields.length}項目 · プロジェクト${facts.projects.length}件`}</small>
       </div>
     </header>
-    <p className="agent-draft-warning">
-      <Icon name="alert" size={13} />
-      <span>{zh ? '以下为机器抽取的未确认草稿，已作为本会话上下文；任何字段经人工确认后才会成为候选人档案。' : '以下は機械抽出の未確認下書きで、この会話のコンテキストとして保存されます。担当者が確認するまで候補者プロフィールにはなりません。'}</span>
-    </p>
     <dl>{visibleFields.map((field) => <div key={field.label}>
       <dt>{field.label}</dt>
       <dd>{field.value ?? '—'}<small>{field.sources.join(' · ')}</small></dd>
@@ -579,9 +576,8 @@ function CandidateDraftFactsView({ facts, zh, onOpenCandidate, onOpenOriginalDoc
       <small>{project.sources.join(' · ')}</small>
     </li>)}</ol> : null}
     <AgentBlockActions>
-      {onOpenCandidate ? <button onClick={() => onOpenCandidate(facts.documentId, 'resume')} type="button"><Icon name="users" size={13} />{zh ? '打开候选人草稿' : '候補者下書きを開く'}</button> : null}
+      {onOpenCandidate ? <button onClick={() => onOpenCandidate(facts.documentId, 'resume')} type="button"><Icon name="users" size={13} />{zh ? '查看资料' : '資料を見る'}</button> : null}
       {onOpenOriginalDocument ? <button onClick={() => onOpenOriginalDocument(facts.documentId)} type="button"><Icon name="file" size={13} />{zh ? '打开原文件' : '元ファイルを開く'}</button> : null}
-      {onOpenReviews && facts.reviewStatus === 'awaiting-review' ? <button onClick={onOpenReviews} type="button"><Icon name="shield" size={13} />{zh ? '去审核' : 'レビューする'}</button> : null}
     </AgentBlockActions>
   </article>
 }
@@ -681,8 +677,8 @@ function JobCaseDraftCardsView({ block, zh, reviews, onOpenSystemAccess, onRunMa
         {pendingDeletion ? <div className="agent-draft-delete" role="group" aria-label={zh ? '案件删除确认' : '案件削除確認'}>
           {pendingDeletion.preview ? <>
             <p>{zh
-              ? `将永久删除案件「${pendingDeletion.preview.title}」：案件版本 ${pendingDeletion.preview.counts.caseVersions}、审核记录 ${pendingDeletion.preview.counts.reviewAudits}、关联任务 ${pendingDeletion.preview.counts.taskRecords}、PII 映射 ${pendingDeletion.preview.counts.piiMappings}、会话引用 ${pendingDeletion.preview.counts.agentReferences.messages}。此操作不可恢复。`
-              : `案件「${pendingDeletion.preview.title}」を完全削除：案件版${pendingDeletion.preview.counts.caseVersions}件・審査記録${pendingDeletion.preview.counts.reviewAudits}件・関連タスク${pendingDeletion.preview.counts.taskRecords}件・PII対応表${pendingDeletion.preview.counts.piiMappings}件・会話参照${pendingDeletion.preview.counts.agentReferences.messages}件。元に戻せません。`}</p>
+              ? `将永久删除案件「${pendingDeletion.preview.title}」：案件版本 ${pendingDeletion.preview.counts.caseVersions}、审核记录 ${pendingDeletion.preview.counts.reviewAudits}、关联任务 ${pendingDeletion.preview.counts.taskRecords}、PII 映射 ${pendingDeletion.preview.counts.piiMappings}、会话引用 ${pendingDeletion.preview.counts.agentReferences.messages}、跟进记录 ${pendingDeletion.preview.counts.businessFollowUps ?? 0}。此操作不可恢复。`
+              : `案件「${pendingDeletion.preview.title}」を完全削除：案件版${pendingDeletion.preview.counts.caseVersions}件・審査記録${pendingDeletion.preview.counts.reviewAudits}件・関連タスク${pendingDeletion.preview.counts.taskRecords}件・PII対応表${pendingDeletion.preview.counts.piiMappings}件・会話参照${pendingDeletion.preview.counts.agentReferences.messages}件・対応記録${pendingDeletion.preview.counts.businessFollowUps ?? 0}件。元に戻せません。`}</p>
             <div className="agent-draft-delete-controls">
               <input aria-label={zh ? '案件删除确认输入' : '案件削除確認入力'} disabled={pendingDeletion.busy} onChange={(event) => setDeletion({ ...pendingDeletion, confirmation: event.target.value })} placeholder={zh ? `输入「${confirmationWord}」以继续` : `続行するには「${confirmationWord}」と入力`} value={pendingDeletion.confirmation} />
               <button className="is-danger" disabled={pendingDeletion.busy || pendingDeletion.confirmation !== confirmationWord} onClick={() => void confirmDeletion()} type="button">{pendingDeletion.busy ? (zh ? '删除中…' : '削除中…') : (zh ? '确认删除' : '完全に削除')}</button>
@@ -879,13 +875,13 @@ function systemAccessContent(block: AgentSystemAccessBlock, zh: boolean): {
     return {
       icon: resume ? 'file' : records ? 'clock' : 'users',
       title: resume
-        ? (zh ? '候选人简历草稿' : '候補者履歴書下書き')
+        ? (zh ? '人员简历' : '候補者の履歴書')
         : records ? (zh ? '候选人面试记录' : '候補者面談記録') : (zh ? '候选人档案' : '候補者プロフィール'),
       description: resume
-        ? (zh ? '进入该候选人的简历抽取与人工确认页面。' : '履歴書の抽出内容と確認画面を開きます。')
+        ? (zh ? '查看简历资料和项目经历，需要时可修改。' : '履歴書とプロジェクト経験を表示し、必要に応じて修正できます。')
         : records ? (zh ? '查看该候选人的全部面试轮次和处理状态。' : 'この候補者の面談ラウンドと処理状況を確認します。') : (zh ? '查看该候选人的结构化档案与业务状态。' : '構造化プロフィールと業務ステータスを確認します。'),
       action: resume
-        ? (zh ? '打开简历草稿' : '履歴書下書きを開く')
+        ? (zh ? '查看资料' : '資料を見る')
         : records ? (zh ? '打开面试记录' : '面談記録を開く') : (zh ? '打开候选人档案' : '候補者プロフィールを開く')
     }
   }
@@ -904,7 +900,7 @@ function systemAccessContent(block: AgentSystemAccessBlock, zh: boolean): {
   if (block.destination === 'review-center') return {
     icon: 'shield',
     title: zh ? '审核中心' : 'レビューセンター',
-    description: zh ? '逐项确认机器抽取内容，再形成正式候选人档案。' : '機械抽出項目を確認して正式な候補者プロフィールにします。',
+    description: zh ? '查看需要处理的操作和记录。' : '対応が必要な操作と記録を確認します。',
     action: zh ? '打开审核中心' : 'レビューセンターを開く'
   }
   if (block.destination === 'broadcast') return {
@@ -971,6 +967,8 @@ function SystemAccessView({ block, zh, onOpen, onOpenCandidate }: {
   onOpen?(access: AgentSystemAccessBlock): void
   onOpenCandidate?(sourceDocumentId: string, view?: CandidateRouteView): void
 }) {
+  // Historical import messages linked a global review queue, unrelated to this conversation.
+  if (block.destination === 'review-center' && !block.reviewIds?.length) return null
   if (block.destination === 'interview-schedule' && block.receipt) {
     return <InterviewReceiptView block={block} onOpen={onOpen} onOpenCandidate={onOpenCandidate} zh={zh} />
   }
@@ -994,7 +992,7 @@ function SystemAccessView({ block, zh, onOpen, onOpenCandidate }: {
   </article>
 }
 
-function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMatching, onOpenOriginalDocument, onOpenReviews, onOpenSystemAccess, onRunMatching, matchingBusy, jobCaseReviews, onPreviewJobCaseDeletion, onDeleteJobCase, currentCaseId }: {
+function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMatching, onOpenOriginalDocument, onOpenSystemAccess, onRunMatching, matchingBusy, jobCaseReviews, onPreviewJobCaseDeletion, onDeleteJobCase, currentCaseId }: {
   block: AiConversationBlock
   locale: string
   zh: boolean
@@ -1002,7 +1000,6 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
   onOpenCandidate?(sourceDocumentId: string, view?: CandidateRouteView, interviewId?: string | null, interviewKind?: 'recruiting' | 'client'): void
   onOpenMatching(jobCaseId: string): void
   onOpenOriginalDocument?(sourceDocumentId: string): void
-  onOpenReviews?(): void
   onOpenSystemAccess?(access: AgentSystemAccessBlock): void
   matchingBusy?: boolean
   onRunMatching?(card: AgentJobCaseDraftCard): void
@@ -1021,8 +1018,8 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
     const facts = block.facts
     return <div className="agent-explanation"><div className="agent-explanation-grid"><span><strong>Match Run</strong>{facts.runId.slice(0, 12)}</span><span><strong>Result Hash</strong>{facts.resultHash.slice(0, 12)}</span><span><strong>{zh ? '状态' : '状態'}</strong>{statusLabel(facts.validity, zh)}</span><span><strong>{zh ? '算法' : 'アルゴリズム'}</strong>{facts.algorithmVersion}</span></div><p>{zh ? '以上解释来自已保存的 Result Snapshot，没有重新运行本地匹配。' : '保存済みの Result Snapshot を読み取りました。マッチングは再実行していません。'}</p>{currentCaseId ? <AgentBlockActions><button disabled={facts.validity === 'deleted'} onClick={() => onOpenMatching(currentCaseId)} type="button">{zh ? '打开完整匹配' : '詳細マッチングを開く'}<Icon name="chevron-right" size={12} /></button>{facts.candidate?.sourceDocumentId && onOpenCandidate ? <button disabled={facts.validity === 'deleted'} onClick={() => onOpenCandidate(facts.candidate!.sourceDocumentId!, 'overview')} type="button">{zh ? '打开候选人' : '候補者を開く'}</button> : null}</AgentBlockActions> : null}</div>
   }
-  if (block.type === 'resume-import') return <ResumeImportView block={block} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} onOpenReviews={onOpenReviews} zh={zh} />
-  if (block.type === 'candidate-draft-facts') return <CandidateDraftFactsView facts={block.facts} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} onOpenReviews={onOpenReviews} zh={zh} />
+  if (block.type === 'resume-import') return <ResumeImportView block={block} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} zh={zh} />
+  if (block.type === 'candidate-draft-facts') return <CandidateDraftFactsView facts={block.facts} onOpenCandidate={onOpenCandidate} onOpenOriginalDocument={onOpenOriginalDocument} zh={zh} />
   if (block.type === 'job-case-draft-cards') return <JobCaseDraftCardsView matchingBusy={matchingBusy} block={block} onDeleteJobCase={onDeleteJobCase} onOpenSystemAccess={onOpenSystemAccess} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onRunMatching={onRunMatching} reviews={jobCaseReviews} zh={zh} />
   if (block.type === 'job-case-broadcast-cards') return <BroadcastCardsView block={block} onOpenSystemAccess={onOpenSystemAccess} zh={zh} />
   if (block.type === 'system-access') return <SystemAccessView block={block} onOpen={onOpenSystemAccess} onOpenCandidate={onOpenCandidate} zh={zh} />
@@ -1030,10 +1027,10 @@ function BlockView({ block, locale, zh, onSelectCase, onOpenCandidate, onOpenMat
 }
 
 interface AgentEmptyStateProps {
+  selectedPerson?: boolean
   cloudConnected: boolean
   /** 今日新着案件, above everything else: it is what the operator opened the app for. */
   lead?: ReactNode
-  pendingReviewCount: number
   selectedCase: TypedAiConversationReference | null
   suggestions: string[]
   zh: boolean
@@ -1042,14 +1039,13 @@ interface AgentEmptyStateProps {
   atsImportNotice?: string | null
   onOpenBroadcast?(): void
   onOpenCaseImport?(): void
-  onOpenReviews?(): void
   onSuggestion(suggestion: string): void
 }
 
 function AgentEmptyState({
+  selectedPerson,
   cloudConnected,
   lead = null,
-  pendingReviewCount,
   selectedCase,
   suggestions,
   zh,
@@ -1058,15 +1054,14 @@ function AgentEmptyState({
   atsImportNotice,
   onOpenBroadcast,
   onOpenCaseImport,
-  onOpenReviews,
   onSuggestion
 }: AgentEmptyStateProps) {
-  const hasQuickActions = Boolean(onImportResume || onImportAtsCsv || onOpenBroadcast || onOpenCaseImport || onOpenReviews)
+  const hasQuickActions = Boolean(onImportResume || onImportAtsCsv || onOpenBroadcast || onOpenCaseImport)
   const title = !cloudConnected
     ? (zh ? '本地工作仍可继续' : 'ローカル業務は続けられます')
     : selectedCase
       ? (zh ? '开始处理当前案件' : '現在の案件を進める')
-      : (zh ? '今天想推进什么工作？' : '今日は何を進めますか？')
+      : selectedPerson ? (zh ? '开始处理当前人员' : '現在の人材を進める') : (zh ? '今天想推进什么工作？' : '今日は何を進めますか？')
   const description = !cloudConnected
     ? (zh
         ? '连接受管账号后可以使用自然语言；简历导入、案件导入、粘贴案件/人员文本的本地导入和人工审核仍可在本机安全完成。'
@@ -1075,7 +1070,7 @@ function AgentEmptyState({
       ? (zh
           ? '已绑定当前案件。可以匹配候选人、查看案件条件，或继续追问保存过的匹配依据。'
           : '現在の案件を選択済みです。候補者のマッチング、条件確認、保存済み根拠への追加質問ができます。')
-      : (zh
+      : selectedPerson ? (zh ? '可以为此人寻找案件、梳理项目经验，或补充介绍内容。对话会保存在此人的资料下。' : 'この人材の案件探し、経験の整理、紹介文の相談ができます。会話はこの人材に紐づけて保存されます。') : (zh
           ? '从案件、人才或面谈开始。AI 负责理解请求，事实、执行和业务状态仍由受控本地工具与人工审核决定。'
           : '案件・人材・面談から始められます。AI は依頼を理解し、事実・実行・業務状態は制御済みローカル Tool と人のレビューが決定します。')
 
@@ -1112,20 +1107,16 @@ function AgentEmptyState({
         label={zh ? '案件配信' : '案件配信'}
         onClick={onOpenBroadcast}
       /> : null}
-      {onOpenReviews ? <AgentQuickAction
-        description={pendingReviewCount > 0
-          ? (zh ? `${pendingReviewCount} 项等待人工确认` : `${pendingReviewCount}件が人の確認待ち`)
-          : (zh ? '查看已完成和待确认项目' : '完了・確認待ちの項目を見る')}
-        icon="shield"
-        label={zh ? '打开审核中心' : 'レビューセンターを開く'}
-        onClick={onOpenReviews}
-      /> : null}
     </div> : null}
     {atsImportNotice ? <p className="agent-empty-notice" role="status">{atsImportNotice}</p> : null}
   </div>
 }
 
 export function AgentWorkspace({
+  businessTitle,
+  businessMatchingBusy = false,
+  chatRequest,
+  businessObject,
   composerObject,
   latestContent,
   homeRequestToken = 0,
@@ -1155,7 +1146,6 @@ export function AgentWorkspace({
   onOpenCases,
   onOpenSystemAccess,
   status,
-  onOpenReviews,
   onOpenSettings,
   onOpenOperatorProfile,
   operatorLabel = 'SES',
@@ -1168,17 +1158,38 @@ export function AgentWorkspace({
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
   const [surface, setSurface] = useState<'latest' | 'conversation'>(latestContent ? 'latest' : 'conversation')
+  const [historyOpen, setHistoryOpen] = useState(false)
+  useEffect(() => { if (chatRequest) { setSurface('conversation'); setHistoryOpen(false) } }, [chatRequest])
+  useEffect(() => {
+    if (!businessTitle || surface !== 'conversation') return
+    const trigger = document.activeElement as HTMLElement | null
+    const frame = requestAnimationFrame(() => composerInputRef.current?.focus({ preventScroll: true }))
+    return () => { cancelAnimationFrame(frame); if (trigger?.isConnected) trigger.focus({ preventScroll: true }) }
+  }, [Boolean(businessTitle), surface])
   const showContextPanel = contextPanelOpen ?? Boolean(contextPanel)
-  const contextualComposer = showContextPanel && surface === 'conversation' ? composerObject : undefined
+  const contextVisible = showContextPanel && (!businessTitle || surface !== 'conversation')
+  const contextualComposer = !businessTitle && showContextPanel && surface === 'conversation' ? composerObject : undefined
   const compactComposer = surface === 'latest'
-  useEffect(() => { if (latestContent) setSurface('latest') }, [homeRequestToken])
+  const lastHomeRequestRef = useRef(homeRequestToken)
+  useEffect(() => {
+    if (lastHomeRequestRef.current === homeRequestToken) return
+    lastHomeRequestRef.current = homeRequestToken
+    if (latestContent) { setSurface('latest'); setHistoryOpen(false) }
+  }, [homeRequestToken])
+  const scopedReview = businessObject?.kind === 'case' ? jobCaseReviews.find((item) => item.reviewId === businessObject.id) : null
+  const scopedCase: TypedAiConversationReference | null = scopedReview?.jobCase ? {
+    kind: 'job-case', objectId: scopedReview.jobCase.id, objectVersion: scopedReview.jobCase.version,
+    resultHash: null, ordinal: null, label: scopedReview.fields.find((item) => item.key === 'title')?.value ?? scopedReview.redactedSubject,
+    target: `job-case:${scopedReview.jobCase.id}`
+  } : null
   const context = useMemo(() => ({
     assistant: 'sales-agent' as const,
+    ...(businessObject ? { businessObject } : {}),
     candidateDocumentId: null,
     interviewId: null,
     interviewKind: null,
     roundNumber: null
-  }), [])
+  }), [businessObject?.kind, businessObject?.id])
   const history = useAiConversationHistory(context, reloadToken)
   const activeConversation = history.conversations.find((item) => item.id === history.activeConversationId) ?? null
   const historyView = useMemo(
@@ -1193,6 +1204,16 @@ export function AgentWorkspace({
   // refresh. Falling back based on a temporarily missing snapshot minted a new
   // draft id and could turn an ordinary follow-up into a new conversation.
   const currentConversationId = history.activeConversationId ?? draftConversationId
+  const previousContext = useRef(context)
+  useEffect(() => {
+    if (previousContext.current === context) return
+    previousContext.current = context
+    setDraftConversationId(newId())
+    setCaseSelection(null)
+    setCandidateSelection(null)
+    setLocalComposerDraft('')
+    onComposerDraftChange?.('')
+  }, [context])
   const [localComposerDraft, setLocalComposerDraft] = useState('')
   const draft = composerDraft ?? localComposerDraft
   const updateDraft = (value: string) => {
@@ -1223,7 +1244,7 @@ export function AgentWorkspace({
   }, [candidateReviews, zh])
   const [candidateSelection, setCandidateSelection] = useState<{ conversationId: string; documentId: string | null } | null>(null)
   const selectedCandidateDocumentId = candidateSelection?.conversationId === currentConversationId
-    ? candidateSelection.documentId : activeConversation?.salesAgentState?.selectedCandidateDocumentId ?? null
+    ? candidateSelection.documentId : activeConversation?.salesAgentState?.selectedCandidateDocumentId ?? (businessObject?.kind === 'person' ? businessObject.id : null)
   const selectedCandidateLabel = selectedCandidateDocumentId ? candidateNames.get(selectedCandidateDocumentId) ?? (zh ? '所选人员' : '選択中の人材') : null
   const clearSelectedCandidate = () => {
     setCandidateSelection({ conversationId: currentConversationId, documentId: null })
@@ -1234,7 +1255,7 @@ export function AgentWorkspace({
     if (focusRequest?.candidateDocumentId) setCandidateSelection({ conversationId: currentConversationId, documentId: focusRequest.candidateDocumentId })
     if (focusRequest) setCaseSelection({ conversationId: currentConversationId, reference: focusRequest.caseReference })
   }, [focusRequest])
-  const persistedSelectedCase = typedReference(activeConversation?.salesAgentState?.selectedJobCaseRef)
+  const persistedSelectedCase = typedReference(activeConversation?.salesAgentState?.selectedJobCaseRef) ?? (businessObject ? scopedCase : null)
   const selectedCase = caseSelection?.conversationId === currentConversationId
     ? caseSelection.reference
     : persistedSelectedCase
@@ -1248,14 +1269,13 @@ export function AgentWorkspace({
       const result = await onImportAtsCsv()
       if (result.cancelled) return
       setAtsImportNotice(zh
-        ? `${result.fileName ?? 'CSV'}：已导入 ${result.importedCount} 名候选人草稿（重复 ${result.duplicateCount}、跳过 ${result.skippedCount}、失败 ${result.failedCount}），请到审核中心逐项确认。`
-        : `${result.fileName ?? 'CSV'}：候補者下書きを${result.importedCount}件作成しました（重複${result.duplicateCount}件・スキップ${result.skippedCount}件・失敗${result.failedCount}件）。レビューセンターで確認してください。`)
+        ? `${result.fileName ?? 'CSV'}：已导入 ${result.importedCount} 名人员（重复 ${result.duplicateCount}、跳过 ${result.skippedCount}、失败 ${result.failedCount}）。`
+        : `${result.fileName ?? 'CSV'}：候補者情報を${result.importedCount}件取り込みました（重複${result.duplicateCount}件・スキップ${result.skippedCount}件・失敗${result.failedCount}件）。`)
       await onLocalDataChanged?.()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : (zh ? 'ATS CSV 导入失败。' : 'ATS CSV を取り込めませんでした。'))
     }
   }
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [contextPanelWidth, setContextPanelWidth] = useState(() => {
     try {
       const stored = Number(globalThis.localStorage?.getItem('ses-agent-context-panel-width-v1'))
@@ -1310,15 +1330,15 @@ export function AgentWorkspace({
   }, [])
 
   useEffect(() => {
-    if (!showContextPanel || !onCloseContextPanel) return undefined
+    if (!contextVisible || !onCloseContextPanel) return undefined
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || event.defaultPrevented) return
       event.preventDefault()
       onCloseContextPanel()
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [showContextPanel, onCloseContextPanel])
+  }, [contextVisible, onCloseContextPanel])
 
   const clampContextPanelWidth = (value: number): number => {
     const available = typeof window === 'undefined' ? 720 : Math.max(380, window.innerWidth - 690)
@@ -1420,6 +1440,7 @@ export function AgentWorkspace({
     setSystemImporting(true)
     setError(null)
     try {
+      if (businessObject && !activeConversation) await history.persistMessages([], null, { conversationId: targetConversationId })
       const conversation = await onImportResume(targetConversationId)
       if (!conversation) return
       // Bind completion to the conversation that opened the native picker. A
@@ -1497,6 +1518,7 @@ export function AgentWorkspace({
     const importedFiles: typeof filesToImport = []
     let failed = 0
     try {
+      if (businessObject && !activeConversation) await history.persistMessages([], null, { conversationId })
       for (const file of filesToImport) {
         try {
           const execution = await window.sesAgent.analyzeResumeFile({
@@ -1572,6 +1594,7 @@ export function AgentWorkspace({
     // Cosmetic only: multi-line label:value text is probably headed for the
     // local intake gate, so start on the local phase instead of flashing an
     // "AI is choosing a Tool" label. Main's own events correct this either way.
+    const originatingConversationId = currentConversationIdRef.current
     const looksLikeBusinessText = message.includes('\n') &&
       (message.match(/^[^\n:：]{1,20}[:：]/gmu)?.length ?? 0) >= 2
     setStreamState({
@@ -1584,10 +1607,14 @@ export function AgentWorkspace({
     })
     setError(null)
     try {
+      const expectedRevision = businessObject && options.expectedConversationRevision === null && !options.branchFrom
+        ? (await history.persistMessages([], null, { conversationId })).revision
+        : options.expectedConversationRevision
       const result = await window.sesAgent.executeAgentTurn({
         conversationId,
+        ...(businessObject ? { businessObject } : {}),
         message,
-        expectedConversationRevision: options.expectedConversationRevision,
+        expectedConversationRevision: expectedRevision,
         requestId: currentRequestId,
         modelKey: lockedModelKey,
         selectedJobCaseRef: options.selectedJobCaseRef,
@@ -1601,6 +1628,7 @@ export function AgentWorkspace({
       if (result.toolName === 'resume.analyze.local') {
         setAttachments([])
       }
+      if (currentConversationIdRef.current !== conversationId && currentConversationIdRef.current !== originatingConversationId) return
       history.acceptConversation(result.conversation)
       setLastTurnTimings(result.timings ?? null)
       setDraftConversationId(result.conversation.id)
@@ -1754,9 +1782,9 @@ export function AgentWorkspace({
   // can still search cases or enumerate candidates that can enter scheduling.
   const emptyStateSuggestions = selectedCase
     ? (zh
-        ? ['给当前案件匹配候选人', '这个案件的条件是什么？', '最近有什么案件？']
-        : ['現在の案件に合う候補者を探して', 'この案件の条件は？', '最近の案件は？'])
-    : (zh
+        ? ['给当前案件匹配候选人', '这个案件的条件是什么？']
+        : ['現在の案件に合う候補者を探して', 'この案件の条件は？'])
+    : businessObject?.kind === 'person' ? (zh ? ['为此人寻找合适的案件', '总结此人的技能和项目经历'] : ['この人材に合う案件を探して', 'この人材のスキルと経験をまとめて']) : (zh
         ? ['最近有什么案件？', '有哪些候选人可以安排面谈？', '有哪些进行中的案件？']
         : ['最近の案件は？', '面談を設定できる候補者は？', '進行中の案件は？'])
   // Initial history loading is read-only and sequence-guarded by the history
@@ -1785,17 +1813,7 @@ export function AgentWorkspace({
     await history.deleteConversations(branchIds)
   }
 
-  const workspaceClassName = [
-    'agent-workspace',
-    historyOpen ? 'is-history-open' : '',
-    showContextPanel ? 'has-context-panel' : ''
-  ].filter(Boolean).join(' ')
-  const workspaceStyle = showContextPanel
-    ? { '--agent-context-panel-width': `${contextPanelWidth}px` } as CSSProperties
-    : undefined
-
-  return <CandidateNamesContext.Provider value={candidateNames}><main aria-label="SES Agent" className={workspaceClassName} style={workspaceStyle}>
-    <aside className={historyOpen ? 'agent-workspace-history is-open' : 'agent-workspace-history'}>
+  const historyPanel = <>
       <AiConversationHistoryPanel
         activeConversationId={history.activeConversationId}
         busy={workspaceBusy}
@@ -1809,8 +1827,11 @@ export function AgentWorkspace({
           const nextConversationId = newId()
           currentConversationIdRef.current = nextConversationId
           history.newConversation()
+          updateDraft('')
           setDraftConversationId(nextConversationId)
-          setCaseSelection({ conversationId: nextConversationId, reference: null })
+          setCaseSelection({ conversationId: nextConversationId, reference: scopedCase })
+          setCandidateSelection({ conversationId: nextConversationId, documentId: businessObject?.kind === 'person' ? businessObject.id : null })
+          void history.persistMessages([], null, { conversationId: nextConversationId, salesAgentState: { selectedJobCaseRef: scopedCase, selectedCandidateDocumentId: businessObject?.kind === 'person' ? businessObject.id : null, lastMatchRunId: null, lastSearchMessageId: null } }).catch((cause) => setError(String(cause)))
           setAttachments([])
           setImportSummary(null)
           setEditingMessage(null)
@@ -1822,6 +1843,8 @@ export function AgentWorkspace({
           onCloseContextPanel?.()
           currentConversationIdRef.current = id
           history.selectConversation(id)
+          updateDraft('')
+          setCandidateSelection(null)
           setCaseSelection(null)
           setDraftConversationId(id)
           setAttachments([])
@@ -1835,37 +1858,35 @@ export function AgentWorkspace({
         {onOpenSettings ? <button aria-label={zh ? '打开设置' : '設定を開く'} onClick={onOpenSettings} type="button"><Icon name="settings" size={19} /></button> : <span />}
         {onOpenOperatorProfile ? <button aria-label={zh ? '打开操作员档案' : '担当者プロフィールを開く'} className="agent-operator-button" onClick={onOpenOperatorProfile} title={operatorLabel} type="button">{operatorLabel.trim().slice(0, 1).toLocaleUpperCase(locale) || 'S'}</button> : null}
       </footer>
-    </aside>
-    {historyOpen ? <button aria-label={zh ? '关闭任务列表' : 'タスク一覧を閉じる'} className="agent-history-backdrop" onClick={() => setHistoryOpen(false)} type="button" /> : null}
-    <section
-      className={dragActive ? 'agent-workspace-main is-drag-active' : 'agent-workspace-main'}
-      onDragOver={(event) => { event.preventDefault(); if (cloudConnected && !workspaceBusy) setDragActive(true) }}
-      onDragLeave={(event) => { if (event.currentTarget === event.target) setDragActive(false) }}
-      onDrop={(event) => {
-        event.preventDefault()
-        setDragActive(false)
-        if (!cloudConnected || workspaceBusy) return
-        void attachFiles([...event.dataTransfer.files])
-      }}
-    >
-      <header className="agent-workspace-header">
-        <button aria-label={zh ? '打开任务列表' : 'タスク一覧を開く'} className="agent-history-toggle" onClick={() => setHistoryOpen(true)} type="button"><Icon name="tasks" size={16} /></button>
-        <div className="agent-thread-title">
-          <h1>SES Agent</h1>
-          <strong>{surface === 'latest' ? (zh ? '最新动态' : '最新情報') : selectedCase ? (selectedCandidateDocumentId ? (zh ? '人员与案件评估' : '人材と案件の評価') : (zh ? '案件助手' : '案件アシスタント')) : threadTitle}</strong>
-        </div>
-        <span className="agent-privacy-badge" title={zh ? 'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态' : 'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'}><Icon name="shield" size={13} />{zh ? '仅发送脱敏内容' : '脱敏済みのみ送信'}</span>
-        {!latestContent && !showContextPanel && onOpenNewCaseBoard ? <button className="agent-open-board" onClick={onOpenNewCaseBoard} type="button"><Icon name="briefcase" size={13} /><span>{zh ? '今日新案件' : '今日の新着案件'}</span>{newCaseUnseenCount > 0 ? <b>{newCaseUnseenCount}</b> : null}</button> : null}
-      </header>
-      {latestContent ? <nav className="agent-surface-tabs" aria-label={zh ? 'Agent 工作区' : 'Agentワークスペース'}>
-        <button aria-pressed={surface === 'latest'} onClick={() => setSurface('latest')} type="button"><Icon name="clock" size={14} />{zh ? '最新动态' : '最新情報'}</button>
-        <button aria-pressed={surface === 'conversation'} onClick={() => setSurface('conversation')} type="button"><Icon name="sparkles" size={14} />{zh ? '当前对话' : '現在の会話'}</button>
-        {onOpenBatch ? <button onClick={() => onOpenBatch()} type="button"><Icon name="upload" size={14} />{zh ? '批量整理' : '一括整理'}</button> : null}
-      </nav> : null}
+    </>
+  const conversationSurface = (
+      <div
+        className={businessTitle ? 'hr-agent-drawer' : 'agent-conversation-surface'}
+        hidden={Boolean(businessTitle) && surface !== 'conversation'}
+        role={businessTitle ? 'complementary' : undefined}
+        aria-label={businessTitle ? 'SES Agent' : undefined}
+        onKeyDown={(event) => {
+          if (!businessTitle || event.key !== 'Escape' || event.defaultPrevented) return
+          event.preventDefault()
+          if (historyOpen) setHistoryOpen(false)
+          else setSurface('latest')
+        }}
+      >
+      {businessTitle ? <header className="hr-agent-heading">
+        <div><h2>SES Agent</h2>{businessObject ? <small>{scopedCase?.label ?? selectedCandidateLabel ?? (zh ? '当前资料的会话' : 'この情報の会話')}</small> : null}</div>
+        <button aria-expanded={historyOpen} type="button" onClick={() => setHistoryOpen(!historyOpen)}>
+          {historyOpen ? (zh ? '返回对话' : '会話に戻る') : (zh ? '会话管理' : '会話管理')}
+        </button>
+        <button aria-label={zh ? '返回业务工作台' : '業務ワークスペースに戻る'} title={zh ? '关闭 Agent' : 'Agentを閉じる'} type="button" onClick={() => { setHistoryOpen(false); setSurface('latest') }}>
+          <span aria-hidden="true">×</span>
+        </button>
+      </header> : null}
+      {businessTitle ? <div className="hr-agent-history" hidden={!historyOpen}>{historyPanel}</div> : null}
+      <div className={businessTitle ? 'hr-agent-conversation' : 'agent-conversation-surface'} hidden={Boolean(businessTitle) && historyOpen}>
       {hasBusinessContext && surface === 'conversation' ? <nav aria-label={zh ? '当前任务上下文' : '現在のタスクコンテキスト'} className="agent-context-bar">
         <div className="agent-context-entities">
-          {selectedCase ? <span><Icon name="briefcase" size={16} /><small>{zh ? '案件' : '案件'}</small><strong>{selectedCase.label}{selectedCase.objectVersion ? ` v${selectedCase.objectVersion}` : ''}</strong><button aria-label={zh ? '清除当前案件' : '現在の案件を解除'} disabled={history.saving} onClick={clearSelectedCase} type="button">×</button></span> : null}
-          {selectedCandidateDocumentId ? <span><Icon name="users" size={16} /><small>{zh ? '人员' : '人材'}</small><strong>{selectedCandidateLabel}</strong><button aria-label={zh ? '清除当前人员' : '現在の人材を解除'} disabled={history.saving} onClick={clearSelectedCandidate} type="button">×</button></span> : <small>{zh ? '匹配范围：全部可匹配人员' : '対象：マッチング可能な全人材'}</small>}
+          {selectedCase ? <span><Icon name="briefcase" size={16} /><small>{zh ? '案件' : '案件'}</small><strong>{selectedCase.label}{selectedCase.objectVersion ? ` v${selectedCase.objectVersion}` : ''}</strong>{businessObject?.kind !== 'case' ? <button aria-label={zh ? '清除当前案件' : '現在の案件を解除'} disabled={history.saving} onClick={clearSelectedCase} type="button">×</button> : null}</span> : null}
+          {selectedCandidateDocumentId ? <span><Icon name="users" size={16} /><small>{zh ? '人员' : '人材'}</small><strong>{selectedCandidateLabel}</strong>{businessObject?.kind !== 'person' ? <button aria-label={zh ? '清除当前人员' : '現在の人材を解除'} disabled={history.saving} onClick={clearSelectedCandidate} type="button">×</button> : null}</span> : <small>{zh ? '从全部人员中查找' : '全要員から検索'}</small>}
         </div>
         <div className="agent-context-links">
           {selectedCase && onOpenCases ? <button onClick={onOpenCases} type="button">{zh ? '打开案件' : '案件を開く'}</button> : null}
@@ -1873,18 +1894,16 @@ export function AgentWorkspace({
           {!workspaceContext.candidateDocumentId && workspaceContext.latestAccess && onOpenSystemAccess ? <button onClick={() => onOpenSystemAccess(workspaceContext.latestAccess!)} type="button">{zh ? '打开结果' : '結果を開く'}</button> : null}
         </div>
       </nav> : null}
-      {latestContent ? <div className="agent-latest-scroll" hidden={surface !== 'latest'}>{latestContent}</div> : null}
       <div className="agent-message-scroll" hidden={surface !== 'conversation'} aria-live="polite" ref={messageScrollRef}>
         {messages.length === 0 ? <AgentEmptyState
           atsImportNotice={atsImportNotice}
           cloudConnected={cloudConnected}
-          onImportAtsCsv={onImportAtsCsv ? () => void importAtsCsv() : undefined}
-          onImportResume={onImportResume ? () => void importResumeFromCard() : undefined}
-          onOpenBroadcast={onOpenBroadcast}
-          onOpenCaseImport={onOpenCaseImport}
-          onOpenReviews={onOpenReviews}
+          selectedPerson={businessObject?.kind === 'person'}
+          onImportAtsCsv={!businessObject && onImportAtsCsv ? () => void importAtsCsv() : undefined}
+          onImportResume={!businessObject && onImportResume ? () => void importResumeFromCard() : undefined}
+          onOpenBroadcast={businessObject ? undefined : onOpenBroadcast}
+          onOpenCaseImport={businessObject ? undefined : onOpenCaseImport}
           onSuggestion={updateDraft}
-          pendingReviewCount={status?.pendingReviewCount ?? 0}
           selectedCase={selectedCase}
           suggestions={emptyStateSuggestions}
           zh={zh}
@@ -1906,7 +1925,7 @@ export function AgentWorkspace({
                     value={editingMessage.value}
                     zh={zh}
                   />
-                : <>{structuredErrorRepeatsContent ? null : <MessageText message={message} />}{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} locale={locale} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} onOpenOriginalDocument={onOpenOriginalDocument ? openOriginalFile : undefined} onOpenReviews={onOpenReviews} onOpenSystemAccess={onOpenSystemAccess} onRunMatching={runMatchingForCase} matchingBusy={mutationBusy} jobCaseReviews={jobCaseReviews} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onDeleteJobCase={onDeleteJobCase} onSelectCase={selectCase} zh={zh} />)}</>}
+                : <>{structuredErrorRepeatsContent ? null : <MessageText message={message} />}{message.blocks?.map((block, index) => <BlockView block={block} currentCaseId={selectedCase?.kind === 'job-case' ? selectedCase.objectId : null} key={`${message.id}-block-${index}`} locale={locale} onOpenCandidate={onOpenCandidate} onOpenMatching={onOpenMatching} onOpenOriginalDocument={onOpenOriginalDocument ? openOriginalFile : undefined} onOpenSystemAccess={onOpenSystemAccess} onRunMatching={runMatchingForCase} matchingBusy={mutationBusy || businessMatchingBusy} jobCaseReviews={jobCaseReviews} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} onDeleteJobCase={onDeleteJobCase} onSelectCase={selectCase} zh={zh} />)}</>}
             </div>
             {hasUserActions && !isEditing ? <div aria-label={zh ? '输入消息操作' : '入力メッセージ操作'} className="agent-message-actions" role="group">
               <time dateTime={message.createdAt}>{messageTimeFormatter.format(new Date(message.createdAt))}</time>
@@ -1917,17 +1936,19 @@ export function AgentWorkspace({
         })}
         {pendingMessage && streamState?.content ? <article className="agent-message is-assistant is-streaming" data-testid="agent-streaming-message"><div className="agent-message-role"><Icon name="sparkles" size={13} /><strong>SES Agent</strong>{streamState.modelDisplayName ? <small>{streamState.modelDisplayName}</small> : null}</div><div className="agent-message-body"><AgentMarkdown content={streamState.content} /></div></article> : null}
         {pendingMessage ? <div className="agent-running-state" data-phase={streamState?.phase ?? 'planning'}><span className="agent-running-dot" />{streamState?.phase === 'planning' ? (zh ? '正在理解问题并选择 Tool…' : '質問を理解して Tool を選択中…') : streamState?.phase === 'connecting-model' ? (zh ? '正在整理 Tool 结果…' : 'Tool の結果を整理中…') : streamState?.phase === 'streaming' ? (zh ? '正在生成回答…' : '回答を生成中…') : streamState?.phase === 'stopping' ? (zh ? '正在停止本地读取并请求远端取消…' : 'ローカル読取を停止し、リモート取消を要求中…') : (zh ? '正在本机执行受控本地 Tool…' : '端末内で制御済みローカル Tool を実行中…')}</div> : null}
-        {!pendingMessage && lastTurnTimings ? <p className="agent-turn-timings" data-testid="agent-turn-timings">{turnTimingsText(lastTurnTimings, zh)}</p> : null}
+        {!pendingMessage && lastTurnTimings ? <details className="agent-turn-details" key={`${currentConversationId}:${messages.at(-1)?.id}`}>
+          <summary>{zh ? '运行详情' : '実行の詳細'}</summary>
+          <p className="agent-turn-timings" data-testid="agent-turn-timings">{turnTimingsText(lastTurnTimings, zh)}</p>
+        </details> : null}
       </div>
       {error ? <p className="agent-workspace-error" role="alert"><Icon name="alert" size={14} />{error}</p> : null}
       {importSummary ? <p className="agent-attachment-progress">
         {zh
-          ? `已导入 ${importSummary.imported} 份${importSummary.failed > 0 ? `，${importSummary.failed} 份失败` : ''}。请到审核中心逐项确认。`
-          : `${importSummary.imported}件を取り込みました${importSummary.failed > 0 ? `（${importSummary.failed}件は失敗）` : ''}。レビューセンターで項目を確認してください。`}
-        {onOpenReviews ? <button onClick={() => onOpenReviews()} type="button">{zh ? '打开审核中心' : 'レビューセンターを開く'}</button> : null}
+          ? `已导入 ${importSummary.imported} 份${importSummary.failed > 0 ? `，${importSummary.failed} 份失败` : ''}。`
+          : `${importSummary.imported}件を取り込みました${importSummary.failed > 0 ? `（${importSummary.failed}件は失敗）` : ''}。`}
       </p> : null}
       {attaching ? <p className="agent-attachment-progress">{zh ? '正在安全暂存附件…' : '添付ファイルを安全に保存しています…'}</p> : null}
-      {compactComposer ? <div className="agent-quick-bar" role="group" aria-label={zh ? '最新动态操作栏' : '最新情報の操作'}>
+      {compactComposer && !businessTitle ? <div className="agent-quick-bar" role="group" aria-label={zh ? '最新动态操作栏' : '最新情報の操作'}>
         <button className="agent-quick-prompt" onClick={() => { setSurface('conversation'); window.requestAnimationFrame(() => composerInputRef.current?.focus()) }} type="button"><Icon name="sparkles" size={16} /><span>{pendingMessage ? (zh ? '查看正在处理的对话' : '処理中の会話を表示') : draft.trim() || attachments.length ? (zh ? '继续未发送的草稿' : '未送信の下書きを続ける') : (zh ? '告诉 Agent 想处理什么…' : 'Agentに依頼したいことを入力…')}</span></button>
         {onOpenBatch ? <button className="agent-quick-paste" onClick={() => onOpenBatch()} type="button"><Icon name="upload" size={14} />{zh ? '粘贴消息' : 'メッセージを貼り付け'}</button> : null}
       </div> : null}
@@ -1935,7 +1956,7 @@ export function AgentWorkspace({
         {contextualComposer ? <div className="agent-composer-object" role="group" aria-label={zh ? '当前处理对象' : '現在の処理対象'}>
           <div><Icon name={contextualComposer.kind === 'case' ? 'briefcase' : 'users'} size={15} /><span>{zh ? '正在处理：' : '処理対象：'}</span><strong title={contextualComposer.label}>{contextualComposer.label}</strong></div>
           <div className="agent-composer-object-actions">
-            {contextualComposer.onMatch ? <button onClick={contextualComposer.onMatch} type="button">{contextualComposer.kind === 'case' ? (zh ? '找人' : '要員を探す') : (zh ? '找案件' : '案件を探す')}</button> : null}
+            {contextualComposer.onMatch ? <button disabled={businessMatchingBusy} onClick={contextualComposer.onMatch} type="button">{contextualComposer.kind === 'case' ? (zh ? '找人' : '要員を探す') : (zh ? '找案件' : '案件を探す')}</button> : null}
             {contextualComposer.onPromote ? <button onClick={contextualComposer.onPromote} type="button">{zh ? '生成介绍' : '紹介文を作成'}</button> : null}
           </div>
         </div> : null}
@@ -2006,8 +2027,58 @@ export function AgentWorkspace({
         </footer>
         </form>
       </div>
+      </div>
+      </div>
+  )
+
+  const workspaceClassName = [
+    'agent-workspace',
+    businessTitle ? 'is-hr-workbench' : '',
+    businessTitle && surface === 'conversation' ? 'is-chat-open' : '',
+    !businessTitle && historyOpen ? 'is-history-open' : '',
+    contextVisible ? 'has-context-panel' : '',
+    businessTitle && (contextVisible || surface === 'conversation') ? 'has-workspace-side' : ''
+  ].filter(Boolean).join(' ')
+  const workspaceStyle = showContextPanel
+    ? { '--agent-context-panel-width': `${contextPanelWidth}px` } as CSSProperties
+    : undefined
+
+  return <CandidateNamesContext.Provider value={candidateNames}><main
+      aria-label="SES Agent"
+      className={workspaceClassName}
+      style={workspaceStyle}
+      onDragOver={(event) => { event.preventDefault(); if (cloudConnected && !workspaceBusy) setDragActive(true) }}
+      onDragLeave={(event) => { if (event.currentTarget === event.target) setDragActive(false) }}
+      onDrop={(event) => {
+        event.preventDefault()
+        setDragActive(false)
+        if (!cloudConnected || workspaceBusy) return
+        void attachFiles([...event.dataTransfer.files])
+      }}
+    >
+    {!businessTitle ? <aside className={historyOpen ? 'agent-workspace-history is-open' : 'agent-workspace-history'}>{historyPanel}</aside> : null}
+    {!businessTitle && historyOpen ? <button aria-label={zh ? '关闭任务列表' : 'タスク一覧を閉じる'} className="agent-history-backdrop" onClick={() => setHistoryOpen(false)} type="button" /> : null}
+    <section className={dragActive ? 'agent-workspace-main is-drag-active' : 'agent-workspace-main'}>
+      <header className="agent-workspace-header">
+        {!businessTitle ? <button aria-label={zh ? '打开任务列表' : 'タスク一覧を開く'} className="agent-history-toggle" onClick={() => setHistoryOpen(true)} type="button"><Icon name="tasks" size={16} /></button> : null}
+        <div className="agent-thread-title">
+          <h1>{businessTitle ? 'SES' : 'SES Agent'}</h1>
+          <strong>{businessTitle ? businessTitle : surface === 'latest' ? (businessTitle ?? (zh ? '最新动态' : '最新情報')) : selectedCase ? (selectedCandidateDocumentId ? (zh ? '人员与案件评估' : '人材と案件の評価') : (zh ? '案件助手' : '案件アシスタント')) : threadTitle}</strong>
+        </div>
+        <span className="agent-privacy-badge" title={zh ? 'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态' : 'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'}><Icon name="shield" size={13} />{zh ? '仅发送脱敏内容' : '脱敏済みのみ送信'}</span>
+        {businessTitle ? <button className="hr-ask-agent" aria-pressed={surface === 'conversation'} type="button" onClick={() => { setSurface('conversation'); setHistoryOpen(false) }}><Icon name="sparkles" size={14} />{zh ? '问 Agent' : 'Agentに質問'}</button> : null}
+        {!latestContent && !showContextPanel && onOpenNewCaseBoard ? <button className="agent-open-board" onClick={onOpenNewCaseBoard} type="button"><Icon name="briefcase" size={13} /><span>{zh ? '今日新案件' : '今日の新着案件'}</span>{newCaseUnseenCount > 0 ? <b>{newCaseUnseenCount}</b> : null}</button> : null}
+      </header>
+      {latestContent && !businessTitle ? <nav className="agent-surface-tabs" aria-label={zh ? 'Agent 工作区' : 'Agentワークスペース'}>
+        <button aria-pressed={surface === 'latest'} onClick={() => setSurface('latest')} type="button"><Icon name="clock" size={14} />{zh ? '最新动态' : '最新情報'}</button>
+        <button aria-pressed={surface === 'conversation'} onClick={() => setSurface('conversation')} type="button"><Icon name="sparkles" size={14} />{zh ? '当前对话' : '現在の会話'}</button>
+        {onOpenBatch ? <button onClick={() => onOpenBatch()} type="button"><Icon name="upload" size={14} />{zh ? '批量整理' : '一括整理'}</button> : null}
+      </nav> : null}
+      {latestContent ? <div className="agent-latest-scroll" hidden={!businessTitle && surface !== 'latest'}>{latestContent}</div> : null}
+      {!businessTitle ? conversationSurface : null}
     </section>
-    {contextPanel ? <aside hidden={!showContextPanel} aria-label={contextPanelLabel} className="agent-context-workspace">
+    {businessTitle ? conversationSurface : null}
+    {contextPanel ? <aside hidden={!contextVisible} aria-label={contextPanelLabel} className="agent-context-workspace">
       <div
         aria-label={zh ? '调整右侧工作区宽度' : '右ワークスペースの幅を調整'}
         aria-orientation="vertical"

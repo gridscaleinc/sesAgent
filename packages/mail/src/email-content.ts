@@ -60,8 +60,15 @@ export function minimizeEmailBodyForLocalProcessing(body: string): string {
 
 export function classifyEmailText(subject: string, body: string): BusinessEmailClassification {
   const text = `${subject}\n${body}`
+  // Rates and availability occur in both directions. The mail's business purpose takes priority.
+  const introduction = /(?:要員|人材|候補者|人员|人員|人才).{0,12}(?:紹介|提案|ご提案|情報|介绍|推荐)/iu
+  const resume = /(?:スキルシート|経歴書|履歴書|简历|履历|resume)/iu
+  if (introduction.test(subject)) return 'candidate-proposal'
+  if (/(?:案件|募集|求人)/u.test(subject)) return 'job-case'
+  if (resume.test(subject)) return 'candidate-proposal'
+  if (introduction.test(body) || /(?:氏名|姓名|名前)\s*[:：]/u.test(body) && /(?:スキル|経験|技能|经验)/u.test(body)) return 'candidate-proposal'
   if (/(?:案件|募集|要件|単価|商流|稼働|参画)/u.test(text)) return 'job-case'
-  if (/(?:要員|人材|候補者|スキルシート|経歴書)/u.test(text)) return 'candidate-proposal'
+  if (/(?:要員|人材|候補者|人员|人員|人才)/u.test(text)) return 'candidate-proposal'
   return 'unclassified'
 }
 

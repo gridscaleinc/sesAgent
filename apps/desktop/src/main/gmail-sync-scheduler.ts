@@ -12,6 +12,7 @@ export function resolveGmailSyncIntervalMinutes(raw: string | undefined): number
 
 /** The slice of a finished sync the scheduler acts on - checkpoint status and counts only. */
 export interface GmailSyncOutcome {
+  personnelImported?: number
   status: 'never' | 'idle' | 'error'
   lastRun: { imported: number; duplicates: number; filtered: number; failed: number } | null
 }
@@ -24,7 +25,7 @@ export interface GmailSyncSchedulerDependencies {
   isReadonlyConnected(): Promise<boolean>
   runSync(): Promise<GmailSyncOutcome>
   /** Fired after a run that imported at least one message. Counts only - never content. */
-  onImported(counts: { imported: number; duplicates: number; filtered: number; failed: number }): void
+  onImported(counts: { personnelImported?: number; imported: number; duplicates: number; filtered: number; failed: number }): void
   setTimer(callback: () => void, delayMs: number): unknown
   clearTimer(timer: unknown): void
   /** Diagnostics sink; details carry counts and fixed codes only. */
@@ -72,8 +73,8 @@ export function createGmailSyncScheduler(deps: GmailSyncSchedulerDependencies) {
     try {
       const outcome = await deps.runSync()
       const run = outcome.lastRun
-      if (run && run.imported > 0) {
-        deps.onImported({ imported: run.imported, duplicates: run.duplicates, filtered: run.filtered, failed: run.failed })
+      if (run && (run.imported > 0 || (outcome.personnelImported ?? 0) > 0)) {
+        deps.onImported({ ...(outcome.personnelImported ? { personnelImported: outcome.personnelImported } : {}), imported: run.imported, duplicates: run.duplicates, filtered: run.filtered, failed: run.failed })
       }
       if (outcome.status === 'error') {
         // The coordinator recorded a failed checkpoint without throwing; back off the same way.

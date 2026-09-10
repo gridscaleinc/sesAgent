@@ -6,6 +6,15 @@ const review = { reviewId: 'case-one', redactedPreview: 'truncated preview' }
 const source = (redactedBody: string): JobCaseSourceText => ({ redactedBody, redactedSubject: 'subject', sourceType: 'gmail', fromDomain: null, messageDate: '2026-09-08T00:00:00Z' })
 
 describe('case body reader', () => {
+  it('shows the restored local original, including Fiori and contact information, without masking labels', async () => {
+    const original = '・BTP or Fiori or Cdsview\n担当：山田太郎\n連絡先：contact@example.com'
+    const load = vi.fn(async () => ({ ...source('・BTP or <PERSON_NAME_001> or Cdsview'), localDisplay: { subject: 'SAP FI', body: original } }))
+    render(<JobCaseBody review={review} zh onLoad={load} />)
+    expect(await screen.findByRole('listitem')).toHaveTextContent('BTP or Fiori or Cdsview')
+    expect(screen.getByText(/担当：山田太郎/)).toHaveTextContent('contact@example.com')
+    expect(screen.queryByText(/已遮蔽|已脱敏|PERSON_NAME/)).not.toBeInTheDocument()
+  })
+
   it('preserves paragraphs and explicit lists without treating source markup as HTML', () => {
     const view = render(<FormattedCaseBody zh text={'挨拶\n改行\n\n──────\n■ 案件情報\n仕事内容\n・UiPath開発\n・Orchestrator必須\n\n単価：60〜65万\n<script>untouched</script>'} />)
     expect(screen.getByText('挨拶 改行').textContent).toBe('挨拶\n改行')

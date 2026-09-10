@@ -1,11 +1,11 @@
 import type { CandidateMatchAssessment } from './contracts'
+import { mentionsRequiredTerm, positiveSkillEvidence } from './matching-requirements'
 
 type AssessmentEvidence = Pick<CandidateMatchAssessment, 'fit' | 'met' | 'gaps' | 'confirm' | 'reason'>
 const normalize = (text: string) => text.normalize('NFKC').toLocaleLowerCase('en-US').trim()
 const atoms = (text: string) => text.split(/[,，、;；\n]+/u).map((part) => part.trim()).filter(Boolean)
 function mentions(text: string, term: string): boolean {
-  const escaped = normalize(term).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, 'u').test(normalize(text))
+  return mentionsRequiredTerm(text, term)
 }
 
 /** Model gaps have no source citation. Keep them as questions, never verified failures.
@@ -19,7 +19,7 @@ export function reviewMatchAssessmentEvidence<T extends AssessmentEvidence>(asse
   for (const item of assessment.met) {
     for (const requirement of atoms(item.requirement)) {
       const technical = /^[a-z][a-z0-9+#. -]*$/iu.test(requirement)
-      if (technical && !mentions(item.evidence, requirement)) {
+      if (technical && !positiveSkillEvidence(item.evidence, requirement)) {
         confirm.push(requirement)
         corrected = true
         continue

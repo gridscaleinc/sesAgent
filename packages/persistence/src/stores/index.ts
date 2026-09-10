@@ -1,3 +1,4 @@
+import { BusinessProgressStore } from './business-progress-store'
 import { PersonnelStore } from './personnel-store'
 import type Database from 'better-sqlite3-multiple-ciphers'
 
@@ -41,6 +42,7 @@ export function createStoreRegistry(options: {
   }
 
   const stores: StoreRegistry = {
+    businessProgress: new BusinessProgressStore(context),
     personnel: new PersonnelStore(context),
     actionRuntime: new ActionRuntimeStore(context),
     agentConversations: new AgentConversationStore(context),

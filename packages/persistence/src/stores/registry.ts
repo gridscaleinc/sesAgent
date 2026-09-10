@@ -1,3 +1,4 @@
+import type { BusinessProgressStore } from './business-progress-store'
 import type { PersonnelStore } from './personnel-store'
 import type { ActionRuntimeStore } from './action-runtime-store'
 import type { AgentConversationStore } from './agent-conversation-store'
@@ -17,6 +18,7 @@ import type { ProposalStore } from './proposal-store'
 import type { WorkTaskStore } from './work-task-store'
 
 export interface StoreRegistry {
+  readonly businessProgress: BusinessProgressStore
   readonly personnel: PersonnelStore
   readonly actionRuntime: ActionRuntimeStore
   readonly agentConversations: AgentConversationStore

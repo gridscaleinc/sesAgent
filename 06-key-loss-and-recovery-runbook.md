@@ -1,6 +1,6 @@
 # SES Agent Desktop 密钥丢失与离线恢复手册
 
-<!-- ses-current-state package=0.1.0 schema=46 -->
+<!-- ses-current-state package=0.1.0 schema=49 -->
 
 > 文档版本：v1.1
 > 更新日期：2026-08-18

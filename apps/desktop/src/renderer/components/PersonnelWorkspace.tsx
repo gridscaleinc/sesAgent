@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { BusinessField } from './BusinessField'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { generatePersonnelMessage, isPersonnelAvailable, type CandidateReviewSnapshot, type PersonnelWorkspace as Workspace,
   type PersonnelTemplate, type PersonnelCaseMatchResult, type PersonnelMessageInput,
   type CandidateBusinessStatus } from '@shared'
@@ -9,6 +10,11 @@ import { CandidateProfileSummary } from './CandidateProfileSummary'
 import { MatchAssessmentView } from './MatchAssessmentView'
 
 interface Props {
+  renderBusinessProgress?(kind: 'person' | 'case', id: string): ReactNode
+  matchingBusy?: boolean
+  businessOnly?: boolean
+  onMatch?(): void
+  onPrepare?(): void
   compact?: boolean
   onOpenEditor?(request: PersonnelEditorTarget): void
   editorRequest?: PersonnelEditorTarget & { id: number }
@@ -34,7 +40,7 @@ export interface PersonnelMessageDrafts {
   onChange(key: string, text: string): void
 }
 
-export function PersonnelWorkspace({ onSelectPerson, compact = false, onOpenEditor, editorRequest, messageDrafts, matchRequest, focusRequest, onMatchingChange, reviews, initialDocumentId, onRefresh, onOpenCase, onOpenProfile }: Props) {
+export function PersonnelWorkspace({ renderBusinessProgress, matchingBusy, businessOnly, onMatch, onPrepare, onSelectPerson, compact = false, onOpenEditor, editorRequest, messageDrafts, matchRequest, focusRequest, onMatchingChange, reviews, initialDocumentId, onRefresh, onOpenCase, onOpenProfile }: Props) {
   const zh = useUiLocale() === 'zh-CN'
   const t = (cn: string, ja: string) => zh ? cn : ja
   const [savedReviews, setSavedReviews] = useState<Record<string, CandidateReviewSnapshot>>({})
@@ -102,6 +108,7 @@ export function PersonnelWorkspace({ onSelectPerson, compact = false, onOpenEdit
     : activeReviews.find((item) => item.documentId === selectedId) ?? visible[0] ?? null
   const cachedMatches = selected ? matchesByPerson[selected.documentId] : undefined
   const matches = cachedMatches?.profileVersion === selected?.profile?.version ? cachedMatches : undefined
+  const recommendedMatches = matches?.items.filter((item) => item.qualification?.status === 'recommended') ?? []
   const template = workspace?.templates.find((item) => item.id === templateId) ?? workspace?.templates[0]
   const ready = (review: CandidateReviewSnapshot) => Boolean(workspace) && review.recordStatus === 'active' && isPersonnelAvailable(statusOf(review)) && Boolean(review.profile)
   const statusLabel = (status: CandidateBusinessStatus) => ({ available: t('待营业', '営業待ち'), soon: t('近期可入场', '近日稼働可能'), assigned: t('已入场', '参画中'), paused: t('不可营业', '営業不可') })[status]
@@ -180,7 +187,7 @@ export function PersonnelWorkspace({ onSelectPerson, compact = false, onOpenEdit
     setNotice(t('已复制，可粘贴到微信群或邮件。', 'コピーしました。微信やメールに貼り付けられます。'))
   }
   return <section className={compact ? "personnel-workspace is-compact" : "personnel-workspace"}>
-    {!compact ? <div className="business-intake-heading"><div><h2>{t('人员整理与推广', '要員の確認・紹介')}</h2><p>{t('导入人员后，直接找案件或生成介绍。资料可在人员管理中修改。', '取込後すぐに案件検索や紹介文を作成できます。情報の修正は要員管理で行います。')}</p></div>
+    {!compact ? <div className="business-intake-heading"><div><h2>{t('人员整理与推广', '要員の確認・紹介')}</h2><p>{t('导入人员后，直接找案件或生成介绍。点击资料即可修改并自动保存。', '取込後すぐに案件検索や紹介文を作成できます。情報の修正は要員管理で行います。')}</p></div>
       <button disabled={busy} onClick={() => void action(async () => { await load(); await onRefresh() })} type="button">{t('刷新', '再読込')}</button></div>
     : null}
     {error ? <p role="alert" className="business-error">{error}</p> : null}
@@ -198,12 +205,14 @@ export function PersonnelWorkspace({ onSelectPerson, compact = false, onOpenEdit
       </article>)}
       {!visible.length ? <p>{t('暂无符合条件的人员。请先整理人员消息或调整筛选。', '対象の要員がいません。要員メッセージを取り込むか条件を変更してください。')}</p> : null}
     </aside> : null}<div className="personnel-detail" ref={detailSection} tabIndex={-1}>{selected ? <>
-      <header className="personnel-detail-header"><div><span className="personnel-detail-eyebrow">{t('人员资料', '要員情報')}</span><h3>{label(selected)}</h3></div><button className="personnel-text-action" onClick={() => onOpenProfile(selected.documentId)} type="button">{compact ? t('查看 / 编辑完整档案', 'プロフィールの確認・編集') : t('完整档案 / 原文', 'プロフィール・原文')}<span aria-hidden="true">↗</span></button></header>
-      {compact ? <div className="personnel-status-summary"><span>{t('营业状态', '営業状態')}</span><strong className={`is-${statusOf(selected)}`}>{workspace ? statusLabel(statusOf(selected)) : t('读取中…', '読込中…')}</strong>{onOpenEditor ? <button className="personnel-text-action" onClick={() => onOpenEditor({ documentId: selected.documentId })} type="button">{t('管理状态', '状態を管理')}<span aria-hidden="true">↗</span></button> : null}</div> : <PersonnelStatusForm key={`${selected.documentId}:${selected.reviewRevision}:${selected.profile?.version}:${workspace?.states.find((state) => state.documentId === selected.documentId)?.confirmedAt}`} disabled={!workspace} state={statusOf(selected)} onSave={async (status) => {
+      <header className="personnel-detail-header"><div><span className="personnel-detail-eyebrow">{t('人员资料', '要員情報')}</span><h3><BusinessField kind="person" id={selected.documentId} version={selected.profile?.version ?? 1} field="identity.displayName" value={selected.localIdentity?.displayName ?? null} label={t('姓名', '氏名')} disabled={!selected.profile}>{label(selected)}</BusinessField></h3></div><button className="personnel-text-action" onClick={() => onOpenProfile(selected.documentId)} type="button">{compact ? t('查看 / 编辑完整档案', 'プロフィールの確認・編集') : t('完整档案 / 原文', 'プロフィール・原文')}<span aria-hidden="true">↗</span></button></header>
+      {renderBusinessProgress?.('person', selected.documentId)}
+      {compact && !businessOnly ? <div className="personnel-status-summary"><span>{t('营业状态', '営業状態')}</span><strong className={`is-${statusOf(selected)}`}>{workspace ? statusLabel(statusOf(selected)) : t('读取中…', '読込中…')}</strong>{onOpenEditor ? <button className="personnel-text-action" onClick={() => onOpenEditor({ documentId: selected.documentId })} type="button">{t('管理状态', '状態を管理')}<span aria-hidden="true">↗</span></button> : null}</div> : !compact ? <PersonnelStatusForm key={`${selected.documentId}:${selected.reviewRevision}:${selected.profile?.version}:${workspace?.states.find((state) => state.documentId === selected.documentId)?.confirmedAt}`} disabled={!workspace} state={statusOf(selected)} onSave={async (status) => {
         setSelectedId(selected.documentId)
         await window.sesAgent.setCandidateBusinessState({ documentId: selected.documentId, profileVersion: selected.profile?.version ?? 0, reviewRevision: selected.reviewRevision, status, confirmed: true })
         setMatchesByPerson((current) => { const next = { ...current }; delete next[selected.documentId]; return next }); await load(); await onRefresh()
-      }} />}
+      }} /> : null}
+      {businessOnly && readinessNote ? <p className="personnel-readiness-note">{readinessNote}</p> : null}
       <CandidateProfileSummary key={selected.documentId} review={selected} collapseProjects={compact} ownCompanyControl={compact ? <>
         <select aria-label={t('是否自社', '自社所属')} disabled={busy || !selected.profile}
           value={selected.isOwnCompany == null ? '' : String(selected.isOwnCompany)}
@@ -212,7 +221,8 @@ export function PersonnelWorkspace({ onSelectPerson, compact = false, onOpenEdit
         </select>
         {affiliationStatus?.documentId === selected.documentId ? <small role={affiliationStatus.failed ? 'alert' : 'status'}>{affiliationStatus.text}</small> : null}
       </> : undefined} />
-      <section ref={promotionSection} tabIndex={-1} className="personnel-promotion" aria-label={t('人员推广', '要員紹介')}>
+      {businessOnly ? <div className="hr-person-actions"><button className="hr-primary" disabled={busy || matchingBusy || !ready(selected)} type="button" onClick={onMatch}>{t('找案件', '案件を探す')}</button><button disabled={busy || !ready(selected)} type="button" onClick={onPrepare}>{t('准备介绍', '紹介を準備')}</button></div> : null}
+      <section hidden={businessOnly} ref={promotionSection} tabIndex={-1} className="personnel-promotion" aria-label={t('人员推广', '要員紹介')}>
         <header className="personnel-promotion-heading"><h3>{t('推广预览', '紹介プレビュー')}</h3>{compact && onOpenEditor ? <button className="personnel-text-action" onClick={() => onOpenEditor({ documentId: selected.documentId, templateId: template?.id, lang })} type="button">{t('编辑文案与模板', '文面・テンプレートを編集')}<span aria-hidden="true">↗</span></button> : null}</header>
         {readinessNote ? <p className="personnel-readiness-note">{readinessNote}</p> : null}
         {template ? <>
@@ -227,14 +237,14 @@ export function PersonnelWorkspace({ onSelectPerson, compact = false, onOpenEdit
           <p className="business-help">{t('复制和打开邮件不会记为已发送。', 'コピーやメールを開く操作は送信済みになりません。')}</p>
           <div ref={matchSection} tabIndex={-1}>
           {matchingDocumentId === selected.documentId ? <p className="personnel-match-progress" role="status">{t('正在筛选案件并由云端 AI 评估适合度…', '案件を絞り込み、Cloud AIで適合性を評価しています…')}</p> : null}
-          {matches ? <section className="personnel-matches" aria-label={t('案件匹配结果', '案件マッチング結果')}><h3>{t('案件匹配结果', '案件マッチング結果')} ({matches.items.length})</h3>
-            {matches.localMatchCount > matches.items.length ? <small>{t('初筛', '一次検索')} {matches.localMatchCount} {t('个案件，优先展示', '件から優先表示')} {matches.items.length} {t('个', '件')}</small> : null}
+          {matches ? <section className="personnel-matches" aria-label={t('案件匹配结果', '案件マッチング結果')}><h3>{t('案件匹配结果', '案件マッチング結果')} ({recommendedMatches.length})</h3>
+            {matches.localMatchCount > recommendedMatches.length ? <small>{t('初筛', '一次検索')} {matches.localMatchCount} {t('个案件，符合必需条件', '件中、必須条件に適合')} {recommendedMatches.length} {t('个', '件')}</small> : null}
             <p className="personnel-match-status" role="status">{matches.cloud.status === 'reviewed' ? t('云端 AI 已评估，按适合度排序。', 'Cloud AI評価済み・適合性順に表示。') : matches.cloud.status === 'partial' ? t('部分案件已由云端 AI 评估，其余标为本地初筛。', '一部はCloud AI評価済み、残りはローカル候補として表示します。') : matches.cloud.status === 'not-needed' ? t('没有找到具备技能或角色匹配依据的案件。', 'スキルや役割が一致する案件は見つかりませんでした。') : t('云端 AI 暂不可用，以下仅为本地初筛结果。', 'Cloud AIを利用できないため、以下はローカル検索結果です。')}{matches.cloud.modelName ? ` · ${matches.cloud.modelName}` : ''}</p>
-            {matches.items.map((item) => <article aria-current={selectedCases[selected.documentId] === item.jobCaseId ? 'true' : undefined} className={selectedCases[selected.documentId] === item.jobCaseId ? 'is-selected' : ''} key={item.jobCaseId}><strong>{item.title}</strong>
+            {recommendedMatches.map((item) => <article aria-current={selectedCases[selected.documentId] === item.jobCaseId ? 'true' : undefined} className={selectedCases[selected.documentId] === item.jobCaseId ? 'is-selected' : ''} key={item.jobCaseId}><strong>{item.title}</strong>
               {item.assessment ? <MatchAssessmentView assessment={item.assessment} zh={zh} title={t('AI 匹配评估', 'AIマッチング評価')} /> : <><small className="personnel-local-match">{t('本地初筛', 'ローカル候補')}</small><p>{t('匹配依据', '一致の根拠')}：{item.matched.join(' · ')}</p>{item.missing.length ? <p>{t('尚未确认符合', '一致未確認')}：{item.missing.join(' · ')}</p> : null}
               {item.hardFilters.filter((filter) => filter.outcome === 'unknown').map((filter) => <small key={`${filter.type}:${filter.requested}`}>{t('待确认', '要確認')}：{filter.requested} </small>)}</>}
               <button onClick={() => { setSelectedCases((current) => ({ ...current, [selected.documentId]: item.jobCaseId })); onOpenCase(item.reviewId) }} type="button">{t('查看案件 / 准备联系', '案件を確認')}</button></article>)}
-            {!matches.items.length ? <p>{t('当前没有足够匹配依据。可以先推广此人，或更新资料后再查。', '現在は十分な一致根拠がありません。要員紹介、または情報更新後の再検索をご利用ください。')}</p> : null}</section> : null}
+            {!recommendedMatches.length ? <p>{t('当前没有符合全部必需条件的案件。', '現在はすべての必須条件を満たす案件がありません。')}</p> : null}</section> : null}
           </div>
           <details className="personnel-promotion-history"><summary>{t('推广准备历史', '紹介の準備履歴')}</summary>{(workspace?.copies ?? []).filter((copy) => copy.documentId === selected.documentId).slice(0, 20).map((copy) => <p key={copy.id}>{new Date(copy.createdAt).toLocaleString()} · {copy.lang === 'ja' ? t('日文', '日本語') : t('中文', '中国語')} · v{copy.profileVersion} · {t('已复制', 'コピー済み')}</p>)}</details>
         </> : workspace ? <p className="business-help">{t('暂无推广模板，请在完整页面刷新推广设置。', '紹介テンプレートがありません。管理画面で設定を再読込してください。')}</p> : null}

@@ -40,7 +40,7 @@ import {
 import { isUnassessableMatchCard } from '@shared'
 import type { AgentCandidateDraftFacts, AgentCloudReviewOutcome, AgentCloudReviewSkipCode, AgentJobCaseBroadcastCard, AgentTurnTimings, CandidateMatchAssessment } from '@shared'
 import { deriveNewCaseDigest } from './job-case-digest'
-import { matchAssessmentShortlistSize, type AgentActiveWorkspaceEvidence, type AgentNarrativeStreamer } from './agent-cloud-narrative'
+import { matchAssessmentShortlistSize, projectCandidateProjectHistory, type AgentActiveWorkspaceEvidence, type AgentNarrativeStreamer } from './agent-cloud-narrative'
 import { deriveBroadcastQueue } from './broadcast-workspace'
 import {
   activeCaseTitle,
@@ -229,13 +229,7 @@ function buildActiveWorkspaceEvidence(
         value: boundedWorkspaceText(field.value, 400),
         status: field.status
       })),
-      projects: review.projectExperiences.slice(0, 6).map((project) => ({
-        title: boundedWorkspaceText(project.title, 180),
-        period: boundedWorkspaceText(project.period, 100),
-        role: boundedWorkspaceText(project.role, 120),
-        technologies: project.technologies.slice(0, 12).map((item) => boundedWorkspaceText(item, 80)),
-        summary: boundedWorkspaceText(project.summary, 600)
-      }))
+      ...projectCandidateProjectHistory(review.projectExperiences)
     }
   }
   const interviewProjection = (interview: ReturnType<typeof interviews>[number]) => ({
@@ -1332,8 +1326,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
                   })),
                   failedCount: 0
                 }] : []),
-                ...inheritedDraftFacts.map((facts) => ({ type: 'candidate-draft-facts' as const, facts })),
-                { type: 'system-access' as const, destination: 'review-center' as const }
+                ...inheritedDraftFacts.map((facts) => ({ type: 'candidate-draft-facts' as const, facts }))
               ],
               createdAt: new Date().toISOString()
             }

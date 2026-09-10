@@ -28,6 +28,11 @@ import { type AiConversationRow } from '../rows'
 import { DomainStore } from './base'
 
 export class AgentConversationStore extends DomainStore {
+  private ownsDeletedObject(snapshot: AiConversationSnapshot, targets: AgentReferenceTargets): boolean {
+    const object = snapshot.context.businessObject
+    return Boolean(object && (object.kind === 'person' ? targets.candidateDocumentIds.has(object.id) : targets.jobCaseReviewIds?.has(object.id)))
+  }
+
   private salesAgentKnownPersonNames(targets: AgentReferenceTargets): string[] {
     if (targets.candidateDocumentIds.size === 0 && targets.matchRunIds.size === 0 && targets.matchResultIds.size === 0) return []
     const targetRows = this.database
@@ -59,8 +64,7 @@ export class AgentConversationStore extends DomainStore {
                 round_number, title, payload_json, revision, created_at, updated_at
          FROM ai_conversations
          WHERE assistant_type = 'sales-agent'
-         ORDER BY updated_at DESC
-         LIMIT 50`
+         ORDER BY updated_at DESC`
       )
       .all()
     const knownPersonNames = this.salesAgentKnownPersonNames(targets)
@@ -76,9 +80,9 @@ export class AgentConversationStore extends DomainStore {
           (state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId))
         )
       )
-      if (affectedMessages > 0 || affectedState) {
+      if (affectedMessages > 0 || affectedState || this.ownsDeletedObject(snapshot, targets)) {
         conversations += 1
-        messages += snapshot.messages.filter((message) =>
+        messages += this.ownsDeletedObject(snapshot, targets) ? snapshot.messages.length : snapshot.messages.filter((message) =>
           agentMessageHasTarget(message, targets) || agentMessageHasDirectIdentifier(message, knownPersonNames)
         ).length
       }
@@ -93,8 +97,7 @@ export class AgentConversationStore extends DomainStore {
                 round_number, title, payload_json, revision, created_at, updated_at
          FROM ai_conversations
          WHERE assistant_type = 'sales-agent'
-         ORDER BY updated_at DESC
-         LIMIT 50`
+         ORDER BY updated_at DESC`
       )
       .all()
     const knownPersonNames = this.salesAgentKnownPersonNames(targets)
@@ -102,6 +105,12 @@ export class AgentConversationStore extends DomainStore {
     let messages = 0
     for (const row of rows) {
       const snapshot = aiConversationFromRow(row)
+      if (this.ownsDeletedObject(snapshot, targets)) {
+        this.database.prepare('DELETE FROM ai_conversations WHERE id=?').run(snapshot.id)
+        conversations += 1
+        messages += snapshot.messages.length
+        continue
+      }
       const state = snapshot.salesAgentState
       const stateAffected = Boolean(
         state && (

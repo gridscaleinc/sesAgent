@@ -1,3 +1,4 @@
+import { BusinessField } from './BusinessField'
 import { useEffect, useState, type FormEvent } from 'react'
 import type {
   SaveJobCaseFieldAliasesInput,
@@ -230,7 +231,7 @@ function JobCaseReviewEditor({
           {review.fields.filter((field) => field.value).map((field) => (
             <div key={field.key}>
               <span>{field.label}</span>
-              <strong>{field.value}</strong>
+              <strong><BusinessField kind="case" id={review.reviewId} version={review.reviewRevision} field={field.key} value={field.value} label={field.label} disabled={review.lifecycle !== 'active'} /></strong>
               <small>{field.sourceLabels.join(' · ') || 'HR確認値'}</small>
             </div>
           ))}
@@ -541,6 +542,7 @@ function JobCaseManagement({
                 <li>PII対応表 {deletionPreview.counts.piiMappings}件</li>
                 <li>脱敏済みソース {deletionPreview.counts.sourceRecords}件</li>
                 <li>Gmailローカルコピー {deletionPreview.counts.gmailMessages}件</li>
+                {deletionPreview.counts.businessFollowUps ? <li>対応記録 {deletionPreview.counts.businessFollowUps}件</li> : null}
                 {deletionPreview.counts.agentReferences ? <li>Agent履歴参照 {deletionPreview.counts.agentReferences.conversations}会話 / {deletionPreview.counts.agentReferences.messages}メッセージ</li> : null}
               </ul>
               <p>続行するには「削除」と入力してください。</p>
@@ -604,6 +606,7 @@ function BulkJobCaseDeletion({
     caseVersions: sum.caseVersions + preview.counts.caseVersions,
     reviewAudits: sum.reviewAudits + preview.counts.reviewAudits,
     taskRecords: sum.taskRecords + preview.counts.taskRecords,
+    businessFollowUps: sum.businessFollowUps + (preview.counts.businessFollowUps ?? 0),
     proposalDrafts: sum.proposalDrafts + preview.counts.proposalDrafts,
     evaluationDraftCases: sum.evaluationDraftCases + preview.counts.evaluationDraftCases,
     piiMappings: sum.piiMappings + preview.counts.piiMappings,
@@ -611,7 +614,7 @@ function BulkJobCaseDeletion({
     gmailMessages: sum.gmailMessages + preview.counts.gmailMessages,
     conversations: sum.conversations + (preview.counts.agentReferences?.conversations ?? 0),
     messages: sum.messages + (preview.counts.agentReferences?.messages ?? 0)
-  }), { caseVersions: 0, reviewAudits: 0, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 0, sourceRecords: 0, gmailMessages: 0, conversations: 0, messages: 0 }) ?? null
+  }), { businessFollowUps: 0, caseVersions: 0, reviewAudits: 0, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 0, sourceRecords: 0, gmailMessages: 0, conversations: 0, messages: 0 }) ?? null
   const confirmed = confirmation === (locale === 'zh-CN' ? '删除' : '削除')
 
   const deleteAll = async () => {
@@ -654,6 +657,7 @@ function BulkJobCaseDeletion({
               </ul>
               {totals ? (
                 <ul>
+                  {totals.businessFollowUps ? <li>対応記録 {totals.businessFollowUps}件</li> : null}
                   <li>JobCase {totals.caseVersions}バージョン</li>
                   <li>監査記録 {totals.reviewAudits}件</li>
                   <li>関連タスク {totals.taskRecords}件</li>

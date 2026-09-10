@@ -722,6 +722,14 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.gmail.findGmailMessageByFingerprint(accountEmail, fingerprint)
   }
 
+  getGmailPersonnelIntakeStatus(accountEmail: string) { return this.stores.gmail.getGmailPersonnelIntakeStatus(accountEmail) }
+  listPendingGmailBusinessIntake(accountEmail: string) { return this.stores.gmail.listPendingGmailBusinessIntake(accountEmail) }
+  getGmailBusinessIntake(accountEmail: string, messageId: string) { return this.stores.gmail.getGmailBusinessIntake(accountEmail, messageId) }
+  saveGmailBusinessIntake(input: import('./stores/gmail-store').GmailBusinessIntake) { return this.stores.gmail.saveGmailBusinessIntake(input) }
+  getCaseMailSource(reviewId: string) { return this.stores.gmail.getCaseMailSource(reviewId) }
+  getCaseReplyRecipient(reviewId: string) { return this.stores.gmail.getCaseReplyRecipient(reviewId) }
+  findResumeDocumentByHash(sha256: string) { return this.stores.gmail.findResumeDocumentByHash(sha256) }
+
   saveGmailMessage(input: StoredGmailMessageInput): boolean {
     return this.stores.gmail.saveGmailMessage(input)
   }
@@ -775,6 +783,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.jobCases.getJobCaseSourceText(reviewId)
   }
 
+  getJobCaseSourceTextForDisplay(reviewId: string): JobCaseSourceText | null {
+    return this.stores.jobCases.getJobCaseSourceTextForDisplay(reviewId)
+  }
+
   listJobCaseReviews(): JobCaseReviewSnapshot[] {
     return this.stores.jobCases.listJobCaseReviews()
   }
@@ -796,6 +808,13 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.jobCaseSeen.listSeenJobCaseReviewIds()
   }
 
+  beginBusinessProgress(input: import('@shared').BeginBusinessProgressInput, actor: string) { return this.stores.businessProgress.begin(input,actor) }
+  advanceBusinessProgress(input: import('@shared').AdvanceBusinessProgressInput, actor: string) { return this.stores.businessProgress.advance(input, actor) }
+  listBusinessProgressMail() { return this.stores.businessProgress.mail() }
+  captureBusinessProgressMail(input: Parameters<StoreRegistry['businessProgress']['captureMail']>[0]) { return this.stores.businessProgress.captureMail(input) }
+  updateBusinessProgressMail(input: Parameters<StoreRegistry['businessProgress']['updateMail']>[0]) { return this.stores.businessProgress.updateMail(input) }
+  listBusinessFollowUps() { return this.stores.personnel.followUps() }
+  saveBusinessFollowUp(input: import('@shared').SaveBusinessFollowUpInput, recordedBy: string) { return this.stores.personnel.saveFollowUp(input, recordedBy) }
   getBusinessFeed() { return this.stores.personnel.feed() }
   markBusinessFeed(input: import('@shared').MarkBusinessFeedInput) { return this.stores.personnel.markFeed(input) }
   getPersonnelWorkspace() { return this.stores.personnel.workspace() }
@@ -869,6 +888,8 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   deleteJobCaseDatabaseData(rawInput: DeleteJobCaseDataInput, now = new Date()): JobCaseDeletionPreview {
     return this.stores.jobCases.deleteJobCaseDatabaseData(rawInput, now)
   }
+
+  saveBusinessCaseField(input: import('@shared').SaveBusinessFieldInput, reviewerId: string, reviewerName: string) { return this.stores.jobCases.saveBusinessCaseField(input, reviewerId, reviewerName) }
 
   confirmJobCaseReview(
     input: SubmitJobCaseReviewInput,

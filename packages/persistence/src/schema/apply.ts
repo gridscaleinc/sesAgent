@@ -46,7 +46,10 @@ import {
   migrationV43,
   migrationV44,
   migrationV45,
-  migrationV46
+  migrationV46,
+  migrationV47,
+  migrationV48,
+  migrationV49
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
@@ -418,4 +421,14 @@ export function applyMigrations(database: Database.Database): void {
   const hasV45 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 45').get()
   if (!hasV45) database.exec(migrationV45)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 46').get()) database.exec(migrationV46)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 47').get()) database.exec(migrationV47)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 48').get()) database.exec(migrationV48)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 49').get()) {
+    database.pragma('foreign_keys=OFF')
+    try { database.exec(migrationV49) } catch (error) {
+      if (database.inTransaction) database.exec('ROLLBACK')
+      throw error
+    } finally { database.pragma('foreign_keys=ON') }
+    if ((database.pragma('foreign_key_check') as unknown[]).length) throw new Error('Schema v49 foreign key verification failed.')
+  }
 }

@@ -555,7 +555,7 @@ export function translateUiText(locale: ApplicationLocale, source: string): stri
   return locale === 'zh-CN' ? translateKnownUiValue(source) ?? source : source
 }
 
-const ipcInvokeErrorPrefix = /^Error invoking remote method '[^']+': Error:\s*/u
+const ipcInvokeErrorPrefix = /^(?:Error: )?Error invoking remote method '[^']+':\s*(?:Error:\s*)?/u
 
 export function localizedIpcError(
   locale: ApplicationLocale,
@@ -566,6 +566,8 @@ export function localizedIpcError(
   if (!(cause instanceof Error)) return fallbackText
   const normalized = cause.message.replace(ipcInvokeErrorPrefix, '').trim()
   if (!normalized) return fallbackText
+  // Schema/transport diagnostics are not useful instructions for the operator.
+  if (/^[\[{]/u.test(normalized) || /^(?:ZodError|TypeError|SqliteError|SQLITE_|Error:) /u.test(normalized)) return fallbackText
   const translated = translateUiText(locale, normalized)
   if (translated !== normalized) return translated
   if (locale === 'zh-CN' && /[\u3040-\u30ff]/u.test(normalized)) return fallbackText

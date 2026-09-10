@@ -101,6 +101,44 @@ describe('broadcast IPC handlers', () => {
     electronMock.handlers.clear()
   })
 
+  it('prepares an old Gmail draft with a placeholder-only note and does not change meaningful fields', () => {
+    const draft = review({ status: 'awaiting-review', jobCase: null, fields: review().fields.map(field => field.key === 'notes' ? { ...field, value: '<NATIONALITY_001>' } : field) })
+    const saved = review()
+    const deps = dependencies({ getJobCaseReview: vi.fn(() => draft), confirmJobCaseReview: vi.fn(() => saved) })
+    registerBroadcastHandlers(deps)
+    expect(invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toEqual(saved)
+    expect(deps.repository.confirmJobCaseReview).toHaveBeenCalledWith(expect.objectContaining({
+      reviewId, reviewRevision: 1, fields: expect.arrayContaining([
+        { key: 'notes', value: null, confirmed: true, changeReason: 'Remove placeholder-only field after local redaction' },
+        { key: 'required_skills', value: 'Java、Spring Boot', confirmed: true }
+      ])
+    }), 'operator-1', 'HR', expect.any(Date))
+    expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
+    expect(deps.openExternal).not.toHaveBeenCalled()
+    vi.mocked(deps.repository.getJobCaseReview).mockReturnValue(saved)
+    expect(invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toEqual(saved)
+    expect(deps.repository.confirmJobCaseReview).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects stale, inactive or missing cases before preparing them', () => {
+    const deps = dependencies({ confirmJobCaseReview: vi.fn() })
+    registerBroadcastHandlers(deps)
+    vi.mocked(deps.repository.getJobCaseReview).mockReturnValue(review({ reviewRevision: 2 }))
+    expect(() => invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toThrow(/更新/u)
+    vi.mocked(deps.repository.getJobCaseReview).mockReturnValue(review({ lifecycle: 'archived' }))
+    expect(() => invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toThrow(/無効/u)
+    vi.mocked(deps.repository.getJobCaseReview).mockReturnValue(null)
+    expect(() => invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toThrow(/見つかりません/u)
+    expect(deps.repository.confirmJobCaseReview).not.toHaveBeenCalled()
+  })
+
+  it('propagates preparation failures instead of returning a draft as a ready case', () => {
+    const deps = dependencies({ getJobCaseReview: vi.fn(() => review({ status: 'awaiting-review', jobCase: null })),
+      confirmJobCaseReview: vi.fn(() => { throw new Error('案件名は必須です。') }) })
+    registerBroadcastHandlers(deps)
+    expect(() => invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toThrow('案件名は必須です。')
+  })
+
   it('returns the queue and the templates, and names no destination at all', () => {
     registerBroadcastHandlers(dependencies())
     const workspace = invoke(ipcChannels.listBroadcastWorkspace) as { queue: unknown[]; templates: unknown[] }
@@ -152,6 +190,21 @@ describe('broadcast IPC handlers', () => {
     electronMock.handlers.clear()
     registerBroadcastHandlers(dependencies({ getJobCaseReview: vi.fn(() => review({ lifecycle: 'archived' })) }))
     expect(() => invoke(ipcChannels.draftCaseBroadcast, { reviewId })).toThrow(/無効/u)
+  })
+
+  it('validates before clipboard writing and rejects stale case or template versions without recording', () => {
+    const deps = dependencies()
+    registerBroadcastHandlers(deps)
+    const input = { reviewId, lang: 'ja', kind: 'new', templateId: builtInBroadcastTemplate().id, text: 'Java project', expectedJobCaseVersion: 1, expectedTemplateRevision: 1 }
+    expect(invoke(ipcChannels.validateCaseBroadcastMessage, input)).toEqual(input)
+    expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
+    expect(deps.openExternal).not.toHaveBeenCalled()
+    for (const patch of [{ expectedJobCaseVersion: 2 }, { expectedTemplateRevision: 2 }]) {
+      expect(() => invoke(ipcChannels.validateCaseBroadcastMessage, { ...input, ...patch })).toThrow(/更新/u)
+      expect(() => invoke(ipcChannels.recordCaseBroadcastCopy, { ...input, ...patch })).toThrow(/更新/u)
+    }
+    expect(() => invoke(ipcChannels.validateCaseBroadcastMessage, { ...input, text: '<PERSON_NAME_001>' })).toThrow(/person_name/u)
+    expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
   })
 
   it('records one copy against the case version the operator is looking at', () => {

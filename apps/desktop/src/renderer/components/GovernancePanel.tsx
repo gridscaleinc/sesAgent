@@ -471,6 +471,7 @@ export function GovernancePanel({
                 : t('Label・業務キーワードの管理者設定待ち')}</strong>
               <small>{t('保存')} {bootstrap.gmailSync.storedMessages}{t('件')}{bootstrap.gmailSync.lastSyncedAt ? ` · ${t('最終')} ${new Date(bootstrap.gmailSync.lastSyncedAt).toLocaleString(locale)}` : ` · ${t('未同期')}`}</small>
             </div>
+            {bootstrap.gmailSync.personnelIntake?.warnings ? <p role="status">{locale === 'zh-CN' ? `邮件附件：${bootstrap.gmailSync.personnelIntake.failed} 封需要重试，${bootstrap.gmailSync.personnelIntake.warnings} 封有附件提示。失败附件会在下次同步重试；不支持的格式可转换为 PDF、Word 或 Excel 后导入。` : `添付取込：再試行 ${bootstrap.gmailSync.personnelIntake.failed}件、注意 ${bootstrap.gmailSync.personnelIntake.warnings}件。次回同期で再試行します。未対応形式はPDF・Word・Excelに変換してください。`}</p> : null}
             {bootstrap.gmailSync.lastRun ? <p className="gmail-sync-result">{bootstrap.gmailSync.lastRun.mode} · 取込 {bootstrap.gmailSync.lastRun.imported} · 重複 {bootstrap.gmailSync.lastRun.duplicates} · 範囲外 {bootstrap.gmailSync.lastRun.filtered}</p> : null}
             {gmailError || gmailSyncError ? <p className="gmail-connection-error">{gmailError ?? gmailSyncError}</p> : null}
             {bootstrap.gmail.status === 'readonly' ? (

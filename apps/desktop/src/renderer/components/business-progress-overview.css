@@ -1,0 +1,40 @@
+.business-progress-overview { margin: 16px 0 22px; padding: 16px; border: 1px solid #cddfd7; border-radius: 12px; background: #f8fbf9; scroll-margin-top: 16px; }
+.business-progress-overview > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.business-progress-overview h3, .business-progress-overview h4 { margin: 0; }
+.business-progress-overview > header > span, .business-progress-totals { color: #526e61; font-size: 12px; }
+.business-progress-totals { line-height: 1.7; margin: 8px 0 12px; }
+.business-progress-relation { padding: 14px 0; border-top: 1px solid #dce7e0; }
+.business-progress-relation-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.business-progress-relation-heading strong { flex: 1 1 180px; color: #233e31; line-height: 1.6; overflow-wrap: anywhere; }
+.business-progress-relation-heading > span { font-size: 12px; font-weight: 600; color: #326951; white-space: nowrap; }
+.business-progress-relation.is-feedback .business-progress-relation-heading > span { color: #966110; }
+.business-progress-relation p { margin: 6px 0; line-height: 1.65; font-size: 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.business-progress-next { color: #3a5949; font-weight: 600; }
+.business-progress-fact { color: #64736b; max-height: 6.6em; overflow: auto; }
+.business-progress-relation footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.business-progress-relation footer small { color: #738179; font-size: 11px; }
+.business-progress-overview button { padding: 7px 11px; border: 1px solid #c9dbd0; border-radius: 7px; background: white; color: #305e46; font: inherit; font-size: 12px; cursor: pointer; }
+.business-progress-overview button:disabled { opacity: .45; cursor: default; }
+.business-progress-started { padding-top: 12px; }
+.business-progress-history { margin-top: 12px; font-size: 12px; }
+.business-progress-history > summary { cursor: pointer; color: #61716a; }
+.business-progress-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 12px; }
+.hr-object-card .hr-card-business { display: block; width: 100%; text-align: left; border: 0; background: #f1f7f3; color: #43644f; border-radius: 7px; padding: 9px 11px; margin: 10px 0 2px; font: inherit; font-size: 12px; line-height: 1.65; cursor: pointer; }
+.hr-card-business:disabled { cursor: default; color: #75837a; }
+.hr-list-progress-filter { font-size: 12px; }
+
+.hr-object-context { height: 100%; min-height: 0; }
+.hr-object-context[hidden] { display: none; }
+.hr-progress.is-embedded { height: 100%; min-height: 0; padding: 14px; overflow: hidden; box-sizing: border-box; }
+.hr-progress.is-embedded > .hr-followup-heading { margin: 0 0 12px; flex-shrink: 0; }
+.hr-progress.is-embedded .hr-progress-layout { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.hr-progress.is-embedded .hr-progress-detail { height: 100%; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
+.hr-progress.is-embedded .hr-progress-content { min-height: 0; overflow: auto; padding: 16px; }
+.hr-progress.is-embedded .hr-progress-detail > header { flex-wrap: wrap; gap: 8px; padding: 16px; }
+.hr-progress.is-embedded .hr-progress-detail > header > div:last-child { flex-shrink: 1; }
+.hr-progress.is-embedded .hr-progress-track { padding: 0 16px 12px; }
+.hr-progress.is-embedded .hr-progress-tabs { padding: 0 16px 12px; }
+.hr-progress.is-embedded .hr-progress-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.hr-existing-progress { color: #326951; background: #f0f7f2; border-radius: 6px; padding: 8px 12px; font-size: 12px; }
+
+.hr-card-business-next { display: block; margin-top: 4px; color: #48644f; font-size: 11px; }
