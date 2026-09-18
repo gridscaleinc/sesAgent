@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-import { loadManagedGoogleWorkspaceConfiguration } from './app-defaults'
+import { gmailSyncState, loadManagedGoogleWorkspaceConfiguration } from './app-defaults'
 
 const managedKeys = [
   'SES_GOOGLE_OAUTH_CLIENT_ID',
@@ -24,6 +24,18 @@ function clearManagedConfiguration(): void {
 }
 
 afterEach(() => vi.unstubAllEnvs())
+
+it('exposes batch progress and intake counts without sending provider pagination tokens to the renderer', () => {
+  const lastRun = { mode: 'baseline', imported: 2, discovered: 2, duplicates: 0, filtered: 0, failed: 0, moreAvailable: true,
+    continuation: { pageToken: 'PRIVATE-PAGE-TOKEN', historyId: '100', startedAt: '2026-09-11T00:00:00Z', mode: 'baseline' } }
+  const repository = { getGmailSyncCheckpoint: () => ({ status: 'idle', historyId: '100', lastRun }), getGmailPersonnelIntakeStatus: () => ({ failed: 0, warnings: 0 }), countGmailMessages: () => 2 }
+  vi.stubEnv('SES_GMAIL_SYNC_INTERVAL_MINUTES', '7')
+  const state = gmailSyncState(repository as any, { accountEmail: 'hr@example.com' } as any, null)
+  expect(state.intervalMinutes).toBe(7)
+  expect(state.lastRun).toMatchObject({ imported: 2, moreAvailable: true })
+  expect(JSON.stringify(state)).not.toContain('PRIVATE-PAGE-TOKEN')
+  expect(lastRun.continuation.pageToken).toBe('PRIVATE-PAGE-TOKEN')
+})
 
 describe('loadManagedGoogleWorkspaceConfiguration', () => {
   it('uses bounded product defaults when the build supplies only the public client identity', () => {

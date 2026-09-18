@@ -1,3 +1,4 @@
+import { useIntroductionExperience } from './use-introduction-experience'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { BroadcastTemplate, DraftCaseBroadcastResult, JobCaseReviewSnapshot } from '@shared'
 import { useUiLocale } from '../i18n'
@@ -68,12 +69,15 @@ export function CaseIntroductionComposer({ target, cases, onClose, onPrepared }:
     if (footer && initial.endsWith(footer)) initial = initial.slice(0, -footer.length).trimEnd()
     initial = initial.replace(/\n[ \t]*\n+/gu, '\n')
   }
-  const text = drafts[textKey] ?? initial
+  const generationInput=target?.jobCaseVersion?{kind:'case' as const,id:target.reviewId,version:target.jobCaseVersion,lang,style:brief?'brief' as const:'standard' as const}:null
+  const experience=useIntroductionExperience(textKey,generationInput,initial,valid)
+  const text = drafts[textKey] ?? experience.text
   const regenerate = async () => {
     if (lock.current || !target || target.jobCaseVersion === null || !valid) return
     lock.current = true; setBusy(true); setError(''); setNotice('')
     try {
       const result = await window.sesAgent.regenerateIntroduction({ kind: 'case', id: target.reviewId, version: target.jobCaseVersion, lang, style: brief ? 'brief' : 'standard' })
+      experience.replace(result)
       setDrafts((current) => ({ ...current, [textKey]: result.text }))
       setNotice(t('AI 已重新生成，可直接编辑。', 'AIで再生成しました。そのまま編集できます。'))
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
@@ -84,7 +88,7 @@ export function CaseIntroductionComposer({ target, cases, onClose, onPrepared }:
     lock.current = true; setBusy(true); setError(''); setNotice('')
     try {
       const input = { reviewId: target.reviewId, templateId: template.id, expectedJobCaseVersion: target.jobCaseVersion,
-        expectedTemplateRevision: template.revision, lang, kind: 'new' as const, text }
+        expectedTemplateRevision: template.revision, lang, kind: 'new' as const, text, experienceRunId:await experience.runId() }
       if (method === 'copy') {
         const checked = await window.sesAgent.validateCaseBroadcastMessage(input)
         await copyTextToClipboard(checked.text)
@@ -114,7 +118,7 @@ export function CaseIntroductionComposer({ target, cases, onClose, onPrepared }:
       ...templates.slice(1).map((item) => ({ id: item.id, label: item.name }))] : []}
       templateId={brief ? 'brief' : template?.id ?? ''} lang={lang} disabled={busy} panelId={panelId} onTemplateChange={setTemplateId} onLanguageChange={setLang} />
     <div className="hr-intro-generation"><button type="button" disabled={busy || !valid} onClick={() => void regenerate()}>{busy ? t('处理中', '処理中') : t('AI 重新生成', 'AIで再生成')}</button></div>
-    <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body"><textarea aria-label={t('介绍文案', '紹介文')} disabled={busy || loading || !valid} value={text} onChange={(event) => setDrafts((current) => ({ ...current, [textKey]: event.target.value }))} /></div>
+    <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body"><textarea aria-label={t('介绍文案', '紹介文')} disabled={busy || loading || !valid} value={text} onChange={(event) => {experience.markEdited();setDrafts((current) => ({ ...current, [textKey]: event.target.value }))}} /></div>
     {loading || preparing ? <p role="status">{t('正在准备…', '準備中…')}</p> : null}{error ? <p role="alert">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
     <footer><small>{t('复制和打开邮件不会记为已发送。', 'コピーやメールを開く操作は送信済みになりません。')}</small><button type="button" disabled={busy || loading || !valid || !text.trim()} onClick={() => void submit('email')}>{t('打开邮件', 'メールを開く')}</button><button type="button" className="hr-primary" disabled={busy || loading || !valid || !text.trim()} onClick={() => void submit('copy')}>{t('复制介绍', '紹介文をコピー')}</button></footer>
   </div></div>

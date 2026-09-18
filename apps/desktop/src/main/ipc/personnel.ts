@@ -1,4 +1,5 @@
-import { createIntroductionGenerator } from '../introduction-generation'
+import { saveCaseSearchAssessments } from '../case-search-assessments'
+import { beginIntroductionDraft, createIntroductionGenerator } from '../introduction-generation'
 import { saveBusinessField } from '../business-field-editing'
 import { businessProgressCalendar, createBusinessProgressAnalyzer, draftBusinessProgressMessage } from '../business-progress'
 import { writeFile } from 'node:fs/promises'
@@ -12,7 +13,10 @@ import { assertTrustedSender, type MainIpcContext } from './context'
 
 export function registerPersonnelHandlers(context: MainIpcContext) {
   const { repository, currentOperator } = context
+  ipcMain.handle(ipcChannels.listPersonnelMailUpdates,(event,id)=>{assertTrustedSender(event);return repository.listPersonnelMailUpdates(z.string().uuid().parse(id))})
+  ipcMain.handle(ipcChannels.resolvePersonnelMailUpdate,(event,input)=>{assertTrustedSender(event);return repository.resolvePersonnelMailUpdate(input,currentOperator().displayName)})
   const regenerate = createIntroductionGenerator(context)
+  ipcMain.handle(ipcChannels.beginIntroductionDraft,(event,input)=>{assertTrustedSender(event);return beginIntroductionDraft(context,input)})
   const analyzeProgress = createBusinessProgressAnalyzer(context)
   ipcMain.handle(ipcChannels.beginBusinessProgress, (event, input) => { assertTrustedSender(event); return repository.beginBusinessProgress(input, currentOperator().displayName) })
   ipcMain.handle(ipcChannels.advanceBusinessProgress, (event, input) => { assertTrustedSender(event); return repository.advanceBusinessProgress(input, currentOperator().displayName) })
@@ -61,7 +65,9 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
     if (existing) return existing.promise
     const controller = new AbortController()
     const notify = (result: unknown) => { if (!event.sender.isDestroyed()) event.sender.send(ipcChannels.businessMatchingProgress, { kind, id, result }) }
-    const promise = (kind === 'case' ? findPeople(id, { signal: controller.signal, onLocal: notify }) : findCases(id, { signal: controller.signal, onLocal: notify }))
+    const startedAt = Date.now()
+    const promise = (kind === 'case' ? findPeople(id, { signal: controller.signal, onLocal: notify })
+      .then(result => saveCaseSearchAssessments(repository, result, startedAt)) : findCases(id, { signal: controller.signal, onLocal: notify }))
       .finally(() => active.delete(key))
     active.set(key, { controller, owner: event.sender.id, promise })
     return promise
@@ -100,7 +106,7 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
     assertTrustedSender(event)
     const input = repository.validatePersonnelMessage(raw)
     const encode = (value: string) => encodeURIComponent(value).replace(/[!'()*]/gu, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
-    const subject = input.lang === 'ja' ? '要員のご紹介' : '人员介绍'
+    const subject = input.subject ?? (input.lang === 'ja' ? '要員のご紹介' : '人员介绍')
     let recipient = input.caseContext ? gmailReplyMailbox(repository.getCaseReplyRecipient(input.caseContext.reviewId) ?? '') : null
     if (!recipient && input.caseContext && context.googleWorkspace) {
       const source = repository.getCaseMailSource(input.caseContext.reviewId)
@@ -119,6 +125,7 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
     const url = `mailto:${recipient ? encode(recipient) : ''}?subject=${encode(subject)}&body=${encode(input.text)}`
     if (url.length > 16_000) throw new Error('文案过长，请使用复制。 / 長い文面はコピーをご利用ください。')
     await shell.openExternal(url)
+    if(input.experienceRunId)repository.recordExperienceAdoption(input.experienceRunId,input.text,currentOperator().operatorId,{documentId:input.documentId,reviewId:input.caseContext?.reviewId??null})
     return { opened: true, recipientPrefilled: Boolean(recipient) }
   })
   ipcMain.handle(ipcChannels.findCasesForPersonnel, (event, raw) => match(event, 'person', raw))

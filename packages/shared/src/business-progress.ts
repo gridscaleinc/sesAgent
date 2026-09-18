@@ -1,3 +1,4 @@
+import { candidateInterviewQuestionSchema } from './schemas'
 import { z } from 'zod'
 import type { BusinessFollowUp } from './business-workbench'
 import type { CandidateInterviewSnapshot } from './contracts'
@@ -15,6 +16,7 @@ export const emptyProgressEntry = (): ProgressEntry => ({ plannedDate: '', rate:
 export interface BusinessProgress {
   stage: BusinessProgressStage
   resumeStage?: BusinessProgressStage
+  previousBusinessStatus?: 'available' | 'soon' | 'assigned' | 'paused'
   candidateAvailability: string
   clientAvailability: string
   pendingConditions: string[]
@@ -36,6 +38,11 @@ export type ProgressSchedule = z.infer<typeof schedule>
 export const advanceBusinessProgressSchema = z.discriminatedUnion('action', [
   z.object({ ...pair, action: z.literal('coordinate'), candidateAvailability: z.string(), clientAvailability: z.string(), pendingConditions: z.array(z.string()) }).strict(),
   z.object({ ...pair, action: z.literal('schedule'), schedule }).strict(),
+  z.object({ ...pair, action: z.literal('rebook'), schedule, reason: line.min(1) }).strict(),
+  z.object({ ...pair, action: z.literal('cancel-schedule'), reason: line.min(1) }).strict(),
+  z.object({ ...pair, action: z.literal('correct-entry'), entry: progressEntrySchema, reason: line.min(1) }).strict(),
+  z.object({ ...pair, action: z.literal('undo-start'), reason: line.min(1) }).strict(),
+  z.object({ ...pair, action: z.literal('prepare'), roundNumber: round, questions: z.array(candidateInterviewQuestionSchema).min(1).max(40) }).strict(),
   z.object({ ...pair, action: z.literal('feedback'), roundNumber: round, notes: z.string().trim().min(1).max(8000),
     result: z.enum(['pending','passed','failed','no-show','withdrawn']), next: z.enum(['unknown','next-round','entry']),
     unresolved: z.array(z.string().trim().min(1).max(300)).max(20) }).strict(),
@@ -51,7 +58,7 @@ export type AdvanceBusinessProgressInput = z.infer<typeof advanceBusinessProgres
 export type ProgressCommand = AdvanceBusinessProgressInput extends infer T ? T extends AdvanceBusinessProgressInput ? Omit<T, keyof typeof pair> : never : never
 
 export const analyzeBusinessProgressSchema = z.object({ documentId: z.string().uuid(), reviewId: z.string().uuid(),
-  expectedRevision: z.number().int().nonnegative(), text: z.string().trim().min(1).max(12000), lang: z.enum(['zh','ja']) }).strict()
+  expectedRevision: z.number().int().nonnegative(), roundNumber: round.optional(), text: z.string().trim().min(1).max(12000), lang: z.enum(['zh','ja']) }).strict()
 export type AnalyzeBusinessProgressInput = z.infer<typeof analyzeBusinessProgressSchema>
 export const progressAnalysisSchema = z.object({
   summary: z.string().max(2000), kind: z.enum(['schedule','feedback','entry','other']),
@@ -89,7 +96,7 @@ export function businessProgressStep(item: BusinessFollowUp, now = new Date(), z
     scheduled: [`${latest?.roundNumber ?? 1} 面已预约`,`${latest?.roundNumber ?? 1} 次面談を予約済み`,'查看面试安排','面談予定を見る'],
     feedback: ['待面试反馈','面談結果待ち','记录面试结果','面談結果を記録'],
     'next-round': [`待安排 ${roundNumber} 面`,`${roundNumber} 次面談の調整待ち`,'安排下一轮','次の面談を予約'],
-    'next-decision': ['本轮通过，后续待定','今回通過・次の対応を確認','确认下一步','次の対応を確認'],
+    'next-decision': [latest?.decision === 'passed' ? '本轮通过，后续待定' : '待确认后续安排',latest?.decision === 'passed' ? '今回通過・次の対応を確認' : '次の対応を確認待ち','确认下一步','次の対応を確認'],
     entry: ['待进场','参画準備中','安排进场','参画を手配'],
     started: ['已进场','参画済み','查看进场记录','参画記録を見る'],
     paused: ['已暂停','保留中','继续推进','対応を再開'],

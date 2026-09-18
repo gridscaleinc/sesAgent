@@ -1,6 +1,6 @@
 # SES Agent Desktop 文档总览
 
-<!-- ses-current-state package=0.1.0 schema=49 -->
+<!-- ses-current-state package=0.1.0 schema=58 -->
 
 > 文档版本：v0.42
 > 更新日期：2026-09-09
@@ -121,7 +121,7 @@ SES Agent Desktop 是面向日本 SES 公司的桌面业务助手，服务对象
 8. 本地确定性 PII 引擎生成稳定占位符，独立 DLP 复检后才产生带品牌的 `RedactedPayload`；Cloud Gateway 还会检查持久化会话、策略、来源版本、哈希、有效期和 HTTPS Endpoint Allowlist。
 9. PDF.js、SheetJS、Mammoth 和 PostalMime 在一次一进程的 Parser Worker 中处理不可信文件；简历生成 `DocumentIR v1`，EML 只返回受限正文、哈希身份和非身份域名。
 10. Parser Worker 不继承应用密钥或 Provider 环境变量，并安装 Node 网络拒绝守卫；宏、公式和外部链接不执行、不加载。
-11. 解析结果、PII 映射、候选人/案件字段草稿、案件字段别名、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Assessment、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话、紹介文模板/案件配信复制记录、案件既読状態和备份修订状态持久化到当前 Schema v49；应用重启后仍能恢复。
+11. 解析结果、PII 映射、候选人/案件字段草稿、案件字段别名、字段/项目审核审计、匿名 CandidateProfile、Profile/项目分段加密向量缓存、匹配运行/人工反馈、Match Assessment、Match Run 有效性绑定、版本化营业优先级 Projection、专家标注草稿、SES Benchmark/评测报告、JobCase、提案草稿/提案后人工跟进、恢复事件、生命周期、删除报告、Google Workspace 管理配置/在线验收报告、本机操作员档案、本机显示语言偏好、ProcessingJob、Gmail 删除墓碑、同步检查点、Cloud Gate/Ticket 审计绑定、Sales Agent 会话、紹介文模板/案件配信复制记录、案件既読状態和备份修订状态持久化到当前 Schema v58；应用重启后仍能恢复。
 12. macOS 原生 Helper 使用 Apple Vision 在本地处理扫描 PDF，输出文字、置信度、坐标、人脸和条码候选区域；进程由系统沙箱禁止联网，原 PDF 不进入云端。
 13. Apple Natural Language 处理其可靠覆盖的英文姓名；日文姓名采用保守标签/形式规则生成候选，所有姓名候选都必须人工确认，不把当前实现包装成已经达到发布质量的日文 NER。
 14. 技能、经验年数、稼动时间、单价、日语等级、工作方式和角色由确定性本地提取器生成草稿；每个字段显示置信度和页码/Sheet/Cell 来源，缺失项保持 `null`。
@@ -132,7 +132,7 @@ SES Agent Desktop 是面向日本 SES 公司的桌面业务助手，服务对象
 19. Google Workspace 桌面 OAuth 基础层使用系统浏览器、随机 `127.0.0.1` Loopback 回调、PKCE S256、`state` 校验和离线 Refresh Token；不使用嵌入式登录页或已废弃的 OOB 复制码。
 20. 首次连接只申请 `gmail.readonly`，并在 Token 交换和刷新后要求实际 Scope **恰好只有这一项**、Token Type 为 Bearer、账号属于公司 Workspace 域；任何额外 Scope 都会拒绝保存凭据。
 21. OAuth 凭据由 OS Keychain/DPAPI 语义的 `safeStorage` 加密保存在 `0600` 私有文件中；UI 明确显示读权限、草稿权限和“发送方法未实现”。
-22. Gmail 首次同步只扫描管理员配置的 Label、业务关键词和回溯天数；后续对每个配置 Label 同时跟踪 `messageAdded + labelAdded`，避免邮件稍后被打上 SES Label 时漏收。使用 `historyId` 增量补齐，检查点过期的 404 只触发相同范围内的有限重扫，范围过宽或消息处理失败时不推进检查点。
+22. Gmail 首次同步只扫描管理员配置的 Label、业务关键词和回溯天数；后续对每个配置 Label 同时跟踪 `messageAdded + labelAdded`，避免邮件稍后被打上 SES Label 时漏收。使用 `historyId` 增量补齐，检查点过期的 404 只触发相同范围内的有限重扫，历史增量过多时在相同范围内分批重扫；每批默认上限 200 封，分页与入库结果加密持久化，成功批次约 5 秒后继续。失败页保留原位置，完整扫描后再补齐扫描期间的新邮件。
 23. Gmail 与 EML 的 MIME 解析只读取受限大小的文字正文；Gmail 额外限制 20 层/1000 Part、合计 2 MB 解码文本和严格 Base64URL。HTML 转纯文本，附件不下载或解析后立即清零，远程图片不加载，提示词注入样式文本只作为不可信内容标记。From 显示名、主题与正文经过本地姓名候选、PII 规则和独立 DLP 复检后才写入加密数据库，`cloud_eligible` 固定为 `0`。
 24. 同一 Gmail Message ID 与脱敏后业务指纹分别用于技术去重和业务重复标记；同步主进程还使用单飞锁，避免用户连续点击产生并发检查点竞争。
 25. 候选人侧边栏已接入真实 active CandidateProfile；支持空条件浏览和本地多关键词检索，返回匿名 ID、确定性适合度分数、命中字段及原始页码/Sheet/Cell 依据。ASCII 技术词使用边界匹配，`Java` 不会误命中 `JavaScript`。
@@ -350,3 +350,7 @@ npm run test:installer:win -- --development
 Playwright 真实渲染验收覆盖 1440px 工作台、`⌘K` 本地业务命令/键盘执行、任务中心、统一审核中心、候选人/案件精确直达、操作员档案保存与侧栏即时更新、命令直达手工案件、Google Workspace 管理设置、授权前连接诊断与连接后在线受入检验、持久任务记录/取消/同范围重试、ProcessingJob 完成状态、简历“加密暂存但执行前不解析”的任务入口、备份到期/延期状态、恢复确认、EML 审核来源、Local AI Stage 4 项目证据/精排 Rank、任务证据/管控三视图、匿名来源与哈希、人工审批边界、提案后人工跟进时间线、营业员反馈、候选人质量门、应用内专家标注、日文/简体中文切换，以及 1100/1280px 治理抽屉和焦点返回；1100px 任务页、审核中心、提案跟进、操作员和显示语言窗口已实测无横向溢出。外部吸收改造另实测 Matching-first 首页、五类案件来源卡和 Proposal Workspace：1440/1280/1100 分别为三栏/两栏/单栏，页面与提案容器均无横向溢出，微信卡展示 Accessibility、屏幕录制、单窗口范围、断网 Helper 与本次读取状态；真实原生确认和窗口捕获由 macOS 目标机验收覆盖。可复用视觉 Fixture 位于 `scripts/playwright-renderer-mock.js`；本次截图写入 `output/playwright/external-adoption/`，控制台 Errors/Warnings 均为 0。
 
 下一开发切片先关闭本地硬性出网与 P0 发布证据：固定模型文件、macOS 目录包/签名包失败关闭验收、A-02 文档自动校验，以及后续真实受控网络链路。仓库外至少 50 份来源、双评审的日文隐私专家数据集和与当前源码绑定的 v2 报告仍建议补齐，用于质量、审计和发布准备度，不再作为普通 Cloud 调用的单独阻断项。匹配质量门另需 30–50 个真实 SES 案件。Windows 侧仍必须在 x64 目标机编译原生启动器并运行 CI/首个目录包，取得 OCR 与 Parser/Embedding/Reranker 的真实 AppContainer 证据，再完成代码签名、安装升级和实机恢复。当前只能称为 A-01 本机实现与构建验证完成，不能称为可发布版本。
+
+案件与人员列表提供单条删除入口，删除前读取关联记录影响并校验确认快照。新增资料在本地保存事务中防重：人员按原始文件内容及解析正文检查，案件按本地还原后的正文检查；空白与全半角差异不产生新记录，不按姓名或案件名单独合并。Schema v51 为已有资料回填内容指纹，保留已有记录；已跳过的重复 Gmail 案件不会在原案件删除后自动重新进入列表。运行 `npm run test:intake-deduplication` 可验证并发导入、跨入口防重、升级和删除后重新添加。
+
+系统经验：后台学习的范围、验证与用量约束见 [无感后台学习与系统经验](docs/design/system-experience.md)，可执行 `npm run test:system-experience` 验证闭环。

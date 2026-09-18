@@ -1,3 +1,4 @@
+import { generatePersonnelProposal } from './personnel-proposal'
 import { z } from 'zod'
 import { candidateFieldKeys, type CandidateFieldKey, type CandidateProfileSearchResult, type CandidateReviewSnapshot, type CandidateMatchAssessment } from './contracts'
 import type { BusinessMatchQualification } from './matching-requirements'
@@ -8,10 +9,12 @@ export const businessIntakeSegmentLimit = 3_900
 export interface BusinessBatchSegment { text: string; startLine: number; endLine: number }
 
 /** Split only at explicit record boundaries. Oversize records stay whole for review. */
-export function splitBusinessBatch(text: string): BusinessBatchSegment[] {
+export function splitBusinessBatch(text: string, kind: 'mixed' | 'case' = 'mixed'): BusinessBatchSegment[] {
   if (text.length > businessBatchCharacterLimit) throw new Error('一次最多整理 100,000 字 / 1回100,000文字まで')
   const lines = text.replace(/\r\n?/gu, '\n').split('\n')
-  const root = /^(?:【(?:案件|案件情報|人员|人員|要員|人材)】|(?:案件名|氏名|姓名|イニシャル)\s*[:：]|【(?:案件名|氏名|姓名|イニシャル)】|案件\s*[0-9①-⑳一二三四五六七八九十]+|(?:人员|要員)\s*[0-9①-⑳]+)/u
+  const root = kind === 'case'
+    ? /^(?:【(?:案件(?:情報|[0-9０-９①-⑳一二三四五六七八九十]+)?|案件名|案件名称|项目名称|项目名|プロジェクト名)】|[■◆●]?\s*(?:案件名|案件名称|项目名称|项目名|プロジェクト名)\s*[:：]|案件\s*[0-9０-９①-⑳一二三四五六七八九十]+)/u
+    : /^(?:【(?:案件|案件情報|人员|人員|要員|人材)】|(?:案件名|氏名|姓名|イニシャル)\s*[:：]|【(?:案件名|氏名|姓名|イニシャル)】|案件\s*[0-9①-⑳一二三四五六七八九十]+|(?:人员|要員)\s*[0-9①-⑳]+)/u
   const separator = /^[-_=─━.・]{4,}$/u
   const records: BusinessBatchSegment[] = []
   let start = 0
@@ -25,11 +28,18 @@ export function splitBusinessBatch(text: string): BusinessBatchSegment[] {
   }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim()
-    if (separator.test(line)) { flush(i); start = i + 1; hasRoot = false; continue }
+    if (separator.test(line)) {
+      // Decorative rules inside a titled case do not turn its conditions into another case.
+      const next = lines.slice(i + 1).find(item => item.trim() && !separator.test(item.trim()))?.trim()
+      if (kind === 'case' && hasRoot && next && !root.test(next)) continue
+      flush(i); start = i + 1; hasRoot = false; continue
+    }
     if (root.test(line)) {
       // A standalone type tag followed by the record's title/name is one record.
       const previous = lines.slice(start, i).filter((item) => item.trim())
-      const tagOnly = previous.length === 1 && /^【(?:案件|案件情報|人员|人員|要員|人材)】$/u.test(previous[0]!.trim())
+      const tagOnly = previous.length === 1 && (kind === 'case'
+        ? /^(?:【案件(?:情報|[0-9０-９①-⑳一二三四五六七八九十]+)?】|案件\s*[0-9０-９①-⑳一二三四五六七八九十]+)$/u
+        : /^【(?:案件|案件情報|人员|人員|要員|人材)】$/u).test(previous[0]!.trim())
       if (hasRoot && !tagOnly) { flush(i); start = i }
       hasRoot = true
     }
@@ -67,6 +77,8 @@ export const candidateBusinessStateInputSchema = z.object({
 export type SetCandidateBusinessStateInput = z.infer<typeof candidateBusinessStateInputSchema>
 
 export const personnelMessageInputSchema = z.object({
+  subject: z.string().trim().min(1).max(240).refine(value => !/[\r\n]/u.test(value)).optional(),
+  experienceRunId: z.string().uuid().optional(),
   documentId: z.string().uuid(), profileVersion: z.number().int().positive(), templateId: z.string().uuid(),
   reviewRevision: z.number().int().positive().optional(),
   caseContext: z.object({ reviewId: z.string().uuid(), version: z.number().int().positive() }).strict().optional(),
@@ -81,6 +93,10 @@ export interface PersonnelWorkspace {
   templates: PersonnelTemplate[]; states: CandidateBusinessState[]; copies: PersonnelCopy[]
 }
 export interface PersonnelCaseMatch {
+  rulePreference?:number
+  ranking?: import('./experience-ranking').RankingAdjustment
+  experienceRunId?: string
+  appliedRules?: import('./ai-work-rules').AppliedWorkRule[]
   reviewId: string; jobCaseId: string; title: string; score: number | null
   matched: string[]; missing: string[]; hardFilters: CandidateProfileSearchResult['retrieval']['hardFilters']
   jobCaseVersion: number
@@ -88,6 +104,7 @@ export interface PersonnelCaseMatch {
   qualification?: BusinessMatchQualification
 }
 export interface PersonnelCaseMatchResult {
+  rulesRevision?: number
   documentId: string
   profileVersion: number
   items: PersonnelCaseMatch[]
@@ -96,14 +113,18 @@ export interface PersonnelCaseMatchResult {
   searchedCount?: number
   excludedCount?: number
   excludedRequirements?: string[]
-  cloud: { status: 'reviewed' | 'partial' | 'unavailable' | 'failed' | 'not-needed'; reviewedCount: number; modelName: string | null }
+  cloud: { status: 'reviewed' | 'partial' | 'unavailable' | 'failed' | 'not-needed'; reviewedCount: number; modelName: string | null;
+    reason?: 'policy-refresh' | 'service-unavailable' | 'request-failed' | 'no-valid-result' }
 }
 
 export interface CasePersonnelMatch extends Omit<PersonnelCaseMatch, 'reviewId' | 'jobCaseId' | 'jobCaseVersion' | 'title'> {
+  assessmentId?: string
   documentId: string
   profileVersion: number
 }
 export interface CasePersonnelMatchResult {
+  assessedAt?: string
+  rulesRevision?: number
   jobCaseId: string
   jobCaseVersion: number
   items: CasePersonnelMatch[]
@@ -128,10 +149,11 @@ export function builtInPersonnelTemplates(): PersonnelTemplate[] {
 }
 
 export function generatePersonnelMessage(review: CandidateReviewSnapshot, template: PersonnelTemplate, lang: 'ja' | 'zh'): string {
+  if (template.revision === 1 && template.id === 'e72e12d0-0000-4000-8000-000000000002') return generatePersonnelProposal(review, undefined, lang, template.id.endsWith('1')).text
   const values = new Map<string, string>(review.fields.map((field) => [field.key, field.value ?? '']))
   values.set('label', `${lang === 'ja' ? '要員' : '人员'} ${review.documentId.slice(0, 8).toUpperCase()}`)
   return (lang === 'ja' ? template.bodyJa : template.bodyZh).replace(/\{\{([^{}]+)\}\}/gu,
-    (_match, key: string) => values.get(key.trim()) || (lang === 'ja' ? '要確認' : '待确认'))
+    (_match, key: string) => values.get(key.trim()) || (lang === 'ja' ? '[送信前に記入]' : '[发送前填写]'))
 }
 
 export const personnelFieldLabels: Record<CandidateFieldKey, readonly [string, string]> = {
@@ -150,7 +172,7 @@ export type SaveBusinessFollowUpInput = z.infer<typeof saveBusinessFollowUpSchem
 export interface BusinessFollowUp extends Omit<SaveBusinessFollowUpInput, 'expectedRevision'> {
   progress?: import('./business-progress').BusinessProgress
   id: string; revision: number; updatedAt: string; recordedBy: string
-  events: Array<{ status: SaveBusinessFollowUpInput['status']; note: string; nextStep: string; recordedAt: string; recordedBy: string; action?: string; mutationId?: string; stage?: import('./business-progress').BusinessProgressStage; roundNumber?: number }>
+  events: Array<{ status: SaveBusinessFollowUpInput['status']; note: string; nextStep: string; recordedAt: string; recordedBy: string; action?: string; mutationId?: string; stage?: import('./business-progress').BusinessProgressStage; roundNumber?: number; previousInterview?: import('./contracts').CandidateInterviewSnapshot; previousEntry?: import('./business-progress').ProgressEntry; entry?: import('./business-progress').ProgressEntry }>
 }
 
 export const regenerateIntroductionInputSchema = z.object({

@@ -1,3 +1,4 @@
+import { candidateContentFingerprint, DuplicateCandidateError } from '../intake-deduplication'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { type WorkTask } from '@domain'
@@ -10,6 +11,7 @@ import {
   type CandidateProfile,
   candidateExtractionDraftSchema,
   candidateProfileSchema,
+  enrichCandidateJapaneseEvidence,
   extractLocalCandidatePersonalDetails
 } from '@resume'
 import {
@@ -94,6 +96,8 @@ export class CandidateStore extends DomainStore {
     )
     const save = this.database.transaction(() => {
       for (const file of files) {
+        const duplicate = this.database.prepare<[string], { token: string }>('SELECT token FROM staged_files WHERE sha256 = ? LIMIT 1').get(file.sha256)
+        if (duplicate) throw new DuplicateCandidateError(duplicate.token)
         insertFile.run(file.token, file.name, file.format, file.size, file.sha256, file.encryptedPath, file.privacyStatus, file.createdAt)
       }
       this.database.prepare(
@@ -195,11 +199,24 @@ export class CandidateStore extends DomainStore {
     return rows.length
   }
 
+  findCandidateByDocumentContent(document: DocumentIR): CandidateReviewSnapshot | null {
+    const fingerprint = candidateContentFingerprint(document)
+    if (!fingerprint) return null
+    const duplicate = this.database.prepare<[string, string], { document_id: string }>(
+      `SELECT parsed.document_id FROM parsed_documents parsed
+       JOIN candidate_review_states review ON review.document_id = parsed.document_id
+       WHERE parsed.intake_fingerprint = ? AND parsed.document_id != ?
+       ORDER BY parsed.analyzed_at, parsed.document_id LIMIT 1`
+    ).get(fingerprint, document.documentId)
+    return duplicate ? this.getCandidateReview(duplicate.document_id) : null
+  }
+
   saveParsedDocument(
     document: DocumentIR,
     summary: ResumeAnalysisSummary,
     redactionSessionId: string,
-    extraction?: CandidateExtractionDraft
+    extraction?: CandidateExtractionDraft,
+    inTalentLibrary = true
   ): void {
     const validatedDocument = documentIrSchema.parse(document)
     const validatedSummary = resumeAnalysisSummarySchema.parse(summary)
@@ -211,6 +228,10 @@ export class CandidateStore extends DomainStore {
       throw new Error('Candidate extraction and parsed document refer to different staged files.')
     }
     const save = this.database.transaction(() => {
+      if (validatedExtraction && !this.getCandidateReview(validatedDocument.documentId)) {
+        const duplicate = this.findCandidateByDocumentContent(validatedDocument)
+        if (duplicate) throw new DuplicateCandidateError(duplicate.documentId)
+      }
       this.database
         .prepare(
           `INSERT INTO parsed_documents(
@@ -231,15 +252,17 @@ export class CandidateStore extends DomainStore {
           validatedDocument.version,
           validatedSummary.analyzedAt
         )
+      this.database.prepare('UPDATE parsed_documents SET intake_fingerprint = ? WHERE document_id = ?')
+        .run(candidateContentFingerprint(validatedDocument), validatedDocument.documentId)
       if (validatedExtraction) {
         const recordTimestamp = validatedExtraction.createdAt
         this.database
           .prepare(
-            `INSERT INTO candidate_records(source_document_id, record_status, recruiting_status, created_at, updated_at)
-             VALUES (?, 'active', 'pending-review', ?, ?)
+            `INSERT INTO candidate_records(source_document_id, record_status, recruiting_status, created_at, updated_at, in_talent_library)
+             VALUES (?, 'active', 'pending-review', ?, ?, ?)
              ON CONFLICT(source_document_id) DO NOTHING`
           )
-          .run(validatedExtraction.documentId, recordTimestamp, recordTimestamp)
+          .run(validatedExtraction.documentId, recordTimestamp, recordTimestamp, Number(inTalentLibrary))
         this.database
           .prepare(
             `INSERT INTO candidate_extractions(document_id, draft_json, review_status, updated_at)
@@ -450,7 +473,7 @@ export class CandidateStore extends DomainStore {
     const profile = profileRow ? candidateProfileSchema.parse(JSON.parse(profileRow.profile_json)) : null
     const profileFieldByKey = new Map(profile?.fields.map((field) => [field.key, field]) ?? [])
     const record = this.database
-      .prepare<[string], CandidateRecordRow>('SELECT record_status, recruiting_status FROM candidate_records WHERE source_document_id = ?')
+      .prepare<[string], CandidateRecordRow>('SELECT record_status, recruiting_status, in_talent_library FROM candidate_records WHERE source_document_id = ?')
       .get(documentId)
     const membership = this.database
       .prepare<[string], TalentPoolMembershipRow>('SELECT status FROM talent_pool_memberships WHERE source_document_id = ?')
@@ -527,9 +550,22 @@ export class CandidateStore extends DomainStore {
           }
         : null,
       recruitingStatus: record?.recruiting_status ?? 'pending-review',
-      talentPoolStatus: (record?.record_status ?? 'active') === 'active' && profileRow?.status === 'current' && (!business || ['available', 'soon'].includes(business.status)) ? 'eligible' : business ? 'none' : membership?.status ?? 'none',
+      talentPoolStatus: record?.in_talent_library === 0 ? 'none' : (record?.record_status ?? 'active') === 'active' && profileRow?.status === 'current' && (!business || ['available', 'soon'].includes(business.status)) ? 'eligible' : business ? 'none' : membership?.status ?? 'none',
+      inTalentLibrary: record?.in_talent_library !== 0,
       recordStatus: record?.record_status ?? 'active'
     })
+  }
+
+  addCandidateToLibrary(documentId: string, profileVersion: number): CandidateReviewSnapshot {
+    return this.database.transaction(() => {
+      const person = this.getCandidateReview(documentId)
+      if (!person || person.recordStatus === 'deleted' || !person.profile || person.profile.status !== 'current' || person.profile.version !== profileVersion) {
+        throw new Error('人员资料已更新或不可用，请刷新后入库。 / 要員情報を再読込してから登録してください。')
+      }
+      this.database.prepare('UPDATE candidate_records SET in_talent_library = 1, updated_at = ? WHERE source_document_id = ? AND in_talent_library = 0')
+        .run(new Date().toISOString(), documentId)
+      return this.getCandidateReview(documentId)!
+    })()
   }
 
   listCandidateReviews(): CandidateReviewSnapshot[] {
@@ -546,10 +582,19 @@ export class CandidateStore extends DomainStore {
     const row = this.database.prepare<[string], CandidateProfileRow>(`SELECT profile.profile_json, profile.status
       FROM candidate_profiles profile JOIN candidate_records record ON record.source_document_id = profile.source_document_id
       WHERE profile.source_document_id = ? AND profile.status = 'current' AND record.record_status = 'active'`).get(documentId)
-    return row ? candidateProfileSchema.parse(JSON.parse(row.profile_json)) : null
+    return row ? enrichCandidateJapaneseEvidence(candidateProfileSchema.parse(JSON.parse(row.profile_json)), () => this.getParsedDocument(documentId)) : null
   }
 
-  /** Active, available personnel participate in business matching immediately after import. */
+  /** Explicit person × case assessment may read an archived resume without restoring it. */
+  getCandidateProfileForAssessment(documentId: string): CandidateProfile | null {
+    const row = this.database.prepare<[string], CandidateProfileRow>(`SELECT profile.profile_json, profile.status
+      FROM candidate_profiles profile JOIN candidate_records record ON record.source_document_id = profile.source_document_id
+      WHERE profile.source_document_id = ? AND profile.status = 'current'
+        AND record.record_status IN ('active', 'archived')`).get(documentId)
+    return row ? enrichCandidateJapaneseEvidence(candidateProfileSchema.parse(JSON.parse(row.profile_json)), () => this.getParsedDocument(documentId)) : null
+  }
+
+  /** Only admitted, active and available library members participate in automatic matching. */
   listEligibleTalentProfiles(): CandidateProfile[] {
     return this.database
       .prepare<[], CandidateProfileRow>(
@@ -559,11 +604,12 @@ export class CandidateStore extends DomainStore {
          LEFT JOIN candidate_business_states business ON business.document_id = profile.source_document_id
          WHERE profile.status = 'current'
            AND record.record_status = 'active'
+           AND record.in_talent_library = 1
            AND (business.document_id IS NULL OR business.status IN ('available','soon'))
          ORDER BY profile.confirmed_at DESC`
       )
       .all()
-      .map((row) => candidateProfileSchema.parse(JSON.parse(row.profile_json)))
+      .map((row) => { const profile = candidateProfileSchema.parse(JSON.parse(row.profile_json)); return enrichCandidateJapaneseEvidence(profile, () => this.getParsedDocument(profile.sourceDocumentId)) })
   }
 
   listCandidateProfileEmbeddings(modelId: string, modelRevision: string): CandidateProfileEmbeddingRecord[] {
@@ -691,6 +737,7 @@ export class CandidateStore extends DomainStore {
          LEFT JOIN candidate_business_states business ON business.document_id = profile.source_document_id
          WHERE profile.status = 'current'
            AND record.record_status = 'active'
+           AND record.in_talent_library = 1
            AND (business.document_id IS NULL OR business.status IN ('available','soon'))`
       )
       .get()?.count ?? 0

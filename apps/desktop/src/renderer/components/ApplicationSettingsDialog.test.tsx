@@ -94,8 +94,8 @@ describe('ApplicationSettingsDialog', () => {
     />)
 
     expect(screen.getByRole('note')).toHaveTextContent(/件名・送信者・本文・日時・Label/u)
-    expect(screen.getByRole('note')).toHaveTextContent(/添付ファイルは取得しません/u)
-    expect(screen.getByRole('note')).toHaveTextContent(/gmail.readonly 同意画面/u)
+    expect(screen.getByRole('note')).toHaveTextContent(/履歴書添付/u)
+    expect(screen.getByRole('note')).toHaveTextContent(/メールを送信・削除することはありません/u)
     fireEvent.click(screen.getByRole('button', { name: 'Google メールを接続' }))
     await waitFor(() => expect(onConnectGoogleWorkspace).toHaveBeenCalledTimes(1))
     expect(screen.queryByText('Desktop OAuth Client ID')).not.toBeInTheDocument()

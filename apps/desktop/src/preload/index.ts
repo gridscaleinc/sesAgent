@@ -1,3 +1,4 @@
+import type { CaseResumeImportProgress } from '@shared'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { ipcChannels, type AgentTurnEvent, type DesktopApi, type BusinessMatchingProgress, type GmailScheduledSyncCompletion } from '@shared/contracts'
 
@@ -47,8 +48,12 @@ function parseAgentTurnEvent(value: unknown): AgentTurnEvent | null {
 }
 
 function parseGmailSyncCompletion(value: unknown): GmailScheduledSyncCompletion | null {
-  if (!isStrictObject(value, ['imported', 'duplicates', 'filtered', 'failed'])) return null
-  const counts = [value.imported, value.duplicates, value.filtered, value.failed]
+  const requiredKeys = ['imported', 'duplicates', 'filtered', 'failed']
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const keys = 'personnelImported' in record ? [...requiredKeys, 'personnelImported'] : requiredKeys
+  if (!isStrictObject(record, keys)) return null
+  const counts = keys.map((key) => record[key])
   if (!counts.every((count) => typeof count === 'number' && Number.isInteger(count) && count >= 0)) return null
   return value as unknown as GmailScheduledSyncCompletion
 }
@@ -56,6 +61,8 @@ function parseGmailSyncCompletion(value: unknown): GmailScheduledSyncCompletion 
 const api: DesktopApi = {
   getBusinessFeed: () => ipcRenderer.invoke(ipcChannels.getBusinessFeed),
   markBusinessFeed: (input) => ipcRenderer.invoke(ipcChannels.markBusinessFeed, input),
+  listPersonnelMailUpdates: (id) => ipcRenderer.invoke(ipcChannels.listPersonnelMailUpdates,id),
+  resolvePersonnelMailUpdate: (input) => ipcRenderer.invoke(ipcChannels.resolvePersonnelMailUpdate,input),
   getPersonnelWorkspace: () => ipcRenderer.invoke(ipcChannels.getPersonnelWorkspace),
   savePersonnelTemplate: (input) => ipcRenderer.invoke(ipcChannels.savePersonnelTemplate, input),
   beginBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.beginBusinessProgress, input),
@@ -79,6 +86,46 @@ const api: DesktopApi = {
   validatePersonnelMessage: (input) => ipcRenderer.invoke(ipcChannels.validatePersonnelMessage, input),
   recordPersonnelCopy: (input) => ipcRenderer.invoke(ipcChannels.recordPersonnelCopy, input),
   openPersonnelEmail: (input) => ipcRenderer.invoke(ipcChannels.openPersonnelEmail, input),
+  listCustomerIdentities:()=>ipcRenderer.invoke(ipcChannels.listCustomerIdentities),
+  saveCustomerIdentity:input=>ipcRenderer.invoke(ipcChannels.saveCustomerIdentity,input),
+  getInterviewAnswers:id=>ipcRenderer.invoke(ipcChannels.getInterviewAnswers,id),
+  getPairInterviewEvidence:input=>ipcRenderer.invoke(ipcChannels.getPairInterviewEvidence,input),
+  listMatchingOpportunities:()=>ipcRenderer.invoke(ipcChannels.listMatchingOpportunities),
+  controlMatchingOpportunity:input=>ipcRenderer.invoke(ipcChannels.controlMatchingOpportunity,input),
+  getQuestionBankHistory:id=>ipcRenderer.invoke(ipcChannels.getQuestionBankHistory,id),
+  restoreQuestionBankVersion:input=>ipcRenderer.invoke(ipcChannels.restoreQuestionBankVersion,input),
+  listQuestionBank:(input)=>ipcRenderer.invoke(ipcChannels.listQuestionBank,input),
+  controlQuestionBank:(input)=>ipcRenderer.invoke(ipcChannels.controlQuestionBank,input),
+  getSystemExperience: () => ipcRenderer.invoke(ipcChannels.getSystemExperience),
+  controlSystemExperience: (input) => ipcRenderer.invoke(ipcChannels.controlSystemExperience,input),
+  getSystemExperienceDetails: (id) => ipcRenderer.invoke(ipcChannels.getSystemExperienceDetails,id),
+  recordExperienceExposure: (input) => ipcRenderer.invoke(ipcChannels.recordExperienceExposure,input),
+  listWorkRules: () => ipcRenderer.invoke(ipcChannels.listWorkRules),
+  getWorkRuleHistory: (input) => ipcRenderer.invoke(ipcChannels.getWorkRuleHistory, input),
+  analyzeWorkRule: (input) => ipcRenderer.invoke(ipcChannels.analyzeWorkRule, input),
+  saveWorkRule: (input) => ipcRenderer.invoke(ipcChannels.saveWorkRule, input),
+  changeWorkRule: (input) => ipcRenderer.invoke(ipcChannels.changeWorkRule, input),
+  assessCasePerson: (input) => ipcRenderer.invoke(ipcChannels.assessCasePerson, input),
+  listCasePersonAssessments: (input) => ipcRenderer.invoke(ipcChannels.listCasePersonAssessments, input),
+  prepareCaseAssessment: input => ipcRenderer.invoke(ipcChannels.prepareCaseAssessment, input),
+  listCaseAssessments: (jobCaseId) => ipcRenderer.invoke(ipcChannels.listCaseAssessments, jobCaseId),
+  getCaseQuestionDraft: (input) => ipcRenderer.invoke(ipcChannels.getCaseQuestionDraft, input),
+  onCaseResumeImportProgress: (listener) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => {
+      if (!isStrictObject(payload, ['requestId', 'jobCaseId', 'stage', 'documentId'])) return
+      if (typeof payload.requestId !== 'string' || !uuidPattern.test(payload.requestId) ||
+        typeof payload.jobCaseId !== 'string' || !uuidPattern.test(payload.jobCaseId) ||
+        payload.stage !== 'parsing' && payload.stage !== 'assessing' ||
+        payload.documentId !== null && (typeof payload.documentId !== 'string' || !uuidPattern.test(payload.documentId))) return
+      listener(payload as unknown as CaseResumeImportProgress)
+    }
+    ipcRenderer.on(ipcChannels.caseResumeImportProgress, handler)
+    return () => ipcRenderer.removeListener(ipcChannels.caseResumeImportProgress, handler)
+  },
+  addCandidateToLibrary: (input) => ipcRenderer.invoke(ipcChannels.addCandidateToLibrary, input),
+  importResumeForCase: (input) => ipcRenderer.invoke(ipcChannels.importResumeForCase, input),
+  saveAssessmentFeedback: (input) => ipcRenderer.invoke(ipcChannels.saveAssessmentFeedback, input),
+  generateRuleQuestions: (input) => ipcRenderer.invoke(ipcChannels.generateRuleQuestions, input),
   findPersonnelForCase: (input) => ipcRenderer.invoke(ipcChannels.findPersonnelForCase, input),
   findCasesForPersonnel: (input) => ipcRenderer.invoke(ipcChannels.findCasesForPersonnel, input),
   getStartupStatus: () => ipcRenderer.invoke(ipcChannels.getStartupStatus),
@@ -94,6 +141,7 @@ const api: DesktopApi = {
   openAiCommerceMemberCenter: () => ipcRenderer.invoke(ipcChannels.openAiCommerceMemberCenter),
   prepareAiCommerceCloudPrompt: (input) => ipcRenderer.invoke(ipcChannels.prepareAiCommerceCloudPrompt, input),
   executeAiCommerceCloudPrompt: (input) => ipcRenderer.invoke(ipcChannels.executeAiCommerceCloudPrompt, input),
+  beginIntroductionDraft: (input) => ipcRenderer.invoke(ipcChannels.beginIntroductionDraft, input),
   regenerateIntroduction: (input) => ipcRenderer.invoke(ipcChannels.regenerateIntroduction, input),
   saveBusinessField: (input) => ipcRenderer.invoke(ipcChannels.saveBusinessField, input),
   listAiConversations: (context) => ipcRenderer.invoke(ipcChannels.listAiConversations, context),
@@ -130,6 +178,7 @@ const api: DesktopApi = {
   openZoomTestMeeting: () => ipcRenderer.invoke(ipcChannels.openZoomTestMeeting),
   createManualJobCaseDraft: (input) => ipcRenderer.invoke(ipcChannels.createManualJobCaseDraft, input),
   createChatPasteJobCaseDraft: (input) => ipcRenderer.invoke(ipcChannels.createChatPasteJobCaseDraft, input),
+  importCaseTextBatch: (input) => ipcRenderer.invoke(ipcChannels.importCaseTextBatch, input),
   prepareWechatVisibleRead: () => ipcRenderer.invoke(ipcChannels.prepareWechatVisibleRead),
   executeWechatVisibleRead: (input) => ipcRenderer.invoke(ipcChannels.executeWechatVisibleRead, input),
   importEmlJobCaseDrafts: () => ipcRenderer.invoke(ipcChannels.importEmlJobCaseDrafts),

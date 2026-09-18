@@ -137,6 +137,7 @@ function candidateRepository(overrides: Partial<Record<string, unknown>> = {}) {
   const stagedRecords: StagedFileRecord[] = []
   const repository = {
     findStagedTextSourceBySha256: vi.fn(() => null),
+    findCandidateByDocumentContent: vi.fn(() => null),
     getCandidateReview: vi.fn(() => ({
       documentId: 'document-1', status: 'awaiting-review', recordStatus: 'active'
     } as unknown as CandidateReviewSnapshot)),

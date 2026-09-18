@@ -35,3 +35,8 @@ it.each([
 it('uses the resume attachment name when the covering mail has no classification words', () => {
   expect(classifyGmailMessage({ subject: '資料送付', body: '添付をご確認ください。', resumeAttachments: [{ name: 'スキルシート.xlsx' }] } as any)).toBe('candidate-proposal')
 })
+
+it('does not mistake a resume covering letter containing only commercial conditions for a case', () => {
+  expect(classifyGmailMessage({ subject: '資料送付', body: '単価：80万円\n稼働：10月', resumeAttachments: [{ name: 'スキルシート.xlsx' }] } as any)).toBe('candidate-proposal')
+  expect(classifyGmailMessage({ subject: 'Java案件', body: '単価：80万円', resumeAttachments: [{ name: '履歴書テンプレート.xlsx' }] } as any)).toBe('job-case')
+})

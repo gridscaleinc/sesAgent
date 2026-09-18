@@ -1,10 +1,14 @@
+import { startOpportunityDiscovery } from './opportunity-discovery'
+import { startExperienceLearning } from './experience-learning'
+import { registerSystemExperienceHandlers } from './ipc/system-experience'
+import { registerWorkRuleHandlers } from './ipc/work-rules'
 import { registerPersonnelHandlers } from './ipc/personnel'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { lstat, readFile, rm } from 'node:fs/promises'
 import { dirname, join, normalize, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, Notification, protocol, session, shell, powerMonitor } from 'electron'
 
 import {
   SafeLocalProcessingDispatcher,
@@ -86,6 +90,7 @@ import { registerCandidateHandlers } from './ipc/candidates'
 import { registerAtsImportHandlers } from './ipc/ats-import'
 import { registerGoogleWorkspaceHandlers } from './ipc/google-workspace'
 import { createGmailSyncScheduler, resolveGmailSyncIntervalMinutes } from './gmail-sync-scheduler'
+import { loadPrivateGoogleConfiguration } from './google-private-configuration'
 import { registerInterviewHandlers } from './ipc/interviews'
 import { registerJobCaseHandlers } from './ipc/job-cases'
 import { registerProposalHandlers } from './ipc/proposals'
@@ -380,17 +385,19 @@ async function initializeServices(): Promise<{
       dimension: localEmbeddingModel.dimension,
       maximumRerankCandidates: localRerankerModel.maximumCandidates
     }, rerankerWorker ?? undefined)
-    const googleWorkspaceConfiguration = loadManagedGoogleWorkspaceConfiguration() ??
+    const privateGoogle = loadPrivateGoogleConfiguration(join(userDataPath, 'security', 'google-private-client.v1.json'), app.isPackaged)
+    const googleWorkspaceConfiguration = loadManagedGoogleWorkspaceConfiguration(new Date(), privateGoogle ?? undefined) ??
       repository.getGoogleWorkspaceAdminConfiguration()
     const googleClientId = googleWorkspaceConfiguration?.clientId ?? null
-    const googleClientSecret = process.env.SES_GOOGLE_OAUTH_CLIENT_SECRET?.trim() || undefined
+    const googleClientSecret = privateGoogle?.clientSecret ?? (process.env.SES_GOOGLE_OAUTH_CLIENT_SECRET?.trim() || undefined)
     const googleWorkspaceDomain = googleWorkspaceConfiguration?.workspaceDomain ?? null
     const googleWorkspace = googleClientId
       ? new GoogleWorkspaceOAuthClient(
           {
             clientId: googleClientId,
             clientSecret: googleClientSecret,
-            workspaceDomain: googleWorkspaceDomain
+            workspaceDomain: googleWorkspaceDomain,
+            ...(privateGoogle ? { accountEmail: privateGoogle.accountEmail, privateLocalWeb: privateGoogle.privateLocalWeb } : {})
           },
           {
             credentialStore: new SafeStorageJsonCredentialVault(
@@ -398,7 +405,8 @@ async function initializeServices(): Promise<{
               (input) => googleWorkspaceCredentialSchema.parse(input)
             ),
             authorizationCodeProvider: new LoopbackAuthorizationCodeProvider({
-              openExternal: (url) => shell.openExternal(url)
+              openExternal: (url) => shell.openExternal(url),
+              ...(privateGoogle?.privateLocalWeb ? { redirectUri: privateGoogle.privateLocalWeb.redirectUri } : {})
             }),
             fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
           }
@@ -466,6 +474,10 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   registerRecoveryHandlers(context)
   registerCandidateHandlers(context)
   registerPersonnelHandlers(context)
+  registerWorkRuleHandlers(context)
+  registerSystemExperienceHandlers(context)
+  const stopOpportunityDiscovery=startOpportunityDiscovery(context,()=>repository.listProcessingJobs().some(job=>job.status==='running')?0:powerMonitor.getSystemIdleTime())
+  const stopExperienceLearning = startExperienceLearning(context, () => repository.listProcessingJobs().some(job=>job.status==='running') ? 0 : powerMonitor.getSystemIdleTime())
   registerAtsImportHandlers(context)
   registerCandidateEvaluationHandlers(context)
   registerJobCaseHandlers(context)
@@ -540,7 +552,7 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   safeLocalDispatcher.start()
 
   // Scheduled Gmail sync: the same guarded sync as the manual button, on a
-  // fixed cadence while the app runs. The first run waits one interval, an
+  // fixed cadence while the app runs. Catch up five seconds after launch; an
   // in-flight sync is never doubled, and failures back off exponentially.
   const gmailSyncScheduler = createGmailSyncScheduler({
     intervalMinutes: resolveGmailSyncIntervalMinutes(process.env.SES_GMAIL_SYNC_INTERVAL_MINUTES),
@@ -550,10 +562,12 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
       return (await context.googleWorkspace.getState()).status === 'readonly'
     },
     runSync: () => googleWorkspaceSync.startGmailSync(),
-    onImported: (counts) => {
+    onCompleted: (counts) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(ipcChannels.gmailSyncCompleted, counts)
       }
+    },
+    onImported: (counts) => {
       // HR may not be looking at the app when mail lands. Counts only - case
       // content never enters an OS notification.
       if (counts.imported > 0 && BrowserWindow.getFocusedWindow() === null && Notification.isSupported()) {
@@ -576,7 +590,14 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
     }
   })
   if (context.googleWorkspaceConfiguration && context.gmailSyncConfig) gmailSyncScheduler.start()
+  googleWorkspaceSync.setSyncResultListener((state) => {
+    const run = state.lastRun
+    if (state.status !== 'error' && !(run?.intake?.casesFailed || run?.intake?.personnelFailed) &&
+      (run?.moreAvailable || run?.intake?.pendingCases || run?.intake?.pendingPersonnel)) gmailSyncScheduler.requestContinuation()
+  })
   return () => {
+    stopExperienceLearning()
+    stopOpportunityDiscovery()
     gmailSyncScheduler.stop()
     wechatScopeTokens.clear()
     stopAgentIpc()

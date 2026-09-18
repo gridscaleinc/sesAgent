@@ -243,6 +243,18 @@ describe('extractJobCaseDraft', () => {
     expect(byKey.get('interview')).toBe('面談1回')
   })
 
+  it('keeps attendance frequency in work style while retaining an explicit work location', () => {
+    const at = new Date('2026-09-11T00:00:00.000Z')
+    for (const [condition, location, remote] of [['週3出勤', null, '週3出勤'], ['都内出勤', '都内出勤', null]]) {
+      const source = createRedactedChatPasteJobCaseSource(`9月～長期、PL1名、C#、AI、${condition}、日本語N1流暢、面談1回。`,
+        '11111111-1111-4111-8111-111111111111', [], at)
+      const draft = extractJobCaseDraft(source.source, '22222222-2222-4222-8222-222222222222', at)
+      const byKey = new Map(draft.fields.map(field => [field.key, field.value]))
+      expect(byKey.get('location')).toBe(location)
+      expect(byKey.get('remote')).toBe(remote)
+    }
+  })
+
   it('flags a nationality preference and an age limit without dropping either from the draft', () => {
     const at = new Date('2026-08-26T00:00:00.000Z')
     const draftFor = (body: string, id: string, reviewId: string) => extractJobCaseDraft(

@@ -75,9 +75,27 @@ try {
     ALTER TABLE candidate_match_runs_v24 RENAME TO candidate_match_runs;
     CREATE INDEX candidate_match_runs_task_idx
       ON candidate_match_runs(task_id, created_at DESC);
+    DROP TABLE customer_identities;
+    DROP TABLE interview_answers;
+    DROP TABLE matching_opportunities;
+    DROP TABLE question_bank_revisions;
+    DROP TABLE growth_checkpoints;
+    DROP TABLE question_bank_uses;
+    DROP TABLE question_bank_sources;
+    DROP TABLE question_bank;
+    DROP TABLE experience_observations;
+    DROP TABLE experience_runs;
+    DROP TABLE experience_events;
+    DROP TABLE experience_versions;
+    DROP TABLE experience_settings;
+    DROP TABLE case_person_question_drafts;
+    DROP TABLE case_person_feedback;
+    DROP TABLE case_person_assessments;
+    DROP TABLE ai_work_rule_versions;
     DROP TABLE business_priority_projections;
     ALTER TABLE candidate_match_results DROP COLUMN result_snapshot_json;
-    DELETE FROM schema_migrations WHERE version IN (25, 36, 37, 38);
+    ALTER TABLE candidate_records DROP COLUMN in_talent_library;
+    DELETE FROM schema_migrations WHERE version IN (25, 36, 37, 38, 52, 53, 54, 55, 56, 57, 58);
     COMMIT;
   `)
   policyLegacy.pragma('foreign_keys=ON')
@@ -129,6 +147,12 @@ try {
   for (const trigger of triggerNames) legacy.exec(`DROP TRIGGER "${trigger.name}"`)
   legacy.exec(`
     BEGIN IMMEDIATE;
+    DROP INDEX parsed_documents_intake_fingerprint;
+    DROP INDEX job_case_sources_intake_fingerprint;
+    ALTER TABLE parsed_documents DROP COLUMN intake_fingerprint;
+    ALTER TABLE job_case_sources DROP COLUMN intake_fingerprint;
+    DROP TABLE personnel_mail_updates;
+    DROP TABLE business_progress_mail;
     DROP TABLE gmail_business_intake;
     DROP TABLE business_followups;
     DROP TABLE business_feed_marks;
@@ -154,6 +178,23 @@ try {
     DROP TABLE candidate_evaluation_drafts;
     DROP TABLE candidate_evaluation_reports;
     DROP TABLE candidate_evaluation_datasets;
+    DROP TABLE customer_identities;
+    DROP TABLE interview_answers;
+    DROP TABLE matching_opportunities;
+    DROP TABLE question_bank_revisions;
+    DROP TABLE growth_checkpoints;
+    DROP TABLE question_bank_uses;
+    DROP TABLE question_bank_sources;
+    DROP TABLE question_bank;
+    DROP TABLE experience_observations;
+    DROP TABLE experience_runs;
+    DROP TABLE experience_events;
+    DROP TABLE experience_versions;
+    DROP TABLE experience_settings;
+    DROP TABLE case_person_question_drafts;
+    DROP TABLE case_person_feedback;
+    DROP TABLE case_person_assessments;
+    DROP TABLE ai_work_rule_versions;
     DROP TABLE business_priority_projections;
     DROP TABLE candidate_match_assessments;
     DROP TABLE candidate_match_results;
@@ -175,7 +216,7 @@ try {
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_hash;
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_status;
     ALTER TABLE cloud_call_audits DROP COLUMN gate_policy_version;
-    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48);
+    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58);
     COMMIT;
   `)
   assert.equal(legacy.prepare<{ version: number }>('SELECT max(version) AS version FROM schema_migrations').get()?.version, 13)
@@ -184,7 +225,7 @@ try {
   const upgraded = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
   assert.equal(upgraded.getSchemaVersion(), currentSchemaVersion)
   assert.equal(upgraded.getJobCaseReview(reviewId)?.redactedSubject, 'Java 案件')
-  assert.equal(upgraded.getLocalDataRevision().revision, 1, 'existing managed data was not conservatively marked changed')
+  assert.ok(upgraded.getLocalDataRevision().revision >= 1, 'existing managed data and fingerprint backfill must mark the backup changed')
   assert.equal(upgraded.getRecoveryState().reminder.reason, 'data-changed', 'legacy backup was incorrectly treated as revision-aware')
   const revisionBeforeMutation = upgraded.getLocalDataRevision().revision
   const upgradeTask = materializeWorkTask(
@@ -282,7 +323,7 @@ try {
     .get()?.count ?? 0
   const violations = inspected.pragma('foreign_key_check') as unknown[]
   inspected.close()
-  assert.equal(triggerCount, 178)
+  assert.equal(triggerCount, 230)
   assert.equal(recoveryColumns.some((column) => column.name === 'data_revision'), true)
   assert.equal(embeddingColumns.some((column) => column.name === 'vector_blob'), true)
   assert.equal(projectEmbeddingColumns.some((column) => column.name === 'project_id'), true)

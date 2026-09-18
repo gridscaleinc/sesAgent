@@ -439,6 +439,12 @@ function remoteWorkMeets(actual: string, requested: string): boolean | null {
 function japaneseLevelRank(value: string): number | null {
   const text = value.normalize('NFKC').toLocaleUpperCase('en-US')
   if (/(?:ネイティブ|母語|母国語|NATIVE)/u.test(text)) return 0
+  const conversation = text.match(/会話\s*[A-D]\s*[（(]([^）)]+)[）)]/u)?.[1]
+  if (conversation) return japaneseLevelRank(conversation)
+  if (/ゆっくり対応可|ゆっくり.*(?:会話|対応)|需要慢速交流/u.test(text)) return 3
+  if (/スムーズ対応可/u.test(text)) return 2
+  if (/現地人と同じレベル/u.test(text)) return 0
+  if (/初学者/u.test(text)) return 4
   const graded = text.match(/(?<![A-Z])N([1-5])(?![0-9])/u)?.[1]
   if (graded) return Number(graded)
   if (/(?:流暢|流畅|堪能|ビジネス|上級|BUSINESS|FLUENT)/u.test(text)) return 2
@@ -462,6 +468,7 @@ function japaneseLevelRequirement(normalized: string): string | null {
     .replace(/\s*(?:可|以上|レベル|程度|相当|必須|歓迎|OK)+$/iu, '')
     .trim()
   if (!core) return null
+  if (/^N[1-5]\s*(?:流暢|流畅|相当|レベル|以上)*$/iu.test(core)) return core.match(/N[1-5]/iu)![0]!.toLocaleUpperCase('en-US')
   if (/^N[1-5]$/iu.test(core)) return core.toLocaleUpperCase('en-US')
   if (/^(?:ネイティブ|母語|母国語|流暢|流畅|堪能|日常会話)$/u.test(core)) return core
   if (/^(?:ビジネス(?:会話)?)$/u.test(core)) return labelled || /レベル|会話/u.test(normalized) ? core : null
@@ -1741,7 +1748,7 @@ function extractStructuredSkillMatrix(blocks: DocumentBlock[]): StructuredSkillE
   return [...unique.values()]
 }
 
-function extractStructuredJapaneseLevel(blocks: DocumentBlock[]): {
+export function extractStructuredJapaneseLevel(blocks: DocumentBlock[]): {
   value: string
   sources: DocumentBlock[]
 } | null {
@@ -1755,6 +1762,11 @@ function extractStructuredJapaneseLevel(blocks: DocumentBlock[]): {
   ]
   const values: string[] = []
   const sources: DocumentBlock[] = [language]
+  const legend = blocks.find(block => block.source.sheet === language.source.sheet &&
+    (spreadsheetCellPosition(block)?.row ?? 0) >= languagePosition.row - 3 &&
+    (spreadsheetCellPosition(block)?.row ?? Infinity) < languagePosition.row &&
+    /A[.．:：]/u.test(block.text.normalize('NFKC')) && /C[.．:：]/u.test(block.text.normalize('NFKC')))
+  const ratings = new Map(legend ? [...legend.text.normalize('NFKC').matchAll(/([A-D])[.:：]\s*(.*?)(?=\s+[A-D][.:：]|$)/gu)].map(match => [match[1], match[2]!.trim()]) : [])
   for (const dimension of dimensions) {
     const header = blocks.find((block) =>
       block.source.sheet === language.source.sheet &&
@@ -1771,10 +1783,23 @@ function extractStructuredJapaneseLevel(blocks: DocumentBlock[]): {
         bounds.endColumn >= headerBounds.startColumn && bounds.startColumn <= headerBounds.endColumn)
     })
     if (!value) continue
-    values.push(`${dimension.output} ${value.text.normalize('NFKC').trim()}`)
+    const grade = value.text.normalize('NFKC').trim()
+    const meaning = ratings.get(grade)
+    values.push(`${dimension.output} ${grade}${meaning ? `（${meaning}）` : ''}`)
+    if (meaning && legend) sources.push(legend)
     sources.push(header, value)
   }
   return values.length > 0 ? { value: values.join(' / '), sources: uniqueBlocks(sources) } : null
+}
+
+export function enrichCandidateJapaneseEvidence(profile: CandidateProfile, document: DocumentIR | null | (() => DocumentIR | null)): CandidateProfile {
+  const field = profile.fields.find(f => f.key === 'japanese_level')
+  if (!document || !field?.value || !/^(?:読む|書く|会話) [A-D](?: \/ (?:読む|書く|会話) [A-D])*$/u.test(field.value)) return profile
+  const parsed = typeof document === 'function' ? document() : document
+  if (!parsed) return profile
+  const expanded = extractStructuredJapaneseLevel(parsed.blocks)
+  if (!expanded || expanded.value.replace(/（[^）]*）/gu, '') !== field.value || expanded.value === field.value) return profile
+  return {...profile, fields: profile.fields.map(f => f.key === 'japanese_level' ? {...f,value:expanded.value,sourceLabels:[...new Set([...f.sourceLabels,...expanded.sources.map(b=>`${b.source.sheet}!${b.source.cell}`)])]} : f)}
 }
 
 function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): CandidateProjectExperienceDraft[] | null {
@@ -2025,11 +2050,15 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
   // and must not override a stated remote preference.
   const preferredWorkStyle = firstMatchingBlock(
     blocks,
-    /(?:希望|勤務形態|稼働形態|勤務条件)\s*[:：][^\n|｜]*?(フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート(?:可|可能)?|ハイブリッド|常駐|出社)/u
+    /(?:希望|勤務形態|稼働形態|勤務条件)\s*[:：][^\n|｜]*?((?:フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート|ハイブリッド|常駐|出社)(?:のみ|限定|希望|不可|可能|可|NG)?)/u
   )
-  const workStyle = preferredWorkStyle ?? firstMatchingBlock(
+  // Keep restriction/preference suffixes: 出社不可 must not become 出社,
+  // and フルリモート希望 must not become an unconditional remote-only limit.
+  const restrictedWorkStyle = firstMatchingBlock(blocks,
+    /((?:フルリモート|完全在宅|在宅|リモート)(?:のみ|限定)|只(?:接受|能|要)[^\n|｜。]*(?:在宅|远程)|(?:出社|出勤|常駐)(?:不可|NG)|週\s*[0-5]\s*日?\s*(?:まで|以内)\s*(?:出社|出勤)|(?:出社|出勤)\s*(?:は)?週\s*[0-5]\s*日?\s*(?:まで|以内))/u)
+  const workStyle = (restrictedWorkStyle?.block === preferredWorkStyle?.block ? restrictedWorkStyle : preferredWorkStyle) ?? restrictedWorkStyle ?? firstMatchingBlock(
     blocks,
-    /(フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート(?:可|可能)|常駐|出社)/u
+    /((?:フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート(?:可能|可)|常駐|出社)(?:のみ|限定|希望|不可|可能|可|NG)?)/u
   )
   const structuredRole = projectExperiences[0]?.role ?? null
   const structuredRoleSources = structuredRole

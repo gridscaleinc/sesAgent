@@ -41,8 +41,9 @@ describe('personnel case matching', () => {
     fixture.setProfiles([{ ...profile, isOwnCompany }])
     fixture.setCases([makeCase('restricted', 'Java', [{ key: 'contract_chain', label: '商流', value: '自社限定', sourceLabels: [] }]), makeCase('open', 'Java')])
     const result = await createPersonnelCaseMatcher(fixture.context)(documentId)
-    expect(result.items.map((item) => item.jobCaseId).sort()).toEqual(isOwnCompany ? ['open', 'restricted'] : ['open'])
-    expect(result.ownCompanyExcludedCount).toBe(isOwnCompany ? 0 : 1)
+    expect(result.items.map((item) => item.jobCaseId).sort()).toEqual(['open', 'restricted'])
+    expect(result.ownCompanyExcludedCount).toBe(0)
+    expect(result.items.find(item => item.jobCaseId === 'restricted')?.qualification?.requirements.find(item => item.requirement.key === 'contract_chain')?.outcome).toBe(isOwnCompany ? 'met' : isOwnCompany === false ? 'conflict' : 'unknown')
   })
   it('publishes real local results before cloud and cancels without consuming a late reply', async () => {
     let finish!: (value: AgentMatchAssessmentResult) => void
@@ -69,7 +70,7 @@ describe('personnel case matching', () => {
     expect(result.items.map((item) => item.jobCaseId)).toEqual(['java'])
     expect(result.cloud).toMatchObject({ status: 'unavailable', reviewedCount: 0 })
   })
-  it('assesses the shortlist in one call, omits local identity, and sorts by cloud fit', async () => {
+  it('assesses the shortlist in one call, omits local identity, and uses common evidence rather than arbitrary model fit', async () => {
     const fixture = setup(async () => ({ assessments: [verdict('CASE_1'), verdict('CASE_2', 'strong')] }))
     const result = await createPersonnelCaseMatcher(fixture.context)(documentId)
     expect(fixture.cloud!.assessPersonnelCases).toHaveBeenCalledTimes(1)
@@ -78,7 +79,8 @@ describe('personnel case matching', () => {
     expect(JSON.stringify(input)).not.toContain('PRIVATE NAME')
     expect(JSON.stringify(input)).not.toContain('private@example.com')
     expect(JSON.stringify(input.person)).not.toContain(documentId)
-    expect(result.items[0]!.jobCaseId).toBe('b')
+    expect(result.items.map(item => item.jobCaseId)).toEqual(['a', 'b'])
+    expect(result.items.every(item => item.assessment?.fit === 'strong')).toBe(true)
     expect(result.cloud).toMatchObject({ status: 'reviewed', reviewedCount: 2 })
   })
   it('does not promote unknown hard conditions to a strong fit', async () => {

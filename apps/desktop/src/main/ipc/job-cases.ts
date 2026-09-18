@@ -9,6 +9,7 @@ import {
   extractJobCaseDraft
 } from '@job-cases'
 import { effectiveJobCaseFieldAliases } from '../app-defaults'
+import { createCaseTextBatchImporter } from '../case-text-import'
 import { importChatPastedJobCaseText, autoConfirmJobCaseDraft } from '../business-text-intake'
 import { deriveNewCaseDigest } from '../job-case-digest'
 import { collectLocalPersonNameCandidates } from '@local-ai'
@@ -101,6 +102,11 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
   const { repository, parserWorker, localNer, wechatVisibleReader, wechatScopeTokens, currentOperator, preflightAction } = context
   let emlImportBusy = false
   let wechatVisibleReadBusy = false
+  const importCaseBatch = createCaseTextBatchImporter(context)
+  ipcMain.handle(ipcChannels.importCaseTextBatch, (event, input) => {
+    assertTrustedSender(event)
+    return importCaseBatch(input)
+  })
 
   ipcMain.handle(ipcChannels.submitJobCaseReview, (event, rawInput): SubmitJobCaseReviewResult => {
     assertTrustedSender(event)
@@ -126,12 +132,11 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     const processed = createRedactedManualJobCaseSource(input, sourceId, knownPersonNames, now)
     const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
       processed.source.redactedSubject,
-      processed.source.redactedBody
+      processed.source.redactedBody,
+      processed.redaction.mappings
     )
-    const source = duplicate ? {
-      ...processed.source,
-      warningCodes: [...new Set([...processed.source.warningCodes, 'BUSINESS_DUPLICATE'])]
-    } : processed.source
+    if (duplicate) return { review: duplicate }
+    const source = processed.source
     const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
     if (!repository.saveRedactedJobCaseSourceAndDraft(
       processed.redaction.session,
@@ -159,7 +164,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
       const imported = await importChatPastedJobCaseText(
         { repository, localNer, operator: currentOperator() }, input.text, new Date(), {}, null, effectiveJobCaseFieldAliases(repository).aliases
       )
-      return { review: imported.review }
+      return { review: imported.review, outcome: imported.outcome }
     }
   )
 
@@ -311,20 +316,18 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
         rawText = ''
         const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
           processed.source.redactedSubject,
-          processed.source.redactedBody
+          processed.source.redactedBody,
+          processed.redaction.mappings
         )
-        const source = duplicate ? {
-          ...processed.source,
-          warningCodes: [...new Set([...processed.source.warningCodes, 'BUSINESS_DUPLICATE'])]
-        } : processed.source
+        const source = processed.source
         const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
-        if (!repository.saveRedactedJobCaseSourceAndDraft(
+        if (!duplicate && !repository.saveRedactedJobCaseSourceAndDraft(
           processed.redaction.session,
           processed.redaction.mappings,
           source,
           draft
         )) throw new Error('微信可见消息的脱敏案件草稿无法保存。')
-        const review = repository.getJobCaseReview(draft.reviewId)
+        const review = duplicate ?? repository.getJobCaseReview(draft.reviewId)
         if (!review) throw new Error('创建的微信案件草稿无法重新读取。')
         repository.updateActionRun(scope.actionRunId, 'succeeded', {
           resultHash: createHash('sha256')
@@ -415,6 +418,11 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
           const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
           const now = new Date()
           const processed = createRedactedEmlJobCaseSource(parsed, sourceId, knownPersonNames, now)
+          const duplicate = repository.findJobCaseReviewByBusinessFingerprint(processed.source.redactedSubject, processed.source.redactedBody, processed.redaction.mappings)
+          if (duplicate) {
+            items.push({ fileName, status: 'duplicate', classification: parsed.classification, errorCode: null, review: duplicate })
+            continue
+          }
           const draft = extractJobCaseDraft(processed.source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
           try {
             repository.saveRedactedJobCaseSourceAndDraft(

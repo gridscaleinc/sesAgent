@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { personnelMailConditionsSchema, resolvePersonnelMailUpdateSchema, type PersonnelMailUpdate, type ResolvePersonnelMailUpdateInput, type CandidateFieldKey } from '@shared'
 import {
   googleWorkspaceAdminConfigurationSchema,
   googleWorkspaceOnlineAcceptanceReportSchema,
@@ -22,6 +24,23 @@ import { DomainStore } from './base'
 export interface GmailBusinessIntake { accountEmail: string; messageId: string; replyTo: string | null; status: 'pending' | 'completed' | 'error'; parts: Record<string, string>; warnings: string[] }
 
 export class GmailStore extends DomainStore {
+  saveGmailIntakeResult(accountEmail: string, counts: Omit<import('@shared').GmailBusinessIntakeResult, 'pendingCases' | 'pendingPersonnel'>): void {
+    const checkpoint = this.getGmailSyncCheckpoint(accountEmail)
+    if (!checkpoint?.lastRun) return
+    const pendingCases = this.database.prepare<[string], { count: number }>(`
+      SELECT count(*) AS count FROM gmail_messages m
+      LEFT JOIN job_case_sources s ON s.source_type='gmail' AND s.provider_account=m.account_email AND s.provider_message_id=m.gmail_message_id
+      LEFT JOIN job_case_extractions e ON e.source_id=s.id
+      WHERE m.account_email=? AND m.classification='job-case' AND e.review_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(s.warning_codes_json, '[]')) WHERE value='BUSINESS_DUPLICATE_SKIPPED')`).get(accountEmail)!.count
+    const pendingPersonnel = this.database.prepare<[string], { count: number }>(`
+      SELECT count(*) AS count FROM gmail_messages m
+      LEFT JOIN gmail_business_intake i ON i.account_email=m.account_email AND i.gmail_message_id=m.gmail_message_id
+      WHERE m.account_email=? AND m.classification='candidate-proposal' AND (i.status IS NULL OR i.status!='completed')`).get(accountEmail)!.count
+    this.database.prepare('UPDATE gmail_sync_states SET last_run_json=?,updated_at=? WHERE account_email=?')
+      .run(JSON.stringify({ ...checkpoint.lastRun, intake: { ...counts, pendingCases, pendingPersonnel } }), new Date().toISOString(), accountEmail)
+  }
+
   getGmailPersonnelIntakeStatus(accountEmail: string): { failed: number; warnings: number } {
     const rows = this.database.prepare<[string], { status: string; warning_codes_json: string }>('SELECT status,warning_codes_json FROM gmail_business_intake WHERE account_email=?').all(accountEmail)
     return { failed: rows.filter((row) => row.status === 'error').length, warnings: rows.filter((row) => row.warning_codes_json !== '[]').length }
@@ -45,6 +64,67 @@ export class GmailStore extends DomainStore {
       VALUES(?,?,?,?,?,?,?) ON CONFLICT(account_email,gmail_message_id) DO UPDATE SET reply_to=excluded.reply_to,status=excluded.status,
       parts_json=excluded.parts_json,warning_codes_json=excluded.warning_codes_json,updated_at=excluded.updated_at`)
       .run(input.accountEmail,input.messageId,input.replyTo,input.status,JSON.stringify(input.parts),JSON.stringify(input.warnings),new Date().toISOString())
+  }
+
+  personnelMailUpdates(documentId:string): PersonnelMailUpdate[] {
+    const profile=this.stores.candidates.getCurrentCandidateProfile(documentId)
+    return this.database.prepare<[string],{payload:string}>('SELECT payload FROM personnel_mail_updates WHERE document_id=? ORDER BY received_at DESC,id').all(documentId).map(row=>{const value=JSON.parse(row.payload) as PersonnelMailUpdate; return {...value,currentValue:profile?.fields.find(field=>field.key===value.field)?.value??null}})
+  }
+
+  private writePersonnelMailUpdate(value:PersonnelMailUpdate) {
+    this.database.prepare('INSERT INTO personnel_mail_updates(id,document_id,field,received_at,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload')
+      .run(value.id,value.documentId,value.field,value.receivedAt,JSON.stringify(value))
+  }
+
+  private applyPersonnelMailField(documentId:string, field:CandidateFieldKey,value:string,actor:string) {
+    const profile=this.stores.candidates.getCurrentCandidateProfile(documentId)
+    if (!profile || this.stores.candidates.getCandidateReview(documentId)?.recordStatus !== 'active') throw new Error('人员不存在或已归档。')
+    return this.stores.candidates.updateCandidateProfile({sourceDocumentId:documentId,expectedVersion:profile.profileVersion,identity:profile.localPersonalDetails,
+      fields:profile.fields.map(item=>({key:item.key,value:item.key===field?value:item.value})),projectExperiences:profile.projectExperiences},actor,actor)
+  }
+
+  mergePersonnelMailConditions(input:{accountEmail:string;messageId:string;documentIds:string[];receivedAt:string;subject:string;evidence:string;conditions:unknown;ambiguous:boolean}): number {
+    const conditions=personnelMailConditionsSchema.parse(input.conditions)
+    if(!Number.isFinite(Date.parse(input.receivedAt))) throw new Error('邮件日期无效。')
+    return this.database.transaction(()=>{
+      let changed=0
+      for(const documentId of new Set(input.documentIds)) for(const condition of conditions) {
+        const id=createHash('sha256').update(JSON.stringify([input.accountEmail,input.messageId,documentId,condition.field])).digest('hex')
+        if(this.database.prepare('SELECT id FROM personnel_mail_updates WHERE id=?').get(id))continue
+        const history=this.stores.candidates.getCandidateProfileHistory(documentId), profile=history[0]
+        if(!profile || this.stores.candidates.getCandidateReview(documentId)?.recordStatus !== 'active')continue
+        const previousValue=profile.fields.find(field=>field.key===condition.field)?.value??null
+        const existing=this.personnelMailUpdates(documentId).filter(row=>row.field===condition.field)
+        const newer=existing.some(row=>row.receivedAt>input.receivedAt)
+        // Only the author of the most recent change to this field matters; editing another field is unrelated.
+        const lastChange=history.find((version,index)=>version.fields.find(field=>field.key===condition.field)?.value!==history[index+1]?.fields.find(field=>field.key===condition.field)?.value)
+        const manual=Boolean(previousValue&&lastChange&&!['本机导入','邮件条件同步'].includes(lastChange.confirmedBy))
+        const row:PersonnelMailUpdate={id,documentId,field:condition.field,previousValue,value:condition.value,receivedAt:input.receivedAt,subject:input.subject.slice(0,1000),evidence:input.evidence.slice(0,6000),
+          status:newer?'superseded':previousValue===condition.value?'applied':'pending',reason:input.ambiguous?'multiple-people':manual?'manual-conflict':null}
+        if(!newer)for(const old of existing.filter(row=>row.status==='pending'&&row.receivedAt<input.receivedAt))this.writePersonnelMailUpdate({...old,status:'superseded'})
+        if(row.status==='pending'&&!row.reason){this.applyPersonnelMailField(documentId,row.field,row.value,'邮件条件同步');row.status='applied';changed++}
+        this.writePersonnelMailUpdate(row)
+      }
+      return changed
+    })()
+  }
+
+  resolvePersonnelMailUpdate(raw:ResolvePersonnelMailUpdateInput,actor:string):void {
+    const input=resolvePersonnelMailUpdateSchema.parse(raw)
+    this.database.transaction(()=>{
+      const saved=this.database.prepare<[string],{payload:string}>('SELECT payload FROM personnel_mail_updates WHERE id=?').get(input.id)
+      if(!saved)throw new Error('这条邮件更新已不存在。')
+      const row=JSON.parse(saved.payload) as PersonnelMailUpdate
+      if(row.status===(input.action==='apply'?'applied':'dismissed'))return
+      if(row.status!=='pending')throw new Error('这条更新已处理，请刷新后查看。')
+      const profile=this.stores.candidates.getCurrentCandidateProfile(row.documentId)
+      if(!profile||profile.profileVersion!==input.expectedVersion)throw new Error('人员资料已更新，请核对最新内容后重试。')
+      if(input.action==='apply') {
+        if(row.reason==='multiple-people')throw new Error('邮件涉及多个人员，请按原文分别编辑资料。')
+        this.applyPersonnelMailField(row.documentId,row.field,row.value,actor)
+      }
+      this.writePersonnelMailUpdate({...row,status:input.action==='apply'?'applied':'dismissed'})
+    })()
   }
 
   getCaseMailSource(reviewId: string): { accountEmail: string; messageId: string } | null {

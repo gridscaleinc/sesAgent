@@ -71,7 +71,7 @@ it('opens only the selected pair in the side editor and reflects saved progress 
   expect(screen.queryByRole('searchbox', { name: '搜索跟进' })).not.toBeInTheDocument()
   fireEvent.change(editor.getByLabelText('人员可用时间'), { target: { value: '周五上午' } })
   fireEvent.click(editor.getByRole('button', { name: '保存可用时间' }))
-  await screen.findByText('已保存，下一步已更新')
+  await screen.findByText('已保存')
   expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({ documentId: 'person-A', reviewId: 'case-3', candidateAvailability: '周五上午' }))
   fireEvent.click(screen.getByRole('button', { name: '← 返回营业情况' }))
   expect(await screen.findByText('双方时间已更新')).toBeVisible()

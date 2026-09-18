@@ -82,18 +82,26 @@ export function registerBroadcastHandlers(dependencies: BroadcastIpcDependencies
     assertTrustedSender(event)
     const input = recordCaseBroadcastCopyInputSchema.parse(rawInput)
     prepareCaseBroadcastEmail(repository, input)
+    if(input.experienceRunId)repository.validateExperienceAdoption(input.experienceRunId,{documentId:null,reviewId:input.reviewId})
     return input
   })
 
   ipcMain.handle(ipcChannels.recordCaseBroadcastCopy, (event, rawInput): RecordCaseBroadcastCopyResult => {
     assertTrustedSender(event)
-    return recordCaseBroadcastCopy(repository, currentOperator(), recordCaseBroadcastCopyInputSchema.parse(rawInput))
+    const input=recordCaseBroadcastCopyInputSchema.parse(rawInput)
+    if(input.experienceRunId)repository.validateExperienceAdoption(input.experienceRunId,{documentId:null,reviewId:input.reviewId})
+    const result=recordCaseBroadcastCopy(repository,currentOperator(),input)
+    if(input.experienceRunId)repository.recordExperienceAdoption(input.experienceRunId,input.text,currentOperator().operatorId,{documentId:null,reviewId:input.reviewId})
+    return result
   })
 
   ipcMain.handle(ipcChannels.openCaseBroadcastEmail, async (event, rawInput): Promise<OpenCaseBroadcastEmailResult> => {
     assertTrustedSender(event)
-    const prepared = prepareCaseBroadcastEmail(repository, openCaseBroadcastEmailInputSchema.parse(rawInput))
+    const input=openCaseBroadcastEmailInputSchema.parse(rawInput)
+    const prepared = prepareCaseBroadcastEmail(repository, input)
+    if(input.experienceRunId)repository.validateExperienceAdoption(input.experienceRunId,{documentId:null,reviewId:input.reviewId})
     await dependencies.openExternal(prepared.mailtoUrl)
+    if(input.experienceRunId)repository.recordExperienceAdoption(input.experienceRunId,input.text,currentOperator().operatorId,{documentId:null,reviewId:input.reviewId})
     return { opened: true }
   })
 

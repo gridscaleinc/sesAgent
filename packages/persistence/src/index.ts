@@ -1,3 +1,4 @@
+export { DuplicateCandidateError } from './intake-deduplication'
 import type { PersonnelTemplate, PersonnelMessageInput, SetCandidateBusinessStateInput } from '@shared'
 import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -157,7 +158,7 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
       this.database.pragma('secure_delete=ON')
       this.database.pragma('busy_timeout=5000')
       this.database.pragma('journal_mode=WAL')
-      applyMigrations(this.database)
+      applyMigrations(this.database, options.mappingKey)
       this.stores = createStoreRegistry({
         database: this.database,
         databaseKey: options.databaseKey,
@@ -449,6 +450,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.candidates.listStagedFileRecords()
   }
 
+  findCandidateByDocumentContent(document: DocumentIR): CandidateReviewSnapshot | null {
+    return this.stores.candidates.findCandidateByDocumentContent(document)
+  }
+
   findStagedTextSourceBySha256(sha256: string): StagedFileRecord | null {
     return this.stores.candidates.findStagedTextSourceBySha256(sha256)
   }
@@ -461,9 +466,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     document: DocumentIR,
     summary: ResumeAnalysisSummary,
     redactionSessionId: string,
-    extraction?: CandidateExtractionDraft
+    extraction?: CandidateExtractionDraft,
+    inTalentLibrary = true
   ): void {
-    return this.stores.candidates.saveParsedDocument(document, summary, redactionSessionId, extraction)
+    return this.stores.candidates.saveParsedDocument(document, summary, redactionSessionId, extraction, inTalentLibrary)
   }
 
   getCandidateExtraction(documentId: string): CandidateExtractionDraft | null {
@@ -488,6 +494,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   getCandidateReview(documentId: string): CandidateReviewSnapshot | null {
     return this.stores.candidates.getCandidateReview(documentId)
+  }
+
+  addCandidateToLibrary(documentId: string, profileVersion: number): CandidateReviewSnapshot {
+    return this.stores.candidates.addCandidateToLibrary(documentId, profileVersion)
   }
 
   listCandidateReviews(): CandidateReviewSnapshot[] {
@@ -564,6 +574,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   getCurrentCandidateProfile(documentId: string) {
     return this.stores.candidates.getCurrentCandidateProfile(documentId)
+  }
+
+  getCandidateProfileForAssessment(documentId: string) {
+    return this.stores.candidates.getCandidateProfileForAssessment(documentId)
   }
 
   getCandidateProfileHistory(sourceDocumentId: string): CandidateProfileVersionDetail[] {
@@ -651,6 +665,63 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.localSettings.saveLocalOperatorProfile(rawInput, now)
   }
 
+  listCustomerIdentities(){return this.stores.growth.customers()}
+  saveCustomerIdentity(input:import('@shared').CustomerIdentityInput){return this.stores.growth.saveCustomer(input)}
+  resolveCustomerIdentity(name:string){return this.stores.growth.customer(name)}
+  getPendingInterviewAnswers(){return this.stores.growth.pendingAnswers()}
+  getPairInterviewEvidence(documentId:string,reviewId:string){return this.stores.growth.pairEvidence(documentId,reviewId)}
+  getInterviewAnswers(id:string){return this.stores.growth.answers(id)}
+  saveInterviewAnswers(source:ReturnType<import('./stores/business-growth-store').BusinessGrowthStore['pendingAnswers']>[number],answers:import('@shared').InterviewAnswer[]){return this.stores.growth.saveAnswers(source,answers)}
+  getGrowthCheckpoint(key:string){return this.stores.growth.checkpoint(key)}
+  saveGrowthCheckpoint(key:string,value:string){this.stores.growth.setCheckpoint(key,value)}
+  listMatchingOpportunities(){return this.stores.growth.opportunities()}
+  saveMatchingOpportunities(reviewId:string,items:Parameters<import('./stores/business-growth-store').BusinessGrowthStore['saveOpportunities']>[1]){return this.stores.growth.saveOpportunities(reviewId,items)}
+  controlMatchingOpportunity(input:unknown){return this.stores.growth.opportunityAction(input)}
+  restoreQuestionBankVersion(id:string,expectedVersion:number,version:number){return this.stores.questionBank.restore(id,expectedVersion,version)}
+  getQuestionBankHistory(id:string){return this.stores.questionBank.history(id)}
+  getQuestionBankRefinement(){return this.stores.questionBank.refinement()}
+  getQuestionBankMergeCandidate(){return this.stores.questionBank.mergeCandidate()}
+  reviseQuestionBank(...args:Parameters<import('./stores/question-bank-store').QuestionBankStore['revise']>){return this.stores.questionBank.revise(...args)}
+  mergeQuestionBank(...args:Parameters<import('./stores/question-bank-store').QuestionBankStore['merge']>){return this.stores.questionBank.merge(...args)}
+  listQuestionBank(query:import('@shared').QuestionBankQuery={}) {return this.stores.questionBank.list(query)}
+  controlQuestionBank(input:import('@shared').QuestionBankControl) {return this.stores.questionBank.control(input)}
+  getApplicableBankQuestions(requirements:import('@shared').ExperienceInput['requirements'],context:import('@shared').ExperienceContext) {return this.stores.questionBank.applicable(requirements,context)}
+  getPendingBankQuestions() {return this.stores.questionBank.pending()}
+  saveQuestionTemplate(source:import('@shared').QuestionBankSource,draft:import('@shared').QuestionTemplateDraft|null) {return this.stores.questionBank.accept(source,draft)}
+  monitorExperienceTrends(){this.stores.experience.monitorTrends()}
+  monitorQuestionBank() {this.stores.questionBank.monitor()}
+  getActiveSystemExperiences() { return this.stores.experience.active() }
+  validateExperienceAdoption(runId:string,target:{documentId:string|null;reviewId:string|null;interviewId?:string|null}) { this.stores.experience.assertAdoption(runId,target) }
+  recordExperienceAdoption(runId: string, after: unknown, actorId: string, target?: { documentId: string | null; reviewId: string | null; interviewId?: string | null }) { return this.stores.experience.adopt(runId, after, actorId, target) }
+  recordQuestionExperienceEdits(documentId:string, reviewId:string|null, interviewId:string, questions: import('@shared').CandidateInterviewQuestion[], actor:string) { return this.stores.experience.questionEdits(documentId,reviewId,interviewId,questions,actor) }
+  getExperienceSettings(){return this.stores.experience.settings()}
+  getExperienceSkills(){return this.stores.experience.list()}
+  getSystemExperience() { return this.stores.experience.snapshot() }
+  controlSystemExperience(input: import('@shared').ExperienceControl) { return this.stores.experience.control(input) }
+  getSystemExperienceDetails(id: string) { return this.stores.experience.details(id) }
+  getExperienceBundle(task: import('@shared').ExperienceTask, requirements: import('@shared').ExperienceInput['requirements'], context?: import('@shared').ExperienceContext) { return this.stores.experience.bundle(task, requirements, context) }
+  saveExperienceRun(input: Parameters<StoreRegistry['experience']['saveRun']>[0]) { return this.stores.experience.saveRun(input) }
+  getExperienceRun(id: string) { return this.stores.experience.run(id) }
+  recordExperienceExposure(input: unknown) { return this.stores.experience.exposure(input) }
+  recordExperienceEvent(input: Parameters<StoreRegistry['experience']['record']>[0]) { return this.stores.experience.record(input) }
+  getPendingExperienceEvents() { return this.stores.experience.pending() }
+  getExperienceEvents(ids: string[]) { return this.stores.experience.events(ids) }
+  saveExperienceSamples(ids: string[], samples: import('@shared').ExperienceSample[]) { return this.stores.experience.analyzed(ids, samples) }
+  getExperienceSamples() { return this.stores.experience.samples() }
+  saveSystemExperience(input: Parameters<StoreRegistry['experience']['put']>[0], expectedVersion: number) { return this.stores.experience.put(input, expectedVersion) }
+  reserveExperienceCall() { return this.stores.experience.reserveCall() }
+  completeExperienceLearning(error: string | null) { return this.stores.experience.complete(error) }
+  listWorkRules() { return this.stores.workRules.list() }
+  getWorkRuleHistory(id: string) { return this.stores.workRules.history(id) }
+  saveWorkRule(input: Parameters<import('./stores/work-rules-store').WorkRulesStore['save']>[0]) { return this.stores.workRules.save(input) }
+  changeWorkRule(input: import('@shared').ChangeWorkRuleInput, actor: string) { return this.stores.workRules.change(input, actor) }
+  saveCasePersonAssessment(input: import('@shared').CasePersonAssessment) { return this.stores.workRules.saveAssessment(input) }
+  listCasePersonAssessments(documentId: string, jobCaseId: string) { return this.stores.workRules.listAssessments(documentId, jobCaseId) }
+  listCaseAssessments(jobCaseId: string) { return this.stores.workRules.listCaseAssessments(jobCaseId) }
+  saveCaseQuestionDraft(input: import('@shared').CasePersonQuestionDraft) { return this.stores.workRules.saveQuestionDraft(input) }
+  getCaseQuestionDraft(documentId: string, jobCaseId: string) { return this.stores.workRules.getQuestionDraft(documentId, jobCaseId) }
+  saveAssessmentFeedback(input: import('@shared').AssessmentFeedbackInput, actor: string) { return this.stores.workRules.feedback(input, actor) }
+
   getLocalApplicationPreferences(): LocalApplicationPreferences | null {
     return this.stores.localSettings.getLocalApplicationPreferences()
   }
@@ -694,6 +765,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.gmail.getGmailSyncCheckpoint(accountEmail)
   }
 
+  saveGmailIntakeResult(accountEmail: string, counts: Parameters<import('./stores/gmail-store').GmailStore['saveGmailIntakeResult']>[1]): void {
+    this.stores.gmail.saveGmailIntakeResult(accountEmail, counts)
+  }
+
   saveGmailSyncSuccess(
     accountEmail: string,
     configHash: string,
@@ -722,6 +797,9 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.gmail.findGmailMessageByFingerprint(accountEmail, fingerprint)
   }
 
+  listPersonnelMailUpdates(documentId:string) { return this.stores.gmail.personnelMailUpdates(documentId) }
+  mergePersonnelMailConditions(input: Parameters<import('./stores/gmail-store').GmailStore['mergePersonnelMailConditions']>[0]) { return this.stores.gmail.mergePersonnelMailConditions(input) }
+  resolvePersonnelMailUpdate(input:import('@shared').ResolvePersonnelMailUpdateInput,actor:string) { return this.stores.gmail.resolvePersonnelMailUpdate(input,actor) }
   getGmailPersonnelIntakeStatus(accountEmail: string) { return this.stores.gmail.getGmailPersonnelIntakeStatus(accountEmail) }
   listPendingGmailBusinessIntake(accountEmail: string) { return this.stores.gmail.listPendingGmailBusinessIntake(accountEmail) }
   getGmailBusinessIntake(accountEmail: string, messageId: string) { return this.stores.gmail.getGmailBusinessIntake(accountEmail, messageId) }
@@ -767,8 +845,8 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.jobCases.saveRedactedJobCaseSourceAndDraft(session, mappings, rawSource, rawDraft)
   }
 
-  findJobCaseReviewByBusinessFingerprint(subject: string, body: string): JobCaseReviewSnapshot | null {
-    return this.stores.jobCases.findJobCaseReviewByBusinessFingerprint(subject, body)
+  findJobCaseReviewByBusinessFingerprint(subject: string, body: string, mappings: LocalPiiMapping[] = []): JobCaseReviewSnapshot | null {
+    return this.stores.jobCases.findJobCaseReviewByBusinessFingerprint(subject, body, mappings)
   }
 
   getEmlJobCaseReview(sourceMessageKey: string): JobCaseReviewSnapshot | null {

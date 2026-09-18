@@ -70,7 +70,7 @@ export class PersonnelStore extends DomainStore {
       FROM gmail_business_intake intake JOIN gmail_messages m ON m.account_email=intake.account_email AND m.gmail_message_id=intake.gmail_message_id,
       json_each(intake.parts_json) part GROUP BY part.value`).all().map((row) => [row.document_id, row.internal_date]))
     for (const review of this.stores.candidates.listCandidateReviews()) {
-      if (review.recordStatus === 'deleted') continue
+      if (review.recordStatus === 'deleted' || review.inTalentLibrary === false) continue
       const times = personTimes.get(review.documentId)
       if (!times) continue
       const state = states.get(review.documentId)
@@ -148,7 +148,7 @@ export class PersonnelStore extends DomainStore {
   validateMessage(raw: PersonnelMessageInput): PersonnelMessageInput {
     const input = personnelMessageInputSchema.parse(raw)
     const review = this.stores.candidates.getCandidateReview(input.documentId)
-    if (!review || review.recordStatus !== 'active' || !review.profile || review.profile.status !== 'current' ||
+    if (!review || review.recordStatus === 'deleted' || (review.recordStatus !== 'active' && !input.caseContext) || !review.profile || review.profile.status !== 'current' ||
       review.profile.version !== input.profileVersion || (input.reviewRevision !== undefined && input.reviewRevision !== review.reviewRevision)) {
       throw new Error('人员资料已更新或不可用，请刷新后重试。 / 要員情報が更新されたか利用できません。再読込してください。')
     }
@@ -163,19 +163,24 @@ export class PersonnelStore extends DomainStore {
     const template = this.templates().find((item) => item.id === input.templateId)
     if (!template || template.revision !== input.templateRevision) throw new Error('模板已更新，请重新生成文案。 / テンプレート更新後の文面を確認してください。')
     const localIdentity = review.localIdentity
-    if ([localIdentity?.displayName, localIdentity?.phone, localIdentity?.email, localIdentity?.address].some((value) => value && input.text.includes(value))) {
+    const customerText = [input.subject, input.text].filter(Boolean).join('\n')
+    if ([localIdentity?.displayName, localIdentity?.phone, localIdentity?.email, localIdentity?.address].some((value) => value && customerText.includes(value))) {
       throw new Error('文案包含本地个人身份信息，请使用匿名介绍。 / 匿名の紹介文を使用してください。')
     }
-    if (detectDirectIdentifiers(introductionIdentifierCheckText(input.text)).length) throw new Error('文案中含有联系方式，请检查后重试。 / 文面内の直接識別子を確認してください。')
+    if (detectDirectIdentifiers(introductionIdentifierCheckText(customerText)).length) throw new Error('文案中含有联系方式，请检查后重试。 / 文面内の直接識別子を確認してください。')
+    if(input.experienceRunId)this.stores.experience.assertAdoption(input.experienceRunId,{documentId:input.documentId,reviewId:input.caseContext?.reviewId??null})
     return input
   }
 
   recordCopy(raw: PersonnelMessageInput, actorId: string): PersonnelCopy {
+    return this.database.transaction(()=>{
     const input = this.validateMessage(raw)
     const copy: PersonnelCopy = { id: randomUUID(), documentId: input.documentId, profileVersion: input.profileVersion,
       templateId: input.templateId, templateRevision: input.templateRevision, lang: input.lang, createdAt: new Date().toISOString() }
     this.database.prepare('INSERT INTO personnel_copies(id,document_id,created_at,payload,text_hash,actor_id) VALUES (?,?,?,?,?,?)')
       .run(copy.id, copy.documentId, copy.createdAt, JSON.stringify(copy), createHash('sha256').update(input.text).digest('hex'), actorId)
+    if(input.experienceRunId)this.stores.experience.adopt(input.experienceRunId,input.text,actorId,{documentId:input.documentId,reviewId:input.caseContext?.reviewId??null})
     return copy
+    })()
   }
 }

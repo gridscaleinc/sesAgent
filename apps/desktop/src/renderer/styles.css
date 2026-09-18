@@ -7197,7 +7197,7 @@ input:focus-visible {
   overflow-y: auto;
 }
 
-.job-case-list > button {
+.job-case-list > .job-case-list-item > button:first-child {
   display: grid;
   width: 100%;
   padding: 13px 14px;
@@ -7208,32 +7208,32 @@ input:focus-visible {
   cursor: pointer;
 }
 
-.job-case-list > button:hover,
-.job-case-list > button.is-selected {
+.job-case-list > .job-case-list-item > button:first-child:hover,
+.job-case-list > .job-case-list-item > button:first-child.is-selected {
   background: white;
 }
 
-.job-case-list > button.is-selected {
+.job-case-list > .job-case-list-item > button:first-child.is-selected {
   box-shadow: inset 3px 0 var(--blue);
 }
 
-.job-case-list > button > div,
-.job-case-list > button > footer {
+.job-case-list > .job-case-list-item > button:first-child > div,
+.job-case-list > .job-case-list-item > button:first-child > footer {
   display: flex;
   align-items: center;
 }
 
-.job-case-list > button > div {
+.job-case-list > .job-case-list-item > button:first-child > div {
   gap: 5px;
 }
 
-.job-case-list > button time {
+.job-case-list > .job-case-list-item > button:first-child time {
   margin-left: auto;
   color: #929cac;
   font-size: 7px;
 }
 
-.job-case-list > button small {
+.job-case-list > .job-case-list-item > button:first-child small {
   color: #758196;
   font-size: 7px;
   font-weight: 700;
@@ -7250,7 +7250,7 @@ input:focus-visible {
   background: var(--green);
 }
 
-.job-case-list > button > strong {
+.job-case-list > .job-case-list-item > button:first-child > strong {
   margin-top: 8px;
   overflow: hidden;
   color: #2a3548;
@@ -7260,7 +7260,7 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-.job-case-list > button > p {
+.job-case-list > .job-case-list-item > button:first-child > p {
   margin: 5px 0 10px;
   overflow: hidden;
   color: #627086;
@@ -7269,7 +7269,7 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-.job-case-list > button > footer {
+.job-case-list > .job-case-list-item > button:first-child > footer {
   justify-content: space-between;
   color: #8a95a6;
   font-size: 7px;
@@ -15155,7 +15155,7 @@ body,
 .recruiting-decision-summary h3 { margin: 0 0 13px; font-size: 14px; }
 .recruiting-decision-summary p { margin: 0; color: #566981; font-size: 13px; line-height: 1.75; white-space: pre-wrap; }
 .recruiting-inherited-check > div { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 11px 0; color: #50637b; font-size: 12px; border-bottom: 1px solid #edf0f4; }
-.recruiting-inherited-check > div strong { color: #2a775c; font-size: 11px; }
+.recruiting-inherited-check > div strong { color: #8a5918; font-size: 11px; }
 .recruiting-decision-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
 .recruiting-decision-two-col strong { color: #40536d; font-size: 12px; }
 .recruiting-decision-two-col ul { padding-left: 18px; color: #5b6e85; font-size: 12px; line-height: 1.7; }

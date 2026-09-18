@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
+import { loadGoogleProductBuildVariables, requireGoogleProductBuildConfiguration } from './scripts/google-product-configuration'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
@@ -41,13 +42,17 @@ const googleWorkspaceBuildVariables = [
   'SES_GMAIL_LOOKBACK_DAYS',
   'SES_GMAIL_MAX_MESSAGES_PER_RUN'
 ] as const
+const googleProductValues = loadGoogleProductBuildVariables(rootDir, process.env)
+const productBuildEnvironment = { ...process.env, ...googleProductValues }
 const mainBuildDefinitions = Object.fromEntries(
-  googleWorkspaceBuildVariables.flatMap((name) => process.env[name] === undefined
+  googleWorkspaceBuildVariables.flatMap((name) => productBuildEnvironment[name] === undefined
     ? []
-    : [[`process.env.${name}`, JSON.stringify(process.env[name])]])
+    : [[`process.env.${name}`, JSON.stringify(productBuildEnvironment[name])]])
 ) as Record<string, string>
 
-export default defineConfig({
+export default defineConfig(({ command }) => {
+  if (command === 'build') requireGoogleProductBuildConfiguration(googleProductValues)
+  return {
   main: {
     define: mainBuildDefinitions,
     plugins: [externalizeDepsPlugin()],
@@ -92,4 +97,5 @@ export default defineConfig({
       }
     }
   }
+}
 })

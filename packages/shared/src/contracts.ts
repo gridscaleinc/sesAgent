@@ -924,6 +924,8 @@ export interface EvaluateCandidateEvaluationDraftResult {
 }
 
 export interface CandidateReviewSnapshot {
+  /** False for a resume saved only for case assessment; unrelated to availability or archival. */
+  inTalentLibrary?: boolean
   /** HR-owned affiliation; null or absent means not set. */
   isOwnCompany?: boolean | null
   documentId: string
@@ -980,6 +982,13 @@ export const candidateInterviewQuestionSources = ['standard', 'resume', 'inherit
 export type CandidateInterviewQuestionSource = (typeof candidateInterviewQuestionSources)[number]
 
 export interface CandidateInterviewQuestion {
+  bankQuestionId?:string
+  bankVersion?:number
+  experienceRunId?: string
+  requirement?: string
+  evidence?: string
+  matchContext?: { jobCaseId: string; jobCaseVersion: number; profileVersion: number; rulesRevision: number }
+
   id: string
   text: string
   source: CandidateInterviewQuestionSource
@@ -987,6 +996,8 @@ export interface CandidateInterviewQuestion {
   selected: boolean
   /** What a good answer looks like; the interviewer's scoring note for this question. */
   scoringGuide?: string | null
+  /** One short probe that tests the answer, never a second question. */
+  followUp?: string | null
 }
 
 /**
@@ -1326,6 +1337,15 @@ export interface CreateChatPasteJobCaseDraftInput {
 
 export interface CreateChatPasteJobCaseDraftResult {
   review: JobCaseReviewSnapshot
+  outcome?: 'created' | 'already-imported' | 'existing-review' | 'archived'
+}
+
+export interface ImportCaseTextBatchResult {
+  created: number
+  duplicates: number
+  failed: number
+  remainingText: string
+  reviewIds: string[]
 }
 
 export interface PrepareWechatVisibleReadResult {
@@ -2443,6 +2463,8 @@ export interface SaveGoogleWorkspaceAdminConfigurationResult {
 export interface GmailSyncState {
   personnelImported?: number
   personnelIntake?: { failed: number; warnings: number }
+  /** Configured normal cadence; failed runs may back off. */
+  intervalMinutes?: number
   configuration: 'required' | 'ready'
   status: 'never' | 'idle' | 'error'
   labelIds: string[]
@@ -2451,14 +2473,7 @@ export interface GmailSyncState {
   checkpointHistoryId: string | null
   storedMessages: number
   lastSyncedAt: string | null
-  lastRun: {
-    mode: 'baseline' | 'incremental' | 'bounded-rescan'
-    discovered: number
-    imported: number
-    duplicates: number
-    filtered: number
-    failed: number
-  } | null
+  lastRun: import('./gmail-sync').GmailSyncRunSummary | null
   lastError: string | null
 }
 
@@ -2718,6 +2733,7 @@ export type DraftCaseUpdateNoticeResult =
   | { status: 'no-changes' }
 
 export interface RecordCaseBroadcastCopyInput {
+  experienceRunId?: string
   expectedJobCaseVersion?: number
   expectedTemplateRevision?: number
   reviewId: string
@@ -2738,6 +2754,7 @@ export interface RecordCaseBroadcastCopyResult {
  * opening a composer means the message was sent.
  */
 export interface OpenCaseBroadcastEmailInput {
+  experienceRunId?: string
   expectedJobCaseVersion?: number
   expectedTemplateRevision?: number
   reviewId: string
@@ -2847,6 +2864,8 @@ export type BeginResumeImportResult =
 export interface DesktopApi {
   getBusinessFeed(): Promise<BusinessFeedEntry[]>
   markBusinessFeed(input: MarkBusinessFeedInput): Promise<BusinessFeedEntry[]>
+  listPersonnelMailUpdates(documentId:string): Promise<import('./personnel-mail-updates').PersonnelMailUpdate[]>
+  resolvePersonnelMailUpdate(input:import('./personnel-mail-updates').ResolvePersonnelMailUpdateInput): Promise<void>
   getPersonnelWorkspace(): Promise<PersonnelWorkspace>
   savePersonnelTemplate(input: PersonnelTemplate): Promise<PersonnelTemplate[]>
   beginBusinessProgress(input: import('./business-progress').BeginBusinessProgressInput): Promise<import('./business-workbench').BusinessFollowUp[]>
@@ -2866,6 +2885,35 @@ export interface DesktopApi {
   validatePersonnelMessage(input: PersonnelMessageInput): Promise<PersonnelMessageInput>
   recordPersonnelCopy(input: PersonnelMessageInput): Promise<PersonnelCopy>
   openPersonnelEmail(input: PersonnelMessageInput): Promise<{ opened: true; recipientPrefilled?: boolean }>
+  listCustomerIdentities():Promise<import('./business-growth').CustomerIdentity[]>
+  saveCustomerIdentity(input:import('./business-growth').CustomerIdentityInput):Promise<import('./business-growth').CustomerIdentity[]>
+  getInterviewAnswers(id:string):Promise<import('./business-growth').InterviewAnswers|null>
+  getPairInterviewEvidence(input:{documentId:string;reviewId:string}):Promise<import('./business-growth').PairInterviewEvidence[]>
+  listMatchingOpportunities():Promise<import('./business-growth').MatchingOpportunity[]>
+  controlMatchingOpportunity(input:{id:string;fingerprint:string;action:'seen'|'dismissed'}):Promise<import('./business-growth').MatchingOpportunity[]>
+  getQuestionBankHistory(id:string):Promise<import('./business-growth').QuestionBankRevision[]>
+  restoreQuestionBankVersion(input:{id:string;expectedVersion:number;version:number}):Promise<import('./question-bank').BankQuestion[]>
+  listQuestionBank(query?:import('./question-bank').QuestionBankQuery):Promise<import('./question-bank').BankQuestion[]>
+  controlQuestionBank(input:import('./question-bank').QuestionBankControl):Promise<import('./question-bank').BankQuestion[]>
+  getSystemExperience(): Promise<import('./system-experience').SystemExperienceSnapshot>
+  controlSystemExperience(input: import('./system-experience').ExperienceControl): Promise<import('./system-experience').SystemExperienceSnapshot>
+  getSystemExperienceDetails(id: string): Promise<{history: import('./system-experience').SystemExperience[]; evidence: Array<Pick<import('./system-experience').ExperienceEvent,'id'|'text'|'kind'|'createdAt'|'documentId'|'reviewId'>>}>
+  recordExperienceExposure(input: {runId:string;action:'shown'|'opened';rank?:number}): Promise<void>
+  listWorkRules(): Promise<import('./ai-work-rules').WorkRuleLibrary>
+  getWorkRuleHistory(id: string): Promise<import('./ai-work-rules').WorkRuleRecord[]>
+  analyzeWorkRule(input: import('./ai-work-rules').AnalyzeWorkRuleInput): Promise<import('./ai-work-rules').WorkRulePreview>
+  saveWorkRule(input: import('./ai-work-rules').SaveWorkRuleInput): Promise<import('./ai-work-rules').WorkRuleRecord>
+  changeWorkRule(input: import('./ai-work-rules').ChangeWorkRuleInput): Promise<import('./ai-work-rules').WorkRuleRecord>
+  assessCasePerson(input: import('./ai-work-rules').AssessCasePersonInput): Promise<import('./ai-work-rules').CasePersonAssessment>
+  listCasePersonAssessments(input: import('./ai-work-rules').AssessCasePersonInput): Promise<import('./ai-work-rules').CasePersonAssessment[]>
+  prepareCaseAssessment(input: PrepareCaseIntroductionInput): Promise<JobCaseReviewSnapshot>
+  listCaseAssessments(jobCaseId: string): Promise<import('./ai-work-rules').CasePersonAssessment[]>
+  getCaseQuestionDraft(input: import('./ai-work-rules').CaseQuestionDraftQuery): Promise<import('./ai-work-rules').CaseQuestionDraftView>
+  onCaseResumeImportProgress(listener: (progress: import('./ai-work-rules').CaseResumeImportProgress) => void): () => void
+  addCandidateToLibrary(input: { documentId: string; profileVersion: number }): Promise<CandidateReviewSnapshot>
+  importResumeForCase(input: { requestId?: string; jobCaseId: string; file: { name: string; bytes: Uint8Array } }): Promise<{ person: CandidateReviewSnapshot; assessment: import('./ai-work-rules').CasePersonAssessment | null; error: string | null }>
+  saveAssessmentFeedback(input: import('./ai-work-rules').AssessmentFeedbackInput): Promise<void>
+  generateRuleQuestions(input: import('./ai-work-rules').GenerateRuleQuestionsInput): Promise<import('./ai-work-rules').RuleQuestionsResult>
   findPersonnelForCase(jobCaseId: string): Promise<import('./business-workbench').CasePersonnelMatchResult>
   findCasesForPersonnel(documentId: string): Promise<import('./business-workbench').PersonnelCaseMatchResult>
   getStartupStatus(): Promise<StartupStatus>
@@ -2881,7 +2929,8 @@ export interface DesktopApi {
   openAiCommerceMemberCenter(): Promise<{ opened: true }>
   prepareAiCommerceCloudPrompt(input: PrepareAiCommerceCloudPromptInput): Promise<PrepareAiCommerceCloudPromptResult>
   executeAiCommerceCloudPrompt(input: ExecuteAiCommerceCloudPromptInput): Promise<AiCommerceCloudPromptResult>
-  regenerateIntroduction(input: import('./business-workbench').RegenerateIntroductionInput): Promise<{ text: string }>
+  regenerateIntroduction(input: import('./business-workbench').RegenerateIntroductionInput): Promise<{ text: string; experienceRunId?: string }>
+  beginIntroductionDraft(input: import('./business-workbench').RegenerateIntroductionInput & {text:string}): Promise<{text:string;experienceRunId:string;hasExperience:boolean}>
   saveBusinessField(input: import('./business-workbench').SaveBusinessFieldInput): Promise<{ version: number }>
   listAiConversations(context: AiConversationContext): Promise<AiConversationSnapshot[]>
   saveAiConversation(input: SaveAiConversationInput): Promise<AiConversationSnapshot>
@@ -2906,6 +2955,7 @@ export interface DesktopApi {
   openZoomTestMeeting(): Promise<{ opened: true }>
   createManualJobCaseDraft(input: CreateManualJobCaseDraftInput): Promise<CreateManualJobCaseDraftResult>
   createChatPasteJobCaseDraft(input: CreateChatPasteJobCaseDraftInput): Promise<CreateChatPasteJobCaseDraftResult>
+  importCaseTextBatch(input: CreateChatPasteJobCaseDraftInput): Promise<ImportCaseTextBatchResult>
   prepareWechatVisibleRead(): Promise<PrepareWechatVisibleReadResult>
   executeWechatVisibleRead(input: ExecuteWechatVisibleReadInput): Promise<ExecuteWechatVisibleReadResult>
   importEmlJobCaseDrafts(): Promise<ImportEmlJobCaseDraftsResult>
@@ -2979,6 +3029,8 @@ export interface DesktopApi {
 export const ipcChannels = {
   getBusinessFeed: 'business-feed:list',
   markBusinessFeed: 'business-feed:mark',
+  listPersonnelMailUpdates: 'personnel:mail-updates',
+  resolvePersonnelMailUpdate: 'personnel:mail-update-resolve',
   getPersonnelWorkspace: 'personnel:workspace',
   savePersonnelTemplate: 'personnel:template-save',
   beginBusinessProgress: 'business:begin-progress',
@@ -2999,6 +3051,29 @@ export const ipcChannels = {
   recordPersonnelCopy: 'personnel:record-copy',
   openPersonnelEmail: 'personnel:open-email',
   findCasesForPersonnel: 'personnel:find-cases',
+  listCustomerIdentities:'growth:customers',saveCustomerIdentity:'growth:customer-save',getInterviewAnswers:'growth:answers',getPairInterviewEvidence:'growth:pair-evidence',
+  listMatchingOpportunities:'growth:opportunities',controlMatchingOpportunity:'growth:opportunity-control',getQuestionBankHistory:'question-bank:history',restoreQuestionBankVersion:'question-bank:restore',
+  listQuestionBank:'question-bank:list',
+  controlQuestionBank:'question-bank:control',
+  getSystemExperience:'system-experience:list',
+  controlSystemExperience:'system-experience:control',
+  getSystemExperienceDetails:'system-experience:details',
+  recordExperienceExposure:'system-experience:exposure',
+  listWorkRules: 'ai-work-rules:list',
+  getWorkRuleHistory: 'ai-work-rules:history',
+  analyzeWorkRule: 'ai-work-rules:analyze',
+  saveWorkRule: 'ai-work-rules:save',
+  changeWorkRule: 'ai-work-rules:change',
+  assessCasePerson: 'case-person:assess',
+  listCasePersonAssessments: 'case-person:history',
+  addCandidateToLibrary: 'case-person:add-to-library',
+  importResumeForCase: 'case-person:import',
+  listCaseAssessments: 'case-person:case-history',
+  getCaseQuestionDraft: 'case-person:question-draft',
+  prepareCaseAssessment: 'case-person:prepare-case',
+  caseResumeImportProgress: 'case-person:import-progress',
+  saveAssessmentFeedback: 'case-person:feedback',
+  generateRuleQuestions: 'ai-work-rules:questions',
   findPersonnelForCase: 'case:find-personnel',
   getStartupStatus: 'startup:get-status',
   getBootstrap: 'bootstrap:get',
@@ -3014,6 +3089,7 @@ export const ipcChannels = {
   prepareAiCommerceCloudPrompt: 'aicommerce:prepare-cloud-prompt',
   executeAiCommerceCloudPrompt: 'aicommerce:execute-cloud-prompt',
   regenerateIntroduction: 'business:introduction-regenerate',
+  beginIntroductionDraft: 'business:introduction-begin',
   saveBusinessField: 'business:field-save',
   listAiConversations: 'ai-conversations:list',
   saveAiConversation: 'ai-conversations:save',
@@ -3038,6 +3114,7 @@ export const ipcChannels = {
   openZoomTestMeeting: 'zoom:open-test-meeting',
   createManualJobCaseDraft: 'job-case-draft:create-manual',
   createChatPasteJobCaseDraft: 'job-case-draft:create-chat-paste',
+  importCaseTextBatch: 'job-case:import-text-batch',
   prepareWechatVisibleRead: 'wechat-visible-read:prepare',
   executeWechatVisibleRead: 'wechat-visible-read:execute',
   importEmlJobCaseDrafts: 'job-case-draft:import-eml',

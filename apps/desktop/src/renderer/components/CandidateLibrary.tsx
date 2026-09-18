@@ -1,3 +1,4 @@
+import { BusinessObjectDeleteButton } from './BusinessObjectDeleteButton'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
   PrepareAiCommerceCloudPromptInput,
@@ -292,6 +293,10 @@ export function CandidateLibrary({
               <footer>
                 <span><Icon name="shield" size={14} />ローカル暗号化プロフィール · Cloud送信前に脱敏</span>
                 <button onClick={() => void openHistory(candidate)} type="button">完全なプロフィールを見る</button>
+                <BusinessObjectDeleteButton kind="person" id={candidate.sourceDocumentId} title={displayName ?? candidate.anonymousLabel}
+                  onPreview={() => onPreviewDeletion(candidate.sourceDocumentId)}
+                  onDelete={(confirmationHash) => onDeleteCandidate({ sourceDocumentId: candidate.sourceDocumentId, confirmationHash, confirmationText: '削除' })}
+                  onDeleted={async (report) => { setDeletionReport(report); await runSearch({ query: submittedQuery, maxResults: 30 }) }} />
               </footer>
             </article>
           )

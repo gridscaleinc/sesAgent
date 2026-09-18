@@ -339,6 +339,7 @@ try {
   })
   const rejectedDocument: DocumentIR = {
     ...document,
+    blocks: document.blocks.map((block) => ({ ...block, text: `${block.text} / 別要員の資料` })),
     documentId: rejectedDocumentId,
     source: { ...document.source, name: 'rejected-candidate.pdf', sha256: 'b'.repeat(64) }
   }

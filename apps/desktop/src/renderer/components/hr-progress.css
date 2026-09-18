@@ -80,3 +80,11 @@
 .hr-progress .hr-followup-search input { border:0; padding:9px 0; background:transparent; }
 .hr-progress-preparation { background:#f8faf7; border:1px solid #e1e9de; border-radius:7px; padding:10px 14px; }
 .hr-progress-preparation[open] > h4 { margin:16px 0 8px; }
+
+.hr-progress-entry-record { margin: 0; display: grid; gap: 0; }
+.hr-progress-entry-record > div { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr); gap: 1rem; padding: .75rem 0; border-bottom: 1px solid var(--border-color, #dce5df); }
+.hr-progress-entry-record dt { color: var(--text-muted, #617568); }
+.hr-progress-entry-record dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.personnel-mail-updates { padding:16px; border:1px solid #d3e0d7; border-radius:10px; margin:12px 0; background:#f6faf7; }
+.personnel-mail-updates article + article { border-top:1px solid #d3e0d7; padding-top:12px; margin-top:12px; }

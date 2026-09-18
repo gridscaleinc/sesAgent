@@ -541,7 +541,7 @@ describe('JobCaseInbox', () => {
     expect(screen.getByText('本日')).toBeInTheDocument()
     expect(screen.getByText('それ以前')).toBeInTheDocument()
     expect(screen.getAllByText('新')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: /C# 保守案件/u }))
+    fireEvent.click(screen.getByRole('button', { name: /^確認済み.*C# 保守案件/u }))
     expect(onMarkSeen).toHaveBeenCalledWith(older.reviewId)
   })
 

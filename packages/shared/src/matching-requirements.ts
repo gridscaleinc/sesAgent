@@ -1,7 +1,7 @@
 /** One requirement policy for both directions of the HR workbench. Scores never
  * compensate for an unevidenced mandatory skill. This describes a pair, not a
  * person's lifecycle or permission to use the workbench. */
-export const businessMatchingPolicyVersion = 'mandatory-evidence-v1' as const
+export const businessMatchingPolicyVersion = 'technical-language-v3' as const
 
 export interface MatchRequirement {
   id: string
@@ -22,7 +22,7 @@ export interface MatchRequirementEvidence {
   source: string | null
 }
 export interface BusinessMatchQualification {
-  policyVersion: typeof businessMatchingPolicyVersion
+  policyVersion: typeof businessMatchingPolicyVersion | 'mandatory-evidence-v1' | 'mandatory-evidence-v2'
   status: 'recommended' | 'needs-confirmation' | 'excluded'
   requirements: MatchRequirementEvidence[]
 }
@@ -34,7 +34,7 @@ type Field = { key: string; label: string; value: string | null }
 const norm = (text: string) => text.normalize('NFKC').toLowerCase().trim()
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 const generic = /^(?:SE|PG|PM|PMO|PL|TL|SL|IT|英語|英语|英文|日本語|日语|日文|English|Japanese|N[1-5]|エンジニア|工程师)$/iu
-const language = /英語|英语|英文|日本語|日语|日文|\b(?:English|Japanese|JLPT|N[1-5]|TOEIC)\b/iu
+const language = /英語|英语|英文|日本語|日语|日文|\b(?:English|Japanese|JLPT|N[1-5]|TOEIC\d*|IELTS|TOEFL)\b/iu
 const optional = /尚可|歓迎|加分|优先|優遇|nice.to.have|preferred|optional/iu
 const orOperator = /^(?:または|又は|もしくは|あるいは|或(?:者)?|or|か)$/iu
 const aliases: Record<string, string[]> = {
@@ -141,8 +141,10 @@ export function parseMatchRequirements(fields: readonly Field[]): MatchRequireme
     if (field.key === 'required_skills') {
       for (const clause of skillClauses(field.value)) {
         const choices = requirementAlternatives(clause)
-        const isCondition = language.test(clause) && choices.every((terms) => terms.length === 0) || generic.test(clause.trim()) || /^(?:SE|PG|PM|PMO|PL|TL|SL)\s*\d*\s*名?$/iu.test(clause.trim())
-        result.push({ id: `R${result.length + 1}`, key: field.key, label: clause,
+        const businessKey = /^(?:週\s*[1-5]\s*日?\s*(?:出社|出勤)|常駐|フルリモート|完全在宅|リモート|在宅)/u.test(clause) ? 'remote'
+          : /^(?:(?:20\d{2}年)?\d{1,2}月|即日).*(?:長期|開始|入場|稼働|～|〜|~)/u.test(clause) ? 'start_date' : null
+        const isCondition = Boolean(businessKey) || language.test(clause) && choices.every(terms => terms.every(term => /^(?:TOEIC\d*|IELTS|TOEFL|JLPT)$/iu.test(term))) || generic.test(clause.trim()) || /^(?:SE|PG|PM|PMO|PL|TL|SL)\s*\d*\s*名?$/iu.test(clause.trim())
+        result.push({ id: `R${result.length + 1}`, key: businessKey ?? field.key, label: clause,
           category: isCondition ? 'condition' : 'core', alternatives: choices,
           minimumYears: Number(clause.match(/(\d+(?:\.\d+)?)\s*(?:年以上|年(?:以上)?の経験|\+?\s*years?)/iu)?.[1]) || null,
           requiresPractice: /実務|实务|实际|実績|production|commercial/iu.test(clause),
@@ -230,7 +232,67 @@ export function groundedRequirementQuote(profile: MatchProfessionalFacts, requir
 }
 
 export function qualificationStatus(requirements: MatchRequirementEvidence[]): BusinessMatchQualification['status'] {
-  const core = requirements.filter((item) => item.requirement.category === 'core')
-  if (!core.length || core.some((item) => item.outcome !== 'met') || requirements.some((item) => item.outcome === 'conflict')) return 'excluded'
-  return requirements.some((item) => item.outcome === 'unknown') ? 'needs-confirmation' : 'recommended'
+  const core = requirements.filter((item) => isProposalRequirement(item.requirement))
+  if (core.some((item) => item.outcome === 'conflict')) return 'excluded'
+  if (!core.some(item => requirementDimension(item.requirement) === 'technical') || core.some(item => item.outcome === 'unknown')) return 'needs-confirmation'
+  return 'recommended'
+}
+
+/** Business terms remain visible, but do not decide professional suitability. */
+export function requirementDimension(requirement: MatchRequirement): 'technical' | 'language' | 'business' {
+  if (['japanese_level', 'japanese-level', 'english_level', 'language'].includes(requirement.key) ||
+    requirement.category === 'condition' && language.test(requirement.label)) return 'language'
+  return requirement.category === 'core' ? 'technical' : 'business'
+}
+export const isProposalRequirement = (requirement: MatchRequirement) => requirementDimension(requirement) !== 'business'
+
+export function proposalConclusion(qualification: BusinessMatchQualification | undefined, zh: boolean): string {
+  return qualification?.status === 'recommended' ? zh ? '可以提案' : '提案可能'
+    : qualification?.status === 'excluded' ? zh ? '不建议向本案提案' : 'この案件への提案は推奨しません'
+    : zh ? '核心信息待补充' : 'コア情報の補足が必要'
+}
+
+const requirementIdentity = (requirement: MatchRequirement) => `${requirementDimension(requirement)}:${norm(requirement.label).replace(/[\s（）()、,，:：~〜～]/gu, '')}`
+export function uniqueRequirementEvidence(items: MatchRequirementEvidence[]): MatchRequirementEvidence[] {
+  const result = new Map<string, MatchRequirementEvidence>()
+  for (const item of items) {
+    const key = requirementIdentity(item.requirement), previous = result.get(key)
+    // A known conflict takes precedence over a duplicate positive or unknown.
+    const rank = { unknown: 0, met: 1, conflict: 2 }
+    if (!previous || rank[item.outcome] > rank[previous.outcome]) result.set(key, item)
+  }
+  return [...result.values()]
+}
+
+/** Free model questions are deliberately not merged back into resolved facts.
+ * Explicit HR questions may add a topic, but cannot reopen an assessed item. */
+export function matchEvidenceSections(qualification: BusinessMatchQualification | undefined, questions: string[] = []) {
+  const items = uniqueRequirementEvidence(qualification?.requirements ?? [])
+  const questionKey = (value: string) => norm(value).replace(/[\s（）()、,，:：~〜～]/gu, '')
+  const represented = (question: string) => items.some(item => {
+    const label = questionKey(item.requirement.label), text = questionKey(question)
+    return text.includes(label) || label.includes(text) || item.requirement.alternatives.flat().some(term => mentionsRequiredTerm(question, term)) ||
+      requirementDimension(item.requirement) === 'language' && (/(日本語|日语|Japanese|JLPT|N[1-5])/iu.test(item.requirement.label) && /(日本語|日语|Japanese|JLPT|N[1-5])/iu.test(question))
+  })
+  return {
+    met: items.filter(item => item.outcome === 'met'),
+    conflicts: items.filter(item => item.outcome === 'conflict' && isProposalRequirement(item.requirement)),
+    corePending: items.filter(item => item.outcome === 'unknown' && isProposalRequirement(item.requirement)),
+    businessPending: items.filter(item => item.outcome !== 'met' && !isProposalRequirement(item.requirement)),
+    questions: [...new Map(questions.filter(text => text.trim() && !represented(text)).map(text => [questionKey(text), text])).values()]
+  }
+}
+
+export function matchFollowUpLabels(qualification: BusinessMatchQualification | undefined, questions: string[] = [], zh = true): string[] {
+  const sections = matchEvidenceSections(qualification, questions)
+  return [...sections.corePending, ...sections.businessPending].map(item =>
+    `${requirementDisplayLabel(item.requirement, zh)}${item.evidence ? `：${item.evidence}` : ''}${item.outcome === 'conflict' ? zh ? '（条件有差异，需协商）' : '（条件に相違あり・要相談）' : ''}`
+  ).concat(sections.questions)
+}
+
+export function requirementDisplayLabel(requirement: MatchRequirement, zh: boolean): string {
+  if (!/^(無|有|なし|あり|可|不可|要相談|不問|未定|待定|无|有|可以|否)$/u.test(requirement.label)) return requirement.label
+  const names: Record<string, [string, string]> = { remote: ['工作方式', '勤務形態'], rate: ['单价', '単価'], start_date: ['入场时间', '稼働時期'], location: ['地点', '勤務地'] }
+  const name = names[requirement.key]
+  return name ? `${name[zh ? 0 : 1]}：${requirement.label}` : requirement.label
 }

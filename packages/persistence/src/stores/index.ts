@@ -1,3 +1,7 @@
+import { BusinessGrowthStore } from './business-growth-store'
+import { QuestionBankStore } from './question-bank-store'
+import { SystemExperienceStore } from './system-experience-store'
+import { WorkRulesStore } from './work-rules-store'
 import { BusinessProgressStore } from './business-progress-store'
 import { PersonnelStore } from './personnel-store'
 import type Database from 'better-sqlite3-multiple-ciphers'
@@ -42,6 +46,10 @@ export function createStoreRegistry(options: {
   }
 
   const stores: StoreRegistry = {
+    growth: new BusinessGrowthStore(context),
+    experience: new SystemExperienceStore(context),
+    questionBank: new QuestionBankStore(context),
+    workRules: new WorkRulesStore(context),
     businessProgress: new BusinessProgressStore(context),
     personnel: new PersonnelStore(context),
     actionRuntime: new ActionRuntimeStore(context),

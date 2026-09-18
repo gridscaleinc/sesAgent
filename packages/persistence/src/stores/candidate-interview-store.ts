@@ -248,6 +248,7 @@ export class CandidateInterviewStore extends DomainStore {
     updatedBy: string,
     now = new Date()
   ): CandidateInterviewSnapshot {
+    return this.database.transaction(()=>{
     const validated = saveCandidateInterviewPreparationInputSchema.parse(input)
     const row = this.database
       .prepare<[string], CandidateInterviewRow>('SELECT * FROM candidate_interview_sessions WHERE id = ?')
@@ -275,7 +276,12 @@ export class CandidateInterviewStore extends DomainStore {
       .prepare<[string], CandidateInterviewRow>('SELECT * FROM candidate_interview_sessions WHERE id = ?')
       .get(validated.interviewId)
     if (!saved) throw new Error('Interview preparation could not be saved.')
-    return this.candidateInterviewFromRow(saved)
+    const result=this.candidateInterviewFromRow(saved)
+    this.stores.experience.questionEdits(result.sourceDocumentId,null,result.id,result.questionPlan,updatedBy)
+    this.stores.experience.record({sourceKey:`interview:${result.id}:questions`,documentId:result.sourceDocumentId,reviewId:null,interviewId:result.id,kind:'questions',
+      text:result.interviewNotes??result.decisionReason??'',actor:updatedBy,data:{result:result.decision,questions:result.questionPlan}})
+    return result
+    })()
   }
 
   saveCandidateInterviewNotes(
@@ -324,7 +330,10 @@ export class CandidateInterviewStore extends DomainStore {
       )
     const saved = this.getCandidateInterviewRow(validated.sourceDocumentId, id)
     if (!saved) throw new Error('Interview notes could not be saved.')
-    return this.candidateInterviewFromRow(saved)
+    const result=this.candidateInterviewFromRow(saved)
+    this.stores.experience.record({sourceKey:`interview:${result.id}:notes`,documentId:result.sourceDocumentId,reviewId:null,interviewId:result.id,kind:'notes',
+      text:result.interviewNotes??result.decisionReason??'',actor:updatedBy,data:{result:result.decision,questions:result.questionPlan}})
+    return result
   }
 
   recordCandidateInterviewDecision(
@@ -403,7 +412,10 @@ export class CandidateInterviewStore extends DomainStore {
       }
       const saved = this.getCandidateInterviewRow(validated.sourceDocumentId, id)
       if (!saved) throw new Error('Interview decision could not be saved.')
-      return this.candidateInterviewFromRow(saved)
+      const result=this.candidateInterviewFromRow(saved)
+      this.stores.experience.record({sourceKey:`interview:${result.id}:feedback`,documentId:result.sourceDocumentId,reviewId:null,interviewId:result.id,kind:'feedback',
+        text:[result.decisionReason,result.interviewNotes].filter(Boolean).join('\n'),actor:decidedBy,data:{result:result.decision,questions:result.questionPlan}})
+      return result
     })()
   }
 }

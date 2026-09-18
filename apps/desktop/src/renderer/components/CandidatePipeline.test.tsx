@@ -440,9 +440,10 @@ describe('CandidatePipeline recruiting workspace', () => {
 
     await waitFor(() => expect(onSendCloudPrompt).toHaveBeenCalledOnce())
     expect(await screen.findByText('Cloud AI 建议 · 已脱敏 · 需人工确认')).toBeInTheDocument()
-    expect(document.querySelectorAll('.recruiting-ai-suggestion-list input[type="checkbox"]')).toHaveLength(8)
+    expect(document.querySelectorAll('.recruiting-ai-suggestion-list input[type="checkbox"]')).toHaveLength(5)
     expect(screen.getByText('请说明微服务拆分的原则和通信方式？')).toBeInTheDocument()
-    expect(screen.getByText('请说明你如何决定是否采用React？')).toBeInTheDocument()
+    expect(screen.queryByText('请说明你如何决定是否采用React？')).not.toBeInTheDocument()
+    expect(onSendCloudPrompt.mock.calls[0]![0].content).toContain('at most ONE per dimension')
     expect(screen.queryByText('Cloud AI 没有返回可用的面试问题，已保留本机建议。')).not.toBeInTheDocument()
   })
 
@@ -589,8 +590,8 @@ describe('CandidatePipeline recruiting workspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: '生成本机结构化建议' }))
     const suggestion = await screen.findByLabelText(/上一轮仍待确认：高并发设计经验/)
     const generatedCount = document.querySelectorAll('.recruiting-ai-suggestion-list input[type="checkbox"]').length
-    expect(generatedCount).toBeGreaterThanOrEqual(6)
-    expect(generatedCount).toBeLessThanOrEqual(10)
+    // No project evidence in this fixture: keep the unresolved question without padding.
+    expect(generatedCount).toBe(1)
     expect((suggestion as HTMLInputElement).checked).toBe(false)
     expect(onSavePreparation).not.toHaveBeenCalled()
     fireEvent.click(suggestion)
@@ -683,5 +684,46 @@ describe('CandidatePipeline recruiting workspace', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '打开人才池' }))
     expect(onOpenCandidateLibrary).toHaveBeenCalledOnce()
+  })
+})
+
+const closeoutCallbacks = {
+  onConfirmCandidateProfile: vi.fn(), onCreateRound: vi.fn(), onImportResume: vi.fn(),
+  onOpenCandidateLibrary: vi.fn(), onOpenIntegrationSettings: vi.fn(), onOpenZoomMeeting: vi.fn(),
+  onRecordDecision: vi.fn(), onSaveNotes: vi.fn(), onSavePreparation: vi.fn(), onSaveSchedule: vi.fn(), onViewChange: vi.fn()
+}
+
+describe('interview conclusion evidence closeout',()=>{
+  it('uses the parent round concerns and recorded answers without inferring confirmation',async()=>{
+    const parent={...interview,decision:'next-round' as const,unresolvedItems:['上一轮：独立设计职责','上一轮：交付范围']}
+    const current:CandidateInterviewSnapshot={...interview,id:'44444444-4444-4444-8444-444444444444',parentInterviewId:interview.id,roundNumber:2,stage:'awaiting-decision',interviewNotes:'本人负责接口实现和单元测试。',unresolvedItems:['本轮：尚待核实的设计范围']}
+    Object.defineProperty(window,'sesAgent',{configurable:true,value:{listAiConversations:vi.fn(async()=>[]),getInterviewAnswers:vi.fn(async()=>({interviewId:current.id,answers:[{questionId:'standard-1',status:'answered',quote:current.interviewNotes,summary:'记录了实现职责',remaining:''}]}))}})
+    const {container}=render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline {...closeoutCallbacks} analyses={[]} reviews={[review]} interviews={[parent,current]} initialInterviewId={current.id} view="decision"/></UiLocaleProvider>)
+    await screen.findByText('已有回答记录，待核实')
+    const recap=container.querySelector('.recruiting-inherited-check')!
+    expect(recap).toHaveTextContent('上一轮：独立设计职责')
+    expect(recap).toHaveTextContent('上一轮：交付范围')
+    expect(recap).not.toHaveTextContent('本轮：尚待核实的设计范围')
+    expect(recap).not.toHaveTextContent('已确认')
+    expect(recap).not.toHaveTextContent('部分确认')
+    expect(container.querySelector('blockquote')).toHaveTextContent(current.interviewNotes!)
+    expect(screen.getByText('简历登记技能')).toBeInTheDocument()
+    expect(screen.queryByText('优势')).not.toBeInTheDocument()
+  })
+
+  it('does not fabricate recap topics or answers when no prior record exists',async()=>{
+    const current={...interview,roundNumber:2,stage:'awaiting-decision' as const}
+    Object.defineProperty(window,'sesAgent',{configurable:true,value:{listAiConversations:vi.fn(async()=>[]),getInterviewAnswers:vi.fn(async()=>null)}})
+    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline {...closeoutCallbacks} analyses={[]} reviews={[review]} interviews={[current]} view="decision"/></UiLocaleProvider>)
+    await screen.findByText('本轮尚未保存回答记录。')
+    expect(screen.getByText('上一轮没有保存待确认事项。')).toBeInTheDocument()
+    expect(screen.queryByText('技术方案深度')).not.toBeInTheDocument()
+    expect(screen.queryByText('团队协作经验')).not.toBeInTheDocument()
+  })
+
+  it('does not claim an unregistered interviewer is confirmed',async()=>{
+    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline {...closeoutCallbacks} analyses={[]} reviews={[review]} interviews={[{...interview,stage:'scheduled',questionPlan:[],interviewer:null}]} view="prepare"/></UiLocaleProvider>)
+    await screen.findByText('面试官未登记')
+    expect(screen.queryByText('已确认面试官')).not.toBeInTheDocument()
   })
 })

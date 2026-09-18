@@ -1,3 +1,7 @@
+import type { BusinessGrowthStore } from './business-growth-store'
+import type { QuestionBankStore } from './question-bank-store'
+import type { SystemExperienceStore } from './system-experience-store'
+import type { WorkRulesStore } from './work-rules-store'
 import type { BusinessProgressStore } from './business-progress-store'
 import type { PersonnelStore } from './personnel-store'
 import type { ActionRuntimeStore } from './action-runtime-store'
@@ -18,6 +22,10 @@ import type { ProposalStore } from './proposal-store'
 import type { WorkTaskStore } from './work-task-store'
 
 export interface StoreRegistry {
+  growth: BusinessGrowthStore
+  questionBank: QuestionBankStore
+  experience: SystemExperienceStore
+  workRules: WorkRulesStore
   readonly businessProgress: BusinessProgressStore
   readonly personnel: PersonnelStore
   readonly actionRuntime: ActionRuntimeStore

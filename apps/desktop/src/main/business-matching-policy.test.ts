@@ -25,7 +25,7 @@ describe('mandatory professional evidence', () => {
     const actual = person('Java', { role: 'SE', japanese_level: 'N1' })
     const result = applyBusinessVerdict(actual, job('Scala、Spark', { role: 'SE' }), confident)
     expect(result.qualification.status).toBe('excluded')
-    expect(result.fit).toBe('insufficient-info')
+    expect(result.fit).toBe('weak')
   })
   it('rejects invented and unrelated cloud quotations even if every mandatory label is returned', () => {
     const result = applyBusinessVerdict(person('Java'), job('Scala、Spark'), { ...confident,
@@ -81,10 +81,10 @@ describe('mandatory professional evidence', () => {
     expect(evaluateBusinessMatch(person('Scala'), job('Scala実務経験')).qualification.status).toBe('excluded')
     expect(evaluateBusinessMatch(person('Scala', {}, [project(['Scala'])]), job('Scala実務経験')).qualification.status).toBe('recommended')
   })
-  it('excludes explicit work-style, availability, and affiliation conflicts', () => {
-    expect(evaluateBusinessMatch(person('Scala、Spark', { work_style: 'フルリモート' }), job('Scala、Spark', { remote: '現場常駐' })).qualification.status).toBe('excluded')
-    expect(evaluateBusinessMatch(person('Scala、Spark', { availability: '2026-10-01' }), job('Scala、Spark', { start_date: '9月〜長期' })).qualification.status).toBe('excluded')
-    for (const isOwnCompany of [null, false]) expect(evaluateBusinessMatch({ ...person('Scala、Spark'), isOwnCompany }, job('Scala、Spark', { contract_chain: '自社限定' })).qualification.status).toBe('excluded')
+  it('keeps commercial conflicts and scheduling separate from professional suitability', () => {
+    expect(evaluateBusinessMatch(person('Scala、Spark', { work_style: 'フルリモート' }), job('Scala、Spark', { remote: '現場常駐' })).qualification.status).toBe('recommended')
+    expect(evaluateBusinessMatch(person('Scala、Spark', { availability: '2026-10-01' }), job('Scala、Spark', { start_date: '9月〜長期' })).qualification.status).toBe('recommended')
+    for (const isOwnCompany of [null, false]) expect(evaluateBusinessMatch({ ...person('Scala、Spark'), isOwnCompany }, job('Scala、Spark', { contract_chain: '自社限定' })).qualification.status).toBe('recommended')
   })
   it('keeps unknown business conditions outside recommendations while retaining technical evidence', () => {
     const result = applyBusinessVerdict(person('Scala、Spark'), job('Scala、Spark', { japanese_level: 'N2以上' }), confident)
@@ -100,7 +100,7 @@ describe('mandatory professional evidence', () => {
     expect(result.qualification.requirements.find((item) => item.requirement.label === '日本語N2以上')?.outcome).toBe('unknown')
   })
   it('does not invent a technical recommendation from an underspecified role-only case', () => {
-    expect(evaluateBusinessMatch(person('SE'), job('SE')).qualification.status).toBe('excluded')
+    expect(evaluateBusinessMatch(person('SE'), job('SE')).qualification.status).toBe('needs-confirmation')
     expect(parseMatchRequirements(job('英語、Scala、Spark').fields).map((item) => item.category)).toEqual(['condition', 'core', 'core'])
   })
   it('requires a project quotation for specialized qualifiers instead of inferring them from the technology name', () => {
@@ -117,4 +117,77 @@ describe('mandatory professional evidence', () => {
     expect(experienced.score).toBeGreaterThan(bare.score)
     expect(evaluateBusinessMatch(person('AWS'), requirement).qualification.status).toBe('excluded')
   })
+})
+
+it('gives the reported case a direct rejection with language evidence, not a list of missing facts',()=>{
+ const source=person('Java、Spring Boot',{role:'SE',japanese_level:'読む C（ゆっくり対応可） / 書く B（スムーズ対応可） / 会話 C（ゆっくり対応可）'})
+ const target=job('SE、C#（ASP.NET）、基本設計～、AI',{remote:'週3出勤',start_date:'9月～長期',japanese_level:'日本語N1流暢'})
+ const result=applyBusinessVerdict(source,target,{...confident,fit:'insufficient-info',confirm:['C#（ASP.NET）の実務経験を確認してください','週3出勤','9月～長期']})
+ expect(result.fit).toBe('weak')
+ expect(result.qualification.status).toBe('excluded')
+ expect(result.qualification.requirements.filter(r=>r.requirement.category==='core').every(r=>r.outcome==='conflict')).toBe(true)
+ expect(result.qualification.requirements.find(r=>r.requirement.key==='japanese_level')).toMatchObject({outcome:'conflict',evidence:source.fields.find(f=>f.key==='japanese_level')!.value})
+ expect(result.qualification.requirements.filter(r=>['start_date','remote'].includes(r.requirement.key)).every(r=>r.outcome==='unknown')).toBe(true)
+ expect(result.hardFilters.some(f=>f.type==='availability-by')).toBe(false)
+ expect(result.confirm).toEqual(['週3出勤','9月～長期'])
+})
+it.each(['週3出勤','週3日出社','常駐'])('retains %s for negotiation without excluding technical matches',remote=>{
+ expect(evaluateBusinessMatch(person('Java'),job('Java',{remote,start_date:'9月～長期'})).qualification.status).toBe('recommended')
+ expect(evaluateBusinessMatch(person('Java',{work_style:'只接受在宅'}),job('Java',{remote})).qualification.status).toBe('recommended')
+ expect(evaluateBusinessMatch(person('Java',{work_style:'出社可'}),job('Java',{remote})).qualification.status).toBe('recommended')
+})
+it('preserves technical aliases and does not reject documented project experience',()=>{
+ const result=applyBusinessVerdict(person('Java',{},[project(['C#','ASP.NET'],undefined,'C#（ASP.NET）基本設計、AI開発を担当')]),job('C#（ASP.NET）、基本設計～、AI'),{...confident,met:[],confirm:['9月入場','出社可否']})
+ expect(result.qualification.status).toBe('recommended')
+ expect(result.confirm).toEqual([])
+})
+
+it.each(['フルリモート希望','リモート希望','週3日まで出社'])('does not turn a compatible preference into an exclusion: %s',work_style=>{
+ expect(evaluateBusinessMatch(person('Java',{work_style}),job('Java',{remote:'週3出勤'})).qualification.status).toBe('recommended')
+})
+it.each(['在宅のみ','出社不可','週2日まで出社','出社は週2日まで'])('shows an explicit commercial conflict without changing proposal fit: %s',work_style=>{
+ const result=evaluateBusinessMatch(person('Java',{work_style}),job('Java',{remote:'週3出勤'}))
+ expect(result.qualification.status).toBe('recommended')
+ expect(result.hardFilters.find(f=>f.type==='remote-work')).toMatchObject({actual:work_style,outcome:'failed'})
+})
+
+it('does not invent an onsite frequency when the case only says attendance is required',()=>{
+ expect(evaluateBusinessMatch(person('Java',{work_style:'週2日まで出社'}),job('Java',{remote:'出社必須'})).qualification.status).toBe('recommended')
+ expect(evaluateBusinessMatch(person('Java',{work_style:'週2日まで出社'}),job('Java',{remote:'出社週3日'})).qualification.status).toBe('recommended')
+})
+
+it('recommends technical and language matches with unknown or conflicting commercial conditions', () => {
+  const result = applyBusinessVerdict(person('C#、ASP.NET、基本設計、AI', { japanese_level: 'N1・日本語で顧客会議を進行、会話流暢', rate: '100万円', work_style: '在宅のみ', location: '大阪' }),
+    job('C#（ASP.NET）、基本設計～、AI', { japanese_level: '日本語N1流暢', rate: '70万円以下', remote: '週3出勤', location: '東京', start_date: '9月～長期' }),
+    { ...confident, fit: 'weak', confirm: ['日本語N1流暢を確認', 'C#（ASP.NET）の実務経験を確認してください'] })
+  expect(result.qualification.status).toBe('recommended')
+  expect(result.fit).toBe('strong')
+  expect(result.reviewable).toBe(true)
+  expect(result.confirm.join(' ')).toContain('需协商')
+  expect(result.confirm.join(' ')).toContain('9月～長期')
+  expect(result.confirm.join(' ')).not.toMatch(/N1|ASP.NET/)
+})
+it.each([
+  ['N1・会話流暢', '日本語N1流暢', 'met'],
+  ['日本語ビジネスレベル、会話流暢', '日本語N1流暢', 'met'],
+  ['日本語ビジネスレベル、会話流暢', 'N1合格証明必須', 'unknown'],
+  ['N1合格', '日本語N1流暢', 'unknown'],
+  ['読む A（現地人と同じレベル） / 会話 C（ゆっくり対応可）', '日本語N1流暢', 'conflict'],
+  ['書く B（スムーズ対応可） / 会話 C', '日本語N1流暢', 'unknown'],
+  ['N1勉強中', 'N1以上', 'unknown'],
+  ['N1を勉強中', 'N1合格必須', 'unknown'],
+  ['N1相当・会話流暢', 'N1合格証明必須', 'unknown'],
+  ['N3・日常会話', 'N2以上', 'conflict']
+])('compares language facts without inventing a certificate: %s / %s', (actual, requested, outcome) => {
+  const result = evaluateBusinessMatch(person('Java', { japanese_level: actual }), job('Java', { japanese_level: requested }))
+  expect(result.qualification.requirements.find(item => item.requirement.key === 'japanese_level')).toMatchObject({ outcome, evidence: actual })
+})
+it('finds Japanese work communication in project evidence even when the structured language field is absent', () => {
+  const result = evaluateBusinessMatch(person('Java', {}, [project(['Java'], undefined, '日本語で顧客会議を進行、会話流暢')]), job('Java', { japanese_level: '日本語N1流暢' }))
+  expect(result.qualification.status).toBe('recommended')
+  expect(result.qualification.requirements.find(item => item.requirement.key === 'japanese_level')).toMatchObject({ outcome: 'met', source: 'データ処理基盤' })
+  expect(result.hardFilters.find(filter => filter.type === 'japanese-level')?.outcome).toBe('passed')
+})
+it('does not turn an empty extraction into a technical rejection', () => {
+  expect(evaluateBusinessMatch(person(''), job('Java')).qualification.status).toBe('needs-confirmation')
 })

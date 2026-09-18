@@ -1,3 +1,6 @@
+import { RankingReason } from './RankingReason'
+import { BusinessObjectDeleteButton } from './BusinessObjectDeleteButton'
+import { PersonnelMailUpdates } from './PersonnelMailUpdates'
 import { BusinessField } from './BusinessField'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { generatePersonnelMessage, isPersonnelAvailable, type CandidateReviewSnapshot, type PersonnelWorkspace as Workspace,
@@ -91,7 +94,7 @@ export function PersonnelWorkspace({ renderBusinessProgress, matchingBusy, busin
     if (editorRequest.lang) setLang(editorRequest.lang)
     setTemplateDraft(null); setNotice(null); setError(null)
   }, [editorRequest, compact])
-  const activeReviews = reviews.filter((item) => item.recordStatus === 'active').map((item) => {
+  const activeReviews = reviews.filter((item) => (item.inTalentLibrary !== false || item.documentId === initialDocumentId) && item.recordStatus === 'active').map((item) => {
     const saved = savedReviews[item.documentId]
     return saved && (saved.profile?.version ?? 0) > (item.profile?.version ?? 0) ? saved : item
   })
@@ -202,10 +205,16 @@ export function PersonnelWorkspace({ renderBusinessProgress, matchingBusy, busin
       {visible.map((review) => <article className={selected?.documentId === review.documentId ? 'is-selected' : ''} key={review.documentId}>
         <input aria-label={`${t('选择', '選択')} ${label(review)}`} type="checkbox" disabled={!ready(review) || busy} checked={checkedIds.has(review.documentId)} onChange={(event) => setCheckedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(review.documentId); else next.delete(review.documentId); return next })} />
         <button onClick={() => { setSelectedId(review.documentId); onSelectPerson?.(review.documentId); setNotice(null); setError(null) }} type="button"><strong>{label(review)}</strong><span>{review.fields.find((field) => field.key === 'skills')?.value ?? t('技能待确认', 'スキル要確認')}</span><small>{statusOf(review) === 'assigned' ? t('已入场', '参画中') : statusOf(review) === 'paused' ? t('不可营业', '営業不可') : (copyByPerson.get(review.documentId) ?? 0) < (review.profile?.version ?? 1) ? t('待推广 / 有更新', '紹介待ち・更新あり') : t('已复制', 'コピー済み')}</small></button>
+        <BusinessObjectDeleteButton kind="person" id={review.documentId} title={label(review)} disabled={busy} onDeleted={async () => {
+          setCheckedIds((current) => { const next = new Set(current); next.delete(review.documentId); return next })
+          setMatchesByPerson((current) => { const next = { ...current }; delete next[review.documentId]; return next })
+          setSelectedId((current) => current === review.documentId ? '' : current); await onRefresh(); await load()
+        }} />
       </article>)}
       {!visible.length ? <p>{t('暂无符合条件的人员。请先整理人员消息或调整筛选。', '対象の要員がいません。要員メッセージを取り込むか条件を変更してください。')}</p> : null}
     </aside> : null}<div className="personnel-detail" ref={detailSection} tabIndex={-1}>{selected ? <>
       <header className="personnel-detail-header"><div><span className="personnel-detail-eyebrow">{t('人员资料', '要員情報')}</span><h3><BusinessField kind="person" id={selected.documentId} version={selected.profile?.version ?? 1} field="identity.displayName" value={selected.localIdentity?.displayName ?? null} label={t('姓名', '氏名')} disabled={!selected.profile}>{label(selected)}</BusinessField></h3></div><button className="personnel-text-action" onClick={() => onOpenProfile(selected.documentId)} type="button">{compact ? t('查看 / 编辑完整档案', 'プロフィールの確認・編集') : t('完整档案 / 原文', 'プロフィール・原文')}<span aria-hidden="true">↗</span></button></header>
+      <PersonnelMailUpdates documentId={selected.documentId} version={selected.profile?.version??1}/>
       {renderBusinessProgress?.('person', selected.documentId)}
       {compact && !businessOnly ? <div className="personnel-status-summary"><span>{t('营业状态', '営業状態')}</span><strong className={`is-${statusOf(selected)}`}>{workspace ? statusLabel(statusOf(selected)) : t('读取中…', '読込中…')}</strong>{onOpenEditor ? <button className="personnel-text-action" onClick={() => onOpenEditor({ documentId: selected.documentId })} type="button">{t('管理状态', '状態を管理')}<span aria-hidden="true">↗</span></button> : null}</div> : !compact ? <PersonnelStatusForm key={`${selected.documentId}:${selected.reviewRevision}:${selected.profile?.version}:${workspace?.states.find((state) => state.documentId === selected.documentId)?.confirmedAt}`} disabled={!workspace} state={statusOf(selected)} onSave={async (status) => {
         setSelectedId(selected.documentId)
@@ -241,7 +250,7 @@ export function PersonnelWorkspace({ renderBusinessProgress, matchingBusy, busin
             {matches.localMatchCount > recommendedMatches.length ? <small>{t('初筛', '一次検索')} {matches.localMatchCount} {t('个案件，符合必需条件', '件中、必須条件に適合')} {recommendedMatches.length} {t('个', '件')}</small> : null}
             <p className="personnel-match-status" role="status">{matches.cloud.status === 'reviewed' ? t('云端 AI 已评估，按适合度排序。', 'Cloud AI評価済み・適合性順に表示。') : matches.cloud.status === 'partial' ? t('部分案件已由云端 AI 评估，其余标为本地初筛。', '一部はCloud AI評価済み、残りはローカル候補として表示します。') : matches.cloud.status === 'not-needed' ? t('没有找到具备技能或角色匹配依据的案件。', 'スキルや役割が一致する案件は見つかりませんでした。') : t('云端 AI 暂不可用，以下仅为本地初筛结果。', 'Cloud AIを利用できないため、以下はローカル検索結果です。')}{matches.cloud.modelName ? ` · ${matches.cloud.modelName}` : ''}</p>
             {recommendedMatches.map((item) => <article aria-current={selectedCases[selected.documentId] === item.jobCaseId ? 'true' : undefined} className={selectedCases[selected.documentId] === item.jobCaseId ? 'is-selected' : ''} key={item.jobCaseId}><strong>{item.title}</strong>
-              {item.assessment ? <MatchAssessmentView assessment={item.assessment} zh={zh} title={t('AI 匹配评估', 'AIマッチング評価')} /> : <><small className="personnel-local-match">{t('本地初筛', 'ローカル候補')}</small><p>{t('匹配依据', '一致の根拠')}：{item.matched.join(' · ')}</p>{item.missing.length ? <p>{t('尚未确认符合', '一致未確認')}：{item.missing.join(' · ')}</p> : null}
+              <RankingReason ranking={item.ranking} zh={zh}/>{item.assessment ? <MatchAssessmentView assessment={item.assessment} zh={zh} title={t('AI 匹配评估', 'AIマッチング評価')} /> : <><small className="personnel-local-match">{t('本地初筛', 'ローカル候補')}</small><p>{t('匹配依据', '一致の根拠')}：{item.matched.join(' · ')}</p>{item.missing.length ? <p>{t('尚未确认符合', '一致未確認')}：{item.missing.join(' · ')}</p> : null}
               {item.hardFilters.filter((filter) => filter.outcome === 'unknown').map((filter) => <small key={`${filter.type}:${filter.requested}`}>{t('待确认', '要確認')}：{filter.requested} </small>)}</>}
               <button onClick={() => { setSelectedCases((current) => ({ ...current, [selected.documentId]: item.jobCaseId })); onOpenCase(item.reviewId) }} type="button">{t('查看案件 / 准备联系', '案件を確認')}</button></article>)}
             {!recommendedMatches.length ? <p>{t('当前没有符合全部必需条件的案件。', '現在はすべての必須条件を満たす案件がありません。')}</p> : null}</section> : null}

@@ -1,3 +1,4 @@
+import { BusinessObjectDeleteButton } from './BusinessObjectDeleteButton'
 import { BusinessField } from './BusinessField'
 import { useEffect, useState, type FormEvent } from 'react'
 import type {
@@ -1135,6 +1136,7 @@ export function JobCaseInbox({
                     const title = review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject
                     const skills = review.fields.find((field) => field.key === 'required_skills')?.value
                     return (
+                      <div className="job-case-list-item" key={review.reviewId}>
                       <button
                         aria-current={selected?.reviewId === review.reviewId ? 'true' : undefined}
                         className={selected?.reviewId === review.reviewId ? 'is-selected' : ''}
@@ -1147,6 +1149,11 @@ export function JobCaseInbox({
                         <p>{skills ?? '必須スキル未抽出'}</p>
                         <footer><span>{review.sourceType === 'manual' ? '営業入力' : review.fromDomain ?? '送信元非表示'}</span><span>{review.warningCodes.includes('BUSINESS_DUPLICATE') ? '類似あり' : sourceTypeLabel(review.sourceType)}</span></footer>
                       </button>
+                      <BusinessObjectDeleteButton kind="case" id={review.reviewId} title={title}
+                        onPreview={() => onPreviewDeletion(review.reviewId)}
+                        onDelete={(confirmationHash) => onDelete({ reviewId: review.reviewId, confirmationHash, confirmationText: '削除' })}
+                        onDeleted={(report) => { setDeletionReport(report as DeleteJobCaseDataResult['report']); setSelectedId((current) => current === review.reviewId ? null : current) }} />
+                      </div>
                     )
                   })]
               })}

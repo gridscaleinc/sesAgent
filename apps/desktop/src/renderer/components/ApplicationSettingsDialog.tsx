@@ -1,3 +1,5 @@
+import { SystemExperiencePanel } from './SystemExperiencePanel'
+import { AiWorkRulesPanel } from './AiWorkRulesPanel'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type {
   SaveJobCaseFieldAliasesInput,
@@ -12,9 +14,10 @@ import type {
 import { jobCaseFieldCanonicalLabels, jobCaseFieldKeys } from '@shared'
 import { BroadcastSettingsSection, type BroadcastSettingsActions } from './BroadcastSettingsSection'
 import { Icon, type IconName } from './Icon'
+import { GmailSyncFeedback } from './GmailSyncFeedback'
 import { useRendererUiRefresh, useUiLocale, useUiText } from '../i18n'
 
-export type ApplicationSettingsSection = 'general' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
+export type ApplicationSettingsSection = 'experience' | 'rules' | 'general' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
 
 interface ApplicationSettingsDialogProps {
   bootstrap: BootstrapPayload
@@ -57,6 +60,8 @@ const languageOptions: Array<{ locale: ApplicationLocale; name: string; nativeNa
 
 const sections: Array<{ id: ApplicationSettingsSection; label: string; detail: string; icon: IconName }> = [
   { id: 'general', label: '一般設定', detail: '言語と本機ユーザー', icon: 'settings' },
+  { id: 'experience', label: '系统经验', detail: '自动学习与核实方法', icon: 'sparkles' },
+  { id: 'rules', label: 'AI 工作规则', detail: '匹配条件与面试要求', icon: 'sparkles' },
   { id: 'fields', label: '案件項目', detail: '項目の別名', icon: 'briefcase' },
   { id: 'broadcast', label: '配信', detail: '紹介文テンプレート', icon: 'mail' },
   { id: 'integrations', label: '外部システム', detail: '接続・権限・同期', icon: 'mail' },
@@ -129,7 +134,7 @@ export function ApplicationSettingsDialog({
     }
     if (event.key !== 'Tab') return
     const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), [tabindex]:not([tabindex="-1"])'
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
     ) ?? [])].filter((element) => element.offsetParent !== null)
     if (focusable.length === 0) return
     const first = focusable[0]
@@ -205,13 +210,15 @@ export function ApplicationSettingsDialog({
                 type="button"
               >
                 <Icon name={section.icon} size={17} />
-                <span><strong>{t(section.label)}</strong><small>{t(section.detail)}</small></span>
+                <span><strong>{section.id === 'experience' ? (zh ? '系统经验' : 'システムの経験') : section.id === 'rules' ? (zh ? 'AI 工作规则' : 'AI業務ルール') : t(section.label)}</strong><small>{section.id === 'experience' ? (zh ? '自动学习与核实方法' : '自動学習と確認方法') : section.id === 'rules' ? (zh ? '匹配条件与面试要求' : 'マッチング条件と面談方針') : t(section.detail)}</small></span>
                 <Icon name="chevron-right" size={14} />
               </button>
             ))}
           </nav>
 
           <div className="application-settings-content" tabIndex={-1}>
+            <div hidden={activeSection !== 'experience'}><SystemExperiencePanel active={activeSection === 'experience'} /></div>
+            <div hidden={activeSection !== 'rules'}><AiWorkRulesPanel active={activeSection === 'rules'} cases={bootstrap.jobCaseReviews} /></div>
             {activeSection === 'general' ? (
               <section aria-labelledby="general-settings-title" className="settings-section">
                 <div className="settings-section-heading">
@@ -312,7 +319,7 @@ export function ApplicationSettingsDialog({
                   <div className="integration-settings-logo google"><Icon name="mail" size={21} /></div>
                   <div className="integration-settings-main">
                     <div className="integration-settings-title">
-                      <div><h4>Google メール</h4><p>個人 Gmail または Google Workspace の会社メールから、案件情報を読取専用で取り込みます。</p></div>
+                      <div><h4>Google メール</h4><p>Googleアカウントでログインすると、案件・要員メールを自動で取り込みます。個人GmailとGoogle Workspaceの会社メールに対応しています。</p></div>
                       <span className={googleConnected ? 'integration-status is-connected' : 'integration-status'}>{t(googleStatus)}</span>
                     </div>
                     {!googleConnected && googleConfigured ? (
@@ -320,16 +327,17 @@ export function ApplicationSettingsDialog({
                         <Icon name="lock" size={16} />
                         <span>
                           <strong>Google メールデータの利用</strong>
-                          <span>接続すると、件名・送信者・本文・日時・Labelを読み取り、端末内で案件を識別します。添付ファイルは取得しません。Gmail接続処理では原文とTokenを当社サーバーやCloud AIへ送信しません。</span>
-                          <span>接続ボタンを押すと、Googleの gmail.readonly 同意画面へ進みます。</span>
+                          <span>案件・要員メールの件名・送信者・本文・日時・Labelと対応する履歴書添付を読み取り、この端末の案件・要員資料に整理します。Gmailの読取処理では原文とTokenを当社サーバーやCloud AIへ送信しません。</span>
+                          <span>Googleでログインし、メールの読取を許可してください。アプリからメールを送信・削除することはありません。</span>
                         </span>
                       </div>
                     ) : null}
                     <dl className="integration-settings-facts">
                       <div><dt>アカウント</dt><dd>{bootstrap.gmail.accountEmail ?? '未接続'}</dd></div>
-                      <div><dt>権限</dt><dd>gmail.readonly</dd></div>
+                      <div><dt>取込対象</dt><dd>案件メール・要員メール・履歴書添付</dd></div>
                       <div><dt>同期</dt><dd>{bootstrap.gmailSync.lastSyncedAt ? new Date(bootstrap.gmailSync.lastSyncedAt).toLocaleString(preferences.locale) : '未同期'}</dd></div>
                     </dl>
+                    {googleConnected ? <GmailSyncFeedback state={bootstrap.gmailSync} zh={zh} /> : null}
                     <div className="integration-settings-actions">
                       {googleConnected ? <>
                         <button disabled={busy !== null} onClick={() => void runIntegrationAction('google-sync', onSyncGoogleWorkspace)} type="button">{busy === 'google-sync' ? '同期中…' : '今すぐ同期'}</button>

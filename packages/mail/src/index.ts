@@ -73,6 +73,7 @@ export interface GoogleWorkspaceCredentialStore {
 
 export interface AuthorizationCodeRequest {
   clientId: string
+  loginHint?: string
   /** Optional hosted-domain hint/restriction for private deployments. */
   workspaceDomain: string | null
   scopes: [typeof gmailReadonlyScope]
@@ -92,6 +93,8 @@ export interface AuthorizationCodeProvider {
 export interface LoopbackAuthorizationCodeProviderOptions {
   openExternal(url: string): Promise<void>
   timeoutMs?: number
+  /** Explicitly registered callback for an operator's private local Web client. */
+  redirectUri?: string
 }
 
 export function createPkceChallenge(verifier: string): string {
@@ -114,6 +117,7 @@ export function buildGoogleAuthorizationUrl(
   url.searchParams.set('access_type', 'offline')
   url.searchParams.set('prompt', 'consent')
   if (request.workspaceDomain) url.searchParams.set('hd', request.workspaceDomain)
+  if (request.loginHint) url.searchParams.set('login_hint', request.loginHint)
   return url.toString()
 }
 
@@ -122,14 +126,20 @@ export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvi
 
   constructor(private readonly options: LoopbackAuthorizationCodeProviderOptions) {
     this.timeoutMs = options.timeoutMs ?? 180_000
+    if (options.redirectUri) privateGoogleLoopbackRedirectSchema.parse(options.redirectUri)
   }
 
   requestAuthorization(request: AuthorizationCodeRequest): Promise<AuthorizationCodeResult> {
     return new Promise((resolve, reject) => {
       let settled = false
+      const configuredRedirect = this.options.redirectUri ? new URL(this.options.redirectUri) : null
+      let redirectUri = configuredRedirect?.toString() ?? ''
       const server = createServer((incoming, response) => {
+        response.setHeader('connection', 'close')
+        if (settled) { response.writeHead(410); response.end('Authorization callback has ended.'); return }
         const requestUrl = new URL(incoming.url ?? '/', 'http://127.0.0.1')
-        if (incoming.method !== 'GET' || requestUrl.pathname !== '/oauth2/callback') {
+        if (incoming.method !== 'GET' || requestUrl.pathname !== (configuredRedirect?.pathname ?? '/oauth2/callback') ||
+          incoming.headers.host !== new URL(redirectUri).host) {
           response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
           response.end('Not found')
           return
@@ -179,10 +189,8 @@ export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvi
           'referrer-policy': 'no-referrer',
           'x-content-type-options': 'nosniff'
         })
-        response.end('<!doctype html><meta charset="utf-8"><title>SES Agent Desktop</title><style>body{font-family:system-ui;padding:48px;color:#172036}h1{font-size:22px}</style><h1>Google Workspace の接続を確認しました</h1><p>このタブを閉じて SES Agent Desktop に戻ってください。</p>')
-        const address = server.address()
-        const port = typeof address === 'object' && address ? address.port : 0
-        finish(() => resolve({ code: validCode, redirectUri: `http://127.0.0.1:${port}/oauth2/callback` }))
+        response.end('<!doctype html><meta charset="utf-8"><title>SES Agent Desktop</title><style>body{font-family:system-ui;padding:48px;color:#172036}h1{font-size:22px}</style><h1>Google 認証の応答を受け取りました</h1><p>SES Agent Desktop に戻り、メール接続と同期の結果を確認してください。このタブは閉じられます。</p>')
+        finish(() => resolve({ code: validCode, redirectUri }))
       })
       const timeout = setTimeout(() => {
         if (settled) return
@@ -196,10 +204,10 @@ export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvi
         clearTimeout(timeout)
         reject(new Error('The local OAuth callback could not start.', { cause: error }))
       })
-      server.listen(0, '127.0.0.1', () => {
+      server.listen(configuredRedirect ? Number(configuredRedirect.port) : 0, '127.0.0.1', () => {
         const address = server.address()
         const port = typeof address === 'object' && address ? address.port : 0
-        const redirectUri = `http://127.0.0.1:${port}/oauth2/callback`
+        redirectUri = configuredRedirect?.toString() ?? `http://127.0.0.1:${port}/oauth2/callback`
         void this.options.openExternal(buildGoogleAuthorizationUrl(request, redirectUri)).catch((error) => {
           if (settled) return
           settled = true
@@ -333,6 +341,9 @@ export interface GoogleWorkspaceOAuthConfig {
   clientSecret?: string
   /** Null in the public product; set only to restrict a private distribution. */
   workspaceDomain: string | null
+  privateLocalWeb?: { redirectUri: string; accountEmail: string }
+  /** Optional exact mailbox restriction for an operator's private installation. */
+  accountEmail?: string
 }
 
 export interface GoogleWorkspaceOAuthDependencies {
@@ -381,6 +392,17 @@ async function oauthErrorCode(response: Response): Promise<string> {
   }
 }
 
+async function gmailProfileForbiddenReason(response: Response): Promise<string> {
+  try {
+    const body = await response.json() as { error?: { errors?: { reason?: string }[]; details?: { reason?: string }[] } }
+    const reasons = [...(body.error?.errors ?? []), ...(body.error?.details ?? [])].map(item => item.reason)
+    if (reasons.some(reason => reason === 'SERVICE_DISABLED' || reason === 'accessNotConfigured')) return 'GMAIL_API_DISABLED'
+    if (reasons.some(reason => reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' || reason === 'insufficientPermissions')) return 'GMAIL_SCOPE_INSUFFICIENT'
+    if (reasons.some(reason => reason === 'ORG_RESTRICTION_VIOLATION' || reason === 'domainPolicy')) return 'GMAIL_ORGANIZATION_RESTRICTED'
+  } catch { /* Return a fixed fallback without provider payload or account data. */ }
+  return 'GMAIL_PROFILE_FORBIDDEN'
+}
+
 const gmailProfileSchema = z.object({
   emailAddress: z.string().email().max(254),
   messagesTotal: z.number().int().nonnegative().optional(),
@@ -396,10 +418,21 @@ function assertReadonlyScopes(scopes: string[]): void {
   }
 }
 
+export const privateGoogleLoopbackRedirectSchema = z.string().max(512).refine(value => {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname) &&
+      Number(url.port) >= 1024 && Number(url.port) <= 65_535 && /^\/[A-Za-z0-9/_-]+$/u.test(url.pathname) &&
+      !url.username && !url.password && !url.search && !url.hash && url.toString() === value
+  } catch { return false }
+}, 'Private Google callback must be an exact local HTTP address with a fixed port and path.')
+
 const googleWorkspaceOAuthConfigSchema = z.object({
   clientId: googleWorkspaceOAuthClientIdSchema,
   clientSecret: z.string().min(8).max(512).optional(),
-  workspaceDomain: googleWorkspaceDomainSchema.nullable()
+  workspaceDomain: googleWorkspaceDomainSchema.nullable(),
+  accountEmail: z.string().email().max(254).optional(),
+  privateLocalWeb: z.object({ redirectUri: privateGoogleLoopbackRedirectSchema, accountEmail: z.string().email().max(254) }).strict().optional()
 }).strict()
 
 function accountDomain(emailAddress: string): string {
@@ -427,11 +460,15 @@ export class GoogleWorkspaceOAuthClient {
     private readonly dependencies: GoogleWorkspaceOAuthDependencies
   ) {
     this.config = googleWorkspaceOAuthConfigSchema.parse(config)
+    if (this.config.privateLocalWeb && !this.config.clientSecret) throw new Error('Private Google Web client requires its local client secret.')
   }
 
   async getState(): Promise<GoogleWorkspaceState> {
     const credential = await this.dependencies.credentialStore.load()
     if (!credential) return this.disconnectedState()
+    if (this.expectedMailbox && credential.accountEmail.toLowerCase() !== this.expectedMailbox.toLowerCase()) {
+      return this.disconnectedState()
+    }
     try {
       assertReadonlyScopes(credential.scopes)
     } catch {
@@ -493,6 +530,9 @@ export class GoogleWorkspaceOAuthClient {
   async getAccessToken(forceRefresh = false): Promise<string> {
     const credential = await this.dependencies.credentialStore.load()
     if (!credential) throw new Error('Google Workspace is not connected.')
+    if (this.expectedMailbox && credential.accountEmail.toLowerCase() !== this.expectedMailbox.toLowerCase()) {
+      throw new Error('Google account does not match the private mailbox configuration.')
+    }
     assertReadonlyScopes(credential.scopes)
     const now = this.dependencies.now?.() ?? new Date()
     if (!forceRefresh && new Date(credential.expiresAt).getTime() > now.getTime() + 60_000) return credential.accessToken
@@ -563,12 +603,15 @@ export class GoogleWorkspaceOAuthClient {
     const state = randomBytes(32).toString('base64url')
     const authorization = await this.dependencies.authorizationCodeProvider.requestAuthorization({
       clientId: this.config.clientId,
+      ...(this.expectedMailbox ? { loginHint: this.expectedMailbox } : {}),
       workspaceDomain: this.config.workspaceDomain,
       scopes: [gmailReadonlyScope],
       state,
       codeChallenge: createPkceChallenge(verifier)
     })
-    const redirectUri = assertLoopbackRedirectUri(authorization.redirectUri)
+    const privateRedirect = this.config.privateLocalWeb?.redirectUri
+    if (privateRedirect && authorization.redirectUri !== privateRedirect) throw new Error('Google OAuth callback did not match the configured private loopback address.')
+    const redirectUri = privateRedirect ?? assertLoopbackRedirectUri(authorization.redirectUri)
     const body = new URLSearchParams({
       client_id: this.config.clientId,
       code: authorization.code,
@@ -595,10 +638,16 @@ export class GoogleWorkspaceOAuthClient {
       headers: { authorization: `Bearer ${token.access_token}` }
     })
     if (profileResponse.status === 403) {
-      throw new Error('Gmail の読取権限を取得できませんでした。個人アカウントは Gmail が有効な Google アカウントを使用してください。会社アカウントは Workspace 管理者に本製品の許可を依頼してください。')
+      const reason = await gmailProfileForbiddenReason(profileResponse)
+      if (reason === 'GMAIL_API_DISABLED') throw new Error('GMAIL_API_DISABLED: Google 项目尚未启用 Gmail API，请在该项目中启用后重新连接。')
+      if (reason === 'GMAIL_SCOPE_INSUFFICIENT') throw new Error('GMAIL_SCOPE_INSUFFICIENT: Google 未授予所需的邮件读取权限，请重新授权。')
+      throw new Error(`${reason}: Gmail の読取権限を取得できませんでした。個人アカウントは Gmail が有効な Google アカウントを使用してください。会社アカウントは Workspace 管理者に本製品の許可を依頼してください。`)
     }
     if (!profileResponse.ok) throw new Error(`Gmail profile verification failed (${profileResponse.status}).`)
     const profile = gmailProfileSchema.parse(await profileResponse.json())
+    if (this.expectedMailbox && profile.emailAddress.toLowerCase() !== this.expectedMailbox.toLowerCase()) {
+      throw new Error('Google account does not match the private mailbox configuration. Sign in with the configured mailbox.')
+    }
     const profileDomain = accountDomain(profile.emailAddress)
     if (this.config.workspaceDomain && profileDomain !== this.config.workspaceDomain) {
       throw new Error(`Google account must belong to ${this.config.workspaceDomain}.`)
@@ -631,6 +680,10 @@ export class GoogleWorkspaceOAuthClient {
       draftAccess: 'not-requested',
       sendMethod: 'not-implemented'
     }
+  }
+
+  private get expectedMailbox(): string | undefined {
+    return this.config.accountEmail ?? this.config.privateLocalWeb?.accountEmail
   }
 }
 
@@ -666,6 +719,7 @@ export interface GmailDiscoveryResult {
   messageReferences: GmailMessageReference[]
   historyId: string | null
   truncated: boolean
+  nextPageToken?: string
 }
 
 export interface GmailResumeAttachment { id: string; name: string; size: number; data?: string }
@@ -879,8 +933,14 @@ export function messageMatchesSyncScope(message: GmailMessageEnvelope, config: G
 
 export function classifyGmailMessage(message: GmailMessageEnvelope): 'job-case' | 'candidate-proposal' | 'unclassified' {
   const classification = classifyEmailText(message.subject, message.body)
+  const attachmentNames = (message.resumeAttachments ?? []).map((item) => item.name).join(' ')
+  // A short covering letter may contain only a rate or availability. Explicit
+  // resume filenames take precedence over those shared commercial fields.
+  if (!/(?:案件|募集|求人)/u.test(message.subject) && /(?:スキルシート|経歴書|履歴書|简历|履历|resume|\bcv[._\s-])/iu.test(attachmentNames)) {
+    return 'candidate-proposal'
+  }
   if (classification === 'unclassified') {
-    return classifyEmailText((message.resumeAttachments ?? []).map((item) => item.name).join(' '), message.body)
+    return classifyEmailText(attachmentNames, message.body)
   }
   return classification
 }
@@ -967,15 +1027,19 @@ export class GmailReadClient {
     return gmailProfileSchema.parse(await this.request('/gmail/v1/users/me/profile'))
   }
 
-  async discoverBaseline(configInput: GmailSyncConfiguration): Promise<GmailDiscoveryResult> {
+  async discoverBaseline(configInput: GmailSyncConfiguration, window?: { startedAt: string; pageToken?: string }): Promise<GmailDiscoveryResult> {
     const config = gmailSyncConfigurationSchema.parse(configInput)
     const references = new Map<string, GmailMessageReference>()
-    let pageToken: string | undefined
+    let pageToken = window?.pageToken
     let pageCount = 0
+    const startedAt = window ? new Date(z.iso.datetime().parse(window.startedAt)).getTime() : null
+    const timeQuery = startedAt === null
+      ? `newer_than:${config.lookbackDays}d`
+      : `after:${Math.floor(startedAt / 1000) - config.lookbackDays * 86400 - 1} before:${Math.ceil(startedAt / 1000) + 1}`
     do {
       const query = new URLSearchParams({
-        maxResults: String(Math.min(100, config.maxMessagesPerRun)),
-        q: `newer_than:${config.lookbackDays}d (${config.query})`,
+        maxResults: String(Math.min(100, config.maxMessagesPerRun - references.size)),
+        q: `${timeQuery} (${config.query})`,
         includeSpamTrash: 'false'
       })
       for (const labelId of config.labelIds) query.append('labelIds', labelId)
@@ -988,7 +1052,7 @@ export class GmailReadClient {
       pageToken = response.nextPageToken
       pageCount += 1
     } while (pageToken && references.size < config.maxMessagesPerRun && pageCount < 10)
-    return { messageReferences: [...references.values()], historyId: null, truncated: Boolean(pageToken) }
+    return { messageReferences: [...references.values()], historyId: null, truncated: Boolean(pageToken), ...(pageToken ? { nextPageToken: pageToken } : {}) }
   }
 
   async discoverHistory(startHistoryId: string, configInput: GmailSyncConfiguration): Promise<GmailDiscoveryResult> {
@@ -1074,18 +1138,19 @@ export class GmailReadClient {
   }
 }
 
-export interface GmailSyncRun {
-  mode: 'baseline' | 'incremental' | 'bounded-rescan'
-  discovered: number
-  imported: number
-  duplicates: number
-  filtered: number
-  failed: number
-}
+export type GmailSyncRun = import('@shared').GmailSyncRunRecord
+
+const gmailContinuationSchema = z.object({
+  mode: z.enum(['baseline', 'bounded-rescan']),
+  pageToken: z.string().min(1).max(4096),
+  historyId: z.string().regex(/^\d{1,40}$/u),
+  startedAt: z.iso.datetime()
+})
 
 export interface GmailSyncCheckpointPortRecord {
   configHash: string
   historyId: string | null
+  lastRun?: GmailSyncRun | null
 }
 
 export interface GmailProcessedMessage {
@@ -1166,7 +1231,9 @@ export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
   const currentSyncHash = syncConfigurationHash(config)
   const exactReadonlyScope = options.live.grantedScopes.length === 1 && options.live.grantedScopes[0] === gmailReadonlyScope
   const syncMatchesConfiguration = options.sync.configHash === currentSyncHash
-  const syncSucceeded = options.sync.status === 'idle' && Boolean(options.sync.lastSyncedAt) && Boolean(options.sync.lastRun)
+  const intake = options.sync.lastRun?.intake
+  const syncSucceeded = options.sync.status === 'idle' && Boolean(options.sync.lastSyncedAt) && Boolean(options.sync.lastRun) &&
+    !options.sync.lastRun?.moreAvailable && !(intake && (intake.casesFailed || intake.personnelFailed || intake.pendingCases || intake.pendingPersonnel))
   const redactionCountReconciled = options.redaction.passed + options.redaction.uncertain + options.redaction.blocked === options.redaction.storedMessages
   const redactionStatus = options.redaction.storedMessages === 0 || !redactionCountReconciled || options.redaction.blocked > 0
     ? 'failed'
@@ -1284,26 +1351,54 @@ export class GmailSyncCoordinator {
     const config = gmailSyncConfigurationSchema.parse(configInput)
     const configHash = syncConfigurationHash(config)
     const now = this.now()
+    const checkpoint = this.store.getGmailSyncCheckpoint(accountEmail)
+    const matchingCheckpoint = checkpoint?.configHash === configHash ? checkpoint : null
+    const parsedContinuation = gmailContinuationSchema.safeParse(matchingCheckpoint?.lastRun?.continuation)
+    let continuation = parsedContinuation.success ? parsedContinuation.data : undefined
+    // On a failed page retain its starting cursor, never its unprocessed successor.
+    let retryRun: GmailSyncRun | null = continuation
+      ? { mode: continuation.mode, discovered: 0, imported: 0, duplicates: 0, filtered: 0, failed: 0, moreAvailable: true, continuation }
+      : null
     try {
       const profile = await this.gmail.getProfile()
       if (profile.emailAddress.toLocaleLowerCase('en-US') !== accountEmail.toLocaleLowerCase('en-US')) {
         throw new Error('Gmail account changed during synchronization.')
       }
       if (!profile.historyId) throw new Error('Gmail profile did not provide a history checkpoint.')
-      const checkpoint = this.store.getGmailSyncCheckpoint(accountEmail)
-      const canContinue = checkpoint?.configHash === configHash && Boolean(checkpoint.historyId)
+      const canContinue = Boolean(matchingCheckpoint?.historyId) && !continuation
       let mode: GmailSyncRun['mode'] = canContinue ? 'incremental' : 'baseline'
       let discovery: GmailDiscoveryResult
-      if (canContinue && checkpoint?.historyId) {
+      let baselineWindow: { mode: 'baseline' | 'bounded-rescan'; historyId: string; startedAt: string; pageToken?: string } =
+        continuation ?? { mode: 'baseline', historyId: profile.historyId, startedAt: now.toISOString() }
+      if (canContinue && matchingCheckpoint?.historyId) {
         try {
-          discovery = await this.gmail.discoverHistory(checkpoint.historyId, config)
+          discovery = await this.gmail.discoverHistory(matchingCheckpoint.historyId, config)
+          // An overflowing history is reconciled through the same bounded mailbox
+          // scope, in resumable batches. Never advance past unprocessed history.
+          if (discovery.truncated) {
+            mode = 'bounded-rescan'
+            baselineWindow = { mode, historyId: profile.historyId, startedAt: now.toISOString() }
+            discovery = await this.gmail.discoverBaseline(config, baselineWindow)
+          }
         } catch (error) {
           if (!(error instanceof GmailApiError) || error.status !== 404) throw error
           mode = 'bounded-rescan'
-          discovery = await this.gmail.discoverBaseline(config)
+          baselineWindow = { mode, historyId: profile.historyId, startedAt: now.toISOString() }
+          discovery = await this.gmail.discoverBaseline(config, baselineWindow)
         }
       } else {
-        discovery = await this.gmail.discoverBaseline(config)
+        mode = baselineWindow.mode
+        try {
+          discovery = await this.gmail.discoverBaseline(config, baselineWindow)
+        } catch (error) {
+          if (!continuation || !(error instanceof GmailApiError) || error.status !== 400) throw error
+          // Expired/invalid page token: restart the fixed business scope and let
+          // stored message IDs make replay idempotent.
+          continuation = undefined
+          mode = 'bounded-rescan'
+          baselineWindow = { mode, historyId: profile.historyId, startedAt: now.toISOString() }
+          discovery = await this.gmail.discoverBaseline(config, baselineWindow)
+        }
       }
       const lastRun: GmailSyncRun = {
         mode,
@@ -1311,9 +1406,11 @@ export class GmailSyncCoordinator {
         imported: 0,
         duplicates: 0,
         filtered: 0,
-        failed: 0
+        failed: 0,
+        ...(continuation ? { continuation } : {})
       }
-      if (discovery.truncated) {
+      retryRun = lastRun
+      if (discovery.truncated && !discovery.nextPageToken) {
         this.store.saveGmailSyncFailure(accountEmail, configHash, 'SYNC_SCOPE_TOO_BROAD', now.toISOString(), lastRun)
         return { lastRun, errorCode: 'SYNC_SCOPE_TOO_BROAD' }
       }
@@ -1333,7 +1430,7 @@ export class GmailSyncCoordinator {
             continue
           }
           const message = { ...result.value, body: minimizeGmailBodyForLocalProcessing(result.value.body) }
-          if (!messageMatchesSyncScope(message, config, now)) {
+          if (!messageMatchesSyncScope(message, config, mode === 'incremental' ? now : new Date(baselineWindow.startedAt))) {
             lastRun.filtered += 1
             continue
           }
@@ -1360,13 +1457,18 @@ export class GmailSyncCoordinator {
         this.store.saveGmailSyncFailure(accountEmail, configHash, 'MESSAGE_PROCESSING_FAILED', now.toISOString(), lastRun)
         return { lastRun, errorCode: 'MESSAGE_PROCESSING_FAILED' }
       }
-      const nextHistoryId = mode === 'incremental' ? discovery.historyId ?? profile.historyId : profile.historyId
+      delete lastRun.continuation
+      if (discovery.nextPageToken) {
+        lastRun.moreAvailable = true
+        lastRun.continuation = { ...baselineWindow, pageToken: discovery.nextPageToken }
+      }
+      const nextHistoryId = mode === 'incremental' ? discovery.historyId ?? profile.historyId : baselineWindow.historyId
       this.store.saveGmailSyncSuccess(accountEmail, configHash, nextHistoryId, lastRun, now.toISOString())
       return { lastRun, errorCode: null }
     } catch (error) {
       const errorCode = coordinatorErrorCode(error)
-      this.store.saveGmailSyncFailure(accountEmail, configHash, errorCode, now.toISOString())
-      return { lastRun: null, errorCode }
+      this.store.saveGmailSyncFailure(accountEmail, configHash, errorCode, now.toISOString(), retryRun)
+      return { lastRun: retryRun, errorCode }
     }
   }
 }

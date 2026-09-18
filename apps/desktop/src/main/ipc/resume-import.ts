@@ -15,7 +15,7 @@ import {
 import { collectLocalPersonNameCandidates, mergeLocalOcr } from '@local-ai'
 import { documentIrSchema } from '@parsers'
 import { ParserWorkerClient } from '@parsers/worker-client'
-import { EncryptedApplicationRepository } from '@persistence'
+import { DuplicateCandidateError, EncryptedApplicationRepository } from '@persistence'
 import { redactTextForCloud } from '@privacy'
 import { extractCandidateDraft } from '@resume'
 import {
@@ -193,6 +193,15 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
     const stagedFiles = []
     try {
       for (const path of selection.filePaths) stagedFiles.push(await fileVault.stageFile(path))
+      // Selecting the same bytes twice (including renamed copies) imports one file.
+      const hashes = new Set<string>()
+      for (let index = 0; index < stagedFiles.length;) {
+        const file = stagedFiles[index]!
+        if (hashes.has(file.sha256)) {
+          await fileVault.discardStagedFile(file)
+          stagedFiles.splice(index, 1)
+        } else { hashes.add(file.sha256); index += 1 }
+      }
       const contextBindings = stagedFiles.map((file) => ({
         objectType: 'staged-file' as const,
         objectId: file.token,
@@ -226,6 +235,15 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
     const stagedFiles = []
     try {
       for (const file of input.files) stagedFiles.push(await fileVault.stageBytes(file.name, Buffer.from(file.bytes)))
+      // Selecting the same bytes twice (including renamed copies) imports one file.
+      const hashes = new Set<string>()
+      for (let index = 0; index < stagedFiles.length;) {
+        const file = stagedFiles[index]!
+        if (hashes.has(file.sha256)) {
+          await fileVault.discardStagedFile(file)
+          stagedFiles.splice(index, 1)
+        } else { hashes.add(file.sha256); index += 1 }
+      }
       const contextBindings = stagedFiles.map((file) => ({
         objectType: 'staged-file' as const,
         objectId: file.token,
@@ -508,8 +526,8 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
               processingJob = repository.failProcessingJob(
                 processingJob.id,
                 lease.leaseToken,
-                'RESUME_ANALYSIS_FAILED',
-                !continueBatchOnFailure
+                cause instanceof DuplicateCandidateError ? 'DUPLICATE_CANDIDATE' : 'RESUME_ANALYSIS_FAILED',
+                !(cause instanceof DuplicateCandidateError) && !continueBatchOnFailure
               )
             }
             const latestTask = repository.getWorkTask(task.id)

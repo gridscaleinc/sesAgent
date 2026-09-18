@@ -14,10 +14,10 @@ function setup(){
 describe('interview progression assistance',()=>{
  it('only proposes structured feedback and never advances the workflow',async()=>{
   const {context,repository,agentNarrativeStreamer}=setup()
-  const result=await createBusinessProgressAnalyzer(context)({documentId,reviewId,expectedRevision:1,text:'客户说：一面通过，需要二面',lang:'zh'})
+  const result=await createBusinessProgressAnalyzer(context)({documentId,reviewId,expectedRevision:1,roundNumber:1,text:'客户说：一面通过，需要二面',lang:'zh'})
   expect(result).toEqual(analysis); expect(repository.advanceBusinessProgress).not.toHaveBeenCalled()
   const projection=agentNarrativeStreamer.analyzeBusinessProgress.mock.calls[0]![0] as unknown as {projection:string}
-  expect(projection.projection).not.toContain('person@example.com');expect(projection.projection).not.toContain(documentId)
+  expect(JSON.parse(projection.projection).context.selectedRound).toBe(1);expect(projection.projection).not.toContain('person@example.com');expect(projection.projection).not.toContain(documentId)
  })
  it('rejects unsupported evidence and rejects stale results',async()=>{
   const {context,agentNarrativeStreamer,repository}=setup()

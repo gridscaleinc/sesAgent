@@ -10,7 +10,7 @@ import type { EncryptedFileVault, StagedFileRecord } from '@files'
 import { agentJobCaseDraftFacts, createRedactedChatPasteJobCaseSource, extractJobCaseDraft, type JobCaseFieldOverrides } from '@job-cases'
 import { collectLocalPersonNameCandidates, type LocalPersonNameDetectorPort } from '@local-ai'
 import { documentIrSchema, documentIrVersion, type DocumentIR } from '@parsers'
-import type { EncryptedApplicationRepository } from '@persistence'
+import { DuplicateCandidateError, type EncryptedApplicationRepository } from '@persistence'
 import { applyLocalPiiMappings, redactTextForCloud } from '@privacy'
 import { applyCandidateFieldOverrides, extractCandidateDraft, type CandidateFieldOverrides } from '@resume'
 import type {
@@ -126,7 +126,8 @@ export async function importChatPastedJobCaseText(
   const processed = createRedactedChatPasteJobCaseSource(text, sourceId, knownPersonNames, now)
   const duplicate = deps.repository.findJobCaseReviewByBusinessFingerprint(
     processed.source.redactedSubject,
-    processed.source.redactedBody
+    processed.source.redactedBody,
+    processed.redaction.mappings
   )
   if (duplicate) {
     if (duplicate.lifecycle === 'archived') return { review: duplicate, outcome: 'archived', validity: 'unknown', attentionReason: null }
@@ -299,6 +300,8 @@ export async function importPastedCandidateText(
       redactedPreview: preview,
       analyzedAt
     }
+    const duplicate = deps.repository.findCandidateByDocumentContent(document)
+    if (duplicate) throw new DuplicateCandidateError(duplicate.documentId)
     deps.repository.saveRedactionSession(redaction.session, redaction.mappings)
     deps.repository.saveParsedDocument(document, summary, redaction.session.id, extraction)
     const review = deps.repository.getCandidateReview(record.token)
@@ -316,6 +319,10 @@ export async function importPastedCandidateText(
       await deps.fileVault.discardStagedFile(record)
     } catch {
       // Same: never mask the original failure with cleanup noise.
+    }
+    if (cause instanceof DuplicateCandidateError) {
+      const review = deps.repository.getCandidateReview(cause.documentId)
+      if (review) return { review, outcome: review.recordStatus === 'archived' ? 'archived' : review.status === 'completed' ? 'already-imported' : 'existing-review', facts: null }
     }
     throw cause
   }

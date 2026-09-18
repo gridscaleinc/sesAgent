@@ -1,0 +1,17 @@
+.gmail-sync-feedback {
+  margin-top: 12px;
+  color: #374b60;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.gmail-sync-feedback p { margin: 8px 0; }
+.gmail-sync-feedback .integration-settings-note { padding: 9px 11px; }
+.gmail-sync-feedback [role="alert"] {
+  padding: 9px 11px;
+  color: #9b3030;
+  background: #fff3f1;
+  border: 1px solid #efccc7;
+  border-radius: 8px;
+}

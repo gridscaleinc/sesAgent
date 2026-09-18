@@ -1,3 +1,4 @@
+import { PersonnelMailUpdates } from './PersonnelMailUpdates'
 import { BusinessField } from './BusinessField'
 import { useMemo, useState, type FormEvent } from 'react'
 import type {
@@ -435,6 +436,7 @@ export function CandidateProfileDetail({
 
   return (
     <main aria-label={t('人材プロフィール詳細')} className={aiOpen && !editMode ? 'resume-profile-workspace candidate-detail-workspace has-ai' : 'resume-profile-workspace candidate-detail-workspace'}>
+      <PersonnelMailUpdates documentId={candidate.sourceDocumentId} version={candidate.version}/>
       <header className="resume-profile-header">
         <div className="resume-profile-identity">
           <button aria-label={t('人材プールへ戻る')} onClick={onBack} type="button"><Icon name="arrow-left" size={17} /></button>

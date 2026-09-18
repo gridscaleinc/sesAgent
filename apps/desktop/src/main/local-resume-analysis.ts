@@ -83,7 +83,7 @@ export async function analyzeStagedResumeLocally(
   return { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt }
 }
 
-export async function importStagedResumeLocally(context: Parameters<typeof analyzeStagedResumeLocally>[0], record: Parameters<typeof analyzeStagedResumeLocally>[1]) {
+export async function importStagedResumeLocally(context: Parameters<typeof analyzeStagedResumeLocally>[0], record: Parameters<typeof analyzeStagedResumeLocally>[1], inTalentLibrary = true) {
   const { repository } = context
   const { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt } = await analyzeStagedResumeLocally(context, record)
   const preview = redaction.redactedContent.length > 4000
@@ -140,7 +140,14 @@ export async function importStagedResumeLocally(context: Parameters<typeof analy
     redactedPreview: preview,
     analyzedAt
   }
+  const duplicate = repository.findCandidateByDocumentContent(document)
+  if (duplicate) {
+    repository.removeStagedFiles([record.token])
+    await context.fileVault.discardStagedFile(record)
+    if (inTalentLibrary && duplicate.inTalentLibrary === false && duplicate.profile) repository.addCandidateToLibrary(duplicate.documentId, duplicate.profile.version)
+    return duplicate.documentId
+  }
   repository.saveRedactionSession(redaction.session, redaction.mappings)
-  repository.saveParsedDocument(document, summary, redaction.session.id, extraction)
+  repository.saveParsedDocument(document, summary, redaction.session.id, extraction, inTalentLibrary)
   return record.token
 }

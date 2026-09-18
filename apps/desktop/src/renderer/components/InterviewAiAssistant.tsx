@@ -1,3 +1,4 @@
+import { interviewQuestionPolicy } from '@shared'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type {
   PrepareAiCommerceCloudPromptInput,
@@ -94,12 +95,12 @@ function quickPrompts(kind: CandidateInterviewSnapshot['kind'], phase: Interview
   if (phase === 'prepare') return kind === 'client'
     ? [
         { id: 'match', label: zh ? '案件匹配点' : '案件との適合点', question: zh ? '分析这个人与当前案件最匹配的经历，以及客户可能追问的缺口。' : 'この候補者と現在案件の適合経験、および顧客が確認しそうな不足点を分析してください。' },
-        { id: 'questions', label: zh ? '生成客户面试问题' : '顧客面談質問を生成', question: zh ? '结合候选人档案和本轮客户面试上下文，生成8个有针对性的问题，每行一个。' : '候補者プロフィールと今回の顧客面談コンテキストから、具体的な質問を8件、1行ずつ生成してください。', action: 'questions' },
+        { id: 'questions', label: zh ? '生成客户面试问题' : '顧客面談質問を生成', question: zh ? '结合候选人档案和本轮客户面试上下文，按能力维度生成4～5个不重复的问题，每行一个。' : '候補者プロフィールと今回の顧客面談コンテキストから、能力の観点ごとに重複のない質問を4〜5件、1行ずつ生成してください。', action: 'questions' },
         { id: 'pitch', label: zh ? '整理候选人卖点' : '候補者の訴求点', question: zh ? '整理向客户介绍这个候选人时可以使用的事实性卖点，不要夸大。' : '顧客へ候補者を紹介する際の事実に基づく訴求点を、誇張せず整理してください。' }
       ]
     : [
         { id: 'strengths', label: zh ? '主要能力与风险' : '主な能力と懸念', question: zh ? '总结候选人的主要能力、简历风险和本轮必须确认的事项。' : '候補者の主な能力、履歴書上の懸念、今回必ず確認する事項をまとめてください。' },
-        { id: 'questions', label: zh ? '生成面试问题' : '面談質問を生成', question: zh ? '结合候选人简历、公司固定题和本轮目标，生成8个有针对性的面试问题，每行一个。' : '候補者の履歴書、会社固定質問、今回目標を踏まえ、具体的な面談質問を8件、1行ずつ生成してください。', action: 'questions' },
+        { id: 'questions', label: zh ? '生成面试问题' : '面談質問を生成', question: zh ? '结合候选人简历、公司固定题和本轮目标，按能力维度生成4～5个不重复的面试问题，每行一个。' : '候補者の履歴書、会社固定質問、今回目標を踏まえ、能力の観点ごとに重複のない面談質問を4〜5件、1行ずつ生成してください。', action: 'questions' },
         { id: 'verify', label: zh ? '找出需要核实的地方' : '確認すべき点を抽出', question: zh ? '找出简历中需要面试核实的经历、职责深度和时间线问题。' : '履歴書から面談で確認すべき経験、担当の深さ、時系列上の論点を抽出してください。' }
       ]
   if (phase === 'record') return [
@@ -149,11 +150,18 @@ function localAnswer(
   const projects = candidate.projectExperiences.slice(0, 4)
 
   if (/问题|追问|質問|聞く/iu.test(question)) {
-    const skillQuestions = skills.slice(0, 3).map((skill) => zh
-      ? `请说明在使用 ${skill} 的项目中，你本人负责的设计、难点和最终结果。`
-      : `${skill}を使った案件で、本人が担当した設計、難所、最終結果を説明してください。`)
-    const remaining = unresolvedItems.slice(0, 3).map((item) => zh ? `请补充说明：${item}` : `追加確認：${item}`)
-    const generated = [...remaining, ...skillQuestions]
+    const focus = projects[0]?.title ?? skills.slice(0, 3).join('、')
+    const generated = focus ? (zh ? [
+      `请结合「${focus}」的一项实际工作，说明你的角色、负责范围、所做判断和最终成果。`,
+      `请从相关能力「${skills.slice(0, 3).join('、') || role || focus}」中选出最核心的一项，说明具体交付物及如何验证质量。`,
+      `在「${focus}」中遇到过什么实际难题？请说明调查判断、处理措施、验证方式与结果。`,
+      `在「${focus}」中，哪些工作由你独立完成？遇到不明确事项时如何与团队确认并推进？`
+    ] : [
+      `「${focus}」の具体的な業務について、ご自身の役割、担当範囲、判断と成果を説明してください。`,
+      `関連能力「${skills.slice(0, 3).join('、') || role || focus}」の中核となるものを一つ選び、成果物と品質の確認方法を説明してください。`,
+      `「${focus}」で直面した課題について、調査・判断、対応、検証と結果を説明してください。`,
+      `「${focus}」ではどの業務を独力で担当しましたか。不明点を誰とどのように確認し、進めましたか。`
+    ]) : []
     return {
       content: generated.length > 0
         ? generated.map((item, index) => `${index + 1}. ${item}`).join('\n')
@@ -265,6 +273,7 @@ function createCloudPrompt({
       ]
   return [
     ...rules,
+    ...(phase === 'prepare' ? [interviewQuestionPolicy] : []),
     `${zh ? '员工问题' : '担当者の質問'}: ${compact(question, 700)}`,
     `${zh ? '匿名候选人编号' : '匿名候補者番号'}: ${anonymousCandidateId(candidate.documentId)}`,
     zh ? '匿名结构化档案:' : '匿名構造化プロフィール:',
@@ -411,7 +420,7 @@ export function InterviewAiAssistant({
 
   const applyMessage = (message: AiConversationMessage) => {
     if (message.action === 'questions') {
-      const extracted = extractInterviewQuestions(message.content)
+      const extracted = extractInterviewQuestions(message.content).slice(0, 5)
       if (extracted.length > 0) onAddQuestions(extracted)
       else setError(zh ? 'AI 回答中没有识别到可加入的问题，请复制后手动整理。' : 'AI回答から追加可能な質問を抽出できませんでした。手動で整理してください。')
       return

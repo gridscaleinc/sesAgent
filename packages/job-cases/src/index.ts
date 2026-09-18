@@ -621,8 +621,8 @@ function classifyShorthandToken(token: string): ShorthandTokenKey {
     return bareLanguageNamePattern.test(token) ? 'notes' : 'required_skills'
   }
   if (/(?:日本語|日语|JLPT|(?<![A-Za-z])N[1-5](?![A-Za-z0-9])|ネイティブ|ビジネスレベル|流暢|流畅)/u.test(token)) return 'japanese_level'
-  if (/(?:都内|東京|大阪|名古屋|福岡|神奈川|埼玉|千葉|横浜|関西|関東|勤務地|[^\s、]{1,6}駅|[^\s、]{1,4}区(?![A-Za-z])|出勤)/u.test(token)) return 'location'
-  if (/(?:在宅|リモート|テレワーク|常駐|常驻|出社|フルリモ|ハイブリッド)/u.test(token)) return 'remote'
+  if (/(?:都内|東京|大阪|名古屋|福岡|神奈川|埼玉|千葉|横浜|関西|関東|勤務地|[^\s、]{1,6}駅|[^\s、]{1,4}区(?![A-Za-z]))/u.test(token)) return 'location'
+  if (/(?:在宅|リモート|テレワーク|常駐|常驻|出社|出勤|フルリモ|ハイブリッド)/u.test(token)) return 'remote'
   if (/^(?:[0-9０-９]{1,3}|[一二三四五六七八九十]|数)[\s]*(?:名|人)(?![A-Za-z])/u.test(token)) return 'headcount'
   if (/(?:面談|面接)/u.test(token)) return 'interview'
   if (/(?:[0-9０-９]+[\s]*(?:万円?|k|K)(?![A-Za-z])|単価|単金|￥|¥)/u.test(token)) return 'rate'
@@ -1148,4 +1148,3 @@ export function createRedactedWechatVisibleJobCaseSource(
   })
   return { source, redaction }
 }
-

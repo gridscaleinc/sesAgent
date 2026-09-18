@@ -181,3 +181,5 @@ body:has(.is-hr-workbench) { min-width: 0; }
 
 .hr-match-batch { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; font-size:12px; color:#607c69; }
 .hr-match-select { display:flex; align-items:center; gap:7px; font-size:11px; color:#7a8d7f; margin-bottom:10px; }
+
+.hr-intro-subject{display:grid;gap:8px;margin:12px 0}.hr-intro-subject input{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--border-color,#dbe5df);border-radius:8px;font:inherit}

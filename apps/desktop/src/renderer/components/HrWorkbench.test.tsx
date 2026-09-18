@@ -1,7 +1,7 @@
 import { BusinessProgressContext, progressIndexes, type useBusinessProgressData } from '../business-progress-data'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { builtInPersonnelTemplates, type BusinessFeedEntry, type BusinessFollowUp, type BusinessMatchingProgress, type CandidateReviewSnapshot, type DesktopApi, type JobCaseReviewSnapshot, type PersonnelCaseMatchResult } from '@shared'
+import { generatePersonnelProposal, builtInPersonnelTemplates, type BusinessFeedEntry, type BusinessFollowUp, type BusinessMatchingProgress, type CandidateReviewSnapshot, type DesktopApi, type JobCaseReviewSnapshot, type PersonnelCaseMatchResult } from '@shared'
 import { HrObjectList } from './HrObjectList'
 import { HrMatchingWorkspace } from './HrMatchingWorkspace'
 import { HrFollowUps } from './HrFollowUps'
@@ -16,7 +16,7 @@ const reviewId = '22222222-2222-4222-8222-222222222222'
 const person = { documentId, fileName: 'Test Engineer', fields: [], projectExperiences: [], reviewRevision: 1, recordStatus: 'active', profile: { version: 1 }, isOwnCompany: null } as unknown as CandidateReviewSnapshot
 const job = { reviewId, redactedSubject: 'Java project', fields: [], lifecycle: 'active', status: 'completed', reviewRevision: 1, jobCase: { id: '33333333-3333-4333-8333-333333333333', version: 1 } } as unknown as JobCaseReviewSnapshot
 const entry = { kind: 'person', objectId: documentId, title: 'Same Name', revision: 'a'.repeat(64), source: 'local-personnel', sourceAt: '2026-09-01T00:00:00Z', occurredAt: '2026-09-01T00:00:00Z', event: 'created', businessStatus: 'available', unseen: false, deferred: false, archived: false, needsReview: false, fields: [], changes: [] } satisfies BusinessFeedEntry
-const qualification = { policyVersion: 'mandatory-evidence-v1' as const, status: 'recommended' as const, requirements: [{ requirement: { id: 'R1', key: 'required_skills', label: 'Java', category: 'core' as const, alternatives: [['Java']], minimumYears: null, requiresPractice: false }, outcome: 'met' as const, evidence: 'Java', source: 'Project A' }] }
+const qualification = { policyVersion: 'technical-language-v3' as const, status: 'recommended' as const, requirements: [{ requirement: { id: 'R1', key: 'required_skills', label: 'Java', category: 'core' as const, alternatives: [['Java']], minimumYears: null, requiresPractice: false }, outcome: 'met' as const, evidence: 'Java', source: 'Project A' }] }
 const result: PersonnelCaseMatchResult = { documentId, profileVersion: 1, localMatchCount: 1, cloud: { status: 'unavailable', reviewedCount: 0, modelName: null }, items: [{ reviewId, jobCaseId: job.jobCase!.id, jobCaseVersion: 1, title: 'Java project', score: 5, matched: ['Java'], missing: [], hardFilters: [], qualification }] }
 let progress: (event: BusinessMatchingProgress) => void
 beforeEach(() => {
@@ -25,6 +25,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
     getBusinessFeed: vi.fn(async () => [entry]), markBusinessFeed: vi.fn(async () => []),
     getPersonnelWorkspace: vi.fn(async () => ({ templates: builtInPersonnelTemplates(), states: [], copies: [] })),
+    regenerateIntroduction: vi.fn(async input => ({text: generatePersonnelProposal(person,input.caseContext ? {...job,redactedSubject: input.caseContext.reviewId === reviewId ? 'Java project' : 'Second case'} : undefined,input.lang).text})),
     onBusinessMatchingProgress: vi.fn((listener) => { progress = listener; return () => {} }),
     cancelBusinessMatching: vi.fn(async () => {}), findCasesForPersonnel: vi.fn(), findPersonnelForCase: vi.fn(),
     listBusinessFollowUps: vi.fn(async () => []), saveBusinessFollowUp: vi.fn(),
@@ -50,13 +51,14 @@ it('shows zero recommendations and the missing Scala/Spark requirements without 
 it('lets HR independently introduce or follow up three condition-pending cases without changing AI qualifications', async () => {
   const jobs = Array.from({ length: 3 }, (_, i) => ({ ...job, reviewId: `22222222-2222-4222-8222-${String(i).padStart(12, '0')}`, redactedSubject: `Java case ${i}` }))
   const condition = { requirement: { id: 'R2', key: 'start_date', label: '9月', category: 'condition' as const, alternatives: [], minimumYears: null, requiresPractice: false }, outcome: 'unknown' as const, evidence: null, source: null }
-  const pendingItems = jobs.map((item) => ({ ...result.items[0]!, reviewId: item.reviewId, qualification: { ...qualification, status: 'needs-confirmation' as const, requirements: [...qualification.requirements, condition] } }))
+  const pendingItems = jobs.map((item) => ({ ...result.items[0]!, reviewId: item.reviewId, qualification: { ...qualification, status: 'recommended' as const, requirements: [...qualification.requirements, condition] } }))
   vi.mocked(window.sesAgent.findCasesForPersonnel).mockResolvedValue({ ...result, items: pendingItems })
   const onPrepare = vi.fn(), onFollowUp = vi.fn(), onView = vi.fn()
   render(<HrMatchingWorkspace source={{ kind: 'person', id: documentId, requestId: 102 }} cases={jobs} people={[person]} onBusy={vi.fn()} onView={onView} onPrepare={onPrepare} onBack={vi.fn()} onFollowUp={onFollowUp} />)
-  const area = within(await screen.findByRole('region', { name: '条件の相談が必要' }))
+  await screen.findByText('3 件の紹介候補')
+  const area = screen
   expect(screen.queryByText('紹介できる案件は見つかりませんでした')).not.toBeInTheDocument()
-  expect(screen.getByText('0 件の紹介候補')).toBeVisible()
+  expect(screen.getByText('3 件の紹介候補')).toBeVisible()
   for (const [index, card] of area.getAllByRole('article').entries()) {
     expect(within(card).getByText('9月')).toBeVisible()
     fireEvent.click(within(card).getByRole('button', { name: '紹介を準備' }))
@@ -69,13 +71,13 @@ it('lets HR independently introduce or follow up three condition-pending cases w
   }
   expect(onPrepare).toHaveBeenCalledTimes(3)
   expect(onFollowUp).toHaveBeenCalledTimes(3)
-  expect(pendingItems.every((item) => item.qualification.status === 'needs-confirmation')).toBe(true)
+  expect(pendingItems.every((item) => item.qualification.status === 'recommended')).toBe(true)
   expect(window.sesAgent.saveBusinessFollowUp).not.toHaveBeenCalled()
 })
 
-it('keeps missing core skills and hard conflicts out of the condition-pending actions', async () => {
-  const missing = { ...qualification.requirements[0]!, outcome: 'unknown' as const, evidence: null, source: null }
-  const conflict = { ...qualification.requirements[0]!, requirement: { ...qualification.requirements[0]!.requirement, id: 'R2', key: 'own_company', category: 'condition' as const }, outcome: 'conflict' as const }
+it('keeps known technical and language shortfalls out of recommendation actions', async () => {
+  const missing = { ...qualification.requirements[0]!, outcome: 'conflict' as const, evidence: null, source: null }
+  const conflict = { ...qualification.requirements[0]!, requirement: { ...qualification.requirements[0]!.requirement, id: 'R2', key: 'japanese_level', label: '日本語N1流暢', category: 'condition' as const }, outcome: 'conflict' as const }
   vi.mocked(window.sesAgent.findCasesForPersonnel).mockResolvedValue({ ...result, items: [
     { ...result.items[0]!, qualification: { ...qualification, status: 'needs-confirmation', requirements: [missing] } },
     { ...result.items[0]!, qualification: { ...qualification, status: 'needs-confirmation', requirements: [...qualification.requirements, conflict] } }
@@ -90,7 +92,7 @@ it('offers the same pending-condition next steps when a case searches for person
   vi.mocked(window.sesAgent.findPersonnelForCase).mockResolvedValue({
     jobCaseId: job.jobCase!.id, jobCaseVersion: 1, localMatchCount: 1, cloud: result.cloud,
     items: [{ documentId, profileVersion: 1, score: 5, matched: ['Java'], missing: [], hardFilters: [],
-      qualification: { ...qualification, status: 'needs-confirmation' },
+      qualification: { ...qualification, status: 'recommended', requirements: [...qualification.requirements, { requirement: { id: 'start', key: 'start_date', label: '9月入場', category: 'condition', alternatives: [], minimumYears: null, requiresPractice: false }, outcome: 'unknown', evidence: null, source: null }] },
       assessment: { confirm: ['開始日を相談'], gaps: [] } as unknown as NonNullable<typeof result.items[number]['assessment']> }]
   })
   const onPrepare = vi.fn(), onFollowUp = vi.fn()
@@ -98,23 +100,23 @@ it('offers the same pending-condition next steps when a case searches for person
   const card = within(await screen.findByRole('article'))
   expect(card.getByText('Test Engineer')).toBeVisible()
   fireEvent.click(card.getByRole('button', { name: '紹介を準備' }))
-  expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({ documentId, reviewId, profileVersion: 1, jobCaseVersion: 1, pendingConditions: ['開始日を相談'] }))
+  expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({ documentId, reviewId, profileVersion: 1, jobCaseVersion: 1, pendingConditions: ['9月入場'] }))
   fireEvent.click(card.getByRole('button', { name: '面談を予約' }))
-  expect(onFollowUp).toHaveBeenCalledWith({ documentId, reviewId, pendingConditions: ['開始日を相談'] })
+  expect(onFollowUp).toHaveBeenCalledWith({ documentId, reviewId, pendingConditions: ['9月入場'] })
 })
 
 it('labels ambiguous business values and avoids repeating them from AI confirmation notes', async () => {
   vi.mocked(window.sesAgent.findCasesForPersonnel).mockResolvedValue({ ...result, items: [{ ...result.items[0]!,
-    qualification: { ...qualification, status: 'needs-confirmation', requirements: [...qualification.requirements, {
+    qualification: { ...qualification, status: 'recommended', requirements: [...qualification.requirements, {
       requirement: { ...qualification.requirements[0]!.requirement, id: 'R2', key: 'remote', label: '無', category: 'condition' }, outcome: 'unknown', evidence: null, source: null
     }] }, assessment: { confirm: ['無', '现场出勤能否对应'], gaps: [] } as unknown as NonNullable<typeof result.items[number]['assessment']>
   }] })
   const onPrepare = vi.fn()
   render(<HrMatchingWorkspace source={{ kind: 'person', id: documentId, requestId: 107 }} cases={[{ ...job, fields: [{ key: 'remote', label: 'リモート', value: '無' } as typeof job.fields[number]] }]} people={[person]} onBusy={vi.fn()} onView={vi.fn()} onPrepare={onPrepare} onBack={vi.fn()} onFollowUp={vi.fn()} />)
-  expect(await screen.findByText('リモート：無')).toBeVisible()
+  expect(await screen.findByText('勤務形態：無')).toBeVisible()
   expect(screen.queryByText('無')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '紹介を準備' }))
-  expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({ pendingConditions: ['リモート：無', '现场出勤能否对应'] }))
+  expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({ pendingConditions: ['勤務形態：無'] }))
 })
 
 it('locks condition-pending next steps during matching and rejects changed versions', async () => {
@@ -136,7 +138,7 @@ it('locks condition-pending next steps during matching and rejects changed versi
 it('refuses to display a legacy unqualified result as a recommendation', async () => {
   vi.mocked(window.sesAgent.findCasesForPersonnel).mockResolvedValue({ ...result, items: [{ ...result.items[0]!, qualification: undefined }] })
   render(<HrMatchingWorkspace source={{ kind: 'person', id: documentId, requestId: 103 }} cases={[job]} people={[person]} onBusy={vi.fn()} onView={vi.fn()} onPrepare={vi.fn()} onBack={vi.fn()} onFollowUp={vi.fn()} />)
-  expect(await screen.findByText('情報が更新されました。再マッチングが必要です。')).toBeVisible()
+  expect(await screen.findByText('情報またはAIルールが更新されました。再マッチングが必要です。')).toBeVisible()
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
 })
 
@@ -171,7 +173,7 @@ it('keeps full OR requirements and parenthesized skill lists intact in the compa
   fireEvent.click(within(card).getByText('残り 2 項目'))
   expect(extra).toBeVisible()
   expect(onOpen).not.toHaveBeenCalled()
-  expect(within(card).getAllByRole('button')).toHaveLength(4)
+  expect(within(card).getByRole('button', { name: /^削除 /u })).toBeEnabled()
   expect(within(card).queryByText(/情報が更新されました|取込済み/u)).not.toBeInTheDocument()
 })
 
@@ -338,7 +340,7 @@ it('shows local results during cloud work, ignores unrelated progress and invali
   await act(async () => finish(result))
   expect(screen.getByRole('button', { name: '紹介を準備' })).toBeEnabled()
   view.rerender(<HrMatchingWorkspace {...props} cases={[{ ...job, jobCase: { ...job.jobCase!, version: 2 } }]} />)
-  expect(screen.getByText('情報が更新されました。再マッチングが必要です。')).toBeVisible()
+  expect(screen.getByText('情報またはAIルールが更新されました。再マッチングが必要です。')).toBeVisible()
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
   expect(window.sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1)
 })
@@ -362,6 +364,7 @@ it('preserves personnel edits across languages and blocks copy before Main valid
   fireEvent.click(screen.getByRole('tab', { name: '中国語' }))
   fireEvent.click(screen.getByRole('tab', { name: '日本語' }))
   fireEvent.click(screen.getByRole('tab', { name: '簡潔' }))
+  await waitFor(() => expect(screen.getByRole('textbox', { name: '紹介文' })).toBeEnabled())
   fireEvent.change(screen.getByRole('textbox', { name: '紹介文' }), { target: { value: 'Brief draft' } })
   fireEvent.keyDown(screen.getByRole('tab', { name: '簡潔' }), { key: 'ArrowLeft' })
   expect(screen.getByRole('tab', { name: '標準' })).toHaveAttribute('aria-selected', 'true')
@@ -449,25 +452,28 @@ it('creates contact only on explicit save and preserves unsaved notes after a wr
 
 it('regenerates an introduction through AI with request locking and preserves the draft on failure', async () => {
   let fail: (error: Error) => void = () => {}
-  const regenerate = vi.fn().mockImplementationOnce(() => new Promise((_, reject) => { fail = reject })).mockResolvedValue({ text: 'AI generated introduction' })
+  const regenerate = vi.fn().mockResolvedValueOnce({text:'First cloud draft'}).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject })).mockResolvedValue({ text: 'AI generated introduction' })
   window.sesAgent.regenerateIntroduction = regenerate
   render(<IntroductionComposer target={{ documentId, profileVersion: 1, matched: [] }} people={[person]} cases={[]} onClose={vi.fn()} onFollowUp={vi.fn()} />)
   const text = await screen.findByRole('textbox', { name: '紹介文' })
+  await waitFor(() => expect(text).toHaveValue('First cloud draft'))
+  expect(regenerate).toHaveBeenCalledTimes(1)
   fireEvent.change(text, { target: { value: 'My existing draft' } })
   fireEvent.click(screen.getByRole('button', { name: 'AIで再生成' }))
-  expect(screen.getByRole('button', { name: '処理中' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Cloud AIで生成中…' })).toBeDisabled()
   await act(async () => fail(new Error('cloud unavailable')))
   expect(text).toHaveValue('My existing draft')
   fireEvent.click(screen.getByRole('button', { name: 'AIで再生成' }))
   await waitFor(() => expect(text).toHaveValue('AI generated introduction'))
-  expect(regenerate).toHaveBeenCalledTimes(2)
+  expect(regenerate).toHaveBeenCalledTimes(3)
 })
 
 
 it('retains pending conditions when preparing an introduction and opening follow-up without marking anything contacted', async () => {
   const onFollowUp = vi.fn()
   render(<IntroductionComposer target={{ documentId, reviewId, profileVersion: 1, jobCaseVersion: 1, matched: ['Java'], pendingConditions: ['9月入場', '単価相談'] }} people={[person]} cases={[job]} onClose={vi.fn()} onFollowUp={onFollowUp} />)
-  await waitFor(() => expect((screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement).value).toContain('9月入場'))
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement).value).toContain('■案件とのマッチポイント'))
+  expect((screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement).value).not.toContain('9月入場')
   expect(screen.getByRole('complementary', { name: '相談する内容' })).toHaveTextContent('単価相談')
   fireEvent.click(screen.getByRole('button', { name: '面談を予約' }))
   expect(onFollowUp).toHaveBeenCalledWith({ documentId, reviewId, pendingConditions: ['9月入場', '単価相談'] })
@@ -483,7 +489,7 @@ it('keeps each case introduction draft independent when HR advances multiple cas
   await waitFor(() => expect((screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement).value).toContain('Java project'))
   fireEvent.change(screen.getByRole('textbox', { name: '紹介文' }), { target: { value: 'First case human draft' } })
   view.rerender(<IntroductionComposer {...props} target={{ ...target, reviewId: secondJob.reviewId, pendingConditions: ['単価相談'] }} />)
-  expect((screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement).value).toContain('Second case')
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement).value).toContain('Second case'))
   expect(screen.getByRole('complementary', { name: '相談する内容' })).toHaveTextContent('単価相談')
   fireEvent.change(screen.getByRole('textbox', { name: '紹介文' }), { target: { value: 'Second case human draft' } })
   view.rerender(<IntroductionComposer {...props} target={null} />)
@@ -522,4 +528,21 @@ it('continues an existing pair from matching without starting another followup',
   fireEvent.click(button)
   expect(onContinue).toHaveBeenCalledWith({documentId,reviewId})
   expect(onFollowUp).not.toHaveBeenCalled()
+})
+
+it('accepts resume files on a case card and never bubbles them into generic attachment handling', async () => {
+  const caseEntry = { ...entry, kind: 'case' as const, objectId: reviewId, title: 'Java project', businessStatus: 'active' as const, occurredAt: new Date().toISOString() }
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([caseEntry])
+  const onDrop = vi.fn(), onAssess = vi.fn()
+  render(<div onDrop={onDrop}><HrObjectList kind="case" cases={[job]} reloadToken={0} candidates={[]} busy={false} onOpen={vi.fn()} onIntake={vi.fn()} onImportResume={vi.fn()} onRefresh={vi.fn()} onAssessResumes={onAssess} /></div>)
+  const card = await screen.findByRole('article', { name: 'Java project' })
+  const resume = new File(['resume'], 'resume.xlsx')
+  fireEvent.dragOver(card, { dataTransfer: { types: ['Files'], dropEffect: 'none' } })
+  expect(card).toHaveClass('is-resume-drag-target')
+  fireEvent.drop(card, { dataTransfer: { files: [resume], types: ['Files'] } })
+  expect(onAssess).toHaveBeenCalledWith(caseEntry, [resume])
+  expect(onDrop).not.toHaveBeenCalled()
+  fireEvent.drop(card.closest('.hr-object-list')!, { dataTransfer: { files: [resume], types: ['Files'] } })
+  expect(onAssess).toHaveBeenCalledTimes(1)
+  expect(onDrop).not.toHaveBeenCalled()
 })

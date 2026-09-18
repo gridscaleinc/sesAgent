@@ -321,6 +321,7 @@ export const localCandidateIdentitySummarySchema = localCandidatePersonalDetails
 })
 
 export const candidateReviewSnapshotSchema = z.object({
+  inTalentLibrary: z.boolean().default(true),
   isOwnCompany: z.boolean().nullable().default(null),
   documentId: z.string().uuid(),
   fileName: z.string().min(1).max(180),
@@ -344,13 +345,19 @@ const candidateInterviewKindSchema = z.enum(candidateInterviewKinds)
 const candidateInterviewMethodSchema = z.enum(['zoom', 'google-meet', 'phone', 'onsite'])
 const candidateInterviewDurationSchema = z.number().int().min(5).max(480)
 
-const candidateInterviewQuestionSchema = z.object({
+export const candidateInterviewQuestionSchema = z.object({
+  bankQuestionId:z.string().uuid().optional(),bankVersion:z.number().int().positive().optional(),
+  experienceRunId: z.string().uuid().optional(),
+  requirement: z.string().max(600).optional(),
+  evidence: z.string().max(1000).optional(),
+  matchContext: z.object({ jobCaseId: z.string().uuid(), jobCaseVersion: z.number().int().positive(), profileVersion: z.number().int().positive(), rulesRevision: z.number().int().nonnegative() }).strict().optional(),
   id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
   text: z.string().trim().min(2).max(500),
   source: z.enum(candidateInterviewQuestionSources),
   sourceLabel: z.string().trim().min(1).max(160).nullable(),
   selected: z.boolean(),
-  scoringGuide: z.string().trim().max(300).nullable().optional()
+  scoringGuide: z.string().trim().max(300).nullable().optional(),
+  followUp: z.string().trim().max(200).nullable().optional()
 })
 
 function isAllowedZoomMeetingUrl(value: string): boolean {
@@ -1828,6 +1835,7 @@ export const prepareCaseIntroductionInputSchema = z.object({
 export const draftCaseUpdateNoticeInputSchema = z.object({ reviewId: jobCaseReviewIdSchema })
 
 export const recordCaseBroadcastCopyInputSchema = z.object({
+  experienceRunId: z.string().uuid().optional(),
   expectedJobCaseVersion: z.number().int().positive().optional(),
   expectedTemplateRevision: z.number().int().positive().optional(),
   reviewId: jobCaseReviewIdSchema,
@@ -1838,6 +1846,7 @@ export const recordCaseBroadcastCopyInputSchema = z.object({
 })
 
 export const openCaseBroadcastEmailInputSchema = z.object({
+  experienceRunId: z.string().uuid().optional(),
   expectedJobCaseVersion: z.number().int().positive().optional(),
   expectedTemplateRevision: z.number().int().positive().optional(),
   reviewId: jobCaseReviewIdSchema,

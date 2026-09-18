@@ -849,3 +849,23 @@ describe('searchConfirmedCandidateProfiles', () => {
     expect(embeddedPassages[0]).toContain('スキル: Java, Spring Boot, AWS')
   })
 })
+
+it('reads Japanese grade definitions from the same sheet and enriches only unchanged legacy values',async()=>{
+ const {extractStructuredJapaneseLevel,enrichCandidateJapaneseEvidence}=await import('./index')
+ const document=await createMergedSesResumeDocument()
+ const template=document.blocks.find(b=>b.source.cell==='A11')!
+ document.blocks.push({...template,text:'A.現地人と同じレベル B.スムーズ対応可 C.ゆっくり対応可 D.初学者',source:{...template.source,cell:'F11'}})
+ const expanded=extractStructuredJapaneseLevel(document.blocks)!
+ expect(expanded.value).toBe('読む C（ゆっくり対応可） / 書く B（スムーズ対応可） / 会話 C（ゆっくり対応可）')
+ const legacy={fields:[{key:'japanese_level',label:'日本語',value:'読む C / 書く B / 会話 C',sourceLabels:[]}],projectExperiences:[]} as unknown as CandidateProfile
+ expect(enrichCandidateJapaneseEvidence(legacy,document).fields[0]!.value).toBe(expanded.value)
+ const edited={...legacy,fields:[{...legacy.fields[0]!,value:'N1'}]}
+ expect(enrichCandidateJapaneseEvidence(edited,document)).toBe(edited)
+ expect(extractCandidateDraft(document).fields.find(f=>f.key==='japanese_level')?.value).toBe(expanded.value)
+})
+
+it.each(['在宅のみ', '只接受在宅', '出社不可', '週2日まで出社', '出社は週2日まで', 'フルリモート希望', 'フルリモートのみ', '出社可能'])('preserves the work-style restriction or preference: %s',async value=>{
+ const document=await createMergedSesResumeDocument()
+ document.blocks=[{...document.blocks[0]!,text:`勤務形態：${value}`}]
+ expect(extractCandidateDraft(document).fields.find(f=>f.key==='work_style')?.value).toBe(value)
+})

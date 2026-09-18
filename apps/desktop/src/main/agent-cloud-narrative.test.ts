@@ -1159,6 +1159,16 @@ describe('business-text extraction protocol', () => {
     )).toEqual({ kind: 'records', records: [{ kind: 'candidate', startLine: 1, endLine: 2, fields: { work_style: 'フルリモート' } }] })
   })
 
+  it('requires complete non-overlapping case coverage and rejects fields copied from the neighbouring case', () => {
+    const lines = ['募集情報', 'Java開発、', '東京。', 'AWS運用、', '在宅。']
+    const records = [{ kind: 'job-case', startLine: 2, endLine: 3, fields: { required_skills: 'AWS', location: '東京' } },
+      { kind: 'job-case', startLine: 4, endLine: 5, fields: { required_skills: 'AWS', remote: '在宅' } }]
+    expect(() => parseAgentBusinessTextExtractionResponse(JSON.stringify({ decision: 'records', records }), lines, [], true)).toThrow(/一部未処理/u)
+    const result = parseAgentBusinessTextExtractionResponse(JSON.stringify({ decision: 'records', records, ignored: [{ startLine: 1, endLine: 1, reason: 'banner' }] }), lines, [], true)
+    expect(result.kind === 'records' && result.records[0]!.fields).toEqual({ location: '東京' })
+    expect(result.kind === 'records' && result.records[1]!.fields).toEqual({ required_skills: 'AWS', remote: '在宅' })
+  })
+
   it('accepts a valid records response, plain or fenced', () => {
     const payload = '{"decision":"records","records":[{"kind":"job-case","startLine":2,"endLine":4},{"kind":"candidate","startLine":6,"endLine":9}]}'
     const expected = {
@@ -1353,7 +1363,7 @@ describe('match assessment protocol', () => {
     expect(parseAgentMatchAssessmentResponse('```json\n' + JSON.stringify({ review: loose }) + '\n```', shown.candidates, shown.requirements)).toEqual(expected)
   })
 
-  it('keeps an unrecorded required technology as unknown instead of claiming it is absent', () => {
+  it('preserves ungrounded model evidence for the shared policy to decide case eligibility', () => {
     const shown = texts()
     const payload = JSON.stringify({
       assessments: [{
@@ -1372,7 +1382,8 @@ describe('match assessment protocol', () => {
         reason: '主要スキル未確認。'
       }]
     })
-    expect(matchAssessmentInstructions).toContain('An absent skill is unknown')
+    expect(matchAssessmentInstructions).toContain('A mandatory skill or experience not evidenced in this resume makes the person unsuitable for this case')
+    expect(matchAssessmentInstructions).toContain('Do not turn missing mandatory skills into confirmation tasks')
     expect(fixedInstructions).toContain('Missing evidence is unknown')
     expect(fixedInstructions).toContain('no suitable candidate was found')
   })
@@ -1401,10 +1412,70 @@ describe('match assessment protocol', () => {
     })
   })
 
-  it('tells the model the local hard filters are authoritative and evidence must be verbatim', () => {
-    expect(matchAssessmentInstructions).toContain('outcome "failed" is authoritative')
+  it('separates core requirements from commercial filters and requires verbatim evidence', () => {
+    expect(matchAssessmentInstructions).toContain('disqualifying only when it concerns required technology or language')
+    expect(matchAssessmentInstructions).toContain('never reasons to lower professional fit')
     expect(matchAssessmentInstructions).toContain('copied verbatim')
     expect(matchAssessmentInstructions).toContain('Never identify')
     expect(matchAssessmentInstructions).toContain('single JSON object')
+  })
+})
+
+describe('learning provenance through the real privacy gateway', () => {
+  const opaqueId = 'aaaaaaaa-a123-4567-8abc-aaaaaaaaaaaa'
+  const input = { task: 'matching', requirements: [{ key: 'skills', label: '技術', value: 'Java' }], facts: [], projects: [], hardFilters: [], hrRules: [], previousQuestions: [], notes: '', locale: 'ja-JP' } as const
+  function fixture(reply: (projection: any) => unknown) {
+    const sessions = new Map<string, RedactionSessionEvidence>()
+    const streamResponses = vi.fn(async (request: Parameters<AiCommerceNativeClient['streamResponses']>[0]) => ({
+      clientRequestId: 'fixture', responseId: 'fixture', billingModeUsed: 'subscription' as const,
+      content: JSON.stringify(reply(JSON.parse(request.input)))
+    }))
+    const service = new AgentCloudNarrativeService({
+      repository: { saveRedactionSession: s => { sessions.set(s.id, s) }, getRedactionSession: id => sessions.get(id) ?? null, appendCloudCallAudit: vi.fn() },
+      localNer: { engine: 'apple-natural-language', detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] }) },
+      aiCommerce: { responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses', streamResponses, cancelClientRequest: vi.fn() } as unknown as AiCommerceNativeClient,
+      policyVersion: 'cloud-redaction-v2', loadGates: vi.fn().mockResolvedValue(passedGates()), allowLoopbackHttp: false
+    })
+    return { service, streamResponses }
+  }
+  const events = [{ id: opaqueId, kind: 'assessment-feedback', text: 'Java 项目应确认本人独立负责的范围。', data: {}, runs: [{ id: opaqueId, input: input as unknown as import('@shared').ExperienceInput, output: '' }] }]
+  it('restores only a supplied event reference and rejects a fabricated source', async () => {
+    const observation = { task: 'matching', method: 'ownership', keyword: 'Java', quote: events[0]!.text, polarity: 'support' }
+    const good = fixture(p => ({ observations: [{ ...observation, eventId: p.events[0].id }] }))
+    const result = await good.service.extractExperience({ events, model, signal: AbortSignal.timeout(5000) })
+    expect(result.observations[0]!.eventId).toBe(opaqueId)
+    expect(good.streamResponses.mock.calls[0]![0].input).not.toContain(opaqueId)
+    const bad = fixture(() => ({ observations: [{ ...observation, eventId: opaqueId }] }))
+    await expect(bad.service.extractExperience({ events, model, signal: AbortSignal.timeout(5000) })).rejects.toThrow('来源无法验证')
+  })
+  it('binds generated questions to the supplied bank version and rejects forged IDs', async () => {
+    const bank = { id: opaqueId, version: 7, category: 'responsibility', keyword: 'Java', text: '请说明 Java 项目中本人独立负责的范围。', scoringGuide: '本人职责与具体成果' } as import('@shared').BankQuestion
+    const question = { dimension: 'ownership-collaboration', ask: 'coordination', text: '请说明 Java 项目中本人负责的范围。', requirementIds: ['R1'], evidenceIds: [], scoringGuide: '本人职责与成果' }
+    const classification = { dimension: 'ownership-collaboration', focus: '本人负责范围', requirementIds: ['R1'], evidenceIds: [] }
+    const args = { bankQuestions: [bank], profile: { fields: [], projectExperiences: [] } as unknown as import('@resume').CandidateProfile, requirements: ['Java'], rules: [], previousQuestions: [], notes: '', locale: 'zh-CN', model, signal: AbortSignal.timeout(5000) }
+    const good = fixture(p => ({ capabilities: [classification], questions: [{ ...question, bankQuestionId: p.bankQuestions[0].id }] }))
+    expect((await good.service.generateRuleQuestions(args))[0]).toMatchObject({ bankQuestionId: opaqueId, bankVersion: 7 })
+    expect(good.streamResponses.mock.calls[0]![0].input).not.toContain(opaqueId)
+    const bad = fixture(() => ({ capabilities: [classification], questions: [{ ...question, bankQuestionId: opaqueId }] }))
+    await expect(bad.service.generateRuleQuestions(args)).rejects.toThrow('题库来源无法验证')
+  })
+  it('resolves combined interview sources through real redaction without returning private source text', async () => {
+    const good = fixture(p => ({ capabilities: [{ dimension: 'core-capability', focus: 'Java/SQL 交付', requirementIds: p.requirements.map((r: { id: string }) => r.id), evidenceIds: [p.facts[0].id, p.projects[0].summary.id] }, { dimension: 'case-readiness', focus: '案件適応', requirementIds: p.requirements.map((r: { id: string }) => r.id), evidenceIds: [p.projects[0].summary.id] }], questions: [{
+      dimension: 'core-capability', ask: 'deliverable-quality', text: '请结合 Java 和 SQL 的项目说明交付物、本人贡献及验证结果。',
+      requirementIds: p.requirements.map((r: { id: string }) => r.id),
+      evidenceIds: [p.facts[0].id, p.projects[0].summary.id], scoringGuide: '具体职责、技术判断和结果'
+    }, { dimension: 'case-readiness', ask: 'onboarding', text: '进入本案件后最先可以独立承担哪些任务？', requirementIds: p.requirements.map((r: { id: string }) => r.id), evidenceIds: [p.projects[0].summary.id], scoringGuide: '具体任务' }] }))
+    const result = await good.service.generateRuleQuestions({
+      caseSupplied: true,
+      profile: { fields: [{ key: 'skills', value: 'Java、SQL private@example.com' }], projectExperiences: [{ id: opaqueId, title: '業務API', period: null, role: 'SE', technologies: ['Java', 'SQL'], summary: 'API開発とSQL作成を担当。', sourceLabels: ['private-file.xlsx'] }] } as any,
+      requirements: ['Java', 'SQL'], rules: [], previousQuestions: [], notes: '', locale: 'zh-CN', model, signal: AbortSignal.timeout(5000)
+    })
+    expect(result[0]!.requirement).toBe('Java / SQL')
+    expect(result[0]!.evidence).toContain('API開発とSQL作成を担当。')
+    expect(result[0]!.evidence).toContain('<PRIVATE_EMAIL_001>')
+    expect(JSON.stringify(result)).not.toContain('private@example.com')
+    const sent = good.streamResponses.mock.calls[0]![0].input
+    expect(sent).not.toMatch(/private@example.com|private-file.xlsx/)
+    expect(sent).not.toContain(opaqueId)
   })
 })

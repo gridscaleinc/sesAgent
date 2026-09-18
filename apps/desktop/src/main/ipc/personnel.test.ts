@@ -40,6 +40,13 @@ describe('personnel IPC', () => {
     expect(() => invoke(ipcChannels.getPersonnelWorkspace)).toThrow('untrusted')
     expect(mock.open).not.toHaveBeenCalled()
   })
+  it('carries the editable proposal subject into the mail client and rejects header injection', async () => {
+    registerPersonnelHandlers({ repository: { validatePersonnelMessage: (input: unknown) => personnelMessageInputSchema.parse(input) } } as unknown as MainIpcContext)
+    const subject = '【要員提案／Java・Spring Boot】SE／経験19年／要員ID：E9AEF099'
+    await invoke(ipcChannels.openPersonnelEmail, { ...valid, subject })
+    expect(new URL(mock.open.mock.calls[0]![0]).searchParams.get('subject')).toBe(subject)
+    expect(personnelMessageInputSchema.safeParse({ ...valid, subject: 'subject\r\nBcc: hidden@example.com' }).success).toBe(false)
+  })
   it('rejects matching for personnel outside the currently eligible set', async () => {
     const listCases = vi.fn()
     registerPersonnelHandlers({ repository: { listEligibleTalentProfiles: () => [], listActiveJobCases: listCases } } as unknown as MainIpcContext)

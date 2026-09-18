@@ -134,3 +134,119 @@ it('books second and third rounds directly and keeps the selected round when sav
  expect(records[0]!.progress!.rounds[0]).toEqual(first)
  expect(records[0]!.progress!.rounds.map(item=>item.decision)).toEqual([null,null,null])
 })
+
+const interviewRound=(roundNumber:number,notes:string|null=null,decision:'passed'|'failed'|null=null)=>({
+ id:`round-${roundNumber}`,roundNumber,scheduledAt:`2099-09-${10+roundNumber}T01:00:00.000Z`,durationMinutes:60,meetingMethod:'onsite',meetingUrl:null,meetingDetails:{onsiteAddress:'東京'},interviewer:'面试官',contactNote:'预约备注',interviewNotes:notes,decision,unresolvedItems:[]
+}) as unknown as NonNullable<BusinessFollowUp['progress']>['rounds'][number]
+
+it('loads the selected historical feedback and preserves an unsaved current appointment after backfill',async()=>{
+ const first=row(0);first.progress={...first.progress!,stage:'scheduled',rounds:[interviewRound(1,'一面原始反馈','passed'),interviewRound(2,'二面原始反馈')]};records=[first,row(1),row(2)]
+ vi.mocked(window.sesAgent.advanceBusinessProgress).mockImplementation(async(input)=>{
+  const previous=records[0]!
+  if(input.action!=='feedback')throw new Error('unexpected command')
+  const saved={...previous,revision:previous.revision+1,progress:{...previous.progress!,rounds:previous.progress!.rounds.map(round=>round.roundNumber===input.roundNumber?{...round,interviewNotes:input.notes}:round)}}
+  records=[saved,...records.slice(1)];return saved
+ })
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.change(detail().getByLabelText('安排备注'),{target:{value:'尚未保存的二面安排'}})
+ fireEvent.click(detail().getByRole('button',{name:'反馈与 AI 整理'}))
+ expect(detail().getByLabelText('面试反馈或消息')).toHaveValue('二面原始反馈')
+ fireEvent.change(detail().getByLabelText('记录第几轮结果'),{target:{value:'1'}})
+ expect(detail().getByLabelText('面试反馈或消息')).toHaveValue('一面原始反馈')
+ expect(detail().getByLabelText('本轮结果')).toHaveValue('passed')
+ expect(detail().queryByLabelText('通过后下一步')).not.toBeInTheDocument()
+ fireEvent.change(detail().getByLabelText('面试反馈或消息'),{target:{value:'补录一面的完整评价'}})
+ fireEvent.click(detail().getByRole('button',{name:'保存历史反馈'}))
+ await waitFor(()=>expect(detail().getByRole('button',{name:'保存历史反馈'})).toBeEnabled())
+ expect(window.sesAgent.advanceBusinessProgress).toHaveBeenLastCalledWith(expect.objectContaining({action:'feedback',roundNumber:1,notes:'补录一面的完整评价'}))
+ expect(detail().getByText('2 面已预约')).toBeVisible()
+ expect(detail().getByLabelText('记录第几轮结果')).toHaveValue(1)
+ fireEvent.click(detail().getByRole('button',{name:'面试安排'}))
+ expect(detail().getByLabelText('面试轮次')).toHaveValue(2)
+ expect(detail().getByLabelText('安排备注')).toHaveValue('尚未保存的二面安排')
+})
+
+it('opens the correct round from history and allows backfilling after arrival',async()=>{
+ const first=row(0);first.status='closed';first.progress={...first.progress!,stage:'started',rounds:[interviewRound(1),interviewRound(2,'终面通过','passed')],entry:{...emptyProgressEntry(),actualDate:'2026-09-10'}};records=[first]
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.click(detail().getByRole('button',{name:'完整记录'}))
+ fireEvent.click(detail().getAllByRole('button',{name:'查看 / 补录本轮反馈'})[0]!)
+ expect(detail().getByLabelText('记录第几轮结果')).toHaveValue(1)
+ expect(detail().getByLabelText('面试反馈或消息')).toBeEnabled()
+ fireEvent.change(detail().getByLabelText('面试反馈或消息'),{target:{value:'补录一面原文'}})
+ fireEvent.click(detail().getByRole('button',{name:'保存历史反馈'}))
+ await waitFor(()=>expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({action:'feedback',roundNumber:1,notes:'补录一面原文'})))
+ expect(detail().getByText('已进场')).toBeVisible()
+})
+
+it('resumes a failed interview into a decision screen and only books the next round on explicit action',async()=>{
+ const first=row(0);first.status='closed';first.progress={...first.progress!,stage:'closed',rounds:[interviewRound(1),interviewRound(2,'二面未通过','failed')]};records=[first]
+ vi.mocked(window.sesAgent.advanceBusinessProgress).mockImplementation(async(input)=>{
+  const old=records[0]!,updated={...old,status:'interview' as const,revision:old.revision+1,progress:{...old.progress!,stage:'next-decision' as const}}
+  expect(input.action).toBe('resume');records=[updated];return updated
+ })
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.click(detail().getByRole('button',{name:'恢复推进'}))
+ expect(await detail().findByText('待确认后续安排')).toBeVisible()
+ expect(detail().getByLabelText('本轮结果')).toHaveValue('failed')
+ expect(detail().getByLabelText('记录第几轮结果')).toHaveValue(2)
+ fireEvent.click(detail().getByRole('button',{name:'安排下一轮面试'}))
+ expect(detail().getByLabelText('面试轮次')).toHaveValue(3)
+ expect(detail().getByLabelText('面试时间（日本时间）')).toHaveValue('')
+ expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledTimes(1)
+})
+
+it('shows all persisted entry terms after arrival and on reopening the record',async()=>{
+ const first=row(0);first.status='closed';first.progress={...first.progress!,stage:'started',entry:{plannedDate:'2026-09-09',actualDate:'2026-09-10',rate:'85万円',workStyle:'每周两天远程',location:'東京丸の内',reportTime:'09:30',contact:'测试联系人 / 03-0000-0000',materials:'电脑\n身份证明',candidateAccepted:true,termsAgreed:true}};records=[first]
+ const view=show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'})
+ const verify=()=>{
+  const record=detail().getByRole('region',{name:'进场记录'})
+  for(const value of ['2026-09-09','2026-09-10','85万円','每周两天远程','東京丸の内','09:30','测试联系人 / 03-0000-0000','电脑 身份证明','人员已接受该案件','双方已确认入场条件'])expect(record).toHaveTextContent(value)
+  expect(detail().queryByRole('button',{name:'确认已到岗'})).not.toBeInTheDocument()
+ }
+ verify();view.unmount()
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'});verify()
+ expect(window.sesAgent.advanceBusinessProgress).not.toHaveBeenCalled()
+})
+
+it('preserves unsaved schedule and feedback when adding a communication note, without switching tabs',async()=>{
+ show();await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.change(detail().getByLabelText('安排备注'),{target:{value:'尚未保存的安排'}})
+ fireEvent.click(detail().getByRole('button',{name:'反馈与 AI 整理'}))
+ fireEvent.change(detail().getByLabelText('面试反馈或消息'),{target:{value:'尚未保存的反馈'}})
+ fireEvent.click(detail().getByRole('button',{name:'完整记录'}))
+ fireEvent.change(detail().getByLabelText('补充沟通记录'),{target:{value:'已与人员联系'}})
+ fireEvent.click(detail().getByRole('button',{name:'保存沟通记录'}))
+ await waitFor(()=>expect(detail().getByLabelText('补充沟通记录')).toHaveValue(''))
+ expect(detail().getByRole('button',{name:'完整记录'})).toHaveAttribute('aria-pressed','true')
+ fireEvent.click(detail().getByRole('button',{name:'面试安排'}));expect(detail().getByLabelText('安排备注')).toHaveValue('尚未保存的安排')
+ fireEvent.click(detail().getByRole('button',{name:'反馈与 AI 整理'}));expect(detail().getByLabelText('面试反馈或消息')).toHaveValue('尚未保存的反馈')
+})
+it('preserves unsaved entry conditions when adding a communication note',async()=>{
+ records[0]!.progress!.stage='entry'
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.change(detail().getByLabelText('最终单价'),{target:{value:'85万円 未保存'}})
+ fireEvent.click(detail().getByRole('button',{name:'完整记录'}));fireEvent.change(detail().getByLabelText('补充沟通记录'),{target:{value:'已联系'}})
+ fireEvent.click(detail().getByRole('button',{name:'保存沟通记录'}));await waitFor(()=>expect(detail().getByLabelText('补充沟通记录')).toHaveValue(''))
+ fireEvent.click(detail().getByRole('button',{name:'入场安排'}));expect(detail().getByLabelText('最终单价')).toHaveValue('85万円 未保存')
+})
+it('lets HR correct or undo an arrival with an explicit reason',async()=>{
+ records[0]!.progress!.stage='started';records[0]!.progress!.entry={...emptyProgressEntry(),actualDate:'2026-09-10',rate:'80万円',candidateAccepted:true,termsAgreed:true}
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('button',{name:'更正进场记录'})
+ fireEvent.click(detail().getByRole('button',{name:'更正进场记录'}));fireEvent.change(detail().getByLabelText('最终单价'),{target:{value:'85万円'}})
+ expect(detail().getByRole('button',{name:'保存更正'})).toBeDisabled()
+ fireEvent.change(detail().getByLabelText('更正原因'),{target:{value:'合同单价录入错误'}});fireEvent.click(detail().getByRole('button',{name:'保存更正'}))
+ await waitFor(()=>expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({action:'correct-entry',reason:'合同单价录入错误',entry:expect.objectContaining({rate:'85万円'})})))
+ await screen.findByRole('button',{name:'更正进场记录'})
+ fireEvent.click(detail().getByText('撤销误确认到岗'));fireEvent.change(detail().getByLabelText('撤销原因'),{target:{value:'尚未到岗'}})
+ fireEvent.click(detail().getByRole('button',{name:'撤销并恢复待进场'}))
+ await waitFor(()=>expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({action:'undo-start',reason:'尚未到岗'})))
+})
+it('rebooks the existing round after a no-show without creating another round',async()=>{
+ const first=row(0);first.progress={...first.progress!,stage:'closed',rounds:[{...interviewRound(1),decision:'no-show',interviewNotes:'客户临时缺席'}]};records=[first]
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.click(detail().getByRole('button',{name:'面试安排'}));fireEvent.click(detail().getByRole('button',{name:'重新预约本轮'}))
+ fireEvent.change(detail().getByLabelText('重新预约原因'),{target:{value:'与客户重新约同一轮'}})
+ fireEvent.click(detail().getByRole('button',{name:'保存面试安排'}))
+ await waitFor(()=>expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({action:'rebook',schedule:expect.objectContaining({roundNumber:1}),reason:'与客户重新约同一轮'})))
+})

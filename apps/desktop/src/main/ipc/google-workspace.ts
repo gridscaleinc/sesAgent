@@ -64,13 +64,18 @@ async function runGmailSync(
   // the operator's field aliases steer extraction, each fresh draft is
   // confirmed with its extracted values, and what the store refuses stays
   // awaiting review in the workspace.
-  createJobCaseDraftsForPendingGmailMessages(
+  const cases = createJobCaseDraftsForPendingGmailMessages(
     repository,
     accountEmail,
     operator,
     effectiveJobCaseFieldAliases(repository).aliases
   )
   const intake = await importPendingGmailPersonnel(context, gmail, accountEmail)
+  repository.saveGmailIntakeResult(accountEmail, {
+    casesCreated: cases.created, casesConfirmed: cases.confirmed,
+    casesNeedAttention: cases.needsAttention, casesFailed: cases.failed,
+    personnelCreated: intake.personnel, personnelFailed: intake.failed
+  })
   return { ...gmailSyncState(repository, googleState, config), personnelImported: intake.personnel }
 }
 
@@ -78,6 +83,7 @@ async function runGmailSync(
 export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
   const { repository, localNer, googleWorkspace, googleWorkspaceDomain, googleWorkspaceConfiguration, gmailSyncConfig, userDataPath, currentOperator, preflightAction } = context
   let gmailSyncInFlight: Promise<GmailSyncState> | null = null
+  let onSyncResult: ((state: GmailSyncState) => void) | null = null
 
   ipcMain.handle(ipcChannels.connectGoogleWorkspace, async (event): Promise<GoogleWorkspaceState> => {
     assertTrustedSender(event)
@@ -175,7 +181,12 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
     repository.updateActionRun(actionRunId, 'running')
     gmailSyncInFlight = runGmailSync(repository, googleWorkspace, localNer, gmailSyncConfig, currentOperator(), context)
       .then((state) => {
-        repository.updateActionRun(actionRunId, 'succeeded', { resultHash: configurationFingerprint })
+        const intake = state.lastRun?.intake
+        const failed = state.status === 'error' || (intake?.casesFailed ?? 0) > 0 || (intake?.personnelFailed ?? 0) > 0
+        repository.updateActionRun(actionRunId, failed ? 'failed' : 'succeeded', failed
+          ? { errorCode: state.lastError ?? 'GMAIL_INTAKE_FAILED' }
+          : { resultHash: configurationFingerprint })
+        onSyncResult?.(state)
         return state
       })
       .catch((cause) => {
@@ -193,6 +204,7 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
 
   return {
     startGmailSync,
+    setSyncResultListener(listener: (state: GmailSyncState) => void) { onSyncResult = listener },
     isGmailSyncRunning: () => gmailSyncInFlight !== null
   }
 }

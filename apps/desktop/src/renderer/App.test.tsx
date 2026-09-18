@@ -135,9 +135,17 @@ describe('App workbench', () => {
       previewHash: 'a'.repeat(64)
     }
     const api: DesktopApi = {
+      listCustomerIdentities:vi.fn(async()=>[]),saveCustomerIdentity:vi.fn(),getInterviewAnswers:vi.fn(async()=>null),getPairInterviewEvidence:vi.fn(async()=>[]),listMatchingOpportunities:vi.fn(async()=>[]),controlMatchingOpportunity:vi.fn(),getQuestionBankHistory:vi.fn(async()=>[]),restoreQuestionBankVersion:vi.fn(),
+      listQuestionBank:vi.fn(async()=>[]),controlQuestionBank:vi.fn(),
+      getSystemExperience:vi.fn(),controlSystemExperience:vi.fn(),getSystemExperienceDetails:vi.fn(),recordExperienceExposure:vi.fn(),
+      listWorkRules: vi.fn(async () => ({revision: 0, rules: []})), getWorkRuleHistory: vi.fn(async () => []), analyzeWorkRule: vi.fn(), saveWorkRule: vi.fn(), changeWorkRule: vi.fn(),
+      prepareCaseAssessment: vi.fn(), getCaseQuestionDraft: vi.fn(async () => ({ draft: null, stale: false })), listCaseAssessments: vi.fn(async () => []), onCaseResumeImportProgress: vi.fn(() => () => {}),
+      assessCasePerson: vi.fn(), listCasePersonAssessments: vi.fn(async () => []), importResumeForCase: vi.fn(), addCandidateToLibrary: vi.fn(), saveAssessmentFeedback: vi.fn(), generateRuleQuestions: vi.fn(),
+      listPersonnelMailUpdates: vi.fn(async () => []), resolvePersonnelMailUpdate: vi.fn(),
       beginBusinessProgress: vi.fn(async () => []), advanceBusinessProgress: vi.fn(), analyzeBusinessProgress: vi.fn(), draftBusinessProgressMessage: vi.fn(), openBusinessProgressEmail: vi.fn(), exportBusinessProgressCalendar: vi.fn(),
       listBusinessProgressMail: vi.fn(async () => []), updateBusinessProgressMail: vi.fn(),
-      regenerateIntroduction: vi.fn(),
+      beginIntroductionDraft: vi.fn(async input=>({text:input.text,experienceRunId:'11111111-1111-4111-8111-111111111111',hasExperience:false})),
+    regenerateIntroduction: vi.fn(async () => ({text:'Cloud generated proposal'})),
       saveBusinessField: vi.fn(),
       getBusinessFeed: vi.fn().mockResolvedValue([]), markBusinessFeed: vi.fn().mockResolvedValue([]),
       getPersonnelWorkspace: vi.fn().mockResolvedValue({ templates: [], states: [], copies: [] }),
@@ -190,6 +198,7 @@ describe('App workbench', () => {
       openZoomTestMeeting: vi.fn().mockResolvedValue({ opened: true }),
       createManualJobCaseDraft: vi.fn(),
       createChatPasteJobCaseDraft: vi.fn(),
+      importCaseTextBatch: vi.fn(),
       prepareWechatVisibleRead: vi.fn(),
       executeWechatVisibleRead: vi.fn(),
       importEmlJobCaseDrafts: vi.fn(),
@@ -690,16 +699,16 @@ describe('App workbench', () => {
     expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '新規タスク' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '情報整理・紹介ワークスペース' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '取込・貼り付け' }))
-    const paste = screen.getByRole('textbox', { name: 'メール・会話テキスト' })
+    fireEvent.click(screen.getByRole('button', { name: '案件を追加' }))
+    const paste = screen.getByRole('textbox', { name: '案件内容' })
     fireEvent.change(paste, { target: { value: '案件名：Java 基盤\n必須：Java' } })
     fireEvent.click(screen.getByRole('button', { name: '業務パネルを閉じる' }))
     fireEvent.click(within(screen.getByRole('complementary', { name: 'システムナビゲーション' })).getByRole('button', { name: '要員' }))
     fireEvent.click(screen.getByRole('button', { name: '要員の全資料' }))
     expect(await screen.findByRole('heading', { name: '候補者' })).toBeVisible()
     fireEvent.click(within(screen.getByRole('complementary', { name: 'システムナビゲーション' })).getByRole('button', { name: '案件' }))
-    fireEvent.click(screen.getByRole('button', { name: '取込・貼り付け' }))
-    expect(screen.getByRole('textbox', { name: 'メール・会話テキスト' })).toHaveValue('案件名：Java 基盤\n必須：Java')
+    fireEvent.click(screen.getByRole('button', { name: '案件を追加' }))
+    expect(screen.getByRole('textbox', { name: '案件内容' })).toHaveValue('案件名：Java 基盤\n必須：Java')
   })
 
   it('uses the Agent system rail as global navigation and preserves an unsent draft on return', async () => {
@@ -799,9 +808,9 @@ describe('App workbench', () => {
     expect(rail.queryByLabelText('確認が必要な操作あり')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /確認が必要な操作を開く|レビューセンターを開く/u })).not.toBeInTheDocument()
     expect(screen.queryByText(bootstrap.tasks[1]!.title)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '取込・貼り付け' }))
+    fireEvent.click(screen.getByRole('button', { name: '案件を追加' }))
     expect(await screen.findByRole('complementary', { name: '業務ワークスペース' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'メール・会話テキスト' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '案件内容' })).toBeVisible()
     expect(screen.queryByRole('complementary', { name: 'SES Agent' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'レビューセンター' })).not.toBeInTheDocument()
 
@@ -1215,6 +1224,51 @@ describe('App workbench', () => {
     expect(window.sesAgent.saveBusinessFollowUp).not.toHaveBeenCalled()
   })
 
+  it('drops a resume on the list, keeps the list visible and retains the original case result across panel switches', async () => {
+    cleanup()
+    const documentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const reviewId = '33333333-3333-4333-8333-333333333333'
+    const job = {
+      reviewId, sourceId: 'manual-1', sourceType: 'manual', providerMessageId: null, threadId: 'manual-1', fromDomain: null,
+      messageDate: new Date().toISOString(), redactedSubject: 'Case Alpha', redactedPreview: 'Java', reviewRevision: 1, status: 'completed', privacyReviewed: true,
+      fields: [{ key: 'title', label: '案件名', originalValue: 'Case Alpha', value: 'Case Alpha', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null }],
+      warningCodes: [], completedAt: new Date().toISOString(), reviewerDisplayName: 'HR', lifecycle: 'active', cloudEligible: false,
+      jobCase: { id: '44444444-4444-4444-8444-444444444444', sourceReviewId: reviewId, version: 1, status: 'active', confirmedAt: new Date().toISOString(), confirmedBy: 'HR', containsDirectIdentifiers: false }
+    } as JobCaseReviewSnapshot
+    const other = { ...job, reviewId: '55555555-5555-4555-8555-555555555555', redactedSubject: 'Case Beta', fields: [{...job.fields[0]!,value:'Case Beta'}], jobCase: {...job.jobCase!,id:'66666666-6666-4666-8666-666666666666'} }
+    const candidate = { documentId, fileName: 'Engineer.xlsx', localIdentity: { displayName: 'Engineer One' }, fields: [], projectExperiences: [], recordStatus: 'active', profile: { version: 1 }, status: 'completed' } as unknown as CandidateReviewSnapshot
+    const payload = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: true }, candidateReviews: [candidate], jobCaseReviews: [job, other] }
+    vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(payload)
+    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([job,other].map(item => ({ kind:'case',objectId:item.reviewId,revision:'a'.repeat(64),title:item.redactedSubject,event:'created',occurredAt:new Date().toISOString(),sourceAt:new Date().toISOString(),source:'manual',unseen:false,deferred:false,archived:false,businessStatus:'active',needsReview:false,fields:[],changes:[] })))
+    let finish!: (value: Awaited<ReturnType<DesktopApi['importResumeForCase']>>) => void
+    vi.mocked(window.sesAgent.importResumeForCase).mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    render(<App />)
+    fireEvent.click(within(await screen.findByRole('complementary', { name:'システムナビゲーション' })).getByRole('button', { name:'案件' }))
+    const first = await screen.findByRole('article', { name:'Case Alpha' }), second = screen.getByRole('article', { name:'Case Beta' })
+    const file = new File(['resume'], 'Engineer.xlsx')
+    Object.defineProperty(file,'arrayBuffer',{value:async()=>new ArrayBuffer(6)})
+    fireEvent.drop(first,{dataTransfer:{files:[file],types:['Files']}})
+    const panel = await screen.findByRole('region',{name:'案件の要員検索'})
+    expect(first).toBeVisible()
+    expect(within(panel).getByRole('heading',{name:'Case Alpha'})).toBeVisible()
+    await waitFor(()=>expect(window.sesAgent.importResumeForCase).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(window.sesAgent.importResumeForCase).mock.calls[0]![0].jobCaseId).toBe(job.jobCase!.id)
+    fireEvent.click(within(panel).getByRole('button',{name:'要員パネルを閉じる'}))
+    expect(screen.queryByRole('region',{name:'案件の要員検索'})).not.toBeInTheDocument()
+    fireEvent.click(within(second).getByRole('button',{name:'要員を探す'}))
+    expect(within(screen.getByRole('region',{name:'案件の要員検索'})).getByRole('heading',{name:'Case Beta'})).toBeVisible()
+    const assessment = { id:'result',documentId,jobCaseId:job.jobCase!.id,jobCaseVersion:1,profileVersion:1,rulesRevision:0,appliedRules:[],assessedAt:new Date().toISOString(),
+      result:{documentId,profileVersion:1,score:0,matched:[],missing:['C#'],hardFilters:[],qualification:{policyVersion:'technical-language-v3',status:'excluded',requirements:[{requirement:{id:'R1',key:'required_skills',label:'C#',category:'core',alternatives:[['C#']],minimumYears:null,requiresPractice:false},outcome:'conflict',evidence:null,source:null}]}},cloud:{status:'unavailable',reviewedCount:0,modelName:null}}
+    await act(async()=>finish({person:candidate,assessment:assessment as any,error:null}))
+    expect(within(screen.getByRole('region',{name:'案件の要員検索'})).queryByRole('article', { name: 'Engineer One' })).not.toBeInTheDocument()
+    fireEvent.click(within(first).getByRole('button',{name:'要員を見る (1)'}))
+    expect((await screen.findAllByText('この案件への提案は推奨しません'))[0]).toBeVisible()
+    expect(screen.getByRole('button',{name:'元の履歴書を見る'})).toBeEnabled()
+    expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledTimes(1)
+    expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledWith(other.jobCase.id)
+    expect(first).toHaveAttribute('aria-current','true')
+  })
+
   it('opens introduction immediately for an imported Gmail draft and prepares its case version without a review screen', async () => {
     cleanup()
     const title = '【Gmail接続テスト02】生保契約管理システム COBOL案件'
@@ -1281,7 +1335,7 @@ describe('App workbench', () => {
     vi.mocked(window.sesAgent.getPersonnelWorkspace).mockResolvedValue({ templates: builtInPersonnelTemplates(), states: [], copies: [] })
     const matchResult = { documentId, profileVersion: 1, localMatchCount: 1,
       cloud: { status: 'reviewed', reviewedCount: 1, modelName: 'Test AI' }, items: [{ reviewId: job.reviewId, jobCaseId: job.jobCase!.id, jobCaseVersion: 1,
-        title: 'Java project', score: 90, matched: ['Java'], missing: [], hardFilters: [], qualification: { policyVersion: 'mandatory-evidence-v1', status: 'recommended', requirements: [] }, assessment: { version: 'match-assessment-v1', fit: 'strong', met: [{ requirement: 'Java', evidence: 'Java' }], gaps: [], confirm: [], reason: 'Java project experience', modelKey: 'test', assessedAt: new Date().toISOString() } }] } as Awaited<ReturnType<DesktopApi['findCasesForPersonnel']>>
+        title: 'Java project', score: 90, matched: ['Java'], missing: [], hardFilters: [], qualification: { policyVersion: 'technical-language-v3', status: 'recommended', requirements: [] }, assessment: { version: 'match-assessment-v1', fit: 'strong', met: [{ requirement: 'Java', evidence: 'Java' }], gaps: [], confirm: [], reason: 'Java project experience', modelKey: 'test', assessedAt: new Date().toISOString() } }] } as Awaited<ReturnType<DesktopApi['findCasesForPersonnel']>>
     let finish!: (value: typeof matchResult) => void
     vi.mocked(window.sesAgent.findCasesForPersonnel).mockImplementation(() => new Promise((resolve) => { finish = resolve }))
     render(<App />)
@@ -1329,26 +1383,28 @@ describe('App workbench', () => {
     const caseCard = await screen.findByRole('article', { name: 'Java project' })
     fireEvent.click(within(caseCard).getByRole('button', { name: '要員を探す' }))
     const matchingPane = await screen.findByRole('region', { name: '案件の要員検索' })
-    expect(caseCard.querySelector('button.hr-primary')).toBeDisabled()
+    expect(caseCard).toBeVisible()
+    expect(caseCard.querySelector('button.hr-primary')).toBeEnabled()
     expect(matchingPane.querySelector('.agent-business-case-picker')).toBeNull()
-    fireEvent.click(within(matchingPane).getByRole('button', { name: 'マッチング中…' }))
-    expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledTimes(1))
+    expect(within(matchingPane).getByRole('button', { name: '要員を検索中…' })).toBeDisabled()
+    fireEvent.click(caseCard.querySelector('button.hr-primary')!)
     await act(async () => finishPeople({ jobCaseId: job.jobCase!.id, jobCaseVersion: 1, localMatchCount: 1,
       cloud: { status: 'reviewed', reviewedCount: 1, modelName: 'Test AI' },
-      items: [{ documentId, profileVersion: 1, score: 10, matched: ['Java'], missing: [], hardFilters: [], qualification: { policyVersion: 'mandatory-evidence-v1', status: 'recommended', requirements: [] } }] }))
-    const peopleScroll = matchingPane.querySelector('.hr-match-results')!
+      items: [{ assessmentId:'saved-assessment', documentId, profileVersion: 1, score: 10, matched: ['Java'], missing: [], hardFilters: [], qualification: { policyVersion: 'technical-language-v3', status: 'recommended', requirements: [] } }] }))
+    const peopleScroll = matchingPane.querySelector('.case-resume-panel-body')!
     peopleScroll.scrollTop = 280
-    fireEvent.click(within(matchingPane).getByRole('button', { name: '情報を見る' }))
+    fireEvent.click(matchingPane.querySelector('.case-people-summary')!)
     expect(caseCard).toHaveAttribute('aria-current', 'true')
     expect(peopleScroll.scrollTop).toBe(280)
-    expect(within(matchingPane).getByRole('article')).toHaveAttribute('aria-current', 'true')
+    expect(matchingPane.querySelector('.case-people-summary')).toHaveAttribute('aria-expanded', 'true')
     expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledTimes(1)
-    fireEvent.click(within(matchingPane).getByRole('button', { name: '紹介を準備' }))
+    fireEvent.click(within(matchingPane).getByRole('button', { name: '提案文を作成' }))
     expect(await screen.findByRole('dialog', { name: '紹介を準備' })).toHaveTextContent('Java project')
     expect(window.sesAgent.saveBusinessFollowUp).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '紹介画面を閉じる' }))
-    const personPanel = screen.getByRole('complementary', { name: '業務ワークスペース' })
-    fireEvent.click(within(personPanel).getByRole('button', { name: '案件を探す' }))
+    fireEvent.click(within(screen.getByRole('complementary', { name: 'システムナビゲーション' })).getByRole('button', { name: '要員' }))
+    fireEvent.click(within(await screen.findByRole('article', { name: 'Selected Engineer' })).getByRole('button', { name: '案件を探す' }))
     const reverseAgain = await screen.findByRole('region', { name: '要員の案件検索' })
     await act(async () => finish(matchResult))
     fireEvent.click(within(reverseAgain).getByRole('button', { name: /要員一覧に戻る/ }))

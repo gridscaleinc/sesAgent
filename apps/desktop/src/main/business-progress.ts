@@ -18,7 +18,7 @@ export function createBusinessProgressAnalyzer(context: MainIpcContext) {
       if ((follow?.revision ?? 0) !== input.expectedRevision) throw new Error('推进记录已更新，请刷新后重新整理。')
       return JSON.stringify({ today: new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit' }).format(new Date()), timeZone:'Asia/Tokyo',
         source: redactInterviewMeetingLinksForCloud(input.text),
-        context: { stage: follow?.progress?.stage ?? 'coordinating', latestRound: nextBusinessRound(follow?.progress),
+        context: { stage: follow?.progress?.stage ?? 'coordinating', latestRound: nextBusinessRound(follow?.progress), selectedRound: input.roundNumber ?? follow?.progress?.rounds.at(-1)?.roundNumber ?? 1,
           candidateAvailability: follow?.progress?.candidateAvailability ?? '', clientAvailability: follow?.progress?.clientAvailability ?? '' }
       })
     }

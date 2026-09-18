@@ -115,6 +115,12 @@ describe('collectLocalPersonNameCandidates', () => {
     expect(collectLocalPersonNameCandidates('担当：高橋健、Java 経験者（東京）')).toEqual(['高橋健'])
   })
 
+  it('preserves the known Java API compound while still masking labeled names', () => {
+    const detection=nameDetectionResultSchema.parse({version:'apple-nl-ner-v1',engine:'apple-natural-language',networkAccess:false,requiresHumanConfirmation:true,entities:[{text:'Java API',startUtf16:0,endUtf16:8,tag:'personalName'}]})
+    expect(collectLocalPersonNameCandidates('Java API実装',detection)).toEqual([])
+    expect(collectLocalPersonNameCandidates('氏名：Java API',detection)).toEqual(['Java API'])
+  })
+
   it('does not let the tagger turn a technology into a person', () => {
     const line = '案件2️⃣：COBOL／Java｜AWS（Aurora）、Shell、JCL、常駐、日本語流暢\nPerl／Ruby、Jenkins 経験\n担当：Tim Cook'
     const appleResult = nameDetectionResultSchema.parse({

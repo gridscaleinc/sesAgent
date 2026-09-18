@@ -324,6 +324,7 @@ export interface CandidateProfileRow {
 }
 
 export interface CandidateRecordRow {
+  in_talent_library: number
   record_status: 'active' | 'archived' | 'deleted'
   recruiting_status: 'pending-review' | 'ready-for-recruiting' | 'recruiting' | 'passed' | 'rejected' | 'withdrawn' | 'no-show' | 'on-hold'
 }
@@ -382,14 +383,7 @@ export interface GmailSyncCheckpointRecord {
   historyId: string | null
   status: 'idle' | 'error'
   lastSyncedAt: string | null
-  lastRun: {
-    mode: 'baseline' | 'incremental' | 'bounded-rescan'
-    discovered: number
-    imported: number
-    duplicates: number
-    filtered: number
-    failed: number
-  } | null
+  lastRun: import('@shared').GmailSyncRunRecord | null
   lastError: string | null
 }
 

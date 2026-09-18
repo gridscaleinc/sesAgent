@@ -125,7 +125,8 @@ function JobCasesView({ reviews, onOpen, zh }: {
   </>
 }
 
-function CaseReviewView({ businessProgress, matchingBusy, access, reviews, onOpen, onLoadSourceText, onEditCase, zh }: {
+function CaseReviewView({ people, businessProgress, matchingBusy, access, reviews, onOpen, onLoadSourceText, onEditCase, zh }: {
+  people: CandidateReviewSnapshot[]
   businessProgress?: ReactNode
   matchingBusy?: boolean
   access: Extract<BusinessAccess, { destination: 'case-review' }>
@@ -387,7 +388,7 @@ export function AgentBusinessWorkspacePanel({
   />
   else   if (access.destination === 'job-cases') content = <JobCasesView onOpen={onOpenAccess} reviews={jobCaseReviews} zh={zh} />
   else if (access.destination === 'case-import') content = <CaseImportView onCreate={onCreateManualCase} onOpen={onOpenAccess} zh={zh} />
-  else if (access.destination === 'case-review') content = <CaseReviewView businessProgress={renderBusinessProgress?.('case', access.reviewId)} matchingBusy={matchingBusy} key={access.reviewId} access={access} onLoadSourceText={onLoadJobCaseSourceText} onOpen={onOpenAccess} onEditCase={onEditCase} reviews={jobCaseReviews} zh={zh} />
+  else if (access.destination === 'case-review') content = <CaseReviewView people={candidateReviews} businessProgress={renderBusinessProgress?.('case', access.reviewId)} matchingBusy={matchingBusy} key={access.reviewId} access={access} onLoadSourceText={onLoadJobCaseSourceText} onOpen={onOpenAccess} onEditCase={onEditCase} reviews={jobCaseReviews} zh={zh} />
   else if (access.destination === 'matching') content = <CaseMatchingWorkspace jobCaseId={access.jobCaseId ?? matchingHome.selectedJobCaseId ?? undefined} request={access.jobCaseId ? { id: focusRequest ?? 1, jobCaseId: access.jobCaseId } : undefined} reviews={jobCaseReviews} candidates={candidateReviews} onOpenPerson={(documentId) => onOpenAccess({ type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'overview' })} />
   else if (access.destination === 'broadcast') {
     content = broadcastActions

@@ -1,3 +1,5 @@
+import './case-resume-panel.css'
+import { BusinessObjectDeleteButton } from './BusinessObjectDeleteButton'
 import { isActiveProgress, nextProgressAppointment, progressPresentation, progressSummary, useBusinessProgress } from '../business-progress-data'
 import { useEffect, useRef, useState } from 'react'
 import type { BusinessFeedEntry, CandidateReviewSnapshot, JobCaseReviewSnapshot } from '@shared'
@@ -9,7 +11,10 @@ import { cardChangeLabels, cardSkillItems } from '../hr-card-presentation'
 const usable = (entry: BusinessFeedEntry) => entry.kind === 'case' ? entry.businessStatus === 'active' : ['available', 'soon'].includes(entry.businessStatus)
 const pageSize = 20
 
-export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, candidates, selectedKey, busy, onOpen, onIntake, onImportResume, onRefresh, onOpenLibrary, onImportHistory }: {
+export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, onOpenProgress, cases = [], kind, reloadToken, candidates, selectedKey, busy, onOpen, onIntake, onImportResume, onRefresh, onOpenLibrary, onImportHistory }: {
+  onAssessResumes?(entry: BusinessFeedEntry, files?: File[]): void
+  resumeStates?: Record<string, { pending: number; count: number }>
+  onDeleted?(entry: BusinessFeedEntry): Promise<void>
   onOpenProgress?(entry: BusinessFeedEntry): void
   cases?: JobCaseReviewSnapshot[]
   kind: HrBusinessKind; reloadToken: unknown; candidates: CandidateReviewSnapshot[]; selectedKey?: string | null; busy: boolean
@@ -26,6 +31,9 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
   const [incoming, setIncoming] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [dragTarget, setDragTarget] = useState<string | null>(null)
+  const [dropHint, setDropHint] = useState(false)
+  const [deletionNotice, setDeletionNotice] = useState('')
   const [queries, setQueries] = useState({ case: '', person: '' })
   const [filters, setFilters] = useState<Record<HrBusinessKind, 'all' | 'unseen' | 'later'>>(() => ({ case: readHrPosition('case').filter, person: readHrPosition('person').filter }))
   const [timeRanges, setTimeRanges] = useState<Record<HrBusinessKind, HrTimeRange>>(() => ({ case: readHrPosition('case').timeRange, person: readHrPosition('person').timeRange }))
@@ -34,6 +42,7 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
   const [pendingMarks, setPendingMarks] = useState<Set<string>>(new Set())
   const marks = useRef(new Set<string>())
   const sequence = useRef(0)
+  const revealImportedCases = useRef(false)
   const scroller = useRef<HTMLDivElement>(null)
   const scrolls = useRef<Record<HrBusinessKind, number>>({ case: readHrPosition('case').scroll, person: readHrPosition('person').scroll })
   const initialized = useRef(false)
@@ -60,7 +69,9 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
     try {
       const rows = await window.sesAgent.getBusinessFeed()
       if (id !== sequence.current) return
-      accept(rows, reveal || !initialized.current); setError('')
+      accept(rows, reveal || revealImportedCases.current || !initialized.current)
+      revealImportedCases.current = false
+      setError('')
     } catch (cause) { if (id === sequence.current) setError(String(cause)) }
     finally { if (id === sequence.current) setLoading(false) }
   }
@@ -76,6 +87,19 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
     }
     window.addEventListener('ses-business-data-changed', refreshEdit)
     return () => window.removeEventListener('ses-business-data-changed', refreshEdit)
+  }, [])
+  useEffect(() => {
+    const imported = () => {
+      revealImportedCases.current = true
+      setQueries(current => ({ ...current, case: '' }))
+      setFilters(current => ({ ...current, case: 'all' }))
+      setTimeRanges(current => ({ ...current, case: 'all' }))
+      setPages(current => ({ ...current, case: 1 }))
+      setActiveFilters(current => ({ ...current, case: false }))
+      void load(true)
+    }
+    window.addEventListener('ses-cases-imported', imported)
+    return () => window.removeEventListener('ses-cases-imported', imported)
   }, [])
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = scrolls.current[kind] }, [kind])
   useEffect(() => { if (!loading && scroller.current) scroller.current.scrollTop = scrolls.current[kind] }, [loading])
@@ -120,10 +144,12 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
   useEffect(() => {
     if (!loading && pages[kind] !== page) changePage(page)
   }, [kind, loading, page, pages[kind]])
-  return <section className="hr-object-list" aria-label={kind === 'case' ? t('案件业务列表', '案件一覧') : t('人员业务列表', '要員一覧')}>
+  return <section className="hr-object-list" onDragOver={event => { if (kind === 'case' && onAssessResumes && event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'none'; setDropHint(true) } }}
+    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { setDropHint(false); setDragTarget(null) } }}
+    onDrop={event => { if (kind === 'case' && onAssessResumes && event.dataTransfer.files.length) { event.preventDefault(); event.stopPropagation(); setDropHint(true); setDragTarget(null) } }} aria-label={kind === 'case' ? t('案件业务列表', '案件一覧') : t('人员业务列表', '要員一覧')}>
     <div className="hr-list-toolbar">
       <label className="hr-search"><Icon name="search" size={16} /><input aria-label={t('搜索案件或人员', '案件・要員を検索')} placeholder={kind === 'case' ? t('搜索案件、技能、地点', '案件名・スキル・勤務地') : t('搜索姓名、技能、角色', '氏名・スキル・役割')} value={queries[kind]} onChange={(event) => { setQueries((current) => ({ ...current, [kind]: event.target.value })); changePage(1) }} /></label>
-      <button className="hr-primary" onClick={onIntake} type="button"><Icon name="upload" size={14} />{t('导入 / 粘贴', '取込・貼り付け')}</button>
+      <button className="hr-primary" onClick={onIntake} type="button"><Icon name="upload" size={14} />{kind === 'case' ? t('新增案件', '案件を追加') : t('导入 / 粘贴', '取込・貼り付け')}</button>
       {kind === 'person' ? <button onClick={onImportResume} type="button">{t('导入简历', '履歴書を取り込む')}</button> : null}
       {onOpenLibrary ? <button onClick={onOpenLibrary} type="button"><Icon name="file" size={14} />{kind === 'person' ? t('完整人员资料', '要員の全資料') : t('完整案件资料', '案件の全資料')}</button> : null}
       {onImportHistory ? <button onClick={onImportHistory} type="button">{t('导入记录', '取込履歴')}</button> : null}
@@ -138,14 +164,18 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
       <span>{visible.length} {t('条', '件')}</span>
       <button disabled={loading} onClick={() => { setLoading(true); void onRefresh().then(() => load(true)).catch((cause) => { setError(String(cause)); setLoading(false) }) }} type="button">{t('刷新', '再読込')}</button>
     </div>
+    {kind === 'case' && onAssessResumes ? <p className={`case-list-drop-help${dropHint ? ' is-active' : ''}`} role={dropHint ? 'status' : undefined}>{t('把简历拖到具体案件上，右侧直接查看人员匹配评估。', '履歴書を案件カードにドロップすると、右側で要員の適合性を評価します。')}</p> : null}
     {incoming ? <div className="hr-list-update"><span>{t('有更新可查看', '更新情報があります')}</span><button onClick={() => void load(true)} type="button">{t('更新列表', '一覧を更新')}</button></div> : null}
     {error ? <p role="alert">{error}</p> : null}
+    {deletionNotice ? <p role="status">{deletionNotice}</p> : null}
     <div className="hr-object-scroll" ref={scroller} onScroll={(event) => { scrolls.current[kind] = event.currentTarget.scrollTop; saveHrPosition(kind, { scroll: event.currentTarget.scrollTop }) }}>
       {loading && !entries.length ? <p role="status">{t('正在读取…', '読込中…')}</p> : null}
       {!loading && !visible.length ? <p className="hr-empty">{kind === 'case' && timeRanges[kind] === 'today' && !query && filters[kind] === 'all'
         ? t('今天暂无案件。可切换时间范围查看历史案件。', '今日の案件はありません。期間を変更すると過去の案件を確認できます。')
         : t('没有符合条件的记录。可以调整筛选，或导入新的资料。', '条件に一致する情報がありません。絞り込みを変更するか、新しい情報を取り込んでください。')}</p> : null}
       {visible.slice(firstIndex, firstIndex + pageSize).map((entry) => {
+        const dropAvailable = kind === 'case' && usable(entry) && cases.some(job => job.reviewId === entry.objectId && job.lifecycle === 'active')
+        const resumeState = resumeStates[entry.objectId]
         const key = businessObjectKey(entry); const selected = key === selectedKey; const person = people.get(entry.objectId)
         const skills = cardSkillItems(entry.fields.find((field) => ['skills', 'required_skills'].includes(field.key))?.value ?? '')
         const skillLimit = kind === 'case' ? 3 : 8
@@ -159,9 +189,14 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
           : people.get(next.documentId)?.localIdentity?.displayName || people.get(next.documentId)?.fileName : undefined
         const factName = (fieldKey: string) => ({ rate: t('单价', '単価'), availability: t('入场', '稼働'), start_date: t('开始', '開始'),
           experience_years: t('经验', '経験'), work_style: t('工作方式', '勤務形態'), remote: t('工作方式', '勤務形態'), location: t('地点', '勤務地') })[fieldKey]
-        return <article key={key} className={`hr-object-card${selected ? ' is-selected' : ''}`} tabIndex={0} aria-label={entry.title} aria-current={selected ? 'true' : undefined}
+        return <article key={key} className={`hr-object-card${selected ? ' is-selected' : ''}${dragTarget === key ? ' is-resume-drag-target' : ''}`}
+          onDragOver={event => { if (kind === 'case' && onAssessResumes && event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = dropAvailable ? 'copy' : 'none'; setDragTarget(key); setDropHint(false) } }}
+          onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragTarget(current => current === key ? null : current) }}
+          onDrop={event => { if (kind === 'case' && onAssessResumes && event.dataTransfer.files.length) { event.preventDefault(); event.stopPropagation(); setDragTarget(null); setDropHint(false); if (dropAvailable) { onAssessResumes(entry, Array.from(event.dataTransfer.files)); if (entry.unseen) void mark(entry, 'seen') } } }}
+          tabIndex={0} aria-label={entry.title} aria-current={selected ? 'true' : undefined}
           onClick={(event) => { if (!(event.target as HTMLElement).closest('button,summary,details') && !window.getSelection()?.toString()) open(entry, 'view') }}
           onKeyDown={(event) => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); open(entry, 'view') } }}>
+          {dragTarget === key ? <p className="case-card-drop-caption" role="status">{dropAvailable ? t('松开后，评估与此案件的匹配程度', 'ドロップして、この案件との適合性を評価') : t('案件暂不可评估', 'この案件は評価できません')}</p> : null}
           <div className="hr-card-meta">{entry.source === 'gmail' ? <span>Gmail</span> : null}<time dateTime={entry.occurredAt}>{new Date(entry.occurredAt).toLocaleString(zh ? 'zh-CN' : 'ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</time>{entry.unseen ? <b>{t('未读', '未読')}</b> : null}{selected ? <b>{t('当前查看', '表示中')}</b> : null}</div>
           <h2>{entry.title}</h2>{entry.kind === 'person' && entries.some((other) => other.kind === 'person' && other.objectId !== entry.objectId && other.title === entry.title) ? <small className="hr-affiliation">{t('资料编号', '資料番号')} · {entry.objectId.slice(0, 8).toUpperCase()}</small> : null}
           {skills.length ? <div className="hr-card-requirements">
@@ -176,9 +211,20 @@ export function HrObjectList({ onOpenProgress, cases = [], kind, reloadToken, ca
           <footer>
             <div className="hr-card-actions">
               <button onClick={() => open(entry, 'view')} type="button">{t('查看详情', '詳細を見る')}</button>
-              <button className="hr-primary" disabled={busy || !usable(entry)} onClick={() => open(entry, 'match')} type="button">{kind === 'case' ? t('找人', '要員を探す') : t('找案件', '案件を探す')}</button>
+              {kind === 'case' && onAssessResumes ? <button className="hr-primary" disabled={!dropAvailable} onClick={() => onAssessResumes(entry)} type="button">{resumeState?.pending ? `${t('查看人员', '要員を見る')} · ${t('处理中', '処理中')}` : resumeState?.count ? `${t('查看人员', '要員を見る')} (${resumeState.count})` : t('找人', '要員を探す')}</button>
+                : <button className="hr-primary" disabled={busy || !usable(entry)} onClick={() => open(entry, 'match')} type="button">{kind === 'case' ? t('找人', '要員を探す') : t('找案件', '案件を探す')}</button>}
               <button disabled={!usable(entry)} onClick={() => open(entry, 'promote')} type="button">{t('准备介绍', '紹介を準備')}</button>
               <button disabled={pendingMarks.has(key)} onClick={() => void mark(entry, entry.deferred ? 'done' : 'defer')} type="button">{entry.deferred ? t('移出稍后处理', 'あとで対応から外す') : t('稍后处理', 'あとで対応')}</button>
+              <BusinessObjectDeleteButton kind={entry.kind} id={entry.objectId} title={entry.title} disabled={busy || pendingMarks.has(key)} onDeleted={async (report) => {
+                setDeletionNotice(report.outcome === 'partial-failure' ? t('资料已删除，部分关联数据清理失败。', '資料は削除済みですが、一部の関連データを消去できませんでした。') : t('已删除所选资料。', '選択した資料を削除しました。'))
+                sequence.current++
+                const next = displayed.current.filter((item) => businessObjectKey(item) !== key)
+                displayed.current = next
+                setEntries((current) => current.filter((item) => businessObjectKey(item) !== key))
+                if (onDeleted) await onDeleted(entry)
+                else await onRefresh()
+                await progress?.refresh()
+              }} />
             </div>
           </footer>
         </article>

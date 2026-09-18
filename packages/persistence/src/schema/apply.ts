@@ -1,3 +1,6 @@
+import { openMapping } from '../mappers'
+import type { MappingRow } from '../rows'
+import { candidateContentFingerprint, jobCaseIntakeFingerprint } from '../intake-deduplication'
 import Database from 'better-sqlite3-multiple-ciphers'
 
 import {
@@ -49,11 +52,16 @@ import {
   migrationV46,
   migrationV47,
   migrationV48,
-  migrationV49
+  migrationV49,
+  migrationV50,
+  migrationV51,
+  migrationV52,
+  migrationV53,
+  migrationV54, migrationV55, migrationV56, migrationV57, migrationV58
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
-export function applyMigrations(database: Database.Database): void {
+export function applyMigrations(database: Database.Database, mappingKey: Buffer): void {
   database.exec(migrationV1)
   database
     .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
@@ -431,4 +439,33 @@ export function applyMigrations(database: Database.Database): void {
     } finally { database.pragma('foreign_keys=ON') }
     if ((database.pragma('foreign_key_check') as unknown[]).length) throw new Error('Schema v49 foreign key verification failed.')
   }
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 50').get()) database.exec(migrationV50)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 51').get()) {
+    database.transaction(() => {
+      database.exec(migrationV51)
+      const update = database.prepare('UPDATE parsed_documents SET intake_fingerprint = ? WHERE document_id = ?')
+      const documents = database.prepare<[], { document_id: string; document_ir_json: string }>('SELECT document_id, document_ir_json FROM parsed_documents').all()
+      for (const row of documents) update.run(candidateContentFingerprint(JSON.parse(row.document_ir_json)), row.document_id)
+      const updateCase = database.prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
+      const sources = database.prepare<[], { id: string; redacted_subject: string; redacted_body: string; redaction_session_id: string }>('SELECT id, redacted_subject, redacted_body, redaction_session_id FROM job_case_sources').all()
+      const mappingRows = database.prepare<[string], MappingRow>('SELECT placeholder, identifier_type, encrypted_original FROM local_pii_mappings WHERE redaction_session_id = ?')
+      for (const row of sources) {
+        const mappings = mappingRows.all(row.redaction_session_id).map((mapping) => ({ placeholder: mapping.placeholder, originalValue: openMapping(mappingKey, mapping, row.redaction_session_id) }))
+        updateCase.run(jobCaseIntakeFingerprint(row.redacted_subject, row.redacted_body, mappings), row.id)
+      }
+      database.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (51, ?)').run(new Date().toISOString())
+    })()
+  }
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 52').get()) database.exec(migrationV52)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 53').get()) database.exec(migrationV53)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 54').get()) {
+    database.pragma('foreign_keys=OFF')
+    try { database.exec(migrationV54) } catch(error) { if(database.inTransaction)database.exec('ROLLBACK');throw error }
+    finally { database.pragma('foreign_keys=ON') }
+    if((database.pragma('foreign_key_check') as unknown[]).length)throw new Error('Schema v54 foreign key verification failed.')
+  }
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 55').get()) database.exec(migrationV55)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 56').get()) database.exec(migrationV56)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 57').get()) database.exec(migrationV57)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 58').get()) database.exec(migrationV58)
 }

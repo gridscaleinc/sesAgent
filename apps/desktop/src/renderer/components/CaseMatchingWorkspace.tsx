@@ -1,3 +1,7 @@
+import { RankingReason } from './RankingReason'
+import { useExperienceExposure, recordExperienceOpened } from './experience-exposure'
+import { workRulesChangedEvent } from './AiWorkRulesPanel'
+import { CaseResumeAssessment } from './CaseResumeAssessment'
 import { useEffect, useRef, useState } from 'react'
 import type { CandidateReviewSnapshot, CasePersonnelMatchResult, JobCaseReviewSnapshot } from '@shared'
 import { useUiLocale } from '../i18n'
@@ -17,6 +21,11 @@ export function CaseMatchingWorkspace({ jobCaseId, request, reviews, candidates,
   const zh = useUiLocale() === 'zh-CN'
   const t = (cn: string, ja: string) => zh ? cn : ja
   const [cache, setCache] = useState<Record<string, CasePersonnelMatchResult>>({})
+  useEffect(() => {
+    const invalidate = () => setCache({})
+    window.addEventListener(workRulesChangedEvent, invalidate)
+    return () => window.removeEventListener(workRulesChangedEvent, invalidate)
+  }, [])
   const [selectedPeople, setSelectedPeople] = useState<Record<string, string>>({})
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -27,6 +36,7 @@ export function CaseMatchingWorkspace({ jobCaseId, request, reviews, candidates,
   const cached = jobCaseId ? cache[jobCaseId] : undefined
   const result = review?.lifecycle === 'active' && cached?.jobCaseVersion === review?.jobCase?.version ? cached : undefined
   const items = result?.items.filter((item) => item.qualification?.status === 'recommended' && candidates.some((candidate) => candidate.documentId === item.documentId && candidate.recordStatus === 'active' && candidate.profile?.version === item.profileVersion)) ?? []
+  useExperienceExposure(body, `${jobCaseId}:${items.map(item => item.experienceRunId ?? '').join(',')}`)
   const available = review?.lifecycle === 'active' && Boolean(review.jobCase)
   const focus = () => { if (body.current && !body.current.closest('[hidden]')) { body.current.scrollTop = 0; body.current.focus({ preventScroll: true }) } }
   const find = async (id: string) => {
@@ -50,6 +60,7 @@ export function CaseMatchingWorkspace({ jobCaseId, request, reviews, candidates,
   const title = review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject
   return <div ref={body} tabIndex={-1} className="case-matching-workspace business-workbench" aria-label={t('案件找人', '案件の要員検索')}>
     <header className="case-matching-heading"><small>{t('为当前案件找人', 'この案件の要員を探す')}</small><h2>{title}</h2></header>
+    <CaseResumeAssessment key={review.reviewId} job={review} cases={reviews} people={candidates} />
     <dl className="agent-business-facts">{review.fields.filter((field) => ['required_skills', 'rate', 'location', 'remote', 'start_date'].includes(field.key) && field.value).map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
     <button className="is-primary" disabled={Boolean(pendingId) || !available} aria-busy={pendingId === jobCaseId} onClick={() => void find(jobCaseId!)} type="button">{pendingId === jobCaseId ? t('正在匹配…', 'マッチング中…') : t('为此案件找人', 'この案件の要員を探す')}</button>
     {jobCaseId && errors[jobCaseId] ? <p role="alert">{errors[jobCaseId]}</p> : null}
@@ -58,13 +69,13 @@ export function CaseMatchingWorkspace({ jobCaseId, request, reviews, candidates,
       <h3>{t('人员匹配结果', '要員マッチング結果')} ({items.length})</h3>
       {result.localMatchCount > result.items.length ? <small>{t('初筛', '一次検索')} {result.localMatchCount} {t('位人员，优先展示', '名から優先表示')} {items.length} {t('位', '名')}</small> : null}
       <p className="personnel-match-status" role="status">{result.cloud.status === 'reviewed' ? t('云端 AI 已评估，按适合度排序。', 'Cloud AI評価済み・適合性順に表示。') : result.cloud.status === 'partial' ? t('部分人员已由云端 AI 评估，其余标为本地初筛。', '一部はCloud AI評価済み、残りはローカル候補として表示します。') : result.cloud.status === 'not-needed' ? t('没有找到具备技能或角色匹配依据的人员。', 'スキルや役割が一致する要員は見つかりませんでした。') : t('云端 AI 暂不可用，以下仅为本地初筛结果。', 'Cloud AIを利用できないため、以下はローカル検索結果です。')}{result.cloud.modelName ? ` · ${result.cloud.modelName}` : ''}</p>
-      {items.map((item) => {
+      {items.map((item, rank) => {
         const person = candidates.find((person) => person.documentId === item.documentId)!
         const name = person.localIdentity?.displayName ?? person.fileName.replace(/\.[^.]+$/u, '')
-        return <article key={item.documentId} aria-label={name} aria-current={selectedPeople[jobCaseId!] === item.documentId ? 'true' : undefined} className={selectedPeople[jobCaseId!] === item.documentId ? 'is-selected' : ''}>
+        return <article data-experience-run={item.experienceRunId} data-experience-rank={rank + 1} key={item.documentId} aria-label={name} aria-current={selectedPeople[jobCaseId!] === item.documentId ? 'true' : undefined} className={selectedPeople[jobCaseId!] === item.documentId ? 'is-selected' : ''}>
           <strong>{name}</strong>
-          {item.assessment ? <MatchAssessmentView assessment={item.assessment} zh={zh} title={t('AI 匹配评估', 'AIマッチング評価')} /> : <><small className="personnel-local-match">{t('本地初筛', 'ローカル候補')}</small><p>{t('匹配依据', '一致の根拠')}：{item.matched.join(' · ')}</p>{item.missing.length ? <p>{t('尚未确认符合', '一致未確認')}：{item.missing.join(' · ')}</p> : null}</>}
-          <button onClick={() => { setSelectedPeople((current) => ({ ...current, [jobCaseId!]: item.documentId })); onOpenPerson(item.documentId) }} type="button">{t('查看人员 / 生成介绍', '要員を確認・紹介')}</button>
+          <RankingReason ranking={item.ranking} zh={zh}/>{item.assessment ? <MatchAssessmentView assessment={item.assessment} zh={zh} title={t('AI 匹配评估', 'AIマッチング評価')} /> : <><small className="personnel-local-match">{t('本地初筛', 'ローカル候補')}</small><p>{t('匹配依据', '一致の根拠')}：{item.matched.join(' · ')}</p>{item.missing.length ? <p>{t('尚未确认符合', '一致未確認')}：{item.missing.join(' · ')}</p> : null}</>}
+          <button onClick={() => { recordExperienceOpened(item.experienceRunId); setSelectedPeople((current) => ({ ...current, [jobCaseId!]: item.documentId })); onOpenPerson(item.documentId) }} type="button">{t('查看人员 / 生成介绍', '要員を確認・紹介')}</button>
         </article>
       })}
       {!items.length ? <p>{t('当前没有足够匹配依据。可以补充人员资料后再查。', '現在は十分な一致根拠がありません。要員情報の追加後に再検索できます。')}</p> : null}

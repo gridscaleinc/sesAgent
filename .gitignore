@@ -19,6 +19,7 @@ models/**
 .env
 .env.*
 !.env.example
+.local/
 local/privacy-expert/
 *.privacy-expert.local.json
 

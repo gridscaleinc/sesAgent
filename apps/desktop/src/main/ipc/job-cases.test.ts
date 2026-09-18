@@ -120,3 +120,18 @@ describe('今日新着案件 IPC handlers', () => {
     expect(dependencies.repository.markJobCaseReviewSeen).not.toHaveBeenCalled()
   })
 })
+
+
+it('returns an existing manual case without saving another source or re-confirming it', async () => {
+  electronMock.handlers.clear()
+  const deps = context()
+  const existing = review(todayReviewId, new Date().toISOString())
+  Object.assign(deps.repository, {
+    findJobCaseReviewByBusinessFingerprint: vi.fn(() => existing),
+    saveRedactedJobCaseSourceAndDraft: vi.fn(), confirmJobCaseReview: vi.fn()
+  })
+  registerJobCaseHandlers(deps as never)
+  expect(await invoke(ipcChannels.createManualJobCaseDraft, { subject: '案件名', body: '必須スキル：Java' })).toEqual({ review: existing })
+  expect((deps.repository as any).saveRedactedJobCaseSourceAndDraft).not.toHaveBeenCalled()
+  expect((deps.repository as any).confirmJobCaseReview).not.toHaveBeenCalled()
+})

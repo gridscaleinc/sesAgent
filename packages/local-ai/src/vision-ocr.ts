@@ -550,6 +550,9 @@ const technologyNamesMistakenForPeople = new Set([
  * space, or in any other script, are never dropped.
  */
 function isTechnologyMention(text: string, candidate: string): boolean {
+  // Observed Apple NER false positive in structured introduction projections.
+  // Keep this compound allowlist exact; arbitrary multiword names remain private.
+  if (candidate.toLowerCase() === 'java api') return true
   if (!/^[A-Za-z][A-Za-z0-9+#.\-]*$/u.test(candidate)) return false
   if (technologyNamesMistakenForPeople.has(candidate.toLowerCase())) return true
   const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')

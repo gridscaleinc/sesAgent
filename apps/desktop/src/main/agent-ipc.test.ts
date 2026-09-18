@@ -159,7 +159,7 @@ function createDependencies(options: {
     listActiveJobCases: vi.fn(() => [{
       id: jobCaseId,
       version: 2,
-      confirmedAt: '2026-08-18T00:00:00.000Z',
+      confirmedAt: new Date().toISOString(), // Recent-search fixture must not age out of the thirty-day window.
       fields: [{ key: 'title', value: 'Java 案件' }, { key: 'required_skills', value: 'Java' }]
     }]),
     getAiConversation: vi.fn((id: string) => conversations.get(id) ?? null),

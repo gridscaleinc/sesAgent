@@ -1,3 +1,4 @@
+import { jobCaseIntakeFingerprint } from '../intake-deduplication'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   agentJobCaseDraftFacts,
@@ -59,6 +60,7 @@ export class JobCaseStore extends DomainStore {
          WHERE message.account_email = ?
            AND message.classification = 'job-case'
            AND extraction.review_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(source.warning_codes_json, '[]')) WHERE value = 'BUSINESS_DUPLICATE_SKIPPED')
          ORDER BY message.internal_date ASC
          LIMIT ?`
       )
@@ -100,6 +102,8 @@ export class JobCaseStore extends DomainStore {
       )
       .get(source.providerAccount, source.providerMessageId)
     if (!row) throw new Error('Gmail job-case source could not be reloaded.')
+    this.database.prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
+      .run(jobCaseIntakeFingerprint(row.redacted_subject, row.redacted_body, this.stores.privacy.getLocalPiiMappings(row.redaction_session_id)), row.id)
     return jobCaseSourceFromRow(row)
   }
 
@@ -122,7 +126,7 @@ export class JobCaseStore extends DomainStore {
     }
     const save = this.database.transaction(() => {
       this.insertJobCaseSource(source)
-      if (!this.insertJobCaseDraft(draft)) throw new Error('Job-case extraction draft identity already exists.')
+      if (!this.insertJobCaseDraft(draft)) throw new Error('相同案件已存在，请查看已有记录。 / 同じ案件は登録済みです。既存の案件をご確認ください。')
       return true
     })
     return save()
@@ -147,7 +151,7 @@ export class JobCaseStore extends DomainStore {
     const save = this.database.transaction(() => {
       this.stores.privacy.persistRedactionSession(session, mappings)
       this.insertJobCaseSource(source)
-      if (!this.insertJobCaseDraft(draft)) throw new Error('Job-case extraction draft identity already exists.')
+      if (!this.insertJobCaseDraft(draft)) throw new Error('相同案件已存在，请查看已有记录。 / 同じ案件は登録済みです。既存の案件をご確認ください。')
       return true
     })
     return save()
@@ -177,17 +181,19 @@ export class JobCaseStore extends DomainStore {
         jobCaseBusinessFingerprint(source.redactedSubject, source.redactedBody),
         source.createdAt
       )
+    this.database.prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
+      .run(jobCaseIntakeFingerprint(source.redactedSubject, source.redactedBody, this.stores.privacy.getLocalPiiMappings(source.redactionSessionId)), source.id)
   }
 
-  findJobCaseReviewByBusinessFingerprint(subject: string, body: string): JobCaseReviewSnapshot | null {
+  findJobCaseReviewByBusinessFingerprint(subject: string, body: string, mappings: LocalPiiMapping[] = []): JobCaseReviewSnapshot | null {
     const row = this.database
       .prepare<[string], { review_id: string }>(
         `SELECT extraction.review_id FROM job_case_sources source
          JOIN job_case_extractions extraction ON extraction.source_id = source.id
-         WHERE source.business_fingerprint = ?
+         WHERE source.intake_fingerprint = ?
          ORDER BY source.created_at ASC LIMIT 1`
       )
-      .get(jobCaseBusinessFingerprint(subject, body))
+      .get(jobCaseIntakeFingerprint(subject, body, mappings))
     return row ? this.getJobCaseReview(row.review_id) : null
   }
 
@@ -204,6 +210,15 @@ export class JobCaseStore extends DomainStore {
   }
 
   private insertJobCaseDraft(draft: JobCaseExtractionDraftV2): boolean {
+    const source = this.database.prepare<[string], JobCaseSourceRow>('SELECT * FROM job_case_sources WHERE id = ?').get(draft.sourceId)
+    const duplicate = source ? this.findJobCaseReviewByBusinessFingerprint(source.redacted_subject, source.redacted_body, this.stores.privacy.getLocalPiiMappings(source.redaction_session_id)) : null
+    if (duplicate) {
+      if (source?.source_type === 'gmail' && duplicate.sourceId !== source.id) {
+        const warnings = [...new Set([...(JSON.parse(source.warning_codes_json) as string[]), 'BUSINESS_DUPLICATE_SKIPPED'])]
+        this.database.prepare('UPDATE job_case_sources SET warning_codes_json = ? WHERE id = ?').run(JSON.stringify(warnings), source.id)
+      }
+      return false
+    }
     const inserted = this.database
       .prepare(
         `INSERT OR IGNORE INTO job_case_extractions(

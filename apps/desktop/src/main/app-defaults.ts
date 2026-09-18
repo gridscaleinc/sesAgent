@@ -2,6 +2,7 @@ import { app } from 'electron'
 
 import { gmailSyncConfigurationSchema, type GmailSyncConfiguration } from '@mail'
 import { EncryptedApplicationRepository } from '@persistence'
+import { resolveGmailSyncIntervalMinutes } from './gmail-sync-scheduler'
 import {
   type JobCaseFieldAliases,
   jobCaseFieldAliasesSchema,
@@ -108,9 +109,9 @@ const defaultGmailBusinessQuery = `${personnelGmailBusinessQuery} OR 面談 OR �
  * domain null so personal Gmail and any customer Workspace account can use the
  * same consent flow; private distributions may optionally restrict one domain.
  */
-export function loadManagedGoogleWorkspaceConfiguration(now = new Date()): GoogleWorkspaceAdminConfiguration | null {
-  const clientId = process.env.SES_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? ''
-  const workspaceDomain = process.env.SES_GOOGLE_WORKSPACE_DOMAIN?.trim() ?? ''
+export function loadManagedGoogleWorkspaceConfiguration(now = new Date(), privateClient?: { clientId: string; workspaceDomain: string }): GoogleWorkspaceAdminConfiguration | null {
+  const clientId = privateClient?.clientId ?? process.env.SES_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? ''
+  const workspaceDomain = privateClient?.workspaceDomain ?? process.env.SES_GOOGLE_WORKSPACE_DOMAIN?.trim() ?? ''
   const configuredValues = [
     clientId,
     workspaceDomain,
@@ -169,8 +170,10 @@ export function gmailSyncState(
   const checkpoint = googleState.accountEmail
     ? repository.getGmailSyncCheckpoint(googleState.accountEmail)
     : null
+  const { continuation: _continuation, ...publicRun } = checkpoint?.lastRun ?? {}
   return {
     personnelIntake: googleState.accountEmail ? repository.getGmailPersonnelIntakeStatus(googleState.accountEmail) : { failed: 0, warnings: 0 },
+    intervalMinutes: resolveGmailSyncIntervalMinutes(process.env.SES_GMAIL_SYNC_INTERVAL_MINUTES),
     configuration: config ? 'ready' : 'required',
     status: checkpoint?.status ?? 'never',
     labelIds: config?.labelIds ?? [],
@@ -179,7 +182,7 @@ export function gmailSyncState(
     checkpointHistoryId: checkpoint?.historyId ?? null,
     storedMessages: googleState.accountEmail ? repository.countGmailMessages(googleState.accountEmail) : 0,
     lastSyncedAt: checkpoint?.lastSyncedAt ?? null,
-    lastRun: checkpoint?.lastRun ?? null,
+    lastRun: checkpoint?.lastRun ? publicRun as NonNullable<GmailSyncState['lastRun']> : null,
     lastError: checkpoint?.lastError ?? null
   }
 }
