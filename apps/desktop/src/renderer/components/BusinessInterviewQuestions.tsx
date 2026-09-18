@@ -21,7 +21,7 @@ export function BusinessInterviewQuestions({ follow, round, disabled, onSaved }:
       if (!active || !view?.draft) return
       if (view.stale) { setDraftNotice(t('评估时生成的面试题草案已过期（资料或规则已更新），请重新生成。', '評価時の質問案は情報またはルールの更新で古くなっています。再生成してください。')); return }
       setQuestions(view.draft.questions); setDraftNotice(t('已带入评估时生成的面试题草案，可调整后保存到本轮。', '評価時に生成した質問案を引き継ぎました。調整して今回の面談に保存できます。'))
-    }).catch(() => undefined)
+    }).catch((cause) => { if (active) setError(`${t('无法读取面试题草案', '質問案を読み込めません')}: ${cause instanceof Error ? cause.message : String(cause)}`) })
     return () => { active = false }
   }, [round.id])
   const run = async (work: () => Promise<void>) => { if (lock.current) return; lock.current = true; setBusy(true); setError(''); setNotice(''); try { await work() } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { lock.current = false; setBusy(false) } }

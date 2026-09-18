@@ -20,7 +20,7 @@ export function AssessmentCard({ value, name, jobCaseId, stale, archived, onRefr
     Promise.resolve(window.sesAgent.getCaseQuestionDraft?.({ documentId: value.documentId, jobCaseId })).then((view) => {
       if (!active || !view?.draft) return
       setQuestions(view.draft.questions); setDraftStale(view.stale)
-    }).catch(() => undefined)
+    }).catch((cause) => { if (active) setError(`${t('无法读取面试题草案', '質問案を読み込めません')}: ${cause instanceof Error ? cause.message : String(cause)}`) })
     return () => { active = false }
   }, [jobCaseId, value.documentId])
   const [feedbackOpen, setFeedbackOpen] = useState(false)
