@@ -61,6 +61,7 @@ function parseGmailSyncCompletion(value: unknown): GmailScheduledSyncCompletion 
 const api: DesktopApi = {
   getBusinessFeed: () => ipcRenderer.invoke(ipcChannels.getBusinessFeed),
   markBusinessFeed: (input) => ipcRenderer.invoke(ipcChannels.markBusinessFeed, input),
+  setCaseWorking: (input) => ipcRenderer.invoke(ipcChannels.setCaseWorking, input),
   listPersonnelMailUpdates: (id) => ipcRenderer.invoke(ipcChannels.listPersonnelMailUpdates,id),
   resolvePersonnelMailUpdate: (input) => ipcRenderer.invoke(ipcChannels.resolvePersonnelMailUpdate,input),
   getPersonnelWorkspace: () => ipcRenderer.invoke(ipcChannels.getPersonnelWorkspace),

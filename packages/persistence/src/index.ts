@@ -896,6 +896,7 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   saveBusinessFollowUp(input: import('@shared').SaveBusinessFollowUpInput, recordedBy: string) { return this.stores.personnel.saveFollowUp(input, recordedBy) }
   getBusinessFeed() { return this.stores.personnel.feed() }
   markBusinessFeed(input: import('@shared').MarkBusinessFeedInput) { return this.stores.personnel.markFeed(input) }
+  setCaseWorking(input: import('@shared').SetCaseWorkingInput, actor: string) { return this.stores.personnel.setCaseWorking(input, actor) }
   getPersonnelWorkspace() { return this.stores.personnel.workspace() }
   savePersonnelTemplate(input: PersonnelTemplate) { return this.stores.personnel.saveTemplate(input) }
   setCandidateBusinessState(input: SetCandidateBusinessStateInput, actorId: string) { return this.stores.personnel.setState(input, actorId) }

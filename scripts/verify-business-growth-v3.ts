@@ -38,7 +38,7 @@ async function prepare(p:Awaited<ReturnType<typeof pair>>,bank?:{id:string;versi
  return repository.advanceBusinessProgress({documentId:p.documentId,reviewId:p.reviewId,expectedRevision:round.revision,mutationId:randomUUID(),action:'prepare',roundNumber:1,questions:[{...question,experienceRunId:runId,text:bank?edited:original}]},'HR')
 }
 try{
- assert.equal(currentSchemaVersion,58)
+ assert.equal(currentSchemaVersion,59)
  repository.controlSystemExperience({action:'budget',dailyCallLimit:60,expectedRevision:0})
  const [customer]=repository.saveCustomerIdentity({name:'ABC株式会社',aliases:['ABC','客户甲'],expectedVersion:0})
  const resolved=repository.resolveCustomerIdentity(' ABC ')

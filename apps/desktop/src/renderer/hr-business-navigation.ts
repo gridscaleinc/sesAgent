@@ -12,7 +12,8 @@ export function currentBusinessObjects(entries: BusinessFeedEntry[]) {
 }
 
 export type HrTimeRange = 'today' | '7d' | '30d' | 'all'
-export interface HrListPosition { filter: 'all' | 'unseen' | 'later'; timeRange: HrTimeRange; page: number; scroll: number; selected: string | null }
+export type HrListFilter = 'working' | 'all' | 'unseen' | 'later'
+export interface HrListPosition { filter: HrListFilter; timeRange: HrTimeRange; page: number; scroll: number; selected: string | null }
 const empty = (): HrListPosition => ({ filter: 'all', timeRange: 'today', page: 1, scroll: 0, selected: null })
 const positionKey = (kind: HrBusinessKind) => `ses-hr-position-${kind === 'person' ? 'v4' : 'v3'}:${kind}`
 // Only non-content navigation metadata is stored in ordinary UI preferences.

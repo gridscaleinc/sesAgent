@@ -83,6 +83,7 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   })
   ipcMain.handle(ipcChannels.getBusinessFeed, (event) => { assertTrustedSender(event); return repository.getBusinessFeed() })
   ipcMain.handle(ipcChannels.markBusinessFeed, (event, input) => { assertTrustedSender(event); return repository.markBusinessFeed(input) })
+  ipcMain.handle(ipcChannels.setCaseWorking, (event, input) => { assertTrustedSender(event); return repository.setCaseWorking(input, currentOperator().displayName) })
   ipcMain.handle(ipcChannels.getPersonnelWorkspace, (event) => {
     assertTrustedSender(event); return repository.getPersonnelWorkspace()
   })

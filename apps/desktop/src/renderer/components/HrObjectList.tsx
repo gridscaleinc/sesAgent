@@ -5,13 +5,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { BusinessFeedEntry, CandidateReviewSnapshot, JobCaseReviewSnapshot } from '@shared'
 import { useUiLocale } from '../i18n'
 import { Icon } from './Icon'
-import { businessObjectKey, currentBusinessObjects, readHrPosition, saveHrPosition, type HrBusinessKind, type HrTimeRange } from '../hr-business-navigation'
+import { businessObjectKey, currentBusinessObjects, readHrPosition, saveHrPosition, type HrBusinessKind, type HrListFilter, type HrTimeRange } from '../hr-business-navigation'
 import { cardChangeLabels, cardSkillItems } from '../hr-card-presentation'
 
 const usable = (entry: BusinessFeedEntry) => entry.kind === 'case' ? entry.businessStatus === 'active' : ['available', 'soon'].includes(entry.businessStatus)
 const pageSize = 20
 
-export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, onOpenProgress, cases = [], kind, reloadToken, candidates, selectedKey, busy, onOpen, onIntake, onImportResume, onRefresh, onOpenLibrary, onImportHistory }: {
+export function HrObjectList({ active = true, onAssessResumes, resumeStates = {}, onDeleted, onOpenProgress, cases = [], kind, reloadToken, candidates, selectedKey, busy, onOpen, onIntake, onImportResume, onRefresh, onOpenLibrary, onImportHistory }: {
   onAssessResumes?(entry: BusinessFeedEntry, files?: File[]): void
   resumeStates?: Record<string, { pending: number; count: number }>
   onDeleted?(entry: BusinessFeedEntry): Promise<void>
@@ -21,6 +21,8 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
   onOpen(entry: BusinessFeedEntry, action: 'view' | 'match' | 'promote'): void
   onIntake(): void; onImportResume(): void; onRefresh(): Promise<void>
   onOpenLibrary?(): void; onImportHistory?(): void
+  /** False while another page covers the list; each return to the list opens cases on the working set again. */
+  active?: boolean
 }) {
   const zh = useUiLocale() === 'zh-CN'; const t = (cn: string, ja: string) => zh ? cn : ja
   const progress = useBusinessProgress()
@@ -35,7 +37,9 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
   const [dropHint, setDropHint] = useState(false)
   const [deletionNotice, setDeletionNotice] = useState('')
   const [queries, setQueries] = useState({ case: '', person: '' })
-  const [filters, setFilters] = useState<Record<HrBusinessKind, 'all' | 'unseen' | 'later'>>(() => ({ case: readHrPosition('case').filter, person: readHrPosition('person').filter }))
+  // Cases always open on the working set; the person list keeps its saved filter.
+  const [filters, setFilters] = useState<Record<HrBusinessKind, HrListFilter>>(() => ({ case: 'working', person: readHrPosition('person').filter === 'working' ? 'all' : readHrPosition('person').filter }))
+  const [workingNotice, setWorkingNotice] = useState<{ entry: BusinessFeedEntry; working: boolean } | null>(null)
   const [timeRanges, setTimeRanges] = useState<Record<HrBusinessKind, HrTimeRange>>(() => ({ case: readHrPosition('case').timeRange, person: readHrPosition('person').timeRange }))
   const [pages, setPages] = useState(() => ({ case: readHrPosition('case').page, person: readHrPosition('person').page }))
   const [own, setOwn] = useState('all')
@@ -57,7 +61,7 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
       const fresh = new Map(next.map((entry) => [businessObjectKey(entry), entry]))
       setEntries((current) => current.flatMap((entry) => {
         const update = fresh.get(businessObjectKey(entry))
-        return update ? [{ ...entry, businessStatus: update.businessStatus, deferred: update.deferred,
+        return update ? [{ ...entry, businessStatus: update.businessStatus, deferred: update.deferred, working: update.working,
           unseen: entry.revision === update.revision ? update.unseen : true }] : []
       }))
     }
@@ -101,6 +105,11 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
     window.addEventListener('ses-cases-imported', imported)
     return () => window.removeEventListener('ses-cases-imported', imported)
   }, [])
+  const wasActive = useRef(active)
+  useEffect(() => {
+    if (active && !wasActive.current) { setFilters((current) => ({ ...current, case: 'working' })); setPages((current) => ({ ...current, case: 1 })); setWorkingNotice(null) }
+    wasActive.current = active
+  }, [active])
   useEffect(() => { if (scroller.current) scroller.current.scrollTop = scrolls.current[kind] }, [kind])
   useEffect(() => { if (!loading && scroller.current) scroller.current.scrollTop = scrolls.current[kind] }, [loading])
   const mark = async (entry: BusinessFeedEntry, action: 'seen' | 'defer' | 'done') => {
@@ -111,6 +120,17 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
       const rows = await window.sesAgent.markBusinessFeed({ kind: entry.kind, objectId: entry.objectId, revision: entry.revision, action })
       const saved = rows.find((item) => businessObjectKey(item) === key)
       if (saved) setEntries((current) => current.map((item) => businessObjectKey(item) === key ? { ...item, unseen: saved.unseen, deferred: saved.deferred } : item))
+    } catch (cause) { setError(String(cause)) }
+    finally { marks.current.delete(key); setPendingMarks(new Set(marks.current)) }
+  }
+  const setWorking = async (entry: BusinessFeedEntry, working: boolean, undo = false) => {
+    const key = businessObjectKey(entry)
+    if (marks.current.has(key)) return
+    marks.current.add(key); setPendingMarks(new Set(marks.current))
+    try {
+      await window.sesAgent.setCaseWorking({ reviewId: entry.objectId, working })
+      setEntries((current) => { const next = current.map((item) => businessObjectKey(item) === key ? { ...item, working } : item); displayed.current = next; return next })
+      setWorkingNotice(undo ? null : { entry, working }); setError('')
     } catch (cause) { setError(String(cause)) }
     finally { marks.current.delete(key); setPendingMarks(new Set(marks.current)) }
   }
@@ -126,8 +146,10 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
   const start = new Date(today)
   if (timeRanges[kind] === '7d') start.setDate(start.getDate() - 6)
   if (timeRanges[kind] === '30d') start.setDate(start.getDate() - 29)
+  const workingView = kind === 'case' && filters.case === 'working'
   const visible = entries.filter((entry) => entry.kind === kind
-    && (timeRanges[kind] === 'all' || (Date.parse(entry.occurredAt) >= start.getTime() && Date.parse(entry.occurredAt) < end.getTime()))
+    && (workingView ? entry.working : true)
+    && (workingView || timeRanges[kind] === 'all' || (Date.parse(entry.occurredAt) >= start.getTime() && Date.parse(entry.occurredAt) < end.getTime()))
     && (!activeOnly || (progress?.indexes[kind].get(entry.objectId) ?? []).some(isActiveProgress))
     && (filters[kind] === 'later' ? entry.deferred : filters[kind] === 'unseen' ? entry.unseen || selectedKey === businessObjectKey(entry) : true)
     && (!query || [entry.title, ...entry.fields.map((field) => field.value)].join(' ').toLocaleLowerCase().includes(query))
@@ -155,8 +177,8 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
       {onImportHistory ? <button onClick={onImportHistory} type="button">{t('导入记录', '取込履歴')}</button> : null}
     </div>
     <div className="hr-list-filters">
-      {(['all', 'unseen', 'later'] as const).map((value) => <button type="button" key={value} aria-pressed={filters[kind] === value} onClick={() => { setFilters((current) => ({ ...current, [kind]: value })); saveHrPosition(kind, { filter: value }); changePage(1) }}>{({ all: t('全部', 'すべて'), unseen: t('未读', '未読'), later: t('稍后处理', 'あとで対応') })[value]}</button>)}
-      <select aria-label={t('列表时间范围', '一覧の期間')} value={timeRanges[kind]} onChange={(event) => { const timeRange = event.target.value as HrTimeRange; setTimeRanges((current) => ({ ...current, [kind]: timeRange })); saveHrPosition(kind, { timeRange }); changePage(1) }}>
+      {(kind === 'case' ? ['working', 'all', 'unseen'] as const : ['all', 'unseen', 'later'] as const).map((value) => <button type="button" key={value} aria-pressed={filters[kind] === value} onClick={() => { setFilters((current) => ({ ...current, [kind]: value })); if (kind === 'person') saveHrPosition(kind, { filter: value }); changePage(1) }}>{({ working: t('处理中', '対応中'), all: t('全部', 'すべて'), unseen: t('未读', '未読'), later: t('稍后处理', 'あとで対応') })[value]}{kind === 'case' && value !== 'all' ? ` ${entries.filter((entry) => entry.kind === 'case' && (value === 'working' ? entry.working : entry.unseen)).length}` : ''}</button>)}
+      <select hidden={workingView} aria-label={t('列表时间范围', '一覧の期間')} value={timeRanges[kind]} onChange={(event) => { const timeRange = event.target.value as HrTimeRange; setTimeRanges((current) => ({ ...current, [kind]: timeRange })); saveHrPosition(kind, { timeRange }); changePage(1) }}>
         <option value="today">{t('今天', '今日')}</option><option value="7d">{t('最近 7 天', '直近7日')}</option><option value="30d">{t('最近 30 天', '直近30日')}</option><option value="all">{t('全部时间', '全期間')}</option>
       </select>
       {kind === 'person' ? <select aria-label={t('自社筛选', '自社所属で絞り込み')} value={own} onChange={(event) => { setOwn(event.target.value); changePage(1) }}><option value="all">{t('全部所属', '所属すべて')}</option><option value="true">自社</option><option value="false">非自社</option><option value="unset">{t('未设置', '未設定')}</option></select> : null}
@@ -168,9 +190,13 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
     {incoming ? <div className="hr-list-update"><span>{t('有更新可查看', '更新情報があります')}</span><button onClick={() => void load(true)} type="button">{t('更新列表', '一覧を更新')}</button></div> : null}
     {error ? <p role="alert">{error}</p> : null}
     {deletionNotice ? <p role="status">{deletionNotice}</p> : null}
+    {workingNotice ? <p className="hr-working-notice" role="status">{workingNotice.working ? t(`已加入处理中：${workingNotice.entry.title}`, `対応中に追加しました：${workingNotice.entry.title}`) : t(`已移出处理中：${workingNotice.entry.title}`, `対応中から外しました：${workingNotice.entry.title}`)}
+      <button type="button" disabled={pendingMarks.has(businessObjectKey(workingNotice.entry))} onClick={() => void setWorking(workingNotice.entry, !workingNotice.working, true)}>{t('撤销', '元に戻す')}</button></p> : null}
     <div className="hr-object-scroll" ref={scroller} onScroll={(event) => { scrolls.current[kind] = event.currentTarget.scrollTop; saveHrPosition(kind, { scroll: event.currentTarget.scrollTop }) }}>
       {loading && !entries.length ? <p role="status">{t('正在读取…', '読込中…')}</p> : null}
-      {!loading && !visible.length ? <p className="hr-empty">{kind === 'case' && timeRanges[kind] === 'today' && !query && filters[kind] === 'all'
+      {!loading && !visible.length && workingView && !query ? <div className="hr-empty"><p>{t('还没有处理中的案件。在「全部」里把正在跟的案件加入处理中，下次打开列表就先看到它们。', '対応中の案件はまだありません。「すべて」から今対応している案件を追加すると、次回から最初に表示されます。')}</p>
+        <button type="button" onClick={() => { setFilters((current) => ({ ...current, case: 'all' })); setTimeRanges((current) => ({ ...current, case: 'all' })); changePage(1) }}>{t('查看全部案件', 'すべての案件を見る')}</button></div>
+      : !loading && !visible.length ? <p className="hr-empty">{kind === 'case' && timeRanges[kind] === 'today' && !query && filters[kind] === 'all'
         ? t('今天暂无案件。可切换时间范围查看历史案件。', '今日の案件はありません。期間を変更すると過去の案件を確認できます。')
         : t('没有符合条件的记录。可以调整筛选，或导入新的资料。', '条件に一致する情報がありません。絞り込みを変更するか、新しい情報を取り込んでください。')}</p> : null}
       {visible.slice(firstIndex, firstIndex + pageSize).map((entry) => {
@@ -184,6 +210,8 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
         const relations = progress?.indexes[kind].get(entry.objectId) ?? []
         const next = progress ? nextProgressAppointment(relations, progress.now) : undefined
         const nextState = next && progress ? progressPresentation(next, progress.now, zh) : undefined
+        // Suggest, never perform, removal once every follow-up of a working case has ended or started work.
+        const removable = kind === 'case' && entry.working && progress && !progress.loading && relations.length > 0 && !relations.some(isActiveProgress)
         const nextName = next ? kind === 'person'
           ? cases.find((item) => item.reviewId === next.reviewId)?.fields.find((field) => field.key === 'title')?.value || cases.find((item) => item.reviewId === next.reviewId)?.redactedSubject
           : people.get(next.documentId)?.localIdentity?.displayName || people.get(next.documentId)?.fileName : undefined
@@ -197,7 +225,7 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
           onClick={(event) => { if (!(event.target as HTMLElement).closest('button,summary,details') && !window.getSelection()?.toString()) open(entry, 'view') }}
           onKeyDown={(event) => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); open(entry, 'view') } }}>
           {dragTarget === key ? <p className="case-card-drop-caption" role="status">{dropAvailable ? t('松开后，评估与此案件的匹配程度', 'ドロップして、この案件との適合性を評価') : t('案件暂不可评估', 'この案件は評価できません')}</p> : null}
-          <div className="hr-card-meta">{entry.source === 'gmail' ? <span>Gmail</span> : null}<time dateTime={entry.occurredAt}>{new Date(entry.occurredAt).toLocaleString(zh ? 'zh-CN' : 'ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</time>{entry.unseen ? <b>{t('未读', '未読')}</b> : null}{selected ? <b>{t('当前查看', '表示中')}</b> : null}</div>
+          <div className="hr-card-meta">{kind === 'case' && entry.working ? <b className="hr-working-badge">{t('处理中', '対応中')}</b> : null}{entry.source === 'gmail' ? <span>Gmail</span> : null}<time dateTime={entry.occurredAt}>{new Date(entry.occurredAt).toLocaleString(zh ? 'zh-CN' : 'ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</time>{entry.unseen ? <b>{t('未读', '未読')}</b> : null}{selected ? <b>{t('当前查看', '表示中')}</b> : null}</div>
           <h2>{entry.title}</h2>{entry.kind === 'person' && entries.some((other) => other.kind === 'person' && other.objectId !== entry.objectId && other.title === entry.title) ? <small className="hr-affiliation">{t('资料编号', '資料番号')} · {entry.objectId.slice(0, 8).toUpperCase()}</small> : null}
           {skills.length ? <div className="hr-card-requirements">
             <ul className="hr-skill-items" aria-label={kind === 'case' ? t('必需技能', '必須スキル') : t('技能', 'スキル')}>{skills.slice(0, skillLimit).map((skill, index) => <li key={index}>{skill}</li>)}</ul>
@@ -208,13 +236,16 @@ export function HrObjectList({ onAssessResumes, resumeStates = {}, onDeleted, on
           </dl>
           {changes.length ? <div className="hr-card-changes" aria-label={t('本次变更', '今回の変更')}>{changes.map((change) => <span key={change}>{change}</span>)}</div> : null}
           {progress ? <button className="hr-card-business" type="button" disabled={progress.loading} onClick={() => { if (progress.failed) void progress.refresh(); else if (onOpenProgress) onOpenProgress(entry); else open(entry, 'view') }}><span>{progress.loading ? t('正在读取营业情况', '営業状況を読込中') : progress.failed ? t('营业情况读取失败，点击重试', '営業状況を読み込めませんでした。再試行') : progressSummary(relations, kind, progress.now, zh)}</span>{!progress.failed && nextState?.when ? <span className="hr-card-business-next">{new Date(nextState.when.length === 10 ? `${nextState.when}T00:00:00+09:00` : nextState.when).toLocaleString(zh ? 'zh-CN' : 'ja-JP', {timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', ...(nextState.when.length > 10 ? {hour: '2-digit', minute: '2-digit', hour12: false} : {})})} · {nextState.label}{nextName ? ` · ${nextName}` : ''}</span> : null}</button> : null}
+          {removable ? <p className="hr-working-hint">{relations.some((row) => row.progress?.stage === 'started') ? t('已有人员进场，其余跟进也已结束。可以移出处理中。', '参画が決まり、他の対応も終了しています。対応中から外せます。') : t('这个案件的跟进都已结束。可以移出处理中。', 'この案件の対応はすべて終了しています。対応中から外せます。')}</p> : null}
           <footer>
             <div className="hr-card-actions">
               <button onClick={() => open(entry, 'view')} type="button">{t('查看详情', '詳細を見る')}</button>
               {kind === 'case' && onAssessResumes ? <button className="hr-primary" disabled={!dropAvailable} onClick={() => onAssessResumes(entry)} type="button">{resumeState?.pending ? `${t('查看人员', '要員を見る')} · ${t('处理中', '処理中')}` : resumeState?.count ? `${t('查看人员', '要員を見る')} (${resumeState.count})` : t('找人', '要員を探す')}</button>
                 : <button className="hr-primary" disabled={busy || !usable(entry)} onClick={() => open(entry, 'match')} type="button">{kind === 'case' ? t('找人', '要員を探す') : t('找案件', '案件を探す')}</button>}
               <button disabled={!usable(entry)} onClick={() => open(entry, 'promote')} type="button">{t('准备介绍', '紹介を準備')}</button>
-              <button disabled={pendingMarks.has(key)} onClick={() => void mark(entry, entry.deferred ? 'done' : 'defer')} type="button">{entry.deferred ? t('移出稍后处理', 'あとで対応から外す') : t('稍后处理', 'あとで対応')}</button>
+              {kind === 'case'
+                ? <button className={entry.working ? undefined : 'hr-working-add'} aria-pressed={Boolean(entry.working)} disabled={pendingMarks.has(key) || (!entry.working && !usable(entry))} onClick={() => void setWorking(entry, !entry.working)} type="button">{entry.working ? t('移出处理中', '対応中から外す') : t('加入处理中', '対応中に追加')}</button>
+                : <button disabled={pendingMarks.has(key)} onClick={() => void mark(entry, entry.deferred ? 'done' : 'defer')} type="button">{entry.deferred ? t('移出稍后处理', 'あとで対応から外す') : t('稍后处理', 'あとで対応')}</button>}
               <BusinessObjectDeleteButton kind={entry.kind} id={entry.objectId} title={entry.title} disabled={busy || pendingMarks.has(key)} onDeleted={async (report) => {
                 setDeletionNotice(report.outcome === 'partial-failure' ? t('资料已删除，部分关联数据清理失败。', '資料は削除済みですが、一部の関連データを消去できませんでした。') : t('已删除所选资料。', '選択した資料を削除しました。'))
                 sequence.current++

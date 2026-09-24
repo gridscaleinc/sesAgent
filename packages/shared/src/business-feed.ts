@@ -13,6 +13,8 @@ export interface BusinessFeedEntry {
   source: string
   unseen: boolean
   deferred: boolean
+  /** Cases only: the HR has this case in the set it is currently working on. Never set on an archived case. */
+  working?: boolean
   archived: boolean
   businessStatus: CandidateBusinessStatus | 'active' | 'archived'
   needsReview: boolean
@@ -24,6 +26,9 @@ export const markBusinessFeedSchema = z.object({
   action: z.enum(['seen', 'defer', 'done'])
 }).strict()
 export type MarkBusinessFeedInput = z.infer<typeof markBusinessFeedSchema>
+/** Adds a case to, or removes it from, the set the HR is currently working on. */
+export const setCaseWorkingSchema = z.object({ reviewId: z.string().uuid(), working: z.boolean() }).strict()
+export type SetCaseWorkingInput = z.infer<typeof setCaseWorkingSchema>
 
 export function changedBusinessFields(
   before: ReadonlyArray<{ key: string; value: string | null }>,

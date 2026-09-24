@@ -162,7 +162,7 @@ it('keeps full OR requirements and parenthesized skill lists intact in the compa
   expect(cardSkillItems('Java, SQL Server（SQL, T-SQL）, AWS')).toEqual(['Java', 'SQL Server（SQL, T-SQL）', 'AWS'])
   const requirements = 'FI 中上级SE\nBTP or Fiori or Cdsview\nアドオン設計者 or 品質レビューアー\nSAP S/4のFI知見があり、基本設計を自走できる方\nBTP or Fiori, Cdsviewの設計経験'
   expect(cardSkillItems(requirements).at(-1)).toBe('BTP or Fiori, Cdsviewの設計経験')
-  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([{ ...entry, kind: 'case', businessStatus: 'active', occurredAt: new Date().toISOString(),
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([{ ...entry, kind: 'case', businessStatus: 'active', working: true, occurredAt: new Date().toISOString(),
     fields: [{ key: 'required_skills', value: requirements }, { key: 'rate', value: '80万円' }], event: 'updated', changes: [] }])
   const onOpen = vi.fn()
   render(<HrObjectList kind="case" reloadToken={0} candidates={[]} busy={false} onOpen={onOpen} onIntake={vi.fn()} onImportResume={vi.fn()} onRefresh={vi.fn()} />)
@@ -213,7 +213,7 @@ it('pages both lists, restores each page and keeps actions visible with matching
   saveHrPosition('person', { timeRange: 'all' })
   const rows: BusinessFeedEntry[] = Array.from({ length: 45 }, (_, index) => ({ ...entry,
     objectId: `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`, title: `Engineer ${index}` }))
-  const cases: BusinessFeedEntry[] = rows.slice(0, 25).map((row) => ({ ...row, kind: 'case', businessStatus: 'active', occurredAt: new Date().toISOString(), title: `Case ${row.title}` }))
+  const cases: BusinessFeedEntry[] = rows.slice(0, 25).map((row) => ({ ...row, kind: 'case', businessStatus: 'active', working: true, occurredAt: new Date().toISOString(), title: `Case ${row.title}` }))
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([...rows, ...cases])
   const props = { kind: 'person' as const, reloadToken: 0, candidates: [], busy: true, onOpen: vi.fn(), onIntake: vi.fn(), onImportResume: vi.fn(), onRefresh: vi.fn() }
   const view = render(<HrObjectList {...props} />)
@@ -259,7 +259,7 @@ it('filters by local calendar days and restores independent case and personnel t
   const atDay = (offset: number) => { const date = new Date(today); date.setDate(date.getDate() + offset); return date.toISOString() }
   const rows: BusinessFeedEntry[] = [0, -6, -7, -29, -30, 1].map((offset) => ({ ...entry,
     objectId: `day-${offset}`, title: `Day ${offset}`, occurredAt: atDay(offset) }))
-  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([...rows, { ...entry, kind: 'case', businessStatus: 'active' }])
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([...rows, { ...entry, kind: 'case', businessStatus: 'active', working: true }])
   const props = { kind: 'person' as const, reloadToken: 0, candidates: [], busy: false, onOpen: vi.fn(), onIntake: vi.fn(), onImportResume: vi.fn(), onRefresh: vi.fn() }
   const view = render(<HrObjectList {...props} />)
   expect(await screen.findAllByRole('article')).toHaveLength(1)
@@ -279,7 +279,7 @@ it('filters by local calendar days and restores independent case and personnel t
   expect(screen.getAllByRole('article')).toHaveLength(6)
 })
 
-it('opens cases on today in descending time order without a matchability filter or import-review gate', async () => {
+it('opens cases on the working set, and "all" on today in descending time order without a matchability filter or import-review gate', async () => {
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const atHour = (hour: number) => new Date(today.getTime() + hour * 3_600_000).toISOString()
   const cases: BusinessFeedEntry[] = [9, -1, 16, 0].map((hour) => ({ ...entry, kind: 'case', businessStatus: 'active',
@@ -287,6 +287,10 @@ it('opens cases on today in descending time order without a matchability filter 
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue(cases)
   const onOpen = vi.fn()
   render(<HrObjectList kind="case" reloadToken={0} candidates={[]} busy={false} onOpen={onOpen} onIntake={vi.fn()} onImportResume={vi.fn()} onRefresh={vi.fn()} />)
+  expect(await screen.findByText(/対応中の案件はまだありません/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '対応中 0' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('article')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
   expect(await screen.findAllByRole('article')).toHaveLength(3)
   expect(screen.getByRole('combobox', { name: '一覧の期間' })).toHaveValue('today')
   expect(screen.getByRole('button', { name: 'すべて' })).toHaveAttribute('aria-pressed', 'true')
@@ -531,7 +535,7 @@ it('continues an existing pair from matching without starting another followup',
 })
 
 it('accepts resume files on a case card and never bubbles them into generic attachment handling', async () => {
-  const caseEntry = { ...entry, kind: 'case' as const, objectId: reviewId, title: 'Java project', businessStatus: 'active' as const, occurredAt: new Date().toISOString() }
+  const caseEntry = { ...entry, kind: 'case' as const, objectId: reviewId, title: 'Java project', businessStatus: 'active' as const, working: true, occurredAt: new Date().toISOString() }
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([caseEntry])
   const onDrop = vi.fn(), onAssess = vi.fn()
   render(<div onDrop={onDrop}><HrObjectList kind="case" cases={[job]} reloadToken={0} candidates={[]} busy={false} onOpen={vi.fn()} onIntake={vi.fn()} onImportResume={vi.fn()} onRefresh={vi.fn()} onAssessResumes={onAssess} /></div>)
@@ -545,4 +549,51 @@ it('accepts resume files on a case card and never bubbles them into generic atta
   fireEvent.drop(card.closest('.hr-object-list')!, { dataTransfer: { files: [resume], types: ['Files'] } })
   expect(onAssess).toHaveBeenCalledTimes(1)
   expect(onDrop).not.toHaveBeenCalled()
+})
+
+const workingCase = (id: string, working: boolean): BusinessFeedEntry => ({ ...entry, kind: 'case', objectId: id, title: `Case ${id}`, businessStatus: 'active', working, occurredAt: new Date().toISOString() } as BusinessFeedEntry)
+const caseTitles = () => screen.queryAllByRole('article').map((card) => card.getAttribute('aria-label'))
+it('opens on the working set and adds, removes and undoes membership without a confirmation', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', false), workingCase('b', true)])
+  window.sesAgent.setCaseWorking = vi.fn(async (input) => input)
+  render(<HrObjectList kind="case" reloadToken={0} candidates={[]} busy={false} onOpen={vi.fn()} onIntake={vi.fn()} onImportResume={vi.fn()} onRefresh={vi.fn()} />)
+  await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
+  expect(screen.getByRole('button', { name: '対応中 1' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('combobox', { name: '一覧の期間' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'あとで対応' })).not.toBeInTheDocument()
+  fireEvent.click(within(screen.getByRole('article', { name: 'Case b' })).getByRole('button', { name: '対応中から外す' }))
+  await waitFor(() => expect(caseTitles()).toEqual([]))
+  expect(window.sesAgent.setCaseWorking).toHaveBeenLastCalledWith({ reviewId: 'b', working: false })
+  fireEvent.click(screen.getByRole('button', { name: '元に戻す' }))
+  await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
+  expect(window.sesAgent.setCaseWorking).toHaveBeenLastCalledWith({ reviewId: 'b', working: true })
+  expect(screen.queryByRole('button', { name: '元に戻す' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
+  fireEvent.click(within(await screen.findByRole('article', { name: 'Case a' })).getByRole('button', { name: '対応中に追加' }))
+  await waitFor(() => expect(window.sesAgent.setCaseWorking).toHaveBeenLastCalledWith({ reviewId: 'a', working: true }))
+  fireEvent.click(await screen.findByRole('button', { name: '対応中 2' }))
+  expect(caseTitles()).toEqual(expect.arrayContaining(['Case a', 'Case b']))
+})
+it('returns to the working set each time the list is shown again', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', false), workingCase('b', true)])
+  const props = { kind: 'case' as const, reloadToken: 0, candidates: [], busy: false, onOpen: vi.fn(), onIntake: vi.fn(), onImportResume: vi.fn(), onRefresh: vi.fn() }
+  const view = render(<HrObjectList {...props} active />)
+  await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
+  fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
+  await waitFor(() => expect(caseTitles()).toHaveLength(2))
+  view.rerender(<HrObjectList {...props} active={false} />)
+  view.rerender(<HrObjectList {...props} active />)
+  await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
+  expect(screen.getByRole('button', { name: '対応中 1' })).toHaveAttribute('aria-pressed', 'true')
+})
+it('suggests, but never performs, removal once every follow-up of a working case has ended', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('b', true)])
+  window.sesAgent.setCaseWorking = vi.fn()
+  const ended = { id: 'f', documentId, reviewId: 'b', revision: 1, status: 'closed', note: '', nextStep: '', recordedBy: 'HR', updatedAt: new Date().toISOString(), events: [],
+    progress: { stage: 'closed', rounds: [], candidateAvailability: '', clientAvailability: '', pendingConditions: [], entry: null } } as unknown as BusinessFollowUp
+  const data = { rows: [ended], indexes: progressIndexes([ended]), now: new Date(), loading: false, failed: false, publish: vi.fn(), refresh: vi.fn(), remove: vi.fn() } as ReturnType<typeof useBusinessProgressData>
+  render(<BusinessProgressContext.Provider value={data}><HrObjectList kind="case" reloadToken={0} candidates={[]} busy={false} onOpen={vi.fn()} onIntake={vi.fn()} onImportResume={vi.fn()} onRefresh={vi.fn()} /></BusinessProgressContext.Provider>)
+  expect(await screen.findByText('この案件の対応はすべて終了しています。対応中から外せます。')).toBeInTheDocument()
+  expect(window.sesAgent.setCaseWorking).not.toHaveBeenCalled()
+  expect(caseTitles()).toEqual(['Case b'])
 })

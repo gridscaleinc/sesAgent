@@ -2869,6 +2869,7 @@ export type BeginResumeImportResult =
 export interface DesktopApi {
   getBusinessFeed(): Promise<BusinessFeedEntry[]>
   markBusinessFeed(input: MarkBusinessFeedInput): Promise<BusinessFeedEntry[]>
+  setCaseWorking(input: import('./business-feed').SetCaseWorkingInput): Promise<{ reviewId: string; working: boolean }>
   listPersonnelMailUpdates(documentId:string): Promise<import('./personnel-mail-updates').PersonnelMailUpdate[]>
   resolvePersonnelMailUpdate(input:import('./personnel-mail-updates').ResolvePersonnelMailUpdateInput): Promise<void>
   getPersonnelWorkspace(): Promise<PersonnelWorkspace>
@@ -3035,6 +3036,7 @@ export interface DesktopApi {
 export const ipcChannels = {
   getBusinessFeed: 'business-feed:list',
   markBusinessFeed: 'business-feed:mark',
+  setCaseWorking: 'business-feed:case-working',
   listPersonnelMailUpdates: 'personnel:mail-updates',
   resolvePersonnelMailUpdate: 'personnel:mail-update-resolve',
   getPersonnelWorkspace: 'personnel:workspace',

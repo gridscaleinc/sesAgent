@@ -14,7 +14,7 @@ const options = { path: join(directory, 'test.db'), databaseKey: randomBytes(32)
 let repository = new EncryptedApplicationRepository(options)
 const fileVault = new EncryptedFileVault({ directory: join(directory, 'vault'), key: randomBytes(32) })
 try {
-  assert.equal(currentSchemaVersion, 58)
+  assert.equal(currentSchemaVersion,59)
   assert.deepEqual(repository.listWorkRules(), { revision: 0, rules: [] })
   const first = repository.saveWorkRule({ expectedRevision: 0, enabled: true, text: 'Java案件はAWS経験を優先', scope: { kind: 'global' },
     clauses: [{ kind: 'preferred', field: 'required_skills', text: 'AWS経験', sourceQuote: 'Java案件はAWS経験を優先', caseKeywords: ['Java'] }], modelKey: 'test-model', updatedBy: 'HR test' })

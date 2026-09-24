@@ -326,8 +326,26 @@ try {
   assert.equal(repository.listBusinessFollowUps().length,0)
   assert.equal(repository.listCandidateInterviews().length,0)
   assert.equal(repository.listBusinessProgressMail().length,0,'associated local mail is deleted with personnel')
-  assert.equal(currentSchemaVersion,58)
-  console.log(JSON.stringify({status:'passed',schema:currentSchemaVersion,verified:['populated v48 migration','one person in three cases','independent first rounds','overlap allowed', 'free-form arrangement and restart','direct second and third rounds without prior feedback', 'next round after an undecided next step', 'historical feedback preserves current stage and appointment','resume negative results requires HR decision','entry details survive pause, backfill and restart','second-round inheritance','unknown next step','entry prerequisites','explicit actual arrival','other cases remain open','revision and duplicate delivery','encrypted restart','mail ambiguity/dedup/atomic apply','same-round rebooking and cancellation history','entry correction with before and after','undo arrival preserves other placements and HR status','mail conditions merge and explicit HR conflicts','mail chronology and attribution','deletion cascade']}))
+  // Working set: explicit HR membership, survives restart, never marks a case unread, and an invalid case leaves it.
+  const workingCase=pairs[0]!.reviewId, feedCase=()=>repository.getBusinessFeed().find(entry=>entry.kind==='case'&&entry.objectId===workingCase)!
+  assert.equal(feedCase().working,false,'new cases are not added automatically')
+  const beforeWorking=feedCase().revision
+  assert.deepEqual(repository.setCaseWorking({reviewId:workingCase,working:true},'HR'),{reviewId:workingCase,working:true})
+  repository.setCaseWorking({reviewId:workingCase,working:true},'HR')
+  assert.equal(feedCase().working,true)
+  assert.equal(feedCase().revision,beforeWorking,'membership does not change the feed revision')
+  repository.close();repository=new EncryptedApplicationRepository({path:databasePath,databaseKey,mappingKey})
+  assert.equal(feedCase().working,true,'working set survives restart')
+  repository.setCaseWorking({reviewId:workingCase,working:false},'HR')
+  assert.equal(feedCase().working,false)
+  repository.setCaseWorking({reviewId:workingCase,working:true},'HR')
+  repository.setJobCaseLifecycle({reviewId:workingCase,state:'archived',reason:'案件已结束'},'HR')
+  assert.equal(feedCase().working,false,'an invalid case leaves the working set')
+  assert.throws(()=>repository.setCaseWorking({reviewId:workingCase,working:true},'HR'),/无效案件/)
+  repository.setJobCaseLifecycle({reviewId:workingCase,state:'active',reason:'案件重新开始'},'HR')
+  assert.equal(feedCase().working,false,'restoring does not re-add the case')
+  assert.equal(currentSchemaVersion,59)
+  console.log(JSON.stringify({status:'passed',schema:currentSchemaVersion,verified:['populated v48 migration','one person in three cases','independent first rounds','overlap allowed', 'free-form arrangement and restart','direct second and third rounds without prior feedback', 'next round after an undecided next step', 'historical feedback preserves current stage and appointment','resume negative results requires HR decision','entry details survive pause, backfill and restart','second-round inheritance','unknown next step','entry prerequisites','explicit actual arrival','other cases remain open','revision and duplicate delivery','encrypted restart','mail ambiguity/dedup/atomic apply','same-round rebooking and cancellation history','entry correction with before and after','undo arrival preserves other placements and HR status','mail conditions merge and explicit HR conflicts','mail chronology and attribution','deletion cascade','case working set']}))
 } finally {
   repository.close()
   await rm(temporaryDirectory,{recursive:true,force:true})

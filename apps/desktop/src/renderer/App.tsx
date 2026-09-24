@@ -1628,7 +1628,7 @@ export function App() {
           cloudConnected={bootstrap.aiCommerce.connection === 'connected'}
           composerDraft={agentComposerDraft}
           latestContent={<div className="hr-board">
-            <div className="hr-list-surface" hidden={Boolean(hrSource) || hrFollowOpen}><MatchingOpportunities active={agentPrimary&&!hrSource&&!hrFollowOpen} onOpen={item=>{ const review = bootstrap.jobCaseReviews.find(job => job.jobCase?.id === item.jobCaseId); const person = bootstrap.candidateReviews.find(person => person.documentId === item.documentId); if (review && person) { openCasePeople(review); setAssessmentFocus(caseResumes.addPerson(review, person)) } }}/><HrObjectList onAssessResumes={openCaseResumeAssessment} resumeStates={resumeStates} onDeleted={async (entry) => {
+            <div className="hr-list-surface" hidden={Boolean(hrSource) || hrFollowOpen}><MatchingOpportunities active={agentPrimary&&!hrSource&&!hrFollowOpen} onOpen={item=>{ const review = bootstrap.jobCaseReviews.find(job => job.jobCase?.id === item.jobCaseId); const person = bootstrap.candidateReviews.find(person => person.documentId === item.documentId); if (review && person) { openCasePeople(review); setAssessmentFocus(caseResumes.addPerson(review, person)) } }}/><HrObjectList active={agentPrimary} onAssessResumes={openCaseResumeAssessment} resumeStates={resumeStates} onDeleted={async (entry) => {
               if (agentFeedSelection === `${entry.kind}:${entry.objectId}`) setAgentFeedSelection(null)
               setAgentHistoryReloadToken((current) => current + 1)
               setBootstrap(await window.sesAgent.getBootstrap())

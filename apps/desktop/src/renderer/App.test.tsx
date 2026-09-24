@@ -139,7 +139,7 @@ describe('App workbench', () => {
       listQuestionBank:vi.fn(async()=>[]),controlQuestionBank:vi.fn(),
       getSystemExperience:vi.fn(),controlSystemExperience:vi.fn(),getSystemExperienceDetails:vi.fn(),recordExperienceExposure:vi.fn(),
       listWorkRules: vi.fn(async () => ({revision: 0, rules: []})), getWorkRuleHistory: vi.fn(async () => []), analyzeWorkRule: vi.fn(), saveWorkRule: vi.fn(), changeWorkRule: vi.fn(),
-      prepareCaseAssessment: vi.fn(), getCaseQuestionDraft: vi.fn(async () => ({ draft: null, stale: false })), deleteBusinessFollowUp: vi.fn(), listCaseAssessments: vi.fn(async () => []), onCaseResumeImportProgress: vi.fn(() => () => {}),
+      prepareCaseAssessment: vi.fn(), getCaseQuestionDraft: vi.fn(async () => ({ draft: null, stale: false })), deleteBusinessFollowUp: vi.fn(), setCaseWorking: vi.fn(), listCaseAssessments: vi.fn(async () => []), onCaseResumeImportProgress: vi.fn(() => () => {}),
       assessCasePerson: vi.fn(), listCasePersonAssessments: vi.fn(async () => []), importResumeForCase: vi.fn(), addCandidateToLibrary: vi.fn(), saveAssessmentFeedback: vi.fn(), generateRuleQuestions: vi.fn(),
       listPersonnelMailUpdates: vi.fn(async () => []), resolvePersonnelMailUpdate: vi.fn(),
       beginBusinessProgress: vi.fn(async () => []), advanceBusinessProgress: vi.fn(), analyzeBusinessProgress: vi.fn(), draftBusinessProgressMessage: vi.fn(), openBusinessProgressEmail: vi.fn(), exportBusinessProgressCalendar: vi.fn(),
@@ -1239,7 +1239,7 @@ describe('App workbench', () => {
     const candidate = { documentId, fileName: 'Engineer.xlsx', localIdentity: { displayName: 'Engineer One' }, fields: [], projectExperiences: [], recordStatus: 'active', profile: { version: 1 }, status: 'completed' } as unknown as CandidateReviewSnapshot
     const payload = { ...bootstrap, featureFlags: { conversationalMatchingEnabled: true }, candidateReviews: [candidate], jobCaseReviews: [job, other] }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue(payload)
-    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([job,other].map(item => ({ kind:'case',objectId:item.reviewId,revision:'a'.repeat(64),title:item.redactedSubject,event:'created',occurredAt:new Date().toISOString(),sourceAt:new Date().toISOString(),source:'manual',unseen:false,deferred:false,archived:false,businessStatus:'active',needsReview:false,fields:[],changes:[] })))
+    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([job,other].map(item => ({ kind:'case',working:true,objectId:item.reviewId,revision:'a'.repeat(64),title:item.redactedSubject,event:'created',occurredAt:new Date().toISOString(),sourceAt:new Date().toISOString(),source:'manual',unseen:false,deferred:false,archived:false,businessStatus:'active',needsReview:false,fields:[],changes:[] })))
     let finish!: (value: Awaited<ReturnType<DesktopApi['importResumeForCase']>>) => void
     vi.mocked(window.sesAgent.importResumeForCase).mockImplementation(() => new Promise(resolve => { finish = resolve }))
     render(<App />)
@@ -1282,7 +1282,7 @@ describe('App workbench', () => {
     const saved: JobCaseReviewSnapshot = { ...job, status: 'completed', privacyReviewed: true,
       jobCase: { id: '44444444-4444-4444-8444-444444444444', sourceReviewId: reviewId, version: 1, status: 'active', confirmedAt: new Date().toISOString(), confirmedBy: 'HR', containsDirectIdentifiers: false } }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue({ ...bootstrap, featureFlags: { conversationalMatchingEnabled: true }, jobCaseReviews: [job] })
-    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([{ kind: 'case', objectId: reviewId, revision: 'a'.repeat(64), title, event: 'created', occurredAt: new Date().toISOString(), sourceAt: new Date().toISOString(), source: 'gmail', unseen: false, deferred: false, archived: false, businessStatus: 'active', needsReview: true, fields: [], changes: [] }])
+    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([{ kind: 'case', working: true, objectId: reviewId, revision: 'a'.repeat(64), title, event: 'created', occurredAt: new Date().toISOString(), sourceAt: new Date().toISOString(), source: 'gmail', unseen: false, deferred: false, archived: false, businessStatus: 'active', needsReview: true, fields: [], changes: [] }])
     vi.mocked(window.sesAgent.listBroadcastWorkspace).mockResolvedValue({ queue: [], templates: [builtInBroadcastTemplate()] })
     vi.mocked(window.sesAgent.draftCaseBroadcast).mockResolvedValue({ textJa: 'COBOL 案件紹介', textZh: 'COBOL 案件介绍', forbiddenJa: [], forbiddenZh: [] })
     let finish!: (value: JobCaseReviewSnapshot) => void
@@ -1331,7 +1331,7 @@ describe('App workbench', () => {
     const entry: BusinessFeedEntry = { kind: 'person', objectId: documentId, revision: 'a'.repeat(64), title: 'Selected Engineer', event: 'created', occurredAt: new Date().toISOString(), sourceAt: new Date().toISOString(),
       source: 'local-personnel', unseen: false, deferred: false, archived: false, businessStatus: 'available', needsReview: false, fields: [], changes: [] }
     vi.mocked(window.sesAgent.getBootstrap).mockResolvedValue({ ...bootstrap, featureFlags: { conversationalMatchingEnabled: true }, candidateReviews: [candidate], jobCaseReviews: [job] })
-    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([entry, { ...entry, kind: 'case', objectId: job.reviewId, title: 'Java project', source: 'manual', businessStatus: 'active' }])
+    vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([entry, { ...entry, kind: 'case', working: true, objectId: job.reviewId, title: 'Java project', source: 'manual', businessStatus: 'active' }])
     vi.mocked(window.sesAgent.getPersonnelWorkspace).mockResolvedValue({ templates: builtInPersonnelTemplates(), states: [], copies: [] })
     const matchResult = { documentId, profileVersion: 1, localMatchCount: 1,
       cloud: { status: 'reviewed', reviewedCount: 1, modelName: 'Test AI' }, items: [{ reviewId: job.reviewId, jobCaseId: job.jobCase!.id, jobCaseVersion: 1,

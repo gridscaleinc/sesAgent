@@ -454,6 +454,8 @@ export class JobCaseStore extends DomainStore {
              changed_at = excluded.changed_at`
         )
         .run(validated.reviewId, validated.state, validated.reason, changedBy, changedAt)
+      // An invalid case leaves the working set; restoring it does not put it back.
+      if (validated.state === 'archived') this.database.prepare('DELETE FROM job_case_working_set WHERE review_id = ?').run(validated.reviewId)
       this.database
         .prepare(
           `INSERT INTO job_case_events(

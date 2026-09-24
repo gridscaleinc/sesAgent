@@ -67,7 +67,7 @@ async function seed(index: number, text = quote) {
   return {pair,run,interviewRun,event}
 }
 try {
-  assert.equal(currentSchemaVersion,58)
+  assert.equal(currentSchemaVersion,59)
   const empty = learner();await empty.tick();empty.stop();assert.equal(calls,0)
   for(let index=1;index<=5;index++) await seed(index)
   repository.controlSystemExperience({action:'budget',dailyCallLimit:4,expectedRevision:repository.getSystemExperience().settings.revision})

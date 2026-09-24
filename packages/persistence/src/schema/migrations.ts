@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 58
+export const currentSchemaVersion = 59
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2437,5 +2437,18 @@ CREATE INDEX case_person_question_drafts_pair ON case_person_question_drafts(doc
 ` + ['INSERT','UPDATE','DELETE'].map(operation=>`CREATE TRIGGER backup_revision_case_person_question_drafts_${operation.toLowerCase()} AFTER ${operation} ON case_person_question_drafts
 BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`).join('\n') + `
 INSERT INTO schema_migrations(version,applied_at) VALUES(58,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`;
+
+// Cases the HR is currently working on. The HR list opens on this set; membership never restricts what a case can be used for.
+export const migrationV59 = `
+BEGIN IMMEDIATE;
+CREATE TABLE job_case_working_set (
+ review_id TEXT PRIMARY KEY REFERENCES job_case_review_states(review_id) ON DELETE CASCADE,
+ added_at TEXT NOT NULL, added_by TEXT NOT NULL
+);
+` + ['INSERT','UPDATE','DELETE'].map(operation=>`CREATE TRIGGER backup_revision_job_case_working_set_${operation.toLowerCase()} AFTER ${operation} ON job_case_working_set
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`).join('\n') + `
+INSERT INTO schema_migrations(version,applied_at) VALUES(59,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
 `;

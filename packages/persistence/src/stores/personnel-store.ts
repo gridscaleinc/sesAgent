@@ -1,5 +1,5 @@
 import { introductionIdentifierCheckText, saveBusinessFollowUpSchema, type SaveBusinessFollowUpInput, type BusinessFollowUp } from '@shared'
-import { changedBusinessFields, markBusinessFeedSchema, type BusinessFeedEntry, type MarkBusinessFeedInput } from '@shared'
+import { changedBusinessFields, markBusinessFeedSchema, setCaseWorkingSchema, type BusinessFeedEntry, type MarkBusinessFeedInput, type SetCaseWorkingInput } from '@shared'
 import { createHash, randomUUID } from 'node:crypto'
 import { builtInPersonnelTemplates, candidateBusinessStateInputSchema, personnelMessageInputSchema, savePersonnelTemplateSchema,
   type CandidateBusinessState, type PersonnelCopy, type PersonnelMessageInput, type PersonnelTemplate, type PersonnelWorkspace,
@@ -35,6 +35,7 @@ export class PersonnelStore extends DomainStore {
 
   feed(): BusinessFeedEntry[] {
     const marks = new Map(this.database.prepare<[], { id: string; revision: string; deferred: number }>('SELECT id,revision,deferred FROM business_feed_marks').all().map((row) => [row.id, row]))
+    const working = new Set(this.database.prepare<[], { review_id: string }>('SELECT review_id FROM job_case_working_set').all().map((row) => row.review_id))
     const caseTimes = new Map(this.database.prepare<[], { review_id: string; updated_at: string; lifecycle_at: string | null }>(
       `SELECT review.review_id,review.updated_at,life.changed_at AS lifecycle_at FROM job_case_review_states review
        LEFT JOIN (SELECT source_review_id,MAX(created_at) AS changed_at FROM job_case_events
@@ -61,7 +62,7 @@ export class PersonnelStore extends DomainStore {
         title: review.fields.find((f) => f.key === 'title')?.value ?? review.redactedSubject,
         event: review.lifecycle === 'archived' ? 'archived' : lifecycleLatest ? 'status-changed' : previous || review.reviewRevision > 1 ? 'updated' : 'created',
         occurredAt: [updatedAt, times?.lifecycle_at ?? ''].sort().at(-1)!, sourceAt: review.messageDate, source: review.sourceType,
-        archived: review.lifecycle === 'archived', businessStatus: review.lifecycle, needsReview: review.status !== 'completed',
+        archived: review.lifecycle === 'archived', working: review.lifecycle === 'active' && working.has(review.reviewId), businessStatus: review.lifecycle, needsReview: review.status !== 'completed',
         fields: review.fields.filter((f) => ['required_skills','rate','location','start_date','remote'].includes(f.key) && f.value).map((f) => ({ key: f.key, value: f.value! })),
         changes: previous ? changedBusinessFields(previous.fields, review.fields) : []
       }, [review.reviewRevision, review.lifecycle, times?.lifecycle_at])
@@ -98,6 +99,18 @@ export class PersonnelStore extends DomainStore {
       .run(`${input.kind}:${input.objectId}`, input.kind === 'case' ? input.objectId : null, input.kind === 'person' ? input.objectId : null,
         input.revision, new Date().toISOString(), input.action === 'defer' ? 1 : 0, input.action)
     return entries.map((entry) => entry === current ? { ...entry, unseen: false, deferred: input.action === 'seen' ? entry.deferred : input.action === 'defer' } : entry)
+  }
+
+  /** Working-set membership is not part of the feed revision, so toggling it never marks a case unread. */
+  setCaseWorking(raw: SetCaseWorkingInput, actor: string): { reviewId: string; working: boolean } {
+    const input = setCaseWorkingSchema.parse(raw)
+    const review = this.stores.jobCases.getJobCaseReview(input.reviewId)
+    if (!review) throw new Error('案件已删除。 / 案件が削除されています。')
+    if (input.working && review.lifecycle !== 'active') throw new Error('无效案件不能加入处理中。 / 無効な案件は対応中にできません。')
+    if (input.working) this.database.prepare('INSERT INTO job_case_working_set(review_id,added_at,added_by) VALUES (?,?,?) ON CONFLICT(review_id) DO NOTHING')
+      .run(input.reviewId, new Date().toISOString(), actor)
+    else this.database.prepare('DELETE FROM job_case_working_set WHERE review_id=?').run(input.reviewId)
+    return { reviewId: input.reviewId, working: input.working }
   }
 
   private templates(): PersonnelTemplate[] {
