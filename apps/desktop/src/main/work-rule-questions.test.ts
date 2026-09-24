@@ -111,7 +111,7 @@ it('asks for the capability classification first and only accepts questions draw
 })
 
 it('rejects a question that leaves choosing the example to the candidate', async () => {
-  await expect(service([{ ...question, text: '「API development」で具体的な一機能を選び、担当範囲と成果を説明してください。' }]).generateRuleQuestions(input)).rejects.toThrow('选择例子')
+  await expect(service([{ ...question, text: '具体的な一機能を選び、担当範囲と成果を説明してください。' }]).generateRuleQuestions(input)).rejects.toThrow('选择例子')
   await expect(service([{ ...question, text: '请选择一个你负责的功能，说明设计判断和成果。' }]).generateRuleQuestions(input)).rejects.toThrow('选择例子')
 })
 
@@ -167,8 +167,10 @@ it('lets the candidate choose a feature only inside a project the question names
   const named = '「API development」の中で実際に開発した機能を一つ選び、要件から結合テストまでの流れを説明してください。'
   const result = await service([{ ...question, text: named, evidenceIds: ['E2', 'E6'] }]).generateRuleQuestions(input)
   expect(result[0]?.evidence).toBe('API development / Designed REST APIs')
-  // Same wording without citing the title: the project name is not provenance, so choosing is still delegated.
-  await expect(service([{ ...question, text: named, evidenceIds: ['E6'] }]).generateRuleQuestions(input)).rejects.toThrow('选择例子')
+  // Citing the project's summary instead of its title still anchors the question to that project.
+  expect((await service([{ ...question, text: named, evidenceIds: ['E6'] }]).generateRuleQuestions(input))[0]?.evidence).toBe('Designed REST APIs')
+  // Naming a project none of the cited sources belong to is not provenance, so choosing is still delegated.
+  await expect(service([{ ...question, text: named, evidenceIds: ['E1'] }]).generateRuleQuestions(input)).rejects.toThrow('选择例子')
 })
 
 it('rejects a question about general practice instead of a real case', async () => {
@@ -181,4 +183,26 @@ it('carries one optional follow-up probe with the question', async () => {
   const result = await service([{ ...question, followUp: probe }]).generateRuleQuestions(input)
   expect(result[0]).toMatchObject({ followUp: probe })
   expect('followUp' in (await service([question]).generateRuleQuestions(input))[0]!).toBe(false)
+})
+
+it('drops a question that still violates a style rule after the retry instead of failing the whole set', async () => {
+  const good = { ...question, dimension: 'authenticity', ask: 'role-scope', text: '「API development」で本人が担当した範囲を説明してください。', evidenceIds: ['E6'] }
+  const bad = { ...question, text: '请选择一个你负责的功能，说明设计判断和成果。' }
+  const cloud = service([good, bad])
+  const result = await cloud.generateRuleQuestions(input)
+  expect((cloud as any).invokeCloud).toHaveBeenCalledTimes(2)
+  expect(result.map(q => q.text)).toEqual([good.text])
+})
+
+it('sends the operator request as redactable source data, never as an instruction', async () => {
+  const cloud = service([question])
+  await cloud.generateRuleQuestions({ ...input, request: '加上团队管理的问题' })
+  const call = (cloud as any).invokeCloud.mock.calls[0][0]
+  expect(JSON.parse(call.projection).operatorRequest).toBe('加上团队管理的问题')
+  expect(call.instructions).not.toContain('加上团队管理的问题')
+  expect(call.instructions).toContain('operatorRequest')
+  // No request means an explicit null, so the model never sees a stale one.
+  const plain = service([question])
+  await plain.generateRuleQuestions(input)
+  expect(JSON.parse((plain as any).invokeCloud.mock.calls[0][0].projection).operatorRequest).toBeNull()
 })

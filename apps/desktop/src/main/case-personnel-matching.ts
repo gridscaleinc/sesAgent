@@ -18,7 +18,7 @@ const fitRank = { strong: 0, possible: 1, 'insufficient-info': 3, weak: 4 }
 export function createCasePersonnelMatcher(context: Pick<MainIpcContext, 'repository' | 'agentNarrativeStreamer' | 'agentChatModelCatalog'>, timeoutMs = 45_000) {
   const { repository, agentNarrativeStreamer: cloud } = context
   const inFlight = new Map<string, Promise<CasePersonnelMatchResult>>()
-  const run = async (jobCaseId: string, options?: { signal?: AbortSignal; onLocal?(result: CasePersonnelMatchResult): void; documentId?: string; withoutRules?: boolean }): Promise<CasePersonnelMatchResult> => {
+  const run = async (jobCaseId: string, options?: { signal?: AbortSignal; onLocal?(result: CasePersonnelMatchResult): void; documentId?: string; withoutRules?: boolean; request?: string }): Promise<CasePersonnelMatchResult> => {
     options?.signal?.throwIfAborted()
     const job = repository.listActiveJobCases().find((item) => item.id === jobCaseId)
     if (!job) throw new Error('案件不存在或已停用，请刷新后重试。 / 案件が存在しないか停止されています。再読込してください。')
@@ -83,6 +83,7 @@ export function createCasePersonnelMatcher(context: Pick<MainIpcContext, 'reposi
           model, signal: controller.signal,
           onClientRequestId: (id) => { remoteId = id; if (controller.signal.aborted) void cloud.cancel(id).catch(() => undefined) },
           onRemoteSettled: () => { settled = true },
+          ...(options?.documentId && options.request ? { operatorRequest: options.request } : {}),
           jobCase: { title: job.fields.find((field) => field.key === 'title')?.value ?? null,
             experienceSkills: bundle.instructions, workRules: ruleContext.applied, requirements: [...job.fields.flatMap((field) => field.value && requirementKeys.has(field.key) ? [{ key: field.key, label: field.label, value: field.value }] : []), ...ruleContext.extraFields] },
           candidates: result.items.map((item, index) => {
@@ -125,9 +126,9 @@ export function createCasePersonnelMatcher(context: Pick<MainIpcContext, 'reposi
     Object.assign(result, exclusionSummary([...evaluations.values()]))
     return finish()
   }
-  return (raw: unknown, options?: { signal?: AbortSignal; onLocal?(result: CasePersonnelMatchResult): void; documentId?: string; withoutRules?: boolean }): Promise<CasePersonnelMatchResult> => {
+  return (raw: unknown, options?: { signal?: AbortSignal; onLocal?(result: CasePersonnelMatchResult): void; documentId?: string; withoutRules?: boolean; request?: string }): Promise<CasePersonnelMatchResult> => {
     const id = candidateProfileSourceInputSchema.parse(raw)
-    const key = `${id}:${options?.documentId ?? ''}:${options?.withoutRules ?? false}:${repository.listWorkRules?.().revision ?? 0}`
+    const key = `${id}:${options?.documentId ?? ''}:${options?.withoutRules ?? false}:${options?.request ?? ''}:${repository.listWorkRules?.().revision ?? 0}`
     const pending = inFlight.get(key)
     if (pending) return pending
     const promise = withLearningForeground(() => run(id, options)).finally(() => inFlight.delete(key))

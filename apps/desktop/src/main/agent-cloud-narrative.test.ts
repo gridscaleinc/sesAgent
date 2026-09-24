@@ -1286,6 +1286,14 @@ describe('match assessment protocol', () => {
     expect(built.projection).not.toContain('sourceDocumentId')
   })
 
+  it('carries the operator request as guidance only when one is given', () => {
+    expect(JSON.parse(buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates }).projection)).not.toHaveProperty('operatorRequest')
+    const steered = JSON.parse(buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates, operatorRequest: '  重点看 日语沟通 ' }).projection)
+    expect(steered.operatorRequest).toBe('重点看 日语沟通')
+    expect(matchAssessmentInstructions).toContain('operatorRequest')
+    expect(matchAssessmentInstructions).toMatch(/never add or waive a mandatory condition/)
+  })
+
   it('selects relevant evidence from the ninth project in both matching directions', () => {
     const projects = Array.from({ length: 9 }, (_, index) => ({ title: `Project ${index + 1}`, period: '2020/01〜2023/12', role: 'SE',
       technologies: index === 8 ? ['Scala', 'Spark'] : ['Java'], summary: index === 8 ? 'Scala と Spark でバッチ処理を開発' : 'Java API 開発' }))

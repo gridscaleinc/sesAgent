@@ -1,5 +1,4 @@
 import { SystemExperiencePanel } from './SystemExperiencePanel'
-import { AiWorkRulesPanel } from './AiWorkRulesPanel'
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type {
   SaveJobCaseFieldAliasesInput,
@@ -17,7 +16,7 @@ import { Icon, type IconName } from './Icon'
 import { GmailSyncFeedback } from './GmailSyncFeedback'
 import { useRendererUiRefresh, useUiLocale, useUiText } from '../i18n'
 
-export type ApplicationSettingsSection = 'experience' | 'rules' | 'general' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
+export type ApplicationSettingsSection = 'experience' | 'general' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
 
 interface ApplicationSettingsDialogProps {
   bootstrap: BootstrapPayload
@@ -61,7 +60,6 @@ const languageOptions: Array<{ locale: ApplicationLocale; name: string; nativeNa
 const sections: Array<{ id: ApplicationSettingsSection; label: string; detail: string; icon: IconName }> = [
   { id: 'general', label: '一般設定', detail: '言語と本機ユーザー', icon: 'settings' },
   { id: 'experience', label: '系统经验', detail: '自动学习与核实方法', icon: 'sparkles' },
-  { id: 'rules', label: 'AI 工作规则', detail: '匹配条件与面试要求', icon: 'sparkles' },
   { id: 'fields', label: '案件項目', detail: '項目の別名', icon: 'briefcase' },
   { id: 'broadcast', label: '配信', detail: '紹介文テンプレート', icon: 'mail' },
   { id: 'integrations', label: '外部システム', detail: '接続・権限・同期', icon: 'mail' },
@@ -210,7 +208,7 @@ export function ApplicationSettingsDialog({
                 type="button"
               >
                 <Icon name={section.icon} size={17} />
-                <span><strong>{section.id === 'experience' ? (zh ? '系统经验' : 'システムの経験') : section.id === 'rules' ? (zh ? 'AI 工作规则' : 'AI業務ルール') : t(section.label)}</strong><small>{section.id === 'experience' ? (zh ? '自动学习与核实方法' : '自動学習と確認方法') : section.id === 'rules' ? (zh ? '匹配条件与面试要求' : 'マッチング条件と面談方針') : t(section.detail)}</small></span>
+                <span><strong>{section.id === 'experience' ? (zh ? '系统经验' : 'システムの経験') : t(section.label)}</strong><small>{section.id === 'experience' ? (zh ? '自动学习与核实方法' : '自動学習と確認方法') : t(section.detail)}</small></span>
                 <Icon name="chevron-right" size={14} />
               </button>
             ))}
@@ -218,7 +216,6 @@ export function ApplicationSettingsDialog({
 
           <div className="application-settings-content" tabIndex={-1}>
             <div hidden={activeSection !== 'experience'}><SystemExperiencePanel active={activeSection === 'experience'} /></div>
-            <div hidden={activeSection !== 'rules'}><AiWorkRulesPanel active={activeSection === 'rules'} cases={bootstrap.jobCaseReviews} /></div>
             {activeSection === 'general' ? (
               <section aria-labelledby="general-settings-title" className="settings-section">
                 <div className="settings-section-heading">

@@ -72,13 +72,17 @@ export function applicableWorkRules(library: WorkRuleLibrary, job: {
 }
 
 export const assessCasePersonInputSchema = z.object({
-  jobCaseId: z.string().uuid(), documentId: z.string().uuid(), withoutRules: z.boolean().optional()
+  jobCaseId: z.string().uuid(), documentId: z.string().uuid(), withoutRules: z.boolean().optional(),
+  /** What the operator asked this assessment to look at; emphasis only, never a new requirement or fact. */
+  request: z.string().trim().min(1).max(500).optional()
 }).strict()
 export type AssessCasePersonInput = z.infer<typeof assessCasePersonInputSchema>
 export interface CasePersonAssessment {
   origin?: 'search' | 'specified'
   id: string; jobCaseId: string; documentId: string; jobCaseVersion: number; profileVersion: number;
   assessedAt: string; rulesRevision: number; appliedRules: AppliedWorkRule[];
+  /** The operator request this assessment ran with, shown on the card so a steered result is never mistaken for a plain one. */
+  request?: string | null;
   result: import('./business-workbench').CasePersonnelMatchResult['items'][number];
   cloud: import('./business-workbench').CasePersonnelMatchResult['cloud']
 }
@@ -90,7 +94,9 @@ export const assessmentFeedbackInputSchema = z.object({
 export type AssessmentFeedbackInput = z.infer<typeof assessmentFeedbackInputSchema>
 
 export const generateRuleQuestionsInputSchema = z.object({
-  documentId: z.string().uuid(), jobCaseId: z.string().uuid().optional(), interviewId: z.string().uuid().optional()
+  documentId: z.string().uuid(), jobCaseId: z.string().uuid().optional(), interviewId: z.string().uuid().optional(),
+  /** What the operator asked for this time; guidance only, never new facts or requirements. */
+  request: z.string().trim().min(1).max(500).optional()
 }).strict()
 export type GenerateRuleQuestionsInput = z.infer<typeof generateRuleQuestionsInputSchema>
 const ruleQuestionSourceIds = { requirementIds: z.array(z.string().regex(/^R[1-9]\d*$/u)).min(1).max(5), evidenceIds: z.array(z.string().regex(/^E[1-9]\d*$/u)).max(5) }

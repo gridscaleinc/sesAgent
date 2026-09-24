@@ -11,7 +11,7 @@ import type { FollowUpTarget } from './HrFollowUps'
 import './hr-followups.css'
 import './hr-progress.css'
 
-type Panel = 'schedule' | 'feedback' | 'entry' | 'history'
+type Panel = 'schedule' | 'questions' | 'feedback' | 'entry' | 'history'
 type Draft = { revision:number; panel:Panel; candidateAvailability:string; clientAvailability:string; pending:string;
   schedule:ProgressSchedule; feedbackRoundNumber:number; feedback:string; result:'pending'|'passed'|'failed'|'no-show'|'withdrawn'; next:'unknown'|'next-round'|'entry'; unresolved:string;
   entry:ProgressEntry; actualDate:string; correctionReason:string; editingEntry:boolean; rebooking:boolean; analysis:ProgressAnalysis|null; messageId?:string; note:string }
@@ -149,7 +149,7 @@ export function HrProgressWorkbench({ embedded=false, onBack, target, active=tru
   }
   const selectedPerson = current ? people.find((row) => row.documentId === current.documentId) : null
   const selectedCase = current ? cases.find((row) => row.reviewId === current.reviewId) : null
-  const panels:Array<[Panel,string]>=[['schedule',t('面试安排','面談日程')],['feedback',t('反馈与 AI 整理','フィードバックと AI 整理')],['entry',t('入场安排','参画手配')],['history',t('完整记录','全履歴')]]
+  const panels:Array<[Panel,string]>=[['schedule',t('面试安排','面談日程')],['questions',t('面试问题','面談質問')],['feedback',t('反馈与 AI 整理','フィードバックと AI 整理')],['entry',t('入场安排','参画手配')],['history',t('完整记录','全履歴')]]
   const count=(name:string)=>items.filter((row)=>{const s=businessProgressStep(row,clock);return name==='all'||name==='today'&&s.due||name==='entry'&&s.stage==='entry'||name==='started'&&s.stage==='started'||name==='active'&&!['started','closed','paused'].includes(s.stage)}).length
   return <section className={`hr-followups hr-progress${embedded?' is-embedded':''}`} aria-label={t('业务跟进','業務の対応記録')}>
     {embedded?<header className="hr-followup-heading hr-progress-embedded-heading"><button disabled={busy} type="button" onClick={onBack}>← {t('返回营业情况','営業状況に戻る')}</button><button disabled={busy} type="button" onClick={onBack} aria-label={t('关闭跟进操作','対応操作を閉じる')}>×</button></header>:<header className="hr-followup-heading"><div><h2>{t('从约面到进场','面談から参画まで')}</h2><p>{t('每个人员与案件，分别推进下一步。','要員と案件ごとに、次の対応を進めます。')}</p></div><div className="hr-followup-heading-actions">
@@ -182,12 +182,14 @@ export function HrProgressWorkbench({ embedded=false, onBack, target, active=tru
       <header><div><small>{state.label}</small><h3>{personName(current.documentId)}</h3><p>{caseName(current.reviewId)}</p></div><div><button disabled={busy} onClick={()=>onView('person',current.documentId)}>{t('查看人员','要員を見る')}</button><button disabled={busy} onClick={()=>onView('case',current.reviewId)}>{t('查看案件','案件を見る')}</button></div></header>
       <div className="hr-progress-track" aria-label={t('业务流程','業務の流れ')}>{[t('约面','日程調整'),t('面试与反馈','面談と結果'),t('入场准备','参画準備'),t('实际到岗','参画開始')].map((label,index)=><span key={label} className={index<=(['entry','started'].includes(state.stage)?state.stage==='started'?3:2:state.stage==='coordinating'?0:1)?'is-reached':''}>{label}</span>)}</div>
       <nav className="hr-progress-tabs" aria-label={t('推进内容','進行内容')}>{panels.map(([id,label])=><button key={id} disabled={busy} aria-pressed={draft.panel===id} onClick={()=>{update({panel:id});setMessage(null)}}>{label}</button>)}</nav>
-      {latestRound ? <BusinessInterviewQuestions key={latestRound.id} follow={current} round={latestRound} disabled={Boolean(busy || stale || inactive)} onSaved={() => { setReload((value) => value + 1); onUpdated?.() }} /> : <CaseQuestionDraftNotice key={current.id} follow={current} />}
       <div className="hr-progress-content" ref={content}>
       {stale?<p className="hr-followup-message is-error">{t('其他操作更新了记录。输入已保留，请核对最新状态后继续。','記録が更新されました。入力は保持されています。最新状況をご確認ください。')}<button disabled={busy} onClick={()=>update({revision:current.revision})}>{t('使用最新记录继续','最新記録で続ける')}</button></p>:null}
       {items.some((row)=>row.documentId===current.documentId&&row.id!==current.id&&row.progress?.stage==='started')?<p className="hr-followup-message">{t('此人员已在其他案件进场，请确认本案件是否继续推进。','この要員は別案件で参画済みです。この案件を継続するか確認してください。')}</p>:null}
       {draft.analysis?<aside className="hr-progress-analysis"><strong>{t('AI 整理建议','AI 整理案')}</strong><p>{draft.analysis.summary}</p>{draft.analysis.evidence?<blockquote>{draft.analysis.evidence}</blockquote>:null}<small>{t('核对下面的安排或结果，保存后生效。','下の予定・結果を確認し、保存して反映します。')}</small>
         {draft.analysis.proposedTimes.length?<div>{draft.analysis.proposedTimes.map((time)=><button disabled={busy} key={time} onClick={()=>update({panel:'schedule',schedule:{...draft.schedule,scheduledAt:time}})}>{timestamp(time)} JST</button>)}</div>:null}</aside>:null}
+      {draft.panel==='questions'?(latestRound
+        ?<BusinessInterviewQuestions key={latestRound.id} follow={current} round={latestRound} disabled={Boolean(busy||stale||inactive)} onSaved={(saved)=>{loadEpoch.current++;setItems((rows)=>[saved,...rows.filter((item)=>item.id!==saved.id)]);update({revision:saved.revision});onUpdated?.()}}/>
+        :<><h4>{t('面试问题','面談質問')}</h4><p>{t('排期建立第一轮后即可在这里编辑本轮问题。','面談を予約して第1回を作成すると、ここで質問を編集できます。')}</p><CaseQuestionDraftNotice key={current.id} follow={current}/></>):null}
       {draft.panel==='schedule'?<>
         {latestRound&&state.stage!=='started'&&!draft.rebooking?<div className="hr-progress-actions"><button disabled={busy||stale} onClick={()=>update({rebooking:true,correctionReason:'',schedule:{...draft.schedule,roundNumber:latestRound.roundNumber,scheduledAt:'',meetingUrl:'',note:''}})}>{t('重新预约本轮','この回を再予約')}</button></div>:null}
         {inactive&&!draft.rebooking?<p>{state.label}</p>:<>

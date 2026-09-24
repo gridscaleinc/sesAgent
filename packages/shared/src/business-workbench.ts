@@ -178,7 +178,9 @@ export interface BusinessFollowUp extends Omit<SaveBusinessFollowUpInput, 'expec
 export const regenerateIntroductionInputSchema = z.object({
  kind: z.enum(['case','person']), id: z.string().uuid(), version: z.number().int().positive(),
  lang: z.enum(['zh','ja']), style: z.enum(['standard','brief']),
- caseContext: z.object({ reviewId: z.string().uuid(), version: z.number().int().positive() }).optional()
+ caseContext: z.object({ reviewId: z.string().uuid(), version: z.number().int().positive() }).optional(),
+ /** What the operator asked for this time, for example "加上他的团队管理经验". Never overrides facts or privacy. */
+ request: z.string().trim().min(1).max(500).optional()
 }).strict()
 export type RegenerateIntroductionInput = z.infer<typeof regenerateIntroductionInputSchema>
 

@@ -22,12 +22,12 @@ export function registerWorkRuleHandlers(context: MainIpcContext) {
   const find = createCasePersonnelMatcher(context)
   const assess = async (raw: unknown): Promise<CasePersonAssessment> => {
     const input = assessCasePersonInputSchema.parse(raw)
-    const result = await find(input.jobCaseId, { documentId: input.documentId, withoutRules: input.withoutRules })
+    const result = await find(input.jobCaseId, { documentId: input.documentId, withoutRules: input.withoutRules, request: input.request })
     const item = result.items[0]
     if (!item) throw new Error('资料已更新，请重新评估。 / 情報が更新されました。再評価してください。')
     const assessment: CasePersonAssessment = { id: randomUUID(), jobCaseId: input.jobCaseId, documentId: input.documentId,
       jobCaseVersion: result.jobCaseVersion, profileVersion: item.profileVersion, rulesRevision: result.rulesRevision ?? 0,
-      assessedAt: new Date().toISOString(), appliedRules: item.appliedRules ?? [], result: item, cloud: result.cloud }
+      assessedAt: new Date().toISOString(), appliedRules: item.appliedRules ?? [], result: item, cloud: result.cloud, ...(input.request ? { request: input.request } : {}) }
     if (!input.withoutRules) repository.saveCasePersonAssessment(assessment)
     return assessment
   }
@@ -156,7 +156,7 @@ export function registerWorkRuleHandlers(context: MainIpcContext) {
     const notes=[...earlier,...(interview?[interview]:[])].flatMap(item=>item.interviewNotes?[item.interviewNotes]:[]).join('\n')
     const answerContext=[...earlier,...(interview?[interview]:[])].flatMap(r=>repository.getInterviewAnswers?.(r.id)?.answers??[])
     const selectedModel=model()
-    const result = await withLearningForeground(()=>cloud.generateRuleQuestions({ caseSupplied: !!job, bankQuestions,profile, requirements, rules: interviewRules, experienceSkills:bundle.instructions,
+    const result = await withLearningForeground(()=>cloud.generateRuleQuestions({ caseSupplied: !!job, bankQuestions,profile, requirements, rules: interviewRules, experienceSkills:bundle.instructions, request: input.request,
       previousQuestions: [...earlier, ...(interview ? [interview] : [])].flatMap((item) => item.questionPlan.map((q) => q.text)),
       notes: notes+'\n'+JSON.stringify({recordedAnswersNotIndependentlyVerified:answerContext}),
       locale: effectiveApplicationPreferences(repository).locale, model: selectedModel, signal: AbortSignal.timeout(60_000) }))
@@ -166,7 +166,7 @@ export function registerWorkRuleHandlers(context: MainIpcContext) {
       profileVersion:profile.profileVersion,jobCaseVersion:job?.version??null,rulesRevision:library.revision,bundle,modelKey:selectedModel.key,output:result,
       input:{task:'interview',context:scopeContext,requirements:requirements.map(value=>({key:'requirement',label:'requirement',value})),facts:profile.fields.flatMap(f=>f.value?[{key:f.key,label:f.label,value:f.value}]:[]),
         projects:profile.projectExperiences.map(({title,period,role,technologies,summary})=>({title,period,role,technologies,summary})),
-        hardFilters:[],hrRules:ruleContext.applied,previousQuestions,notes,locale:effectiveApplicationPreferences(repository).locale}})
+        hardFilters:[],hrRules:ruleContext.applied,previousQuestions,notes,locale:effectiveApplicationPreferences(repository).locale,...(input.request?{operatorRequest:input.request}:{})}})
     const questions = result.map((q) => ({ ...q, experienceRunId, ...(job ? { matchContext: { jobCaseId: job.id, jobCaseVersion: job.version, profileVersion: profile.profileVersion, rulesRevision: library.revision } } : {}) }))
     // Case questions are kept per person and case until round one exists, so the assessment card and the follow-up share one set.
     const draft = job && (!interview || interview.roundNumber === 1) ? { id: randomUUID(), documentId: input.documentId, jobCaseId: job.id, jobCaseVersion: job.version, profileVersion: profile.profileVersion,

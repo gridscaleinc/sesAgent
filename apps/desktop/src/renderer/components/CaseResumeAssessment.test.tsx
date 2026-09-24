@@ -65,3 +65,16 @@ it('shows the saved question draft for this person and case again when the card 
   expect(screen.getByText('已随本人员与案件保存，安排面试后会带入第一轮。')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '重新生成面试问题' })).toBeInTheDocument()
 })
+
+it('reassesses with what HR asked for and shows that request on the resulting card', async () => {
+  vi.mocked(window.sesAgent.assessCasePerson).mockResolvedValue({ ...assessment, id: 'steered', request: '重点看日语沟通能力' })
+  render(<CaseResumeAssessment job={job} cases={[job]} />)
+  fireEvent.change(screen.getByLabelText('选择简历'), { target: { files: [file('resume.pdf')] } })
+  await screen.findByText('不建议向本案提案')
+  expect(screen.queryByText(/本次评估按你的要求侧重/)).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('对 AI 评估的要求'), { target: { value: ' 重点看日语沟通能力 ' } })
+  fireEvent.click(screen.getByRole('button', { name: '重新评估' }))
+  await waitFor(() => expect(window.sesAgent.assessCasePerson).toHaveBeenCalledWith({ jobCaseId: 'case', documentId: 'person', request: '重点看日语沟通能力' }))
+  expect(await screen.findByText('本次评估按你的要求侧重：重点看日语沟通能力')).toBeInTheDocument()
+  expect(screen.getByLabelText('对 AI 评估的要求')).toHaveValue('')
+})

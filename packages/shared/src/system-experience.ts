@@ -24,6 +24,8 @@ export const baseExperienceSkills: Record<ExperienceTask, string> = {
 }
 export interface ExperienceInput {
   task: ExperienceTask
+  /** The operator's own request for this generation, kept for audit and learning. */
+  operatorRequest?: string
   ranking?:RankingSnapshot
   context?: ExperienceContext
   introduction?: { projection: string; lang: 'zh' | 'ja'; style: 'brief' | 'standard' }

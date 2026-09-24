@@ -131,3 +131,40 @@ it('restores saved searches without another model call and does not restart an e
   await act(async () => { await result.current.search(job) })
   expect(window.sesAgent.findPersonnelForCase).toHaveBeenCalledTimes(1)
 })
+
+it('shows and counts one list: placed searched people are hidden and duplicate records of one person collapse', async () => {
+  const { visibleCaseTasks } = await import('./use-case-resume-assessments')
+  const library = { documentId: 'lib', fileName: 'resume.xlsx', localIdentity: { displayName: '楊 凱' }, recordStatus: 'active', projectExperiences: [{ title: '日立財務報表システム' }] } as unknown as CandidateReviewSnapshot
+  const dragged = { documentId: 'drag', fileName: 'yang.pdf', localIdentity: { displayName: '楊凱' }, recordStatus: 'active', projectExperiences: [{ title: '日立財務報表システム' }, { title: '商取引アプリ' }] } as unknown as CandidateReviewSnapshot
+  const placed = { documentId: 'placed', fileName: 'placed.pdf', localIdentity: { displayName: '佐藤' }, recordStatus: 'active', projectExperiences: [] } as unknown as CandidateReviewSnapshot
+  const stranger = { documentId: 'other', fileName: 'other.pdf', localIdentity: { displayName: '楊凱' }, recordStatus: 'active', projectExperiences: [{ title: '別システム' }] } as unknown as CandidateReviewSnapshot
+  const task = (id: string, documentId: string, origin: 'search' | 'specified', extra: Partial<import('./use-case-resume-assessments').CaseResumeTask> = {}) =>
+    ({ id, reviewId: 'review-a', jobCaseId: 'case-a', reviewRevision: 1, name: '', status: 'completed' as const, documentId, origin, assessment: { id, documentId, result: {} } as any, ...extra })
+  const all = [task('t-lib', 'lib', 'search'), task('t-drag', 'drag', 'specified'), task('t-placed', 'placed', 'search'), task('t-other', 'other', 'search'), { ...task('t-b', 'lib', 'search'), reviewId: 'review-b' }]
+  const view = visibleCaseTasks(all, 'review-a', [library, dragged, placed, stranger], new Set(['placed']))
+  expect(view.tasks.map(item => item.id)).toEqual(['t-drag', 't-other'])
+  expect(view.hiddenDuplicates.get('t-drag')?.map(item => item.id)).toEqual(['t-lib'])
+  // A record that already has a follow-up wins over the manually added copy.
+  const withFollow = visibleCaseTasks(all, 'review-a', [library, dragged, placed, stranger], new Set(['placed']), item => item.documentId === 'lib')
+  expect(withFollow.tasks.map(item => item.id)).toEqual(['t-lib', 't-other'])
+  expect(withFollow.hiddenDuplicates.get('t-lib')?.map(item => item.id)).toEqual(['t-drag'])
+  // A manually added person stays visible even after placement; only searched people are hidden.
+  expect(visibleCaseTasks([task('t-p', 'placed', 'specified')], 'review-a', [placed], new Set(['placed'])).tasks).toHaveLength(1)
+})
+
+it('reassesses with the operator request, keeps it across a failed retry and clears it on a plain reassessment', async () => {
+  const { result } = renderHook(useCaseResumeAssessments)
+  let id = ''
+  act(() => { id = result.current.enqueue(job, [file()]) })
+  await waitFor(() => expect(result.current.tasks[0]?.status).toBe('completed'))
+  vi.mocked(window.sesAgent.assessCasePerson).mockRejectedValueOnce(new Error('offline'))
+  act(() => result.current.retry(id, undefined, '重点看日语'))
+  await waitFor(() => expect(result.current.tasks[0]?.status).toBe('failed'))
+  expect(window.sesAgent.assessCasePerson).toHaveBeenLastCalledWith({ jobCaseId: 'case-a', documentId: 'person', request: '重点看日语' })
+  act(() => result.current.retry(id))
+  await waitFor(() => expect(result.current.tasks[0]?.status).toBe('completed'))
+  expect(window.sesAgent.assessCasePerson).toHaveBeenLastCalledWith({ jobCaseId: 'case-a', documentId: 'person', request: '重点看日语' })
+  act(() => result.current.retry(id, undefined, null))
+  await waitFor(() => expect(window.sesAgent.assessCasePerson).toHaveBeenCalledTimes(3))
+  expect(window.sesAgent.assessCasePerson).toHaveBeenLastCalledWith({ jobCaseId: 'case-a', documentId: 'person' })
+})

@@ -1,4 +1,5 @@
 export const interviewQuestionDimensions = ['authenticity', 'core-capability', 'problem-solving', 'ownership-collaboration', 'case-readiness'] as const
+export type InterviewQuestionDimension = (typeof interviewQuestionDimensions)[number]
 
 export const interviewDimensionLabels = {
   authenticity: { zh: '履历真实性与深度', ja: '経歴の実態と深さ' },

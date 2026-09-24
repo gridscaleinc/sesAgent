@@ -3,7 +3,7 @@ import { businessMatchingPolicyVersion, proposalConclusion, matchEvidenceSection
 import { useUiLocale } from '../i18n'
 import { AssessmentCard } from './CaseResumeAssessment'
 import { AiWorkRulesPanel, workRulesChangedEvent } from './AiWorkRulesPanel'
-import { pendingResumeTask, type CaseResumeController } from './use-case-resume-assessments'
+import { pendingResumeTask, type CaseResumeController, type CaseResumeTask } from './use-case-resume-assessments'
 import { InterviewEvidencePanel } from './InterviewEvidencePanel'
 import { RankingReason } from './RankingReason'
 import { recordExperienceOpened, useExperienceExposure } from './experience-exposure'
@@ -32,7 +32,6 @@ export function CaseResumeAssessmentPanel({ job, people, controller, focusTaskId
   const admissionLocks = useRef(new Set<string>())
   const [rulesError, setRulesError] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false), [starting, setStarting] = useState(false)
-  const [unavailablePeople, setUnavailablePeople] = useState<Set<string>>(new Set())
   const startLock = useRef(false)
   const progress = useBusinessProgress()
   const exposureRoot = useRef<HTMLElement>(null)
@@ -57,18 +56,14 @@ export function CaseResumeAssessmentPanel({ job, people, controller, focusTaskId
     refresh(); window.addEventListener(workRulesChangedEvent, refresh)
     return () => { live = false; window.removeEventListener(workRulesChangedEvent, refresh) }
   }, [])
-  useEffect(() => {
-    let live = true
-    void window.sesAgent.getPersonnelWorkspace?.().then(value => {
-      if (live) setUnavailablePeople(new Set(value.states.filter(item => !['available', 'soon'].includes(item.status)).map(item => item.documentId)))
-    }).catch(() => { /* Main validates eligibility again before business actions. */ })
-    return () => { live = false }
-  }, [people])
+  const { refreshAvailability } = controller
+  useEffect(() => { refreshAvailability() }, [people, refreshAvailability])
+  const unavailablePeople = controller.unavailable
   const peopleById = new Map(people.map(person => [person.documentId, person]))
-  const personFor = (task: CaseResumeController['tasks'][number]) => peopleById.get(task.documentId ?? '') ?? task.person
+  const personFor = (task: CaseResumeTask) => peopleById.get(task.documentId ?? '') ?? task.person
   const search = controller.searches[job.reviewId]
-  const tasks = controller.tasks.filter(item => item.reviewId === job.reviewId && (item.origin !== 'search' ||
-    item.assessment?.result.qualification?.status !== 'excluded' && personFor(item)?.recordStatus === 'active' && !unavailablePeople.has(item.documentId ?? '')))
+  const existing = (task: CaseResumeTask) => task.documentId ? progress?.indexes.pairs.get(progressPairKey({ documentId: task.documentId, reviewId: job.reviewId })) : undefined
+  const { tasks, hiddenDuplicates } = controller.visible(job.reviewId, people, task => Boolean(existing(task)))
   const active = job.lifecycle === 'active'
   const staleFor = (assessment: CasePersonAssessment, person?: CandidateReviewSnapshot) => !active ||
     assessment.id.startsWith('preview:') || assessment.result.qualification?.policyVersion !== businessMatchingPolicyVersion ||
@@ -76,7 +71,6 @@ export function CaseResumeAssessmentPanel({ job, people, controller, focusTaskId
     rulesRevision === null || assessment.rulesRevision !== rulesRevision || !person?.profile || person.profile.version !== assessment.profileVersion
   const canUse = (task: typeof tasks[number]) => Boolean(task.assessment && !pendingResumeTask(task) &&
     !staleFor(task.assessment, personFor(task)) && personFor(task)?.recordStatus !== 'deleted' && !unavailablePeople.has(task.documentId ?? ''))
-  const existing = (task: typeof tasks[number]) => task.documentId ? progress?.indexes.pairs.get(progressPairKey({ documentId: task.documentId, reviewId: job.reviewId })) : undefined
   const nameFor = (item: typeof tasks[number]) => personFor(item)?.localIdentity?.displayName ?? (item.name || personFor(item)?.fileName || t('已评估人员', '評価済み要員'))
   const statusLabel = (status: typeof tasks[number]['status']) => ({ queued: t('等待处理', '処理待ち'), parsing: t('正在解析简历', '履歴書を解析中'), assessing: t('正在评估', '評価中'), completed: t('已完成', '完了'), failed: t('处理失败', '処理失敗') })[status]
   const conclusion = (task: typeof tasks[number]) => {
@@ -147,6 +141,7 @@ export function CaseResumeAssessmentPanel({ job, people, controller, focusTaskId
         return <article className={`case-people-card${expanded ? ' is-expanded' : ''}`} key={task.id} aria-label={nameFor(task)} data-experience-run={assessment?.result.experienceRunId} data-experience-rank={rank + 1}>
           <button className="case-people-summary" type="button" aria-expanded={expanded} onClick={() => { setSelected(state => ({ ...state, [job.reviewId]: expanded ? null : task.id })); if (!expanded) recordExperienceOpened(assessment?.result.experienceRunId) }}>
             <span><strong>{nameFor(task)}</strong><small>{task.origin === 'search' ? t('系统找到', 'システム検索') : t('手动添加', '手動追加')}</small></span><b>{conclusion(task)}</b>
+            {hiddenDuplicates.get(task.id)?.length ? <small>{t('同一人员的另一条记录已合并显示', '同一要員の別記録をまとめて表示しています')}</small> : null}
             {!busy && stale && !preliminary ? <small>{t('历史结果 · 需重新评估', '過去の結果・再評価が必要')}</small> : null}
             {met.length ? <small>{t('匹配依据', '一致の根拠')}：{met.map(item => item.requirement.label).join(' · ')}</small> : null}
             {met[0]?.evidence ? <small>{met[0].evidence.slice(0, 140)}</small> : null}
@@ -166,7 +161,7 @@ export function CaseResumeAssessmentPanel({ job, people, controller, focusTaskId
             {preliminary && !busy ? <p role="status">{t('当前为本地初筛结果，请等待完整评估或重新找人。', '現在はローカル検索結果です。評価の完了を待つか、再検索してください。')}</p> : null}
             {assessment && !busy && !preliminary ? <>
               <AssessmentCard key={assessment.id} value={assessment} name={nameFor(task)} jobCaseId={job.jobCase?.id ?? assessment.jobCaseId} reevaluationDisabled={!active} archived={person?.recordStatus === 'archived'} stale={stale}
-                onRefresh={value => controller.completed(task.id, value)} onReassess={() => { if (active) controller.retry(task.id, job.jobCase?.id) }} />
+                onRefresh={value => controller.completed(task.id, value)} onReassess={(request) => { if (active) controller.retry(task.id, job.jobCase?.id, request) }} />
               {relevantProjects.length ? <details className="case-resume-projects"><summary>{t('相关项目经历', '関連する案件経験')} ({relevantProjects.length})</summary>{relevantProjects.slice(0, 3).map(project => <article key={project.draftId}><strong>{project.title}</strong><p>{project.period} · {project.role}</p><p>{project.summary}</p></article>)}</details> : null}
               <InterviewEvidencePanel documentId={assessment.documentId} reviewId={job.reviewId}/><RankingReason ranking={assessment.result.ranking} zh={zh}/>
               {unavailablePeople.has(task.documentId ?? '') ? <p role="status">{t('此人员已入场或暂停营业，请先更新人员营业状态。', '参画中または営業停止中です。営業状況を更新してください。')}</p> : null}

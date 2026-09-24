@@ -998,6 +998,11 @@ export interface CandidateInterviewQuestion {
   scoringGuide?: string | null
   /** One short probe that tests the answer, never a second question. */
   followUp?: string | null
+  /** Capability dimension the question verifies; absent on questions saved before dimensions existed. */
+  dimension?: import('./interview-question-policy').InterviewQuestionDimension | null
+  /** The individual case requirements and resume sources behind `requirement` / `evidence`. */
+  requirementItems?: string[]
+  evidenceItems?: string[]
 }
 
 /**

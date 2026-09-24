@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { interviewQuestionDimensions } from './interview-question-policy'
 import { workTaskTypes } from '@domain'
 import {
   candidateFieldKeys,
@@ -357,7 +358,10 @@ export const candidateInterviewQuestionSchema = z.object({
   sourceLabel: z.string().trim().min(1).max(160).nullable(),
   selected: z.boolean(),
   scoringGuide: z.string().trim().max(300).nullable().optional(),
-  followUp: z.string().trim().max(200).nullable().optional()
+  followUp: z.string().trim().max(200).nullable().optional(),
+  dimension: z.enum(interviewQuestionDimensions).nullable().optional(),
+  requirementItems: z.array(z.string().trim().min(1).max(600)).max(10).optional(),
+  evidenceItems: z.array(z.string().trim().min(1).max(1000)).max(10).optional()
 })
 
 function isAllowedZoomMeetingUrl(value: string): boolean {

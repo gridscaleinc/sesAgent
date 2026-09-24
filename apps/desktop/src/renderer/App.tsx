@@ -2,7 +2,7 @@ import { matchFollowUpLabels } from '@shared'
 import { CaseResumeAssessmentPanel } from './components/CaseResumeAssessmentPanel'
 import { pendingResumeTask, useCaseResumeAssessments } from './components/use-case-resume-assessments'
 import { MatchingOpportunities } from './components/MatchingOpportunities'
-import { BusinessProgressContext, useBusinessProgressData } from './business-progress-data'
+import { BusinessProgressContext, progressPairKey, useBusinessProgressData } from './business-progress-data'
 import { BusinessProgressOverview } from './components/BusinessProgressOverview'
 import { CaseIntroductionComposer, type CaseIntroductionTarget } from './components/CaseIntroductionComposer'
 import type { FollowUpTarget } from './components/HrFollowUps'
@@ -1485,9 +1485,10 @@ export function App() {
   }
   const assessmentJob = bootstrap.jobCaseReviews.find(job => job.reviewId === assessmentReviewId)
   const resumeStates: Record<string, { pending: number; count: number }> = {}
-  for (const task of caseResumes.tasks) {
-    const state = resumeStates[task.reviewId] ??= { pending: 0, count: 0 }
-    state.count++; if (pendingResumeTask(task)) state.pending++
+  // The card counts exactly the people the panel would show.
+  for (const reviewId of new Set(caseResumes.tasks.map(task => task.reviewId))) {
+    const visible = caseResumes.visible(reviewId, bootstrap.candidateReviews, task => Boolean(task.documentId && businessProgress.indexes.pairs.get(progressPairKey({ documentId: task.documentId, reviewId })))).tasks
+    resumeStates[reviewId] = { pending: visible.filter(pendingResumeTask).length, count: visible.length }
   }
   for (const [reviewId, search] of Object.entries(caseResumes.searches)) {
     const state = resumeStates[reviewId] ??= { pending: 0, count: 0 }
@@ -1639,7 +1640,7 @@ export function App() {
             <div className="hr-follow-surface" hidden={!hrFollowOpen}><HrProgressWorkbench active={hrFollowOpen} onSchedule={openInterviewSchedule}
               onBackToMatches={hrFollowTarget?.reviewId === assessmentReviewId && !hrSource ? () => { setHrFollowOpen(false); setAgentSideMode('assessment'); setAgentHomeRequest(value => value + 1) } : hrSource ? () => { setHrFollowOpen(false); closeAgentPanel(); setAgentHomeRequest((value) => value + 1) } : undefined}
               onBrowse={openHrList}
-              interviews={bootstrap.candidateInterviews} onUpdated={() => { void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} target={hrFollowTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} /></div>
+              interviews={bootstrap.candidateInterviews} onUpdated={() => { caseResumes.refreshAvailability(); void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} target={hrFollowTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} /></div>
           </div>}
 
           homeRequestToken={agentHomeRequest}
@@ -1647,7 +1648,7 @@ export function App() {
           onOpenBatch={openAgentBatch}
           contextPanelOpen={agentPrimary && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)}
           contextPanel={<>
-            {sideProgressTarget ? <HrProgressWorkbench embedded key={`${sideProgressTarget.documentId}:${sideProgressTarget.reviewId}`} onBack={() => setSideProgressTarget(null)} target={sideProgressTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} interviews={bootstrap.candidateInterviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} onUpdated={() => { void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} /> : null}
+            {sideProgressTarget ? <HrProgressWorkbench embedded key={`${sideProgressTarget.documentId}:${sideProgressTarget.reviewId}`} onBack={() => setSideProgressTarget(null)} target={sideProgressTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} interviews={bootstrap.candidateInterviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} onUpdated={() => { caseResumes.refreshAvailability(); void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} /> : null}
             <div className="hr-object-context" hidden={Boolean(sideProgressTarget)}>
             <div hidden={agentSideMode !== 'assessment'} className="case-resume-panel-surface">
               {assessmentJob ? <CaseResumeAssessmentPanel job={assessmentJob} people={bootstrap.candidateReviews} controller={caseResumes} focusTaskId={assessmentFocus} onClose={closeAgentPanel}

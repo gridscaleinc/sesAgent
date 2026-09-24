@@ -134,6 +134,16 @@ describe('case personnel matching', () => {
     await second
     expect(f.cloud!.assessMatchCandidates).toHaveBeenCalledTimes(2)
   })
+  it('sends the operator request only for a single-person assessment and never for a batch search', async () => {
+    const f = setup(async (input) => ({ assessments: input.candidates.map((candidate) => verdict(candidate.label)) }))
+    const repository = f.context.repository as unknown as Record<string, unknown>
+    repository.getCandidateProfileForAssessment = (id: string) => makePerson(id)
+    const match = createCasePersonnelMatcher(f.context)
+    await match(jobId, { documentId: 'a', request: '重点看日语' })
+    expect(f.cloud!.assessMatchCandidates.mock.calls[0]![0].operatorRequest).toBe('重点看日语')
+    await match(jobId, { request: '重点看日语' })
+    expect(f.cloud!.assessMatchCandidates.mock.calls[1]![0]).not.toHaveProperty('operatorRequest')
+  })
 })
 it('allows only explicit archived assessments and drops a deleted target before completion',async()=>{
   let target:CandidateProfile|null=makePerson('archived')

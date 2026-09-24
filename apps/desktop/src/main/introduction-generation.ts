@@ -18,6 +18,7 @@ function load(context:Context,input:RegenerateIntroductionInput) {
   // Cloud writing needs business facts only. Keep database IDs and source metadata
   // local: UUID fragments can also resemble postal codes to the independent DLP.
   const projection=JSON.stringify({
+    operatorRequest:input.request??null,
     customerMailTemplate,
     hrRules:hrRules.map(({kind,text})=>({kind,text})),
     task:input.kind==='case'?'Introduce this job opening':'Introduce this person, referring to the case if provided',
@@ -32,7 +33,7 @@ function load(context:Context,input:RegenerateIntroductionInput) {
   const requirements=[{key:'purpose',label:'purpose',value:input.kind==='case'?'案件介绍 / 案件紹介':'人员介绍 / 要員紹介'},...(job?.fields??[]).flatMap(f=>f.value?[{key:f.key,label:f.key,value:f.value}]:[])]
   const scope=experienceContext(context.repository,job?.fields??[],locale,input.style)
   const snapshot:ExperienceInput={task:'introduction',context:scope,introduction:{projection,lang:input.lang,style:input.style},requirements,
-    facts:person?.fields.flatMap(f=>f.value?[{key:f.key,label:f.label,value:f.value}]:[])??[],projects:person?.projectExperiences.map(({title,period,role,technologies,summary})=>({title,period,role,technologies,summary}))??[],hardFilters:[],hrRules,previousQuestions:[],notes:'',locale}
+    facts:person?.fields.flatMap(f=>f.value?[{key:f.key,label:f.label,value:f.value}]:[])??[],projects:person?.projectExperiences.map(({title,period,role,technologies,summary})=>({title,period,role,technologies,summary}))??[],hardFilters:[],hrRules,previousQuestions:[],notes:'',locale,...(input.request?{operatorRequest:input.request}:{})}
   return {customerMailTemplate,projection,snapshot,bundle:experienceBundle(context.repository,'introduction',requirements,scope),documentId:person?input.id:null,reviewId:job?.reviewId??null,profileVersion:person?.profileVersion??0,jobCaseVersion:job?.jobCase?.version??null}
 }
 function validateText(text:string) {

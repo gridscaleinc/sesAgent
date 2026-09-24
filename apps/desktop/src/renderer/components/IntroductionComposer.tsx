@@ -20,6 +20,7 @@ export function IntroductionComposer({ target, people, cases, onClose, onFollowU
   const [lang, setLang] = useState<'ja' | 'zh'>('ja')
   const [subjects, setSubjects] = useState<Record<string, string>>({})
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [requests, setRequests] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -52,11 +53,12 @@ export function IntroductionComposer({ target, people, cases, onClose, onFollowU
   const working = busy || experience.generating
   const text = drafts[key] ?? experience.text
   const missingFields = proposal?.missingFields.filter(label => text.includes(`${label}：${lang === 'ja' ? '[送信前に記入]' : '[发送前填写]'}`)) ?? []
+  const request = (requests[key] ?? '').trim()
   const regenerate = async () => {
     if (lock.current || experience.generating || !target || !valid) return
     lock.current = true; setBusy(true); setError(''); setNotice('')
     try {
-      const result = await window.sesAgent.regenerateIntroduction({ kind: 'person', id: target.documentId, version: target.profileVersion, lang, style: template?.id === briefTemplateId ? 'brief' : 'standard', ...(target.reviewId && target.jobCaseVersion ? { caseContext: { reviewId: target.reviewId, version: target.jobCaseVersion } } : {}) })
+      const result = await window.sesAgent.regenerateIntroduction({ kind: 'person', id: target.documentId, version: target.profileVersion, lang, style: template?.id === briefTemplateId ? 'brief' : 'standard', ...(request ? { request } : {}), ...(target.reviewId && target.jobCaseVersion ? { caseContext: { reviewId: target.reviewId, version: target.jobCaseVersion } } : {}) })
       experience.replace(result)
       setDrafts((current) => ({ ...current, [key]: result.text }))
       setNotice(t('AI 已重新生成，可直接编辑。', 'AIで再生成しました。そのまま編集できます。'))
@@ -101,7 +103,10 @@ export function IntroductionComposer({ target, people, cases, onClose, onFollowU
       label: item.id === standardTemplateId ? t('标准', '標準') : item.id === briefTemplateId ? t('省略', '簡潔') : item.name }))}
       templateId={template?.id ?? ''} lang={lang} disabled={busy} panelId={panelId} onTemplateChange={setTemplateId} onLanguageChange={setLang} />
     {experience.generating ? <p role="status">{t('正在结合案件要求、项目技术和实际职责生成提案文…', '案件要件・使用技術・担当業務をもとに提案文を生成しています…')}</p> : null}
-    <div className="hr-intro-generation"><button type="button" disabled={working || !valid} onClick={() => void regenerate()}>{working ? t('云端 AI 正在生成…', 'Cloud AIで生成中…') : t('AI 重新生成', 'AIで再生成')}</button></div>
+    <div className="hr-intro-generation">
+      <input className="ai-request-input" aria-label={t('对 AI 的要求', 'AIへの要望')} placeholder={t('例：加上他的团队管理经验', '例：チーム管理の経験を加えて')} maxLength={500} disabled={working || !valid} value={requests[key] ?? ''} onChange={(event) => setRequests(state => ({ ...state, [key]: event.target.value }))} />
+      <button type="button" disabled={working || !valid} onClick={() => void regenerate()}>{working ? t('云端 AI 正在生成…', 'Cloud AIで生成中…') : t('AI 重新生成', 'AIで再生成')}</button>
+    </div>
     <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body"><textarea aria-label={t('介绍文案', '紹介文')} value={text} onChange={(event) => {experience.markEdited();setDrafts((state) => ({ ...state, [key]: event.target.value }))}} disabled={working} /></div>
     {error || experience.error ? <p role="alert">{error || experience.error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
     <footer>{target.reviewId ? <button type="button" disabled={working || !valid} onClick={() => { if (busy) return; setBusy(true); void Promise.resolve(onFollowUp({ documentId: target.documentId, reviewId: target.reviewId!, ...(target.pendingConditions ? { pendingConditions: target.pendingConditions } : {}) })).catch((cause) => setError(String(cause))).finally(() => setBusy(false)) }}>{t('安排面试', '面談を予約')}</button> : null}<small>{t('复制和打开邮件不会记为已发送。', 'コピーやメールを開く操作は送信済みになりません。')}</small><button disabled={working || !valid || !template || !text.trim()} type="button" onClick={() => void submit('email')}>{t('打开邮件', 'メールを開く')}</button><button className="hr-primary" disabled={working || !valid || !template || !text.trim()} type="button" onClick={() => void submit('copy')}>{t('复制介绍', '紹介文をコピー')}</button></footer>

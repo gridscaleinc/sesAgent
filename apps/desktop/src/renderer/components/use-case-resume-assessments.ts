@@ -15,10 +15,41 @@ export interface CaseResumeTask {
   file?: File
   origin?: 'search' | 'specified'
   updatedAt?: number
+  /** Operator request for the next assessment of this person; kept across a failed retry. */
+  request?: string
 }
 export interface CasePeopleSearch { pending: boolean; localReady: boolean; jobCaseId?: string; result?: CasePersonnelMatchResult; error?: string }
 export const pendingResumeTask = (task: CaseResumeTask) => ['queued', 'parsing', 'assessing'].includes(task.status)
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
+
+export interface CaseTaskVisibility { tasks: CaseResumeTask[]; hiddenDuplicates: Map<string, CaseResumeTask[]> }
+const identityKey = (task: CaseResumeTask, person?: CandidateReviewSnapshot) => (person?.localIdentity?.displayName ?? '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase()
+/** Two records are the same human when the name matches and either the file or a project title is shared. */
+const samePerson = (a?: CandidateReviewSnapshot, b?: CandidateReviewSnapshot) => {
+  if (!a || !b) return false
+  if (a.fileName && a.fileName === b.fileName) return true
+  const titles = new Set((a.projectExperiences ?? []).map(project => project.title).filter(Boolean))
+  return (b.projectExperiences ?? []).some(project => project.title && titles.has(project.title))
+}
+/** The one list the people panel shows and the case card counts: unavailable searched people are hidden and duplicate records collapse to one card. */
+export function visibleCaseTasks(all: CaseResumeTask[], reviewId: string, people: CandidateReviewSnapshot[], unavailable: Set<string>, hasFollowUp?: (task: CaseResumeTask) => boolean): CaseTaskVisibility {
+  const peopleById = new Map(people.map(person => [person.documentId, person]))
+  const personFor = (task: CaseResumeTask) => peopleById.get(task.documentId ?? '') ?? task.person
+  const shown = all.filter(item => item.reviewId === reviewId && (item.origin !== 'search' ||
+    item.assessment?.result.qualification?.status !== 'excluded' && personFor(item)?.recordStatus === 'active' && !unavailable.has(item.documentId ?? '')))
+  const rank = (task: CaseResumeTask) => (hasFollowUp?.(task) ? 4 : 0) + (task.origin !== 'search' ? 2 : 0) + (task.status === 'completed' ? 1 : 0)
+  const kept: CaseResumeTask[] = [], hiddenDuplicates = new Map<string, CaseResumeTask[]>()
+  for (const task of shown) {
+    const person = personFor(task), key = identityKey(task, person)
+    const twin = kept.find(other => (task.documentId && other.documentId === task.documentId) || (key !== '' && identityKey(other, personFor(other)) === key && samePerson(person, personFor(other))))
+    if (!twin) { kept.push(task); continue }
+    const replace = rank(task) > rank(twin) || (rank(task) === rank(twin) && (task.updatedAt ?? 0) > (twin.updatedAt ?? 0))
+    const winner = replace ? task : twin, loser = replace ? twin : task
+    if (replace) kept[kept.indexOf(twin)] = task
+    hiddenDuplicates.set(winner.id, [...(hiddenDuplicates.get(twin.id) ?? []), loser]); if (replace) hiddenDuplicates.delete(twin.id)
+  }
+  return { tasks: kept, hiddenDuplicates }
+}
 
 /** App-owned tasks survive panel navigation. Files stay in memory only while needed. */
 export function useCaseResumeAssessments() {
@@ -40,6 +71,18 @@ export function useCaseResumeAssessments() {
     current.current = update(current.current)
     setTasks(current.current)
   }, [])
+  // Placed or paused personnel are hidden from search results; the panel and the case card read the same set.
+  const [unavailable, setUnavailable] = useState<Set<string>>(new Set())
+  const refreshAvailability = useCallback(() => {
+    Promise.resolve(window.sesAgent.getPersonnelWorkspace?.()).then(value => {
+      if (value) setUnavailable(new Set(value.states.filter(item => !['available', 'soon'].includes(item.status)).map(item => item.documentId)))
+    }).catch(() => { /* Main validates eligibility again before business actions. */ })
+  }, [])
+  useEffect(() => {
+    refreshAvailability(); window.addEventListener('ses-business-data-changed', refreshAvailability)
+    return () => window.removeEventListener('ses-business-data-changed', refreshAvailability)
+  }, [refreshAvailability])
+  const visible = useCallback((reviewId: string, people: CandidateReviewSnapshot[], hasFollowUp?: (task: CaseResumeTask) => boolean) => visibleCaseTasks(tasks, reviewId, people, unavailable, hasFollowUp), [tasks, unavailable])
   const patch = useCallback((id: string, values: Partial<CaseResumeTask>) => {
     change(items => items.map(item => item.id === id ? { ...item, ...values } : item))
   }, [change])
@@ -77,7 +120,7 @@ export function useCaseResumeAssessments() {
         }
         if (task.documentId) {
           patch(id, { status: 'assessing', error: undefined })
-          completed(id, await window.sesAgent.assessCasePerson({ jobCaseId, documentId: task.documentId }))
+          completed(id, await window.sesAgent.assessCasePerson({ jobCaseId, documentId: task.documentId, ...(task.request ? { request: task.request } : {}) }))
         } else if (task.file) {
           patch(id, { status: 'parsing', error: undefined })
           const result = await window.sesAgent.importResumeForCase({ requestId: id, jobCaseId,
@@ -98,10 +141,11 @@ export function useCaseResumeAssessments() {
     added.forEach(task => schedule(task.id))
     return added[0]!.id
   }, [change, schedule])
-  const retry = useCallback((id: string, jobCaseId?: string) => {
+  /** `request` undefined keeps the task's current request (a failed retry); null clears it. */
+  const retry = useCallback((id: string, jobCaseId?: string, request?: string | null) => {
     const task = current.current.find(item => item.id === id)
     if (!task || pendingResumeTask(task)) return
-    patch(id, { status: 'queued', origin: 'specified', error: undefined, ...(jobCaseId ? { jobCaseId } : {}) })
+    patch(id, { status: 'queued', origin: 'specified', error: undefined, ...(jobCaseId ? { jobCaseId } : {}), ...(request !== undefined ? { request: request ?? undefined } : {}) })
     schedule(id)
   }, [patch, schedule])
   const loadHistory = useCallback(async (job: JobCaseReviewSnapshot) => {
@@ -189,6 +233,6 @@ export function useCaseResumeAssessments() {
     schedule(id)
     return id
   }, [change, schedule])
-  return { tasks, enqueue, retry, completed, loadHistory, historyErrors, loadingHistory, searches, search, cancelSearch, addPerson }
+  return { tasks, visible, unavailable, refreshAvailability, enqueue, retry, completed, loadHistory, historyErrors, loadingHistory, searches, search, cancelSearch, addPerson }
 }
 export type CaseResumeController = ReturnType<typeof useCaseResumeAssessments>

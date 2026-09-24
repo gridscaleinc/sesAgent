@@ -443,8 +443,39 @@ describe('CandidatePipeline recruiting workspace', () => {
     expect(document.querySelectorAll('.recruiting-ai-suggestion-list input[type="checkbox"]')).toHaveLength(5)
     expect(screen.getByText('请说明微服务拆分的原则和通信方式？')).toBeInTheDocument()
     expect(screen.queryByText('请说明你如何决定是否采用React？')).not.toBeInTheDocument()
-    expect(onSendCloudPrompt.mock.calls[0]![0].content).toContain('at most ONE per dimension')
+    expect(onSendCloudPrompt.mock.calls[0]![0].content).toContain('at most ONE question per dimension')
     expect(screen.queryByText('Cloud AI 没有返回可用的面试问题，已保留本机建议。')).not.toBeInTheDocument()
+  })
+
+  it('sends what HR asked for with the work-rule question request', async () => {
+    const generateRuleQuestions = vi.fn(async () => ({ questions: [] }))
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...window.sesAgent, generateRuleQuestions } })
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          initialCandidateId={documentId}
+          interviewKind="recruiting"
+          interviews={[{ ...interview, stage: 'scheduled' }]}
+          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenCloudSettings={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="prepare"
+        />
+      </UiLocaleProvider>
+    )
+    fireEvent.change(await screen.findByLabelText('对 AI 的要求'), { target: { value: ' 加上团队管理的问题 ' } })
+    fireEvent.click(screen.getByRole('button', { name: '按 AI 工作规则生成问题' }))
+    await waitFor(() => expect(generateRuleQuestions).toHaveBeenCalledWith({ documentId, interviewId: interview.id, request: '加上团队管理的问题' }))
   })
 
   it('lets HR append a local structured summary into the interview record', async () => {
