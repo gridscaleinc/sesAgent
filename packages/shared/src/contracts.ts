@@ -2875,6 +2875,7 @@ export interface DesktopApi {
   savePersonnelTemplate(input: PersonnelTemplate): Promise<PersonnelTemplate[]>
   beginBusinessProgress(input: import('./business-progress').BeginBusinessProgressInput): Promise<import('./business-workbench').BusinessFollowUp[]>
   advanceBusinessProgress(input: import('./business-progress').AdvanceBusinessProgressInput): Promise<import('./business-workbench').BusinessFollowUp>
+  deleteBusinessFollowUp(input: import('./business-progress').DeleteBusinessFollowUpInput): Promise<import('./business-progress').DeleteBusinessFollowUpResult>
   analyzeBusinessProgress(input: import('./business-progress').AnalyzeBusinessProgressInput): Promise<import('./business-progress').ProgressAnalysis>
   draftBusinessProgressMessage(input: import('./business-progress').ProgressMessageInput): Promise<{ text: string; recipient: string | null }>
   openBusinessProgressEmail(input: import('./business-progress').ProgressMessageInput): Promise<{ opened: true; recipientPrefilled: boolean }>
@@ -3040,6 +3041,7 @@ export const ipcChannels = {
   savePersonnelTemplate: 'personnel:template-save',
   beginBusinessProgress: 'business:begin-progress',
   advanceBusinessProgress: 'business:advance-progress',
+  deleteBusinessFollowUp: 'business:delete-followup',
   analyzeBusinessProgress: 'business:analyze-progress',
   draftBusinessProgressMessage: 'business:draft-progress-message',
   openBusinessProgressEmail: 'business:open-progress-email',

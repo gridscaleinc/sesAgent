@@ -55,6 +55,10 @@ export const advanceBusinessProgressSchema = z.discriminatedUnion('action', [
   z.object({ ...pair, action: z.literal('link-interview'), interviewId: z.string().uuid() }).strict()
 ])
 export type AdvanceBusinessProgressInput = z.infer<typeof advanceBusinessProgressSchema>
+/** Removes one follow-up (a duplicate or mistaken pairing) with its rounds and linked progress mail; the person and the case stay. */
+export const deleteBusinessFollowUpSchema = z.object({ followUpId: z.string().uuid(), expectedRevision: z.number().int().nonnegative() }).strict()
+export type DeleteBusinessFollowUpInput = z.infer<typeof deleteBusinessFollowUpSchema>
+export interface DeleteBusinessFollowUpResult { deletedId: string; rounds: number; mails: number }
 export type ProgressCommand = AdvanceBusinessProgressInput extends infer T ? T extends AdvanceBusinessProgressInput ? Omit<T, keyof typeof pair> : never : never
 
 export const analyzeBusinessProgressSchema = z.object({ documentId: z.string().uuid(), reviewId: z.string().uuid(),

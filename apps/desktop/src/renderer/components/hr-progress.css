@@ -88,3 +88,5 @@
 
 .personnel-mail-updates { padding:16px; border:1px solid #d3e0d7; border-radius:10px; margin:12px 0; background:#f6faf7; }
 .personnel-mail-updates article + article { border-top:1px solid #d3e0d7; padding-top:12px; margin-top:12px; }
+.hr-progress-delete { margin-top:24px; padding-top:14px; border-top:1px solid var(--line, #e3e6ea); }
+.hr-progress-delete button.is-danger, .hr-progress-delete > button { color: var(--danger, #b43d49); }

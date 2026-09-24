@@ -519,7 +519,7 @@ it('starts three selected matches once and disables all scheduling buttons while
 it('continues an existing pair from matching without starting another followup', async () => {
   vi.mocked(window.sesAgent.findCasesForPersonnel).mockResolvedValue(result)
   const row = { id: 'existing-pair', documentId, reviewId, revision: 3, status: 'interview', note: '', nextStep: '', recordedBy: 'HR', updatedAt: '2026-09-10T00:00:00Z' } as BusinessFollowUp
-  const data = { rows: [row], indexes: progressIndexes([row]), now: new Date(), loading: false, failed: false, publish: vi.fn(), refresh: vi.fn() } as ReturnType<typeof useBusinessProgressData>
+  const data = { rows: [row], indexes: progressIndexes([row]), now: new Date(), loading: false, failed: false, publish: vi.fn(), refresh: vi.fn(), remove: vi.fn() } as ReturnType<typeof useBusinessProgressData>
   const onContinue = vi.fn(), onFollowUp = vi.fn()
   render(<BusinessProgressContext.Provider value={data}><HrMatchingWorkspace source={{kind:'person',id:documentId,requestId:99999}} people={[person]} cases={[job]} onBusy={vi.fn()} onView={vi.fn()} onPrepare={vi.fn()} onBack={vi.fn()} onFollowUp={onFollowUp} onContinue={onContinue} onScheduleMany={vi.fn()}/></BusinessProgressContext.Provider>)
   const button = await screen.findByRole('button', {name:'対応を続ける'})

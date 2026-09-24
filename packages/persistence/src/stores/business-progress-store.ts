@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { advanceBusinessProgressSchema, beginBusinessProgressSchema, candidateInterviewSnapshotSchema, emptyProgressEntry, interviewScheduleConflict,
-  type AdvanceBusinessProgressInput, type BusinessFollowUp, type BusinessProgress, type BusinessProgressMail, type CandidateInterviewSnapshot } from '@shared'
+import { advanceBusinessProgressSchema, beginBusinessProgressSchema, candidateInterviewSnapshotSchema, deleteBusinessFollowUpSchema, emptyProgressEntry, interviewScheduleConflict,
+  type AdvanceBusinessProgressInput, type DeleteBusinessFollowUpInput, type DeleteBusinessFollowUpResult, type BusinessFollowUp, type BusinessProgress, type BusinessProgressMail, type CandidateInterviewSnapshot } from '@shared'
 import { DomainStore } from './base'
 
 const fail = (message: string): never => { throw new Error(message) }
@@ -27,6 +27,19 @@ export class BusinessProgressStore extends DomainStore {
       const existing = this.list().find((item) => item.documentId === pair.documentId && item.reviewId === pair.reviewId)
       return existing?.progress ? existing : this.advance({ ...pair, pendingConditions: pair.pendingConditions ?? [], expectedRevision:existing?.revision ?? 0, mutationId:randomUUID(), action:'coordinate', candidateAvailability:'', clientAvailability:'' }, actor)
     }))()
+  }
+
+  /** Rounds and linked progress mail go with the follow-up through ON DELETE CASCADE, the same path personnel deletion uses. */
+  remove(raw: DeleteBusinessFollowUpInput): DeleteBusinessFollowUpResult {
+    const input = deleteBusinessFollowUpSchema.parse(raw)
+    return this.database.transaction(() => {
+      const current = this.list().find((item) => item.id === input.followUpId) ?? fail('推进记录不存在或已删除。')
+      if (current.revision !== input.expectedRevision) fail('推进记录已更新，请刷新后重试。')
+      if (current.progress?.stage === 'started') fail('已记录进场的推进不能删除，请先撤销进场。')
+      const mails = this.database.prepare<[string], { n: number }>('SELECT COUNT(*) AS n FROM business_progress_mail WHERE followup_id=?').get(input.followUpId)!.n
+      this.database.prepare('DELETE FROM business_followups WHERE id=?').run(input.followUpId)
+      return { deletedId: input.followUpId, rounds: current.progress?.rounds.length ?? 0, mails }
+    })()
   }
 
   advance(raw: AdvanceBusinessProgressInput, actor: string, now = new Date()): BusinessFollowUp {

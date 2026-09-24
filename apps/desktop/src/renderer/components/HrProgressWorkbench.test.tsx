@@ -250,3 +250,44 @@ it('rebooks the existing round after a no-show without creating another round',a
  fireEvent.click(detail().getByRole('button',{name:'保存面试安排'}))
  await waitFor(()=>expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({action:'rebook',schedule:expect.objectContaining({roundNumber:1}),reason:'与客户重新约同一轮'})))
 })
+
+it('keeps the feedback form usable after saving round questions from the questions tab',async()=>{
+ const round={id:'44444444-4444-4444-8444-444444444444',businessFollowUpId:row(0).id,sourceDocumentId:documentId,kind:'client' as const,roundNumber:1,parentInterviewId:null,stage:'scheduled' as const,scheduledAt:'2026-09-19T06:39:00.000Z',durationMinutes:60,meetingMethod:'onsite' as const,meetingUrl:null,interviewer:null,contactNote:null,interviewGoal:null,
+  questionPlan:[{id:'q1',text:'请说明担当范围。',source:'match' as const,sourceLabel:null,selected:true}],interviewNotes:null,unresolvedItems:[],decision:null,decisionReason:null,decidedAt:null,decidedBy:null,createdAt:'2026-09-10T00:00:00Z',updatedAt:'2026-09-10T00:00:00Z',updatedBy:'HR',cloudEligible:false as const}
+ records[0]={...row(0),progress:{...row(0).progress!,stage:'scheduled',rounds:[round]}}
+ show();await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.click(screen.getByRole('button',{name:/Java 案件 1/}))
+ fireEvent.click(detail().getByRole('button',{name:'面试问题'}))
+ await detail().findByRole('article',{name:'问题 1'})
+ fireEvent.click(detail().getByLabelText('采用'))
+ fireEvent.click(detail().getByRole('button',{name:/保存本轮问题/}))
+ await waitFor(()=>expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({action:'prepare',roundNumber:1,expectedRevision:1})))
+ fireEvent.click(detail().getByRole('button',{name:'反馈与 AI 整理'}))
+ fireEvent.change(detail().getByLabelText('面试反馈或消息'),{target:{value:'客户反馈通过'}})
+ await waitFor(()=>expect(detail().getByRole('button',{name:'保存面试结果'})).toBeEnabled())
+ expect(detail().queryByText(/其他操作更新了记录/)).not.toBeInTheDocument()
+})
+it('deletes one follow-up only after an explicit second confirmation and keeps the others',async()=>{
+ window.sesAgent.deleteBusinessFollowUp=vi.fn(async(input)=>{records=records.filter(record=>record.id!==input.followUpId);return {deletedId:input.followUpId,rounds:0,mails:0}})
+ show();await screen.findByRole('article',{name:'推进详情'})
+ const first=detail().getByRole('heading',{level:3}).parentElement!.textContent
+ fireEvent.click(detail().getByRole('button',{name:'完整记录'}))
+ fireEvent.click(detail().getByRole('button',{name:'删除这条跟进…'}))
+ fireEvent.click(detail().getByRole('button',{name:'取消'}))
+ expect(window.sesAgent.deleteBusinessFollowUp).not.toHaveBeenCalled()
+ fireEvent.click(detail().getByRole('button',{name:'删除这条跟进…'}))
+ fireEvent.click(detail().getByRole('button',{name:'确认删除'}))
+ await waitFor(()=>expect(window.sesAgent.deleteBusinessFollowUp).toHaveBeenCalledWith({followUpId:row(0).id,expectedRevision:1}))
+ expect(await screen.findByText(/已删除这条跟进/)).toBeInTheDocument()
+ await waitFor(()=>expect(detail().getByRole('heading',{level:3}).parentElement!.textContent).not.toBe(first))
+ expect(screen.queryByText('Java 案件 1')).not.toBeInTheDocument()
+ expect(screen.getAllByText('Java 案件 2').length).toBeGreaterThan(0)
+})
+it('asks to undo arrival before a started follow-up can be deleted',async()=>{
+ records=[{...row(0),progress:{...row(0).progress!,stage:'started'}}]
+ window.sesAgent.deleteBusinessFollowUp=vi.fn()
+ show({target:{documentId,reviewId:cases[0]!.reviewId}});await screen.findByRole('article',{name:'推进详情'})
+ fireEvent.click(detail().getByRole('button',{name:'完整记录'}))
+ expect(detail().getByText('此人员已进场。请先撤销进场，再删除这条跟进。')).toBeInTheDocument()
+ expect(detail().queryByRole('button',{name:'删除这条跟进…'})).not.toBeInTheDocument()
+})

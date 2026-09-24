@@ -139,7 +139,7 @@ describe('App workbench', () => {
       listQuestionBank:vi.fn(async()=>[]),controlQuestionBank:vi.fn(),
       getSystemExperience:vi.fn(),controlSystemExperience:vi.fn(),getSystemExperienceDetails:vi.fn(),recordExperienceExposure:vi.fn(),
       listWorkRules: vi.fn(async () => ({revision: 0, rules: []})), getWorkRuleHistory: vi.fn(async () => []), analyzeWorkRule: vi.fn(), saveWorkRule: vi.fn(), changeWorkRule: vi.fn(),
-      prepareCaseAssessment: vi.fn(), getCaseQuestionDraft: vi.fn(async () => ({ draft: null, stale: false })), listCaseAssessments: vi.fn(async () => []), onCaseResumeImportProgress: vi.fn(() => () => {}),
+      prepareCaseAssessment: vi.fn(), getCaseQuestionDraft: vi.fn(async () => ({ draft: null, stale: false })), deleteBusinessFollowUp: vi.fn(), listCaseAssessments: vi.fn(async () => []), onCaseResumeImportProgress: vi.fn(() => () => {}),
       assessCasePerson: vi.fn(), listCasePersonAssessments: vi.fn(async () => []), importResumeForCase: vi.fn(), addCandidateToLibrary: vi.fn(), saveAssessmentFeedback: vi.fn(), generateRuleQuestions: vi.fn(),
       listPersonnelMailUpdates: vi.fn(async () => []), resolvePersonnelMailUpdate: vi.fn(),
       beginBusinessProgress: vi.fn(async () => []), advanceBusinessProgress: vi.fn(), analyzeBusinessProgress: vi.fn(), draftBusinessProgressMessage: vi.fn(), openBusinessProgressEmail: vi.fn(), exportBusinessProgressCalendar: vi.fn(),

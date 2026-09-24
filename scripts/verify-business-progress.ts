@@ -309,6 +309,17 @@ try {
   assert.equal(repository.getCurrentCandidateProfile(documentId)!.fields.find(field=>field.key==='rate')!.value,'80万円')
   const recovered=repository.listBusinessFollowUps().find(row=>row.reviewId===pairs[1]!.reviewId)!
   assert.ok(recovered.events.some(event=>event.previousInterview?.decision==='no-show'),'rebooking audit survives restart')
+  // A single duplicate follow-up can be removed without touching the person, the case or the other follow-ups.
+  const removable=repository.listBusinessFollowUps().find(row=>row.progress?.stage!=='started'&&row.progress?.rounds.length)!
+  const followUpsBefore=repository.listBusinessFollowUps().length,roundIds=removable.progress!.rounds.map(round=>round.id)
+  assert.throws(()=>repository.deleteBusinessFollowUp({followUpId:removable.id,expectedRevision:removable.revision+1}),/已更新/)
+  const started=repository.listBusinessFollowUps().find(row=>row.progress?.stage==='started')
+  if(started)assert.throws(()=>repository.deleteBusinessFollowUp({followUpId:started.id,expectedRevision:started.revision}),/撤销进场/)
+  const linkedMails=repository.listBusinessProgressMail().filter(mail=>mail.followUpId===removable.id).length
+  assert.deepEqual(repository.deleteBusinessFollowUp({followUpId:removable.id,expectedRevision:removable.revision}),{deletedId:removable.id,rounds:roundIds.length,mails:linkedMails})
+  assert.equal(repository.listBusinessFollowUps().length,followUpsBefore-1)
+  assert.ok(!repository.listCandidateInterviews().some(round=>roundIds.includes(round.id)),'rounds are removed with their follow-up')
+  assert.ok(repository.getCandidateReview(documentId),'the person stays')
   const deletion=repository.previewCandidateDeletion(documentId)
   repository.deleteCandidateDatabaseData(documentId,deletion.confirmationHash)
   assert.equal(repository.listPersonnelMailUpdates(documentId).length,0,'mail condition records are deleted with personnel')

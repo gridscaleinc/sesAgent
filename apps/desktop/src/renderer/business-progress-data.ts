@@ -62,6 +62,10 @@ export function useBusinessProgressData(reloadToken: unknown) {
     setRows((current) => [...saved, ...current.filter((row) => !saved.some((item) => item.id === row.id))])
     setLoading(false); setFailed(false)
   }, [])
+  const remove = useCallback((id: string) => {
+    epoch.current++
+    setRows((current) => current.filter((row) => row.id !== id))
+  }, [])
   useEffect(() => { alive.current = true; return () => { alive.current = false; epoch.current++ } }, [])
   useEffect(() => { if (reloadToken) void refresh() }, [reloadToken, refresh])
   useEffect(() => {
@@ -71,7 +75,7 @@ export function useBusinessProgressData(reloadToken: unknown) {
   }, [reloadToken, refresh])
   useEffect(() => { const timer = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(timer) }, [])
   const indexes = useMemo(() => progressIndexes(rows), [rows])
-  return useMemo(() => ({ rows, indexes, loading, failed, now, refresh, publish }), [rows, indexes, loading, failed, now, refresh, publish])
+  return useMemo(() => ({ rows, indexes, loading, failed, now, refresh, publish, remove }), [rows, indexes, loading, failed, now, refresh, publish, remove])
 }
 export const BusinessProgressContext = createContext<ReturnType<typeof useBusinessProgressData> | null>(null)
 export const useBusinessProgress = () => useContext(BusinessProgressContext)

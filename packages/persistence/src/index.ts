@@ -888,6 +888,7 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   beginBusinessProgress(input: import('@shared').BeginBusinessProgressInput, actor: string) { return this.stores.businessProgress.begin(input,actor) }
   advanceBusinessProgress(input: import('@shared').AdvanceBusinessProgressInput, actor: string) { return this.stores.businessProgress.advance(input, actor) }
+  deleteBusinessFollowUp(input: import('@shared').DeleteBusinessFollowUpInput) { return this.stores.businessProgress.remove(input) }
   listBusinessProgressMail() { return this.stores.businessProgress.mail() }
   captureBusinessProgressMail(input: Parameters<StoreRegistry['businessProgress']['captureMail']>[0]) { return this.stores.businessProgress.captureMail(input) }
   updateBusinessProgressMail(input: Parameters<StoreRegistry['businessProgress']['updateMail']>[0]) { return this.stores.businessProgress.updateMail(input) }

@@ -43,7 +43,7 @@ export function HrProgressWorkbench({ embedded=false, onBack, target, active=tru
   const items=shared?.rows??localItems
   const [localLoading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[reload,setReload]=useState(0),[clock,setClock]=useState(()=>new Date())
   const loading=localLoading||Boolean(shared?.loading)
-  const [drafts,setDrafts]=useState<Record<string,Draft>>({}),[inboxOpen,setInboxOpen]=useState(false)
+  const [drafts,setDrafts]=useState<Record<string,Draft>>({}),[inboxOpen,setInboxOpen]=useState(false),[confirmingDelete,setConfirmingDelete]=useState<string|null>(null)
   const [message,setMessage]=useState<{purpose:ProgressMailPurpose;recipient:'person'|'client';lang:'zh'|'ja';text:string;to:string|null;draftKey:string}|null>(null)
   const content=useRef<HTMLDivElement>(null)
   const lock=useRef(false), requests=useRef(new Map<string,string>()), targetSeen=useRef<FollowUpTarget|null>(null), loadEpoch=useRef(0)
@@ -131,6 +131,16 @@ export function HrProgressWorkbench({ embedded=false, onBack, target, active=tru
       onUpdated?.()
     })
   }
+  const removeFollowUp=(row:BusinessFollowUp)=>{void run(async()=>{
+    const result=await window.sesAgent.deleteBusinessFollowUp({followUpId:row.id,expectedRevision:(drafts[pairKey(row)]??makeDraft(row)).revision})
+    shared?.remove(result.deletedId)
+    loadEpoch.current++;setLoading(false);setItems((rows)=>rows.filter((item)=>item.id!==result.deletedId))
+    setMail((rows)=>rows.filter((item)=>item.followUpId!==result.deletedId))
+    setDrafts((rows)=>{const next={...rows};delete next[pairKey(row)];return next})
+    setConfirmingDelete(null);setMessage(null);setSelected(null)
+    setNotice(t(`已删除这条跟进（面试 ${result.rounds} 轮，关联邮件 ${result.mails} 封），人员和案件保留。`,`この対応記録を削除しました（面談 ${result.rounds} 回・関連メール ${result.mails} 件）。要員と案件は残ります。`))
+    onUpdated?.()
+  })}
   const analyze=()=>{if(!current||!draft)return;void run(async()=>{
     const value=await window.sesAgent.analyzeBusinessProgress({documentId:current.documentId,reviewId:current.reviewId,expectedRevision:draft.revision,roundNumber:draft.feedbackRoundNumber,text:draft.feedback,lang:zh?'zh':'ja'})
     update({analysis:value,feedbackRoundNumber:value.roundNumber??draft.feedbackRoundNumber,result:value.result,next:value.next,unresolved:value.unresolved.join('\n'),
@@ -256,6 +266,12 @@ export function HrProgressWorkbench({ embedded=false, onBack, target, active=tru
         <label>{t('补充沟通记录','連絡メモを追加')}<textarea disabled={busy} rows={3} maxLength={2000} value={draft.note} onChange={(event)=>update({note:event.target.value})}/></label><button disabled={busy||stale||!draft.note.trim()||!current.id} onClick={()=>void save({action:'note',note:draft.note})}>{t('保存沟通记录','連絡メモを保存')}</button>
         {!['closed','started','paused'].includes(state.stage)?<div className="hr-progress-actions"><button disabled={busy||stale||!draft.note.trim()} onClick={()=>void save({action:'pause',reason:draft.note})}>{t('按此原因暂停','この理由で保留')}</button><button disabled={busy||stale||!draft.note.trim()} onClick={()=>void save({action:'close',reason:draft.note})}>{t('按此原因结束','この理由で終了')}</button></div>:null}
         {['paused','closed'].includes(state.stage)?<button disabled={busy||stale} onClick={()=>void save({action:'resume'})}>{t('恢复推进','対応を再開')}</button>:null}
+        {current.id?<section className="hr-progress-delete" aria-label={t('删除这条跟进','この対応記録を削除')}><h4>{t('删除这条跟进','この対応記録を削除')}</h4>
+          {state.stage==='started'?<p>{t('此人员已进场。请先撤销进场，再删除这条跟进。','この要員は参画済みです。参画を取り消してから削除してください。')}</p>
+          :confirmingDelete===current.id?<><p className="hr-followup-message is-error">{t(`将删除此人员与此案件的跟进、${current.progress?.rounds.length??0} 轮面试记录和关联的进度邮件，无法恢复。人员和案件本身保留。`,`この要員と案件の対応記録、面談 ${current.progress?.rounds.length??0} 回分の記録、関連する進捗メールを削除します。元に戻せません。要員と案件は残ります。`)}</p>
+            <div className="hr-progress-actions"><button className="is-danger" disabled={busy||stale} onClick={()=>removeFollowUp(current)}>{t('确认删除','削除する')}</button><button disabled={busy} onClick={()=>setConfirmingDelete(null)}>{t('取消','キャンセル')}</button></div></>
+          :<><p>{t('用于误建或重复的跟进。','誤って作成した、または重複した対応記録に使います。')}</p><button disabled={busy||stale} onClick={()=>setConfirmingDelete(current.id)}>{t('删除这条跟进…','この対応記録を削除…')}</button></>}
+        </section>:null}
       </>:null}
       {message&&message.draftKey===key?<section className="hr-progress-message" aria-label={t('准备联系消息','連絡文を準備')}><h4>{t('准备联系消息','連絡文を準備')}</h4><div className="hr-progress-actions">{(['person','client'] as const).map((recipient)=><button key={recipient} disabled={busy} aria-pressed={message.recipient===recipient} onClick={()=>prepareMessage(message.purpose,recipient,message.lang)}>{recipient==='person'?t('发给人员','要員宛'):t('发给案件方','案件側宛')}</button>)}{(['zh','ja'] as const).map((lang)=><button key={lang} disabled={busy} aria-pressed={message.lang===lang} onClick={()=>prepareMessage(message.purpose,message.recipient,lang)}>{lang==='zh'?t('中文','中国語'):t('日文','日本語')}</button>)}</div>
         <small>{t('收件人','宛先')}：{message.to||t('打开邮件后选择','メールで選択')}</small><textarea aria-label={t('联系文案','連絡文')} disabled={busy} rows={8} value={message.text} onChange={(event)=>setMessage({...message,text:event.target.value})}/><div className="hr-progress-actions"><button disabled={busy} onClick={()=>void run(async()=>{await copyTextToClipboard(message.text);setNotice(t('已复制','コピーしました'))})}>{t('复制消息','連絡文をコピー')}</button><button disabled={busy||stale} onClick={()=>void run(async()=>{await window.sesAgent.openBusinessProgressEmail({documentId:current.documentId,reviewId:current.reviewId,expectedRevision:current.revision,purpose:message.purpose,recipient:message.recipient,lang:message.lang,text:message.text});setNotice(t('已打开邮件，请确认后发送。','メールを開きました。確認して送信してください。'))})}>{t('打开邮件','メールを開く')}</button><small>{t('打开邮件不会记为已发送。','メールを開く操作は送信済みになりません。')}</small></div>

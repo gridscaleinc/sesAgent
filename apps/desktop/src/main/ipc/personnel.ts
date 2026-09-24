@@ -20,6 +20,7 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   const analyzeProgress = createBusinessProgressAnalyzer(context)
   ipcMain.handle(ipcChannels.beginBusinessProgress, (event, input) => { assertTrustedSender(event); return repository.beginBusinessProgress(input, currentOperator().displayName) })
   ipcMain.handle(ipcChannels.advanceBusinessProgress, (event, input) => { assertTrustedSender(event); return repository.advanceBusinessProgress(input, currentOperator().displayName) })
+  ipcMain.handle(ipcChannels.deleteBusinessFollowUp, (event, input) => { assertTrustedSender(event); return repository.deleteBusinessFollowUp(input) })
   ipcMain.handle(ipcChannels.analyzeBusinessProgress, (event, input) => { assertTrustedSender(event); return analyzeProgress(input) })
   ipcMain.handle(ipcChannels.listBusinessProgressMail, (event) => { assertTrustedSender(event); return repository.listBusinessProgressMail() })
   ipcMain.handle(ipcChannels.updateBusinessProgressMail, (event, input) => { assertTrustedSender(event); return repository.updateBusinessProgressMail(input) })

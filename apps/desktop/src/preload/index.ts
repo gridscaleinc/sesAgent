@@ -67,6 +67,7 @@ const api: DesktopApi = {
   savePersonnelTemplate: (input) => ipcRenderer.invoke(ipcChannels.savePersonnelTemplate, input),
   beginBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.beginBusinessProgress, input),
   advanceBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.advanceBusinessProgress, input),
+  deleteBusinessFollowUp: (input) => ipcRenderer.invoke(ipcChannels.deleteBusinessFollowUp, input),
   analyzeBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.analyzeBusinessProgress, input),
   draftBusinessProgressMessage: (input) => ipcRenderer.invoke(ipcChannels.draftBusinessProgressMessage, input),
   openBusinessProgressEmail: (input) => ipcRenderer.invoke(ipcChannels.openBusinessProgressEmail, input),
