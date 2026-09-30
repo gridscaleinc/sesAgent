@@ -51,7 +51,7 @@ function daysBetweenTokyoDays(day: string, today: string): number {
  * "what arrived today", so messageDate is the fallback for rows a caller built
  * without it, never the primary.
  */
-function arrivalOf(review: JobCaseReviewSnapshot): string {
+export function caseArrivalOf(review: JobCaseReviewSnapshot): string {
   return review.intakeAt ?? review.messageDate
 }
 
@@ -69,7 +69,7 @@ function entryFrom(review: JobCaseReviewSnapshot, seen: ReadonlySet<string>): Ne
     jobCaseId: confirmed ? review.jobCase!.id : null,
     title: fieldValue(review, 'title') ?? review.redactedSubject,
     sourceType: review.sourceType,
-    arrivedAt: arrivalOf(review),
+    arrivedAt: caseArrivalOf(review),
     unseen: !seen.has(review.reviewId),
     status: confirmed && !blockingWarning && missingFieldKeys.length === 0 ? 'ready' : 'needs-completion',
     missingFieldKeys,
@@ -99,7 +99,7 @@ export function deriveNewCaseDigest(input: {
   ])
   for (const review of input.reviews) {
     if (review.lifecycle !== 'active') continue
-    const age = daysBetweenTokyoDays(tokyoDayKey(arrivalOf(review)), today)
+    const age = daysBetweenTokyoDays(tokyoDayKey(caseArrivalOf(review)), today)
     if (age < 0 || age >= digestLookbackDays) continue
     buckets.get(age === 0 ? 'today' : age === 1 ? 'yesterday' : 'earlier')!.push(entryFrom(review, seen))
   }

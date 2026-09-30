@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto'
 import net from 'node:net'
 import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { collectLocalPersonNameCandidates, MacNaturalLanguageNerClient } from '@local-ai'
+import {
+  collectLocalPersonNameCandidates,
+  LocalUnionPersonNameDetector,
+  MacNaturalLanguageNerClient,
+  type LocalPersonNameDetectorPort
+} from '@local-ai'
 import { evaluatePrivacyExpertDataset, privacyExpertDatasetSchema } from '@privacy'
+import { InProcessGlinerNameDetector, releaseGlinerRuntime } from '../apps/desktop/src/workers/ner-engine'
 import { installParserNetworkDenyGuard } from '../apps/desktop/src/workers/network-deny'
 import {
   computeCloudEnforcementSha256,
@@ -70,14 +77,30 @@ try {
 if (!socketBlocked || !fetchBlocked) throw new Error('The local expert evaluator network guard is not active.')
 
 const automaticNamesByCase: Record<string, string[]> = {}
+// The detector the platform runs: Apple NL ∪ GLiNER on macOS (Apple alone
+// without the bundled model), GLiNER on Windows.
+const nerModelDirectory = resolve(root, 'models/knowledgator/gliner-x-small')
+const gliner =
+  process.platform === 'win32' || existsSync(resolve(nerModelDirectory, 'model-manifest.json'))
+    ? new InProcessGlinerNameDetector(nerModelDirectory)
+    : null
 const appleNer = process.platform === 'darwin' ? new MacNaturalLanguageNerClient(resolve(root, 'build/native/macos/ses-vision-ocr')) : null
+let glinerDegraded = false
+const localNer: LocalPersonNameDetectorPort | null =
+  appleNer && gliner
+    ? new LocalUnionPersonNameDetector(appleNer, gliner, () => {
+        glinerDegraded = true
+      })
+    : (appleNer ?? gliner)
 for (const testCase of [...parsed.data.cases, ...parsed.data.safeCases]) {
-  const localNerResult = appleNer ? await appleNer.detectNames(testCase.text) : undefined
+  const localNerResult = localNer ? await localNer.detectNames(testCase.text) : undefined
   if (localNerResult && localNerResult.networkAccess !== false) {
-    throw new Error('The local Apple NER helper did not prove networkAccess=false.')
+    throw new Error('The local NER did not prove networkAccess=false.')
   }
   automaticNamesByCase[testCase.id] = collectLocalPersonNameCandidates(testCase.text, localNerResult)
 }
+await releaseGlinerRuntime()
+if (glinerDegraded) throw new Error('GLiNER failed during the expert evaluation; the result would not match the runtime detector.')
 
 const evaluation = evaluatePrivacyExpertDataset(parsed.data, automaticNamesByCase)
 const privacyImplementationSha256 = await computePrivacyImplementationSha256(root)
@@ -96,7 +119,11 @@ const report = {
   reviewedAt: parsed.data.review.reviewedAt,
   evaluatedAt: new Date().toISOString(),
   ...evaluation,
-  nameDetectionEngines: process.platform === 'darwin' ? ['label-and-form-rules', 'apple-natural-language'] : ['label-and-form-rules'],
+  nameDetectionEngines: [
+    'label-and-form-rules',
+    ...(appleNer ? ['apple-natural-language'] : []),
+    ...(gliner ? ['gliner-x-small-onnx'] : [])
+  ],
   manualPersonNameReviewRequired: true,
   containsCaseContent: false,
   cloudDirectIdentifiers: 0,
@@ -116,4 +143,4 @@ const finalReport =
 await writeFile(reportPath, `${JSON.stringify(finalReport, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
 await chmod(reportPath, 0o600)
 process.stdout.write(`${JSON.stringify(finalReport)}\n`)
-if (!finalReport.releaseEligible) process.exit(1)
+if (!finalReport.releaseEligible) process.exitCode = 1

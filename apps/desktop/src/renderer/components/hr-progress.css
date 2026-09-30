@@ -434,12 +434,134 @@
   padding-top: 12px;
   margin-top: 12px;
 }
-.hr-progress-delete {
-  margin-top: 24px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line, #e2e6eb);
+/* Detail header "⋯" menu: pause, end, resume or delete from any tab. */
+.hr-progress-detail > header .hr-menu-trigger {
+  min-width: 34px;
+  padding-inline: 10px;
+  font-weight: 600;
 }
-.hr-progress-delete button.is-danger,
-.hr-progress-delete > button {
+.hr-progress .hr-menu-list button {
+  width: 100%;
+  border: 0;
+  border-radius: 5px;
+  text-align: left;
+  white-space: nowrap;
+  background: transparent;
+}
+.hr-progress .hr-menu-list button:not(:disabled):hover,
+.hr-progress .hr-menu-list button:focus-visible {
+  background: #eff9f5;
+  outline: none;
+}
+.hr-progress .hr-menu-list button.is-danger {
+  color: var(--danger);
+}
+.hr-progress .hr-followup-badge.stage-paused,
+.hr-progress .hr-followup-badge.stage-closed {
+  background: #e2e6eb;
+  color: #5b6470;
+}
+.hr-progress-stopped {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 20px 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f1f3f5;
+  color: #4a5360;
+  font-size: 13px;
+}
+.hr-progress-stopped.is-paused {
+  background: #fbf5e6;
+  color: #6b5520;
+}
+.hr-progress-stopped p {
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.hr-progress-stopped button {
+  flex-shrink: 0;
+}
+.hr-progress-hint {
+  margin-top: 16px;
+  color: #6b7e70;
+  font-size: 12px;
+}
+.hr-progress-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #14203266;
+}
+.hr-progress-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 460px);
+  max-height: 85vh;
+  overflow: auto;
+  padding: 22px 24px;
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 14px;
+  box-shadow: 0 20px 70px #14203240;
+}
+.hr-progress-dialog h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.hr-progress-dialog p {
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.hr-progress-dialog-pair {
+  color: #6b7e70;
+  font-size: 13px;
+}
+.hr-progress-dialog fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.hr-progress-dialog legend {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.hr-progress-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.hr-progress-dialog-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hr-progress-dialog-chips button {
+  border-radius: 999px;
+}
+.hr-progress-dialog-chips button[aria-pressed='true'] {
+  color: var(--forest);
+  background: #eff9f5;
+  border-color: #b6cebd;
+}
+.hr-progress-dialog [role='alert'] {
+  color: var(--danger);
+}
+.hr-progress-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.hr-progress-dialog .is-danger {
   color: var(--danger);
 }

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { isAbsolute, win32 } from 'node:path'
 import { z } from 'zod'
 import { documentIrSchema, type DocumentBlock, type DocumentIR, type DocumentWarning } from '@parsers'
+import { LocalNerWorkerClient, LocalUnionPersonNameDetector } from './gliner-ner'
 
 const boundingBoxSchema = z.object({
   x: z.number().min(0).max(1),
@@ -92,25 +93,59 @@ export interface LocalOcrPort {
   ocrPdf(bytes: Buffer): Promise<LocalOcrResult>
 }
 
-export const nameDetectionResultSchema = z.object({
-  version: z.literal('apple-nl-ner-v1'),
-  engine: z.literal('apple-natural-language'),
-  networkAccess: z.literal(false),
-  requiresHumanConfirmation: z.literal(true),
-  entities: z.array(
-    z.object({
-      text: z.string().min(2).max(120),
-      startUtf16: z.number().int().nonnegative(),
-      endUtf16: z.number().int().positive(),
-      tag: z.literal('personalName')
-    })
-  )
+const nameEntitySchema = z.object({
+  text: z.string().min(2).max(120),
+  startUtf16: z.number().int().nonnegative(),
+  endUtf16: z.number().int().positive(),
+  tag: z.literal('personalName')
 })
 
+const nameDetectionShape = {
+  networkAccess: z.literal(false),
+  requiresHumanConfirmation: z.literal(true),
+  entities: z.array(nameEntitySchema)
+}
+
+export const localNameDetectionEngines = ['apple-natural-language', 'gliner-x-small-onnx', 'local-ner-union'] as const
+export type LocalNameDetectionEngine = (typeof localNameDetectionEngines)[number]
+
+export const appleNameDetectionResultSchema = z.object({
+  version: z.literal('apple-nl-ner-v1'),
+  engine: z.literal('apple-natural-language'),
+  ...nameDetectionShape
+})
+
+export const glinerNameDetectionResultSchema = z.object({
+  version: z.literal('gliner-ner-v1'),
+  engine: z.literal('gliner-x-small-onnx'),
+  modelRevision: z.string().regex(/^[a-f0-9]{40}$/u),
+  ...nameDetectionShape
+})
+
+/** Apple NaturalLanguage and GLiNER entities merged before candidate collection. */
+export const unionNameDetectionResultSchema = z.object({
+  version: z.literal('local-ner-union-v1'),
+  engine: z.literal('local-ner-union'),
+  engines: z
+    .array(z.enum(['apple-natural-language', 'gliner-x-small-onnx']))
+    .min(1)
+    .max(2),
+  ...nameDetectionShape
+})
+
+export const nameDetectionResultSchema = z.discriminatedUnion('engine', [
+  appleNameDetectionResultSchema,
+  glinerNameDetectionResultSchema,
+  unionNameDetectionResultSchema
+])
+
 export type NameDetectionResult = z.infer<typeof nameDetectionResultSchema>
+export type AppleNameDetectionResult = z.infer<typeof appleNameDetectionResultSchema>
+export type GlinerNameDetectionResult = z.infer<typeof glinerNameDetectionResultSchema>
+export type UnionNameDetectionResult = z.infer<typeof unionNameDetectionResultSchema>
 
 export interface LocalPersonNameDetectorPort {
-  readonly engine: 'apple-natural-language' | 'windows-local-ner'
+  readonly engine: LocalNameDetectionEngine
   detectNames(text: string): Promise<NameDetectionResult>
 }
 
@@ -212,7 +247,7 @@ export class MacNaturalLanguageNerClient implements LocalPersonNameDetectorPort 
   readonly engine = 'apple-natural-language' as const
   constructor(private readonly executablePath: string) {}
 
-  detectNames(text: string): Promise<NameDetectionResult> {
+  detectNames(text: string): Promise<AppleNameDetectionResult> {
     if (process.platform !== 'darwin') return Promise.reject(new Error('Apple NaturalLanguage NER is only available on macOS.'))
     const input = Buffer.from(text, 'utf8')
     if (input.length === 0 || input.length > 2 * 1024 * 1024) {
@@ -251,7 +286,7 @@ export class MacNaturalLanguageNerClient implements LocalPersonNameDetectorPort 
           return
         }
         try {
-          const result = nameDetectionResultSchema.parse(parseLocalHelperJson(Buffer.concat(chunks).toString('utf8')))
+          const result = appleNameDetectionResultSchema.parse(parseLocalHelperJson(Buffer.concat(chunks).toString('utf8')))
           finish(() => resolve(result))
         } catch (error) {
           finish(() => reject(new Error('Apple NaturalLanguage NER output violates its schema.', { cause: error })))
@@ -421,6 +456,14 @@ export function isWindowsOfflineOcrWorkerResponse(value: unknown): value is Wind
   )
 }
 
+export interface LocalGlinerNerRuntimeOptions {
+  workerPath: string
+  modelDirectory: string
+  idleUnloadMs?: number
+  /** Called when GLiNER fails on macOS and detection degrades to Apple NaturalLanguage alone. */
+  onGlinerUnavailable?: (error: unknown) => void
+}
+
 export function createLocalAiRuntime(options: {
   platform?: NodeJS.Platform
   macExecutablePath?: string
@@ -431,16 +474,44 @@ export function createLocalAiRuntime(options: {
   windowsOcrResourceManifestPath?: string
   windowsAppContainerGrantRoots?: string[]
   windowsNetworkIsolation?: 'windows-kernel-network-verified'
+  /** The bundled GLiNER worker; omitted when the verified model files are absent. */
+  glinerNer?: LocalGlinerNerRuntimeOptions
 }): LocalAiRuntime {
   const platform = options.platform ?? process.platform
   if (platform === 'darwin' && options.macExecutablePath) {
+    const apple = new MacNaturalLanguageNerClient(options.macExecutablePath)
     return {
       platform,
       ocr: new MacVisionOcrClient({ executablePath: options.macExecutablePath }),
-      personNameDetector: new MacNaturalLanguageNerClient(options.macExecutablePath),
+      personNameDetector: options.glinerNer
+        ? new LocalUnionPersonNameDetector(
+            apple,
+            new LocalNerWorkerClient({
+              workerPath: options.glinerNer.workerPath,
+              modelDirectory: options.glinerNer.modelDirectory,
+              idleUnloadMs: options.glinerNer.idleUnloadMs
+            }),
+            options.glinerNer.onGlinerUnavailable
+          )
+        : apple,
       status: 'vision-ocr-and-pii-active'
     }
   }
+  // Windows has no system NER: GLiNER runs in the same AppContainer as the
+  // other local workers, and without the launcher there is no detector at
+  // all, so Cloud AI stays blocked.
+  const windowsPersonNameDetector =
+    platform === 'win32' && options.glinerNer && options.windowsOcrSandboxLauncherPath && options.windowsAppContainerGrantRoots?.length
+      ? new LocalNerWorkerClient({
+          workerPath: options.glinerNer.workerPath,
+          modelDirectory: options.glinerNer.modelDirectory,
+          idleUnloadMs: options.glinerNer.idleUnloadMs,
+          windowsSandbox: {
+            launcherPath: options.windowsOcrSandboxLauncherPath,
+            grantReadRoots: options.windowsAppContainerGrantRoots
+          }
+        })
+      : null
   if (
     platform === 'win32' &&
     options.windowsOcrSandboxLauncherPath &&
@@ -462,7 +533,7 @@ export function createLocalAiRuntime(options: {
         appContainerGrantRoots: options.windowsAppContainerGrantRoots,
         networkIsolation: options.windowsNetworkIsolation
       }),
-      personNameDetector: null,
+      personNameDetector: windowsPersonNameDetector,
       status: 'windows-ocr-and-pii-rules-active'
     }
   }
@@ -477,16 +548,31 @@ export function createLocalAiRuntime(options: {
     return {
       platform,
       ocr: null,
-      personNameDetector: null,
+      personNameDetector: windowsPersonNameDetector,
       status: 'windows-ocr-bundled-isolation-pending'
     }
   }
   return {
     platform,
     ocr: null,
-    personNameDetector: null,
+    personNameDetector: windowsPersonNameDetector,
     status: 'pii-rules-active-ocr-unavailable'
   }
+}
+
+/**
+ * Separators that join the parts of a foreign name written in katakana:
+ * グエン・ヴァン・ナム, マイケル・ジョンソン, ジャン＝ポール. They are only
+ * accepted between katakana parts - 設計・構築 or 技術・人文知識 stay rejected.
+ */
+const katakanaNameSeparator = /[・･·＝=]/u
+const katakanaNamePart = /^[ァ-ヺー]{1,20}$/u
+
+function katakanaJoinedNameParts(value: string): string[] | null {
+  if (!katakanaNameSeparator.test(value)) return null
+  const parts = value.split(/[・･·＝= ]/u)
+  if (parts.length < 2 || parts.length > 6 || parts.some((part) => !katakanaNamePart.test(part))) return null
+  return parts
 }
 
 function cleanNameCandidate(value: string): string | null {
@@ -495,8 +581,133 @@ function cleanNameCandidate(value: string): string | null {
     .replaceAll(/[\t　 ]+/gu, ' ')
     .trim()
   if (cleaned.length < 2 || cleaned.length > 40) return null
-  if (/[\d<>@/\\・,，;；:：|｜]/u.test(cleaned)) return null
+  if (katakanaJoinedNameParts(cleaned)) return cleaned
+  if (/[\d<>@＠/\\・･·＝=,，;；:：|｜]/u.test(cleaned)) return null
   return cleaned
+}
+
+/**
+ * Adds a cleaned name and, for a katakana name joined by ・/＝, each part of
+ * two or more characters, so a later partial mention (ナム, ジョンソン) is
+ * replaced too. The full name keeps priority where it appears because the
+ * redactor prefers the longest match at a position.
+ */
+function addNameCandidate(candidates: Set<string>, cleaned: string): void {
+  candidates.add(cleaned)
+  const parts = katakanaJoinedNameParts(cleaned)
+  if (!parts) return
+  // The same name is often written run together (グエンヴァンナム); parts only match at katakana boundaries.
+  candidates.add(parts.join(''))
+  for (const part of parts) {
+    if (part.length >= 2) candidates.add(part)
+  }
+}
+
+const katakanaCharacter = /[ァ-ヺー]/u
+
+/**
+ * A model may tag only one part of グエン・ヴァン・ナム. A katakana entity is
+ * widened across directly adjacent ・/＝-joined katakana parts so the whole
+ * name, not just グエン, becomes the candidate.
+ */
+function expandKatakanaJoinedEntity(text: string, entity: { text: string; startUtf16: number; endUtf16: number }): string {
+  if (text.slice(entity.startUtf16, entity.endUtf16) !== entity.text) return entity.text
+  if (!/^[ァ-ヺー・･·＝=]+$/u.test(entity.text)) return entity.text
+  let start = entity.startUtf16
+  let end = entity.endUtf16
+  while (end + 1 < text.length && katakanaNameSeparator.test(text[end]!) && katakanaCharacter.test(text[end + 1]!)) {
+    end += 1
+    while (end < text.length && katakanaCharacter.test(text[end]!)) end += 1
+  }
+  while (start >= 2 && katakanaNameSeparator.test(text[start - 1]!) && katakanaCharacter.test(text[start - 2]!)) {
+    start -= 1
+    while (start > 0 && katakanaCharacter.test(text[start - 1]!)) start -= 1
+  }
+  return text.slice(start, end)
+}
+
+/** Role and title words a model can read as a name - Backend Engineer, SRE. Compared lower-case, whole words. */
+const roleWordsMistakenForPeople = new Set([
+  'engineer',
+  'engineers',
+  'developer',
+  'developers',
+  'manager',
+  'leader',
+  'lead',
+  'architect',
+  'consultant',
+  'programmer',
+  'designer',
+  'analyst',
+  'tester',
+  'director',
+  'officer',
+  'administrator',
+  'specialist',
+  'scientist',
+  'backend',
+  'frontend',
+  'fullstack',
+  'full-stack',
+  'infrastructure',
+  'infra',
+  'senior',
+  'junior',
+  'chief',
+  'head',
+  'sales',
+  'project',
+  'product',
+  'data',
+  'software',
+  'system',
+  'systems',
+  'cloud',
+  'se',
+  'sre',
+  'pm',
+  'pl',
+  'pg',
+  'pmo',
+  'qa',
+  'ceo',
+  'cto',
+  'cio',
+  'cfo',
+  'coo',
+  'hr'
+])
+const japaneseRoleSuffix =
+  /(?:エンジニア|マネージャー|マネジャー|リーダー|コンサルタント|アーキテクト|プログラマー?|デザイナー|アナリスト|テスター|スペシャリスト|ディレクター|オペレーター)$/u
+
+/**
+ * Whether a model entity is plainly not a person: a job title made only of
+ * role words, or the local part of an e-mail address. Kept deliberately
+ * narrow - anything else a model calls a name stays a candidate.
+ */
+function isObviousNonName(text: string, candidate: string): boolean {
+  if (/^[A-Za-z][A-Za-z\- ]*$/u.test(candidate)) {
+    const words = candidate.toLowerCase().split(/\s+/u).filter(Boolean)
+    if (words.length > 0 && words.every((word) => roleWordsMistakenForPeople.has(word))) return true
+  }
+  if (japaneseRoleSuffix.test(candidate) && !katakanaJoinedNameParts(candidate)) return true
+  if (/^[A-Za-z0-9._%+\-]+$/u.test(candidate)) {
+    const emailSpans = [...text.matchAll(/[A-Za-z0-9._%+\-]+[@＠][A-Za-z0-9\-]+(?:[.．][A-Za-z0-9\-]+)+/gu)].map((match) => [
+      match.index,
+      match.index + match[0].length
+    ])
+    const occurrences: number[] = []
+    for (let index = text.indexOf(candidate); index >= 0; index = text.indexOf(candidate, index + candidate.length)) {
+      occurrences.push(index)
+    }
+    if (
+      occurrences.length > 0 &&
+      occurrences.every((index) => emailSpans.some(([start, end]) => index >= start! && index + candidate.length <= end!))
+    )
+      return true
+  }
+  return false
 }
 
 const personNameStopwords = new Set([
@@ -526,6 +737,7 @@ const personNameStopwords = new Set([
 ])
 
 function looksLikeStructuredPersonName(value: string): boolean {
+  if (katakanaJoinedNameParts(value)) return true
   const parts = value.split(' ').filter(Boolean)
   if (parts.some((part) => personNameStopwords.has(part))) return false
   if (parts.length === 2) {
@@ -814,18 +1026,18 @@ function isTechnologyMention(text: string, candidate: string): boolean {
   return bracketed.test(text) || slashPaired.test(text) || listedWithTechnology.test(text)
 }
 
-export function collectLocalPersonNameCandidates(text: string, appleResult?: NameDetectionResult): string[] {
+export function collectLocalPersonNameCandidates(text: string, nameDetection?: NameDetectionResult): string[] {
   const candidates = new Set<string>()
-  for (const entity of appleResult?.entities ?? []) {
-    const cleaned = cleanNameCandidate(entity.text)
-    if (cleaned && !isTechnologyMention(text, cleaned)) candidates.add(cleaned)
+  for (const entity of nameDetection?.entities ?? []) {
+    const cleaned = cleanNameCandidate(expandKatakanaJoinedEntity(text, entity))
+    if (cleaned && !isTechnologyMention(text, cleaned) && !isObviousNonName(text, cleaned)) addNameCandidate(candidates, cleaned)
   }
 
   const labeledName = /(?:氏名|姓名|候補者名|お名前|担当者?|営業担当|ご担当|窓口|Name|Candidate)\s*[:：]\s*([^\r\n]{2,40})/giu
   for (const match of text.matchAll(labeledName)) {
     // 担当：山田太郎、Java 経験者 - the name ends where the list goes on.
     const cleaned = cleanNameCandidate((match[1] ?? '').split(/[、，,／/｜|（(【\[]/u)[0] ?? '')
-    if (cleaned && looksLikeStructuredPersonName(cleaned)) candidates.add(cleaned)
+    if (cleaned && looksLikeStructuredPersonName(cleaned)) addNameCandidate(candidates, cleaned)
   }
   const spreadsheetRows = new Map<string, Array<{ column: number; value: string }>>()
   for (const line of text.split(/\r?\n/u)) {

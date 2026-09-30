@@ -106,8 +106,15 @@ function qualityGateFailures(report: Record<string, unknown> | null, platform: N
   if (report.cloudDirectIdentifiers !== 0 || report.networkAccess !== false) failures.push('quality:data-boundary')
   if (!Array.isArray(report.failures) || report.failures.length > 0) failures.push('quality:failures')
   const appleNer = report.appleNer as Record<string, unknown> | undefined
+  const glinerNer = report.glinerNer as Record<string, unknown> | undefined
   if (platform === 'darwin' && appleNer?.verified !== true) failures.push('quality:apple-ner')
+  // macOS runs Apple NL ∪ GLiNER when the model is bundled; a report that ran
+  // GLiNER must also have verified it.
+  if (platform === 'darwin' && glinerNer?.required === true && glinerNer.verified !== true) failures.push('quality:gliner-ner')
   if (platform === 'win32' && appleNer?.required !== false) failures.push('quality:windows-ner-contract')
+  // Windows has no system NER; the GLiNER smoke and regression path are mandatory.
+  if (platform === 'win32' && (glinerNer?.required !== true || glinerNer.verified !== true || glinerNer.engine !== 'gliner-x-small-onnx'))
+    failures.push('quality:gliner-ner')
   return failures
 }
 

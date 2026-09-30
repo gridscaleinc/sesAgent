@@ -31,7 +31,7 @@ const pageSize = 20
  * A "…" style menu button: arrow keys move between items, Esc and a click outside close it.
  * Items stay mounted while closed so a confirmation opened from an item (e.g. delete) survives the menu closing.
  */
-function ActionMenu({
+export function ActionMenu({
   label,
   trigger,
   triggerClassName,
@@ -147,7 +147,8 @@ export function HrObjectList({
   onRefresh,
   onOpenLibrary,
   onImportHistory,
-  extraActions = []
+  extraActions = [],
+  filterRequest
 }: {
   onAssessResumes?(entry: BusinessFeedEntry, files?: File[]): void
   resumeStates?: Record<string, { pending: number; count: number }>
@@ -174,6 +175,8 @@ export function HrObjectList({
   extraActions?: Array<{ id: string; label: string; onSelect(): void; overflow?: boolean }>
   /** False while another page covers the list; each return to the list opens cases on the working set again. */
   active?: boolean
+  /** Opens the list on one filter (the menu-bar panel's 未读); a new id applies it again. */
+  filterRequest?: { kind: HrBusinessKind; filter: HrListFilter; id: number }
 }) {
   const { locale, zh, t } = useLocaleText()
   const progress = useBusinessProgress()
@@ -318,6 +321,16 @@ export function HrObjectList({
     }
     wasActive.current = active
   }, [active])
+  // Declared after the return-to-list reset so a requested filter wins when both happen in one commit.
+  useEffect(() => {
+    if (!filterRequest) return
+    const { kind: target, filter } = filterRequest
+    setFilters((current) => ({ ...current, [target]: filter }))
+    setTimeRanges((current) => ({ ...current, [target]: 'all' }))
+    setQueries((current) => ({ ...current, [target]: '' }))
+    setPages((current) => ({ ...current, [target]: 1 }))
+    if (target === 'case') setCaseStatus('active')
+  }, [filterRequest?.id])
   useEffect(() => {
     if (scroller.current) scroller.current.scrollTop = scrolls.current[kind]
   }, [kind])

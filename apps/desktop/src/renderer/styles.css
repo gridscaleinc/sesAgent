@@ -6170,7 +6170,8 @@ input:focus-visible {
   padding: 34px;
   color: #253047;
   background:
-    radial-gradient(circle at 18% 5%, rgba(55, 116, 225, 0.09), transparent 34%), linear-gradient(150deg, var(--surface-faint) 0%, var(--line-faint) 100%);
+    radial-gradient(circle at 18% 5%, rgba(55, 116, 225, 0.09), transparent 34%),
+    linear-gradient(150deg, var(--surface-faint) 0%, var(--line-faint) 100%);
 }
 
 .startup-recovery-panel {
@@ -6790,6 +6791,45 @@ input:focus-visible {
   color: #687b8d;
   font-size: 11px;
   font-style: normal;
+}
+
+.settings-toggle-group {
+  display: grid;
+  gap: 9px;
+}
+
+.settings-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 14px;
+  color: #334a66;
+  background: var(--surface);
+  border: 1px solid #cdd9e7;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.settings-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #2677ca;
+}
+
+.settings-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.settings-toggle strong {
+  font-size: 14px;
+}
+
+.settings-toggle small {
+  color: #687b8d;
+  font-size: 11px;
 }
 
 .application-settings-policy {
@@ -8347,7 +8387,6 @@ body,
 }
 
 @media (max-width: 900px) {
-
   .application-settings-layout {
     grid-template-columns: 180px minmax(0, 1fr);
   }
@@ -18109,6 +18148,55 @@ body,
   margin: 8px 0 0;
   color: #a83a3a;
   font-size: 11.5px;
+}
+
+/* Settings: AI model per kind of business work. */
+.settings-model-grid {
+  display: grid;
+  gap: 14px;
+}
+.settings-model-row {
+  display: grid;
+  gap: 6px;
+}
+.settings-model-row > label {
+  color: #26384e;
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-model-row > small {
+  color: #317b67;
+  font-size: 11px;
+}
+.settings-model-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.settings-model-controls select {
+  flex: 1 1 260px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #fff;
+}
+.settings-model-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+}
+.settings-model-result.is-available {
+  color: #317b67;
+}
+.settings-model-result.is-failed {
+  color: #a83a3a;
 }
 
 /* Review-time alias learning banner. */

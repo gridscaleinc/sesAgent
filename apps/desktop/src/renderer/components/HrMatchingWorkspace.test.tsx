@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import {
   builtInPersonnelTemplates,
@@ -200,16 +200,46 @@ it('hydrates list badge counts from stored summaries on first use', async () => 
   expect(personCaseMatchCount(documentId, 2)).toBeNull()
 })
 
-it('puts primary actions first and AI internals under details with natural exclusion wording', async () => {
+it('puts primary actions first and AI internals in their tab with natural exclusion wording', async () => {
   api()
-  render(<HrMatchingWorkspace {...props(3)} />)
-  const card = await screen.findByRole('article')
-  const buttons = [...card.querySelectorAll('.hr-result-actions button')].map((button) => button.textContent)
-  expect(buttons).toEqual(['紹介を準備', '対応を開始', '案件を見る'])
+  const callbacks = props(3)
+  render(<HrMatchingWorkspace {...callbacks} />)
+  const card = await screen.findByRole('article', { name: 'Java project' })
+  const buttons = [...card.querySelectorAll('.match-detail-actions > button')].map((button) => button.textContent)
+  expect(buttons).toEqual(['紹介を準備', '対応を開始'])
+  fireEvent.click(within(card).getByRole('button', { name: 'その他の操作' }))
+  const menu = within(within(card).getByRole('menu'))
+  fireEvent.click(menu.getByRole('menuitem', { name: '案件を見る' }))
+  expect(callbacks.onView).toHaveBeenLastCalledWith('case', reviewId)
+  fireEvent.click(within(card).getByRole('button', { name: 'その他の操作' }))
+  fireEvent.click(within(within(card).getByRole('menu')).getByRole('menuitem', { name: '要員情報を見る' }))
+  expect(callbacks.onView).toHaveBeenLastCalledWith('person', documentId)
   expect(screen.queryByText(/test-model/)).not.toBeVisible()
   expect(screen.getByText(/Prefer Java/)).not.toBeVisible()
   expect(screen.getByText('自社要員限定のため 1 件を除外')).not.toBeVisible()
   expect(screen.getByText(/除外 2/)).toBeVisible()
+  fireEvent.click(within(card).getByRole('tab', { name: 'AIの意見' }))
+  expect(screen.getByText(/test-model/)).toBeVisible()
+  expect(screen.getByText(/Prefer Java/)).toBeVisible()
+  fireEvent.click(screen.getByText('除外 3', { selector: 'summary' }))
+  expect(screen.getByText('自社要員限定のため 1 件を除外')).toBeVisible()
+})
+
+it('lists one compact row per case beside the selected case, and hides the question tab without a draft', async () => {
+  api()
+  render(<HrMatchingWorkspace {...props(6)} />)
+  const card = await screen.findByRole('article', { name: 'Java project' })
+  const row = within(screen.getByRole('list', { name: '案件' })).getByRole('button', { name: /Java project/ })
+  expect(row).toHaveAttribute('aria-current', 'true')
+  expect(within(row).getByText('提案可能')).toBeInTheDocument()
+  expect(within(row).getByText('✓ Java')).toHaveClass('is-met')
+  expect(
+    within(card)
+      .getAllByRole('tab')
+      .map((tab) => tab.textContent)
+  ).toEqual(['マッチングの根拠', '推薦ポイント', '要相談', 'AIの意見', '記録'])
+  expect(within(card).getByRole('table', { name: 'マッチングの根拠' })).toBeVisible()
+  expect(screen.getByRole('button', { name: /^概要/ })).toHaveAttribute('aria-haspopup', 'dialog')
 })
 
 it('waits for business states, then names why an assigned person cannot be matched', async () => {
@@ -233,4 +263,37 @@ it('offers a rules retry without leaving the result permanently stale', async ()
   fireEvent.click(screen.getByRole('button', { name: '再試行' }))
   await waitFor(() => expect(screen.queryByText(/ルールを読み込めなかった/)).not.toBeInTheDocument())
   expect(screen.getByRole('article')).toBeVisible()
+})
+
+it('selects the case a request asks for and names the page it goes back to', async () => {
+  api()
+  const second = {
+    ...job,
+    reviewId: '44444444-4444-4444-8444-444444444444',
+    redactedSubject: 'Go project',
+    jobCase: { id: '55555555-5555-4555-8555-555555555555', version: 1 }
+  } as unknown as JobCaseReviewSnapshot
+  const two = {
+    ...result,
+    items: [
+      result.items[0]!,
+      { ...result.items[0]!, reviewId: second.reviewId, jobCaseId: second.jobCase!.id, title: 'Go project', score: 4 }
+    ]
+  }
+  api().findCasesForPersonnel.mockResolvedValue(two)
+  const base = props(7)
+  const onBack = vi.fn()
+  render(
+    <HrMatchingWorkspace
+      {...base}
+      cases={[job, second]}
+      source={{ ...base.source, selectReviewId: second.reviewId }}
+      backLabel="返回新匹配机会"
+      onBack={onBack}
+    />
+  )
+  const list = await screen.findByRole('list', { name: '案件' })
+  await waitFor(() => expect(within(list).getByRole('button', { name: /Go project/ })).toHaveAttribute('aria-current', 'true'))
+  fireEvent.click(screen.getByRole('button', { name: '← 返回新匹配机会' }))
+  expect(onBack).toHaveBeenCalled()
 })

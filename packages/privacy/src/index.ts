@@ -337,15 +337,23 @@ function collectRuleDetections(input: string): Detection[] {
   return detections
 }
 
+const katakanaLetter = /[ァ-ヺー]/u
+const katakanaOnlyName = /^[ァ-ヺー・･·＝=]+$/u
+
 function collectKnownPersonDetections(input: string, names: string[]): Detection[] {
   const detections: Detection[] = []
   for (const rawName of names) {
     const name = rawName.trim()
     if (name.length < 2) continue
+    // A katakana name part (ナム) must not match inside a longer katakana word (ベトナム): Japanese has no spaces,
+    // so the only boundary is the script change on either side.
+    const bounded = katakanaOnlyName.test(name)
     let start = input.indexOf(name)
     while (start >= 0) {
-      detections.push({ start, end: start + name.length, value: name, identifierType: 'person_name' })
-      start = input.indexOf(name, start + name.length)
+      const end = start + name.length
+      const inside = bounded && (katakanaLetter.test(input[start - 1] ?? '') || katakanaLetter.test(input[end] ?? ''))
+      if (!inside) detections.push({ start, end, value: name, identifierType: 'person_name' })
+      start = input.indexOf(name, start + 1)
     }
   }
   return detections
@@ -371,9 +379,8 @@ function hashContent(content: string): string {
 
 function runIndependentDlp(content: string, knownPersonNames: string[]): string[] {
   const reasons = dlpRules.filter(({ pattern }) => pattern.test(content)).map(({ label }) => `residual:${label}`)
-  for (const name of knownPersonNames) {
-    if (name.trim().length >= 2 && content.includes(name.trim())) reasons.push('residual:person_name')
-  }
+  // The same boundary rule as the redactor: a name counts as residual wherever the redactor would have replaced it.
+  if (collectKnownPersonDetections(content, knownPersonNames).length) reasons.push('residual:person_name')
   return [...new Set(reasons)]
 }
 

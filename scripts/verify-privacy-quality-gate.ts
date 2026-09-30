@@ -1,10 +1,23 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { collectLocalPersonNameCandidates, MacNaturalLanguageNerClient } from '@local-ai'
+import {
+  collectLocalPersonNameCandidates,
+  LocalUnionPersonNameDetector,
+  localNerModel,
+  MacNaturalLanguageNerClient,
+  type LocalPersonNameDetectorPort,
+  type NameDetectionResult
+} from '@local-ai'
 import { directIdentifierTypes, detectDirectIdentifiers, redactTextForCloud } from '@privacy'
+import { InProcessGlinerNameDetector, releaseGlinerRuntime } from '../apps/desktop/src/workers/ner-engine'
+import { installParserNetworkDenyGuard } from '../apps/desktop/src/workers/network-deny'
+
+// Synthetic fixtures only, and nothing here may reach the network.
+installParserNetworkDenyGuard()
 
 const expectedIdentifierSchema = z.object({
   type: z.enum(directIdentifierTypes),
@@ -59,15 +72,45 @@ const dataset = datasetSchema.parse(JSON.parse(datasetBytes.toString('utf8')))
 const ids = [...dataset.cases, ...dataset.safeCases, ...dataset.blockedCases].map((testCase) => testCase.id)
 assert.equal(new Set(ids).size, ids.length, 'privacy regression case IDs must be unique')
 
+const failures: string[] = []
+
+// The regression path runs the detector the platform uses at runtime: Apple
+// NaturalLanguage ∪ GLiNER on macOS (Apple alone when the GLiNER model is not
+// present), GLiNER on Windows. GLiNER runs the worker's inference code in this
+// already network-denied process; worker isolation is checked by
+// test:ner-worker and test:windows-local-workers.
+const nerModelDirectory = resolve(root, 'models/knowledgator/gliner-x-small')
+const glinerRequired = process.platform === 'win32' || existsSync(resolve(nerModelDirectory, 'model-manifest.json'))
+const gliner = glinerRequired ? new InProcessGlinerNameDetector(nerModelDirectory) : null
+const apple = process.platform === 'darwin' ? new MacNaturalLanguageNerClient(resolve(root, 'build/native/macos/ses-vision-ocr')) : null
+let glinerFailure: string | null = null
+const runtimeDetector: LocalPersonNameDetectorPort | null =
+  apple && gliner
+    ? new LocalUnionPersonNameDetector(apple, gliner, () => {
+        glinerFailure = 'gliner-ner:unavailable-during-regression'
+      })
+    : (apple ?? gliner)
+
+async function localNameDetection(text: string, caseId: string): Promise<NameDetectionResult | undefined> {
+  if (!runtimeDetector) return undefined
+  try {
+    const result = await runtimeDetector.detectNames(text)
+    if (result.networkAccess !== false) failures.push(`${caseId}:local-ner-network-access`)
+    return result
+  } catch {
+    failures.push(`${caseId}:local-ner-failed`)
+    return undefined
+  }
+}
+
 let expectedIdentifiers = 0
 let detectedIdentifiers = 0
 let mappingCount = 0
 let expectedMappingCount = 0
 let residualLeakCount = 0
-const failures: string[] = []
 
 for (const testCase of dataset.cases) {
-  const nameCandidates = collectLocalPersonNameCandidates(testCase.text)
+  const nameCandidates = collectLocalPersonNameCandidates(testCase.text, await localNameDetection(testCase.text, testCase.id))
   const expectedNames = testCase.expected.filter((item) => item.type === 'person_name').map((item) => item.value)
   for (const name of expectedNames) {
     if (!nameCandidates.includes(name)) failures.push(`${testCase.id}:person-name-candidate-missed:${name}`)
@@ -108,7 +151,7 @@ for (const testCase of dataset.cases) {
 
 let safeCaseFalsePositiveCount = 0
 for (const testCase of dataset.safeCases) {
-  const nameCandidates = collectLocalPersonNameCandidates(testCase.text)
+  const nameCandidates = collectLocalPersonNameCandidates(testCase.text, await localNameDetection(testCase.text, testCase.id))
   const identifiers = detectDirectIdentifiers(testCase.text, nameCandidates)
   if (nameCandidates.length > 0 || identifiers.length > 0) {
     safeCaseFalsePositiveCount += 1
@@ -134,7 +177,7 @@ let appleNer = {
   detectedNameCount: 0
 }
 if (process.platform === 'darwin') {
-  const client = new MacNaturalLanguageNerClient(resolve(root, 'build/native/macos/ses-vision-ocr'))
+  const client = apple ?? new MacNaturalLanguageNerClient(resolve(root, 'build/native/macos/ses-vision-ocr'))
   const result = await client.detectNames('Tim Cook met Satya Nadella in Tokyo.')
   const detectedNames = result.entities.map((entity) => entity.text)
   if (!detectedNames.includes('Tim Cook') || !detectedNames.includes('Satya Nadella') || result.networkAccess !== false) {
@@ -148,6 +191,50 @@ if (process.platform === 'darwin') {
   }
 }
 
+if (glinerFailure) failures.push(glinerFailure)
+// Known names in Japanese, Chinese, katakana and English must survive the
+// whole path: model entities, candidate cleanup and redaction.
+const glinerSmokeCases = [
+  { text: '先日ご紹介した佐々木健一は、来月から保守に参画可能です。', names: ['佐々木健一'] },
+  { text: '候选人王小明，5年Java开发经验，目前在上海。', names: ['王小明'] },
+  { text: 'エンジニアのマイケル・ジョンソンさんは英語と日本語が堪能です。', names: ['マイケル・ジョンソン'] },
+  { text: '要員：グエン・ヴァン・ナム（ベトナム国籍）\n日本語：N2', names: ['グエン・ヴァン・ナム'] },
+  { text: 'Candidate: Priya Raman / Role: Backend Engineer', names: ['Priya Raman'] }
+]
+let glinerNer = {
+  required: glinerRequired,
+  verified: false,
+  engine: null as string | null,
+  modelRevision: null as string | null,
+  detectedNameCount: 0
+}
+if (gliner) {
+  try {
+    let detectedNameCount = 0
+    for (const smoke of glinerSmokeCases) {
+      const result = await gliner.detectNames(smoke.text)
+      const candidates = collectLocalPersonNameCandidates(smoke.text, result)
+      detectedNameCount += result.entities.length
+      if (smoke.names.some((name) => !candidates.includes(name)) || result.networkAccess !== false) {
+        failures.push('gliner-ner:expected-names-missed')
+      }
+      if (candidates.some((candidate) => /Engineer/u.test(candidate))) failures.push('gliner-ner:job-title-candidate')
+    }
+    glinerNer = {
+      required: true,
+      verified: failures.every((failure) => !failure.startsWith('gliner-ner:')),
+      engine: gliner.engine,
+      modelRevision: localNerModel.revision,
+      detectedNameCount
+    }
+  } catch {
+    failures.push('gliner-ner:unavailable')
+  } finally {
+    // Release the ONNX session before exiting; exiting with it alive aborts the process.
+    await releaseGlinerRuntime()
+  }
+}
+
 const identifierRecall = expectedIdentifiers === 0 ? 0 : detectedIdentifiers / expectedIdentifiers
 const redactionPrecision = mappingCount === 0 ? 0 : expectedMappingCount / mappingCount
 const releaseEligible =
@@ -156,7 +243,8 @@ const releaseEligible =
   redactionPrecision >= dataset.thresholds.redactionPrecision &&
   residualLeakCount <= dataset.thresholds.residualLeakCount &&
   safeCaseFalsePositiveCount <= dataset.thresholds.safeCaseFalsePositiveCount &&
-  (!appleNer.required || appleNer.verified)
+  (!appleNer.required || appleNer.verified) &&
+  (!glinerNer.required || glinerNer.verified)
 const report = {
   version: 'ses-privacy-quality-report-v1',
   datasetVersion: dataset.version,
@@ -176,6 +264,7 @@ const report = {
   safeCaseFalsePositiveCount,
   failedClosedCases: dataset.blockedCases.length,
   appleNer,
+  glinerNer,
   cloudDirectIdentifiers: 0,
   networkAccess: false,
   releaseEligible,
@@ -192,4 +281,5 @@ await writeFile(resolve(root, 'build/privacy-verification/privacy-quality-report
   mode: 0o600
 })
 process.stdout.write(`${JSON.stringify(report)}\n`)
-if (!releaseEligible) process.exit(1)
+// exitCode, not exit(): exiting while ONNX Runtime threads are alive aborts the process.
+if (!releaseEligible) process.exitCode = 1

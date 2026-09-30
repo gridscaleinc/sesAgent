@@ -5,7 +5,9 @@ import {
   type BusinessFollowUp,
   type CandidateReviewSnapshot,
   type JobCaseReviewSnapshot,
-  type PersonnelTemplate
+  type PersonnelTemplate,
+  type RecommendationPoint,
+  recommendationPointText
 } from '@shared'
 import {
   aiServiceProblem,
@@ -20,6 +22,7 @@ import { progressPairKey, progressPresentation, useBusinessProgress } from '../b
 import type { IntroductionTarget } from './HrMatchingWorkspace'
 import type { FollowUpTarget } from './follow-up-target'
 import { IntroductionOptions } from './IntroductionOptions'
+import { RecommendationPointsPicker } from './RecommendationPoints'
 
 const briefTemplateId = 'e72e12d0-0000-4000-8000-000000000001'
 const standardTemplateId = 'e72e12d0-0000-4000-8000-000000000002'
@@ -59,6 +62,9 @@ export function IntroductionComposer({
   const businessProgress = useBusinessProgress()
   const lock = useRef(false)
   const dialog = useRef<HTMLDivElement>(null)
+  const editor = useRef<HTMLTextAreaElement>(null)
+  // Where HR last placed the cursor in the body; null until they do, so 「插入」 then appends at the end.
+  const cursor = useRef<{ start: number; end: number } | null>(null)
   const panelId = useId()
   useEffect(() => {
     if (!target) return
@@ -241,6 +247,25 @@ export function IntroductionComposer({
   const working = busy || generating
   const storedDraft = style ? stored[storedKey(lang)] : undefined
   const text = drafts[key] ?? (style ? (storedDraft?.text ?? '') : initial())
+  useEffect(() => {
+    cursor.current = null
+  }, [key])
+  /** Puts one 推荐要点 (headline and detail) into the body at the cursor, or at the end when HR has not placed one. */
+  const insertPoint = (point: RecommendationPoint) => {
+    const line = recommendationPointText(point)
+    const start = Math.min(cursor.current?.start ?? text.length, text.length)
+    const end = Math.min(cursor.current?.end ?? text.length, text.length)
+    const before = text.slice(0, start),
+      after = text.slice(end)
+    const inserted = `${before && !before.endsWith('\n') ? '\n' : ''}${line}${after && !after.startsWith('\n') ? '\n' : ''}`
+    setDrafts((state) => ({ ...state, [key]: `${before}${inserted}${after}` }))
+    const position = before.length + inserted.length
+    cursor.current = { start: position, end: position }
+    requestAnimationFrame(() => {
+      editor.current?.focus()
+      editor.current?.setSelectionRange(position, position)
+    })
+  }
   const missingFields =
     // i18n-ignore: placeholder written into the draft in the message language
     proposal?.missingFields.filter((label) => text.includes(`${label}：${lang === 'ja' ? '[送信前に記入]' : '[发送前填写]'}`)) ?? []
@@ -526,11 +551,19 @@ export function IntroductionComposer({
             </button>
           </div>
         ) : null}
+        {target.reviewId && valid ? (
+          <RecommendationPointsPicker documentId={target.documentId} reviewId={target.reviewId} disabled={working} onInsert={insertPoint} />
+        ) : null}
         <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body">
           <textarea
+            ref={editor}
             aria-label={t('介绍文案', '紹介文')}
             value={text}
+            onSelect={(event) => {
+              cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }
+            }}
             onChange={(event) => {
+              cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }
               setDrafts((state) => ({ ...state, [key]: event.target.value }))
             }}
             disabled={working}

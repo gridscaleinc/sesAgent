@@ -24,6 +24,7 @@ const asarPath = join(resourcesPath, 'app.asar')
 const unpackedPath = join(resourcesPath, 'app.asar.unpacked')
 const embeddingModelPath = join(resourcesPath, 'models', 'Xenova', 'multilingual-e5-small')
 const rerankerModelPath = join(resourcesPath, 'models', 'hotchpotch', 'japanese-reranker-tiny-v2')
+const nerModelPath = join(resourcesPath, 'models', 'knowledgator', 'gliner-x-small')
 const privacyQualityReportPath = join(resourcesPath, 'verification', 'privacy-quality-report.json')
 const privacyExpertReportPath = join(resourcesPath, 'verification', 'privacy-expert-report.json')
 const cloudEnforcementManifestPath = join(resourcesPath, 'verification', 'cloud-enforcement-manifest.json')
@@ -82,6 +83,28 @@ async function verifyEmbeddingModel() {
     await pipeline(createReadStream(path), hash)
     if (!metadata.isFile() || metadata.size !== file.bytes || hash.digest('hex') !== file.sha256) {
       throw new Error(`Packaged embedding model failed integrity verification: ${file.path}`)
+    }
+  }
+  return manifest
+}
+
+async function verifyNerModel() {
+  const manifest = JSON.parse(await readFile(join(nerModelPath, 'model-manifest.json'), 'utf8'))
+  if (
+    manifest.schemaVersion !== 'local-ner-model-v1' ||
+    manifest.modelId !== 'knowledgator/gliner-x-small' ||
+    manifest.revision !== 'd51a0984d11084a55f9df3899d9dbf7704f580f5' ||
+    manifest.license !== 'Apache-2.0' ||
+    manifest.threshold !== 0.5
+  )
+    throw new Error('Packaged NER model manifest is invalid.')
+  for (const file of manifest.files) {
+    const path = join(nerModelPath, file.path)
+    const metadata = await stat(path)
+    const hash = createHash('sha256')
+    await pipeline(createReadStream(path), hash)
+    if (!metadata.isFile() || metadata.size !== file.bytes || hash.digest('hex') !== file.sha256) {
+      throw new Error(`Packaged NER model failed integrity verification: ${file.path}`)
     }
   }
   return manifest
@@ -184,6 +207,7 @@ async function verifyOfflineOcrResources() {
       localWorkerEvidence.parserCompleted !== true ||
       localWorkerEvidence.embeddingCompleted !== true ||
       localWorkerEvidence.rerankerCompleted !== true ||
+      localWorkerEvidence.nerCompleted !== true ||
       localWorkerEvidence.launcherSha256 !== manifest.sandboxLauncher.sha256)
   )
     throw new Error('Packaged Windows local-worker network-isolation evidence is incomplete or stale.')
@@ -392,6 +416,8 @@ function launchPackagedWorkerSmoke(expectOcrEnabled, ocrFixturePath) {
           result.embeddingCompleted !== true ||
           result.rerankerCompleted !== true ||
           result.rerankerModel !== 'hotchpotch/japanese-reranker-tiny-v2' ||
+          result.nerCompleted !== true ||
+          result.nerModel !== 'knowledgator/gliner-x-small' ||
           result.embeddingDimension !== 384 ||
           result.rawPersonalDataCloudEligible !== false ||
           result.ocrCompleted !== expectOcrEnabled ||
@@ -432,6 +458,7 @@ try {
     '/out/main/parser-worker.js',
     '/out/main/embedding-worker.js',
     '/out/main/reranker-worker.js',
+    '/out/main/ner-worker.js',
     '/out/main/windows-ocr-worker.js',
     '/out/main/tesseract-worker.js'
   ]) {
@@ -460,6 +487,7 @@ try {
 
   const embeddingModel = await verifyEmbeddingModel()
   const rerankerModel = await verifyRerankerModel()
+  await verifyNerModel()
   const privacyQuality = await verifyPrivacyQualityReport()
   const privacyExpert = await verifyPrivacyExpertReport()
   const cloudEnforcement = await verifyCloudEnforcementManifest(privacyExpert)

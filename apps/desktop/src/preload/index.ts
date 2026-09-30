@@ -1,4 +1,4 @@
-import type { CaseResumeImportProgress } from '@shared'
+import type { CaseResumeImportProgress, TrayNavigation } from '@shared'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   ipcChannels,
@@ -84,6 +84,31 @@ function parseAgentTurnEvent(value: unknown): AgentTurnEvent | null {
     return record as unknown as AgentTurnEvent
   }
   return null
+}
+
+// Kept in step with trayRoutes in @shared/tray (checked by the preload test); the preload cannot import it.
+export const trayNavigationRoutes = [
+  'cases',
+  'cases:new',
+  'people:import',
+  'followups',
+  'agent',
+  'ai-member',
+  'settings:models',
+  'settings:integrations'
+]
+
+/** A place the menu-bar panel asked for; anything beyond the known route, filters and question is dropped. */
+function parseTrayNavigation(value: unknown): TrayNavigation | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const keys = ['id', 'route', 'caseView', 'followUpFilter', 'text']
+  if (!Object.keys(record).every((key) => keys.includes(key))) return null
+  if (!uuidPattern.test(String(record.id)) || !trayNavigationRoutes.includes(String(record.route))) return null
+  if (record.caseView !== undefined && record.caseView !== 'unseen' && record.caseView !== 'opportunities') return null
+  if (record.followUpFilter !== undefined && record.followUpFilter !== 'today') return null
+  if (record.text !== undefined && (typeof record.text !== 'string' || record.text.length > 2000)) return null
+  return record as unknown as TrayNavigation
 }
 
 function parseGmailSyncCompletion(value: unknown): GmailScheduledSyncCompletion | null {
@@ -181,6 +206,7 @@ const api: DesktopApi = {
   resolveActionApproval: (input) => ipcRenderer.invoke(ipcChannels.resolveActionApproval, input),
   saveLocalOperatorProfile: (input) => ipcRenderer.invoke(ipcChannels.saveLocalOperatorProfile, input),
   saveLocalApplicationPreferences: (input) => ipcRenderer.invoke(ipcChannels.saveLocalApplicationPreferences, input),
+  testAiModel: (input) => ipcRenderer.invoke(ipcChannels.testAiModel, input),
   saveJobCaseFieldAliases: (input) => ipcRenderer.invoke(ipcChannels.saveJobCaseFieldAliases, input),
   connectAiCommerce: () => ipcRenderer.invoke(ipcChannels.connectAiCommerce),
   getAiCommerceDashboard: () => ipcRenderer.invoke(ipcChannels.getAiCommerceDashboard),
@@ -194,6 +220,8 @@ const api: DesktopApi = {
   listCaseIntroductionDrafts: (reviewId) => ipcRenderer.invoke(ipcChannels.listCaseIntroductionDrafts, reviewId),
   savePersonnelIntroductionDrafts: (input) => ipcRenderer.invoke(ipcChannels.savePersonnelIntroductionDrafts, input),
   listPersonnelIntroductionDrafts: (documentId) => ipcRenderer.invoke(ipcChannels.listPersonnelIntroductionDrafts, documentId),
+  generateRecommendationPoints: (input) => ipcRenderer.invoke(ipcChannels.generateRecommendationPoints, input),
+  getRecommendationPoints: (input) => ipcRenderer.invoke(ipcChannels.getRecommendationPoints, input),
   exportSkillSheet: (input) => ipcRenderer.invoke(ipcChannels.exportSkillSheet, input),
   regenerateIntroduction: (input) => ipcRenderer.invoke(ipcChannels.regenerateIntroduction, input),
   saveBusinessField: (input) => ipcRenderer.invoke(ipcChannels.saveBusinessField, input),
@@ -290,6 +318,21 @@ const api: DesktopApi = {
     const handler = () => listener()
     ipcRenderer.on(ipcChannels.openNewCaseBoard, handler)
     return () => ipcRenderer.removeListener(ipcChannels.openNewCaseBoard, handler)
+  },
+  onTrayNavigate: (listener) => {
+    let active = true
+    const deliver = (payload: unknown) => {
+      const parsed = parseTrayNavigation(payload)
+      if (active && parsed) listener(parsed)
+    }
+    const handler = (_event: IpcRendererEvent, payload: unknown) => deliver(payload)
+    ipcRenderer.on(ipcChannels.trayNavigate, handler)
+    // A request made while this window was still loading waits in Main until the window subscribes.
+    void Promise.resolve(ipcRenderer.invoke(ipcChannels.takeTrayNavigation)).then(deliver, () => undefined)
+    return () => {
+      active = false
+      ipcRenderer.removeListener(ipcChannels.trayNavigate, handler)
+    }
   },
   onGmailSyncCompleted: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: unknown) => {

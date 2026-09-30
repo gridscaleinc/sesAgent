@@ -41,6 +41,7 @@ try {
     access(resolve('out/main/windows-ocr-worker.js')),
     access(resolve('out/main/tesseract-worker.js')),
     access(resolve('out/main/reranker-worker.js')),
+    access(resolve('out/main/ner-worker.js')),
     access(resolve('models/hotchpotch/japanese-reranker-tiny-v2/model-manifest.json')),
     access(resolve('models/hotchpotch/japanese-reranker-tiny-v2/onnx/model_qint8_avx2.onnx')),
     access(resolve('build/native/windows/ocr/resource-manifest.json')),
@@ -102,6 +103,27 @@ try {
   failures.push('The fixed Japanese local reranker worker or its Windows x64 model is missing or invalid.')
 }
 try {
+  const directory = resolve('models/knowledgator/gliner-x-small')
+  const manifest = JSON.parse(await readFile(resolve(directory, 'model-manifest.json'), 'utf8'))
+  if (
+    manifest?.schemaVersion !== 'local-ner-model-v1' ||
+    manifest?.modelId !== 'knowledgator/gliner-x-small' ||
+    manifest?.revision !== 'd51a0984d11084a55f9df3899d9dbf7704f580f5' ||
+    manifest?.license !== 'Apache-2.0'
+  )
+    throw new Error('invalid NER manifest')
+  await access(resolve('out/main/ner-worker.js'))
+  for (const file of manifest.files ?? []) {
+    const bytes = await readFile(resolve(directory, file.path))
+    if (bytes.length !== file.bytes || createHash('sha256').update(bytes).digest('hex') !== file.sha256) {
+      throw new Error(`invalid NER resource: ${file.path}`)
+    }
+  }
+  evidence.nerRuntime = true
+} catch {
+  failures.push('The local person-name detector worker or its model is missing or invalid; Windows Cloud AI would stay blocked.')
+}
+try {
   const functional = JSON.parse(await readFile(resolve('build/windows-verification/offline-ocr-runtime.json'), 'utf8'))
   evidence.ocrRuntimeFunctionalEvidence =
     functional?.version === 'windows-release-evidence-v1' &&
@@ -151,11 +173,13 @@ try {
     workers?.parserCompleted === true &&
     workers?.embeddingCompleted === true &&
     workers?.rerankerCompleted === true &&
+    workers?.nerCompleted === true &&
     workers?.launcherSha256 === launcherSha256
 } catch {
   evidence.workerNetworkPolicyEvidence = false
 }
-if (!evidence.workerNetworkPolicyEvidence) failures.push('Windows parser/embedding/reranker kernel network-isolation evidence is missing.')
+if (!evidence.workerNetworkPolicyEvidence)
+  failures.push('Windows parser/embedding/reranker/NER kernel network-isolation evidence is missing.')
 try {
   const privacy = JSON.parse(await readFile(resolve('build/privacy-verification/privacy-quality-report.json'), 'utf8'))
   evidence.privacyQualityGate =

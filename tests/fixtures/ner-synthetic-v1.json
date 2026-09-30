@@ -1,0 +1,366 @@
+{
+  "version": "ses-ner-synthetic-v1",
+  "syntheticOnly": true,
+  "note": "Synthetic SES-style person-name fixtures written for this evaluation. All names are fictitious.",
+  "cases": [
+    {
+      "id": "ja-resume-header-spaced",
+      "lang": "ja",
+      "text": "技術者スキルシート\n氏名：山田 太郎（ヤマダ タロウ）\n年齢：35歳　性別：男性\n最寄駅：大手町",
+      "names": [
+        "山田 太郎",
+        "ヤマダ タロウ"
+      ]
+    },
+    {
+      "id": "ja-resume-header-compact",
+      "lang": "ja",
+      "text": "スキルシート\n名前 田中美咲\n経験年数 8年\n得意分野 Java, Spring Boot, AWS",
+      "names": [
+        "田中美咲"
+      ]
+    },
+    {
+      "id": "ja-inline-sentence",
+      "lang": "ja",
+      "text": "先日ご紹介した佐々木健一は、来月から日立財務報表システムの保守に参画可能です。",
+      "names": [
+        "佐々木健一"
+      ]
+    },
+    {
+      "id": "ja-email-signature",
+      "lang": "ja",
+      "text": "よろしくお願いいたします。\n--\n株式会社テックブリッジ\n営業部　松本 由美\nTEL: 03-0000-0000",
+      "names": [
+        "松本 由美"
+      ]
+    },
+    {
+      "id": "ja-email-opening",
+      "lang": "ja",
+      "text": "株式会社アルファシステム\n井上様\n\nいつもお世話になっております。テックブリッジの木村です。",
+      "names": [
+        "井上",
+        "木村"
+      ]
+    },
+    {
+      "id": "ja-table-row",
+      "lang": "ja",
+      "text": "No | 氏名 | 年齢 | スキル | 単価\n1 | 石川 翔太 | 29 | Python/Django | 65万\n2 | 前田 彩 | 41 | COBOL/JCL | 70万",
+      "names": [
+        "石川 翔太",
+        "前田 彩"
+      ]
+    },
+    {
+      "id": "ja-tab-table",
+      "lang": "ja",
+      "text": "要員名\t所属\t稼働\n清水大輔\t株式会社山田商事\t即日\n小川真由美\t弊社正社員\t10月〜",
+      "names": [
+        "清水大輔",
+        "小川真由美"
+      ]
+    },
+    {
+      "id": "ja-name-next-to-company",
+      "lang": "ja",
+      "text": "株式会社山田商事の岡田誠一さんから案件の打診がありました。",
+      "names": [
+        "岡田誠一"
+      ]
+    },
+    {
+      "id": "ja-hiragana-given",
+      "lang": "ja",
+      "text": "候補者：藤原 さくら\n希望単価：55万円\n勤務地：勝どき",
+      "names": [
+        "藤原 さくら"
+      ]
+    },
+    {
+      "id": "ja-rare-surname",
+      "lang": "ja",
+      "text": "本件の担当者は勅使河原 蓮になります。面談は明日15時です。",
+      "names": [
+        "勅使河原 蓮"
+      ]
+    },
+    {
+      "id": "ja-katakana-foreign",
+      "lang": "ja",
+      "text": "要員：グエン・ヴァン・ナム（ベトナム国籍）\n日本語：N2\n経験：PHP 5年",
+      "names": [
+        "グエン・ヴァン・ナム"
+      ]
+    },
+    {
+      "id": "ja-katakana-foreign-2",
+      "lang": "ja",
+      "text": "エンジニアのマイケル・ジョンソンさんは英語と日本語が堪能です。",
+      "names": [
+        "マイケル・ジョンソン"
+      ]
+    },
+    {
+      "id": "ja-romaji-in-ja",
+      "lang": "ja",
+      "text": "氏名（ローマ字）：Kenta NAKAMURA\n国籍：日本\n資格：AWS SAA",
+      "names": [
+        "Kenta NAKAMURA"
+      ]
+    },
+    {
+      "id": "ja-initials-plus-name",
+      "lang": "ja",
+      "text": "【要員情報】T.K（男性・32歳）\n本名：小島 拓海\n業務：基本設計〜テスト",
+      "names": [
+        "小島 拓海"
+      ],
+      "optional": [
+        "T.K"
+      ]
+    },
+    {
+      "id": "ja-interview-memo",
+      "lang": "ja",
+      "text": "面談メモ：森田さんはコミュニケーション良好。上長の長谷川部長も同席。",
+      "names": [
+        "森田",
+        "長谷川"
+      ]
+    },
+    {
+      "id": "ja-cc-line",
+      "lang": "ja",
+      "text": "CC: 高木 修（営業）、中島 恵（採用）\n件名：Java案件のご紹介",
+      "names": [
+        "高木 修",
+        "中島 恵"
+      ]
+    },
+    {
+      "id": "ja-long-resume-body",
+      "lang": "ja",
+      "text": "【職務経歴書】\n氏名：原田 光\n2019年4月〜2022年3月 某大手銀行 勘定系システム更改\n役割：PL、メンバー5名\n言語：Java、Oracle\n2022年4月〜現在 日立財務報表システム 保守開発\n最寄駅：大手町、勝どき\n自己PR：原田は顧客折衝を得意とし、要件定義から参画してきました。",
+      "names": [
+        "原田 光",
+        "原田"
+      ]
+    },
+    {
+      "id": "ja-single-kanji-given",
+      "lang": "ja",
+      "text": "紹介者：村上 翼\n紹介先：株式会社丸の内ソリューションズ",
+      "names": [
+        "村上 翼"
+      ]
+    },
+    {
+      "id": "zh-simple",
+      "lang": "zh",
+      "text": "候选人王小明，5年Java开发经验，目前在上海。",
+      "names": [
+        "王小明"
+      ]
+    },
+    {
+      "id": "zh-two-char",
+      "lang": "zh",
+      "text": "联系人：楊凱\n电话：请通过公司邮箱联系",
+      "names": [
+        "楊凱"
+      ]
+    },
+    {
+      "id": "zh-sentence",
+      "lang": "zh",
+      "text": "李娜和张伟下周一起参加面试，负责人是陈建国。",
+      "names": [
+        "李娜",
+        "张伟",
+        "陈建国"
+      ]
+    },
+    {
+      "id": "zh-in-japanese",
+      "lang": "zh",
+      "text": "中国籍エンジニア 劉 洋（リュウ ヨウ）\nJava 7年、日本語ビジネスレベル",
+      "names": [
+        "劉 洋",
+        "リュウ ヨウ"
+      ]
+    },
+    {
+      "id": "zh-signature",
+      "lang": "zh",
+      "text": "此致\n敬礼\n\n赵丽华\n东京软件株式会社 人事部",
+      "names": [
+        "赵丽华"
+      ]
+    },
+    {
+      "id": "zh-traditional",
+      "lang": "zh",
+      "text": "本案由黃志明負責對接，預計十月上旬開始。",
+      "names": [
+        "黃志明"
+      ]
+    },
+    {
+      "id": "en-signature",
+      "lang": "en",
+      "text": "Best regards,\nJohn Smith\nSenior Recruiter, Acme Staffing K.K.",
+      "names": [
+        "John Smith"
+      ]
+    },
+    {
+      "id": "en-sentence",
+      "lang": "en",
+      "text": "Please arrange an interview with Priya Raman and David Chen for the AWS migration project.",
+      "names": [
+        "Priya Raman",
+        "David Chen"
+      ]
+    },
+    {
+      "id": "en-resume-header",
+      "lang": "en",
+      "text": "CURRICULUM VITAE\nName: Maria Garcia Lopez\nNationality: Spain\nSkills: React, TypeScript, Node.js",
+      "names": [
+        "Maria Garcia Lopez"
+      ]
+    },
+    {
+      "id": "en-romaji-japanese",
+      "lang": "en",
+      "text": "Candidate Takahashi Yuki has 6 years of SAP FI/CO experience.",
+      "names": [
+        "Takahashi Yuki"
+      ]
+    },
+    {
+      "id": "mixed-ja-en",
+      "lang": "mixed",
+      "text": "PM: Alex Brown / サブリーダー：吉田 浩二\nプロジェクト：大手町 FinTech 基盤刷新",
+      "names": [
+        "Alex Brown",
+        "吉田 浩二"
+      ]
+    },
+    {
+      "id": "mixed-ja-zh-en",
+      "lang": "mixed",
+      "text": "チームメンバー：佐藤 健、王芳、Kevin Lee（計3名）",
+      "names": [
+        "佐藤 健",
+        "王芳",
+        "Kevin Lee"
+      ]
+    },
+    {
+      "id": "mixed-forwarded-mail",
+      "lang": "mixed",
+      "text": "From: Suzuki Haruto <haruto@example.co.jp>\nTo: 営業部\n\n鈴木です。添付の通り、青木 陽菜のスキルシートを送付します。",
+      "names": [
+        "Suzuki Haruto",
+        "鈴木",
+        "青木 陽菜"
+      ]
+    }
+  ],
+  "safeCases": [
+    {
+      "id": "safe-company-yamada",
+      "lang": "ja",
+      "text": "発注元：株式会社山田商事\n元請：日立ソリューションズ\n商流：エンド直"
+    },
+    {
+      "id": "safe-places",
+      "lang": "ja",
+      "text": "勤務地：勝どき、大手町、豊洲、武蔵小杉（リモート併用）"
+    },
+    {
+      "id": "safe-project-name",
+      "lang": "ja",
+      "text": "案件名：日立財務報表システム改修\n工程：詳細設計〜結合テスト"
+    },
+    {
+      "id": "safe-tech-stack",
+      "lang": "ja",
+      "text": "必須スキル：Java, Spring Boot, Oracle, Linux\n尚可：Kubernetes, Terraform, Datadog"
+    },
+    {
+      "id": "safe-tech-names-person-like",
+      "lang": "en",
+      "text": "Experience with Jenkins, Ansible, Sidekiq, Hugo and Django is preferred."
+    },
+    {
+      "id": "safe-roles",
+      "lang": "ja",
+      "text": "募集職種：PM、PL、SE、PG\n担当：バックエンド開発\n人数：3名"
+    },
+    {
+      "id": "safe-commercial",
+      "lang": "ja",
+      "text": "単価：80万円（スキル見合い）\n精算：140-180h\n支払サイト：30日"
+    },
+    {
+      "id": "safe-station-names",
+      "lang": "ja",
+      "text": "最寄駅：新橋、神谷町、御成門、虎ノ門ヒルズ"
+    },
+    {
+      "id": "safe-company-list",
+      "lang": "ja",
+      "text": "取引実績：三菱UFJ銀行、野村総合研究所、富士通、NTTデータ、伊藤忠テクノソリューションズ"
+    },
+    {
+      "id": "safe-zh-requirements",
+      "lang": "zh",
+      "text": "岗位要求：熟悉Java和Spring框架，有金融系统开发经验，工作地点东京。"
+    },
+    {
+      "id": "safe-en-requirements",
+      "lang": "en",
+      "text": "Requirements: 5+ years with AWS Lambda, DynamoDB and CloudFormation. Location: Tokyo, hybrid."
+    },
+    {
+      "id": "safe-product-names",
+      "lang": "ja",
+      "text": "利用ツール：Salesforce、ServiceNow、Backlog、kintone、Microsoft Teams"
+    },
+    {
+      "id": "safe-surname-like-company",
+      "lang": "ja",
+      "text": "株式会社佐藤製作所向け生産管理システムのリプレース案件です。"
+    },
+    {
+      "id": "safe-surname-like-place",
+      "lang": "ja",
+      "text": "作業場所は千葉県松戸市、または横浜市青葉区のデータセンターです。"
+    },
+    {
+      "id": "safe-business-terms",
+      "lang": "ja",
+      "text": "面談回数：1回（営業同席）\n開始時期：即日〜\n年齢制限：なし\n外国籍：不可"
+    },
+    {
+      "id": "safe-system-names",
+      "lang": "ja",
+      "text": "対象システム：次期勘定系、証券バックオフィス、損保代理店システム、みずほ新統合基盤"
+    },
+    {
+      "id": "safe-jp-headings",
+      "lang": "ja",
+      "text": "案件 概要\n必須 スキル\n歓迎 スキル"
+    },
+    {
+      "id": "safe-mixed-en-ja",
+      "lang": "mixed",
+      "text": "Project: Tokyo Metro 運行管理 / Role: Backend Engineer / Stack: Go, gRPC, PostgreSQL"
+    }
+  ]
+}

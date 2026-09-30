@@ -209,6 +209,8 @@ export interface LocalApplicationPreferencesRow {
   locale: string
   revision: number
   updated_at: string
+  ai_models: string | null
+  menu_bar: string | null
 }
 
 export interface JobCaseFieldAliasesRow {

@@ -576,12 +576,14 @@ it('deletes one follow-up only after an explicit second confirmation and keeps t
   show()
   await screen.findByRole('article', { name: '跟进详情' })
   const first = detail().getByRole('heading', { level: 3 }).parentElement!.textContent
-  fireEvent.click(detail().getByRole('button', { name: '完整记录' }))
-  fireEvent.click(detail().getByRole('button', { name: '删除这条跟进…' }))
-  fireEvent.click(detail().getByRole('button', { name: '取消' }))
+  openMenu()
+  fireEvent.click(detail().getByRole('menuitem', { name: '删除这条跟进（误建或重复）…' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '删除这条跟进' })).getByRole('button', { name: '取消' }))
   expect(window.sesAgent.deleteBusinessFollowUp).not.toHaveBeenCalled()
-  fireEvent.click(detail().getByRole('button', { name: '删除这条跟进…' }))
-  fireEvent.click(detail().getByRole('button', { name: '确认删除' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  openMenu()
+  fireEvent.click(detail().getByRole('menuitem', { name: '删除这条跟进（误建或重复）…' }))
+  fireEvent.click(within(screen.getByRole('dialog', { name: '删除这条跟进' })).getByRole('button', { name: '确认删除' }))
   await waitFor(() => expect(window.sesAgent.deleteBusinessFollowUp).toHaveBeenCalledWith({ followUpId: row(0).id, expectedRevision: 1 }))
   expect(await screen.findByText(/已删除这条跟进/)).toBeInTheDocument()
   await waitFor(() => expect(detail().getByRole('heading', { level: 3 }).parentElement!.textContent).not.toBe(first))
@@ -593,7 +595,120 @@ it('asks to undo arrival before a started follow-up can be deleted', async () =>
   window.sesAgent.deleteBusinessFollowUp = vi.fn()
   show({ target: { documentId, reviewId: cases[0]!.reviewId } })
   await screen.findByRole('article', { name: '跟进详情' })
-  fireEvent.click(detail().getByRole('button', { name: '完整记录' }))
-  expect(detail().getByText('此人员已进场。请先撤销进场，再删除这条跟进。')).toBeInTheDocument()
-  expect(detail().queryByRole('button', { name: '删除这条跟进…' })).not.toBeInTheDocument()
+  openMenu()
+  expect(detail().queryByRole('menuitem', { name: '结束跟进…' })).not.toBeInTheDocument()
+  fireEvent.click(detail().getByRole('menuitem', { name: '删除这条跟进（误建或重复）…' }))
+  const dialog = within(screen.getByRole('dialog', { name: '删除这条跟进' }))
+  expect(dialog.getByText('此人员已进场。请先撤销进场，再删除这条跟进。')).toBeInTheDocument()
+  expect(dialog.queryByRole('button', { name: '确认删除' })).not.toBeInTheDocument()
+})
+const openMenu = () => fireEvent.click(detail().getByRole('button', { name: '更多跟进操作' }))
+const stopped = (stage: 'paused' | 'closed', reason: string) => (input: { reviewId: string; action: string }) => {
+  const old = records.find((record) => record.reviewId === input.reviewId)!
+  const updated: BusinessFollowUp = {
+    ...old,
+    revision: old.revision + 1,
+    status: stage === 'closed' ? 'closed' : 'interview',
+    progress: { ...old.progress!, stage },
+    events: [
+      ...old.events,
+      {
+        status: 'closed',
+        note: `${stage === 'closed' ? '结束推进' : '暂停推进'}：${reason}`,
+        nextStep: '',
+        recordedAt: '2026-09-12T03:00:00Z',
+        recordedBy: 'HR',
+        action: input.action,
+        stage
+      }
+    ]
+  }
+  records = records.map((record) => (record.id === old.id ? updated : record))
+  return Promise.resolve(updated)
+}
+it('ends a 待约面 follow-up from the header menu on the schedule tab with a chosen reason', async () => {
+  vi.mocked(window.sesAgent.advanceBusinessProgress).mockImplementation(((input: { reviewId: string; action: string; reason: string }) =>
+    stopped('closed', input.reason)(input)) as never)
+  show()
+  await screen.findByRole('article', { name: '跟进详情' })
+  expect(detail().getByRole('button', { name: '面试安排' })).toHaveAttribute('aria-pressed', 'true')
+  expect(detail().getByRole('heading', { level: 3 }).parentElement!.textContent).toContain('待约面')
+  openMenu()
+  expect(detail().getByRole('menuitem', { name: '暂停跟进…' })).toBeVisible()
+  expect(detail().queryByRole('menuitem', { name: '恢复跟进' })).not.toBeInTheDocument()
+  fireEvent.click(detail().getByRole('menuitem', { name: '结束跟进…' }))
+  const dialog = within(screen.getByRole('dialog', { name: '结束这条跟进' }))
+  expect(dialog.getByText('测试人员 × Java 案件 1')).toBeInTheDocument()
+  expect(dialog.getByRole('button', { name: '结束跟进' })).toBeDisabled()
+  fireEvent.click(dialog.getByRole('button', { name: '客户不录用' }))
+  fireEvent.change(dialog.getByLabelText('补充说明（可选）'), { target: { value: '技术面评价不足' } })
+  fireEvent.click(dialog.getByRole('button', { name: '结束跟进' }))
+  await waitFor(() =>
+    expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'close', reason: '客户不录用：技术面评价不足', reviewId: cases[0]!.reviewId })
+    )
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(detail().getByRole('status', { name: '跟进状态' })).toHaveTextContent(/已结束 · 客户不录用：技术面评价不足 · 2026/)
+  fireEvent.click(screen.getByRole('button', { name: /^全部/ }))
+  expect(screen.getByRole('button', { name: /Java 案件 1/ })).toHaveTextContent('已结束')
+})
+it('requires a note for 其他 and closes the dialog on Esc without saving', async () => {
+  show()
+  await screen.findByRole('article', { name: '跟进详情' })
+  openMenu()
+  fireEvent.click(detail().getByRole('menuitem', { name: '结束跟进…' }))
+  const dialog = within(screen.getByRole('dialog', { name: '结束这条跟进' }))
+  fireEvent.click(dialog.getByRole('button', { name: '其他' }))
+  expect(dialog.getByRole('button', { name: '结束跟进' })).toBeDisabled()
+  fireEvent.change(dialog.getByLabelText('说明（必填）'), { target: { value: '   ' } })
+  expect(dialog.getByRole('button', { name: '结束跟进' })).toBeDisabled()
+  fireEvent.change(dialog.getByLabelText('说明（必填）'), { target: { value: '客户合并了岗位' } })
+  expect(dialog.getByRole('button', { name: '结束跟进' })).toBeEnabled()
+  fireEvent.keyDown(dialog.getByLabelText('说明（必填）'), { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(window.sesAgent.advanceBusinessProgress).not.toHaveBeenCalled()
+})
+it('keeps the pause dialog open with the error when saving fails', async () => {
+  vi.mocked(window.sesAgent.advanceBusinessProgress).mockRejectedValueOnce(new Error('写入失败'))
+  show()
+  await screen.findByRole('article', { name: '跟进详情' })
+  openMenu()
+  fireEvent.click(detail().getByRole('menuitem', { name: '暂停跟进…' }))
+  const dialog = within(screen.getByRole('dialog', { name: '暂停这条跟进' }))
+  fireEvent.click(dialog.getByRole('button', { name: '等待资料' }))
+  fireEvent.click(dialog.getByRole('button', { name: '暂停跟进' }))
+  expect(await dialog.findByRole('alert')).toBeInTheDocument()
+  expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({ action: 'pause', reason: '等待资料' }))
+  expect(screen.getByRole('dialog', { name: '暂停这条跟进' })).toBeInTheDocument()
+})
+it('pauses from the menu and resumes from the status line', async () => {
+  vi.mocked(window.sesAgent.advanceBusinessProgress).mockImplementation(((input: { reviewId: string; action: string; reason?: string }) => {
+    if (input.action === 'pause') return stopped('paused', input.reason!)(input)
+    const old = records.find((record) => record.reviewId === input.reviewId)!,
+      updated = { ...old, revision: old.revision + 1, progress: { ...old.progress!, stage: 'coordinating' as const } }
+    records = records.map((record) => (record.id === old.id ? updated : record))
+    return Promise.resolve(updated)
+  }) as never)
+  show()
+  await screen.findByRole('article', { name: '跟进详情' })
+  openMenu()
+  fireEvent.click(detail().getByRole('menuitem', { name: '暂停跟进…' }))
+  const dialog = within(screen.getByRole('dialog', { name: '暂停这条跟进' }))
+  fireEvent.click(dialog.getByRole('button', { name: '客户暂缓' }))
+  fireEvent.click(dialog.getByRole('button', { name: '暂停跟进' }))
+  await waitFor(() =>
+    expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(expect.objectContaining({ action: 'pause', reason: '客户暂缓' }))
+  )
+  const status = await detail().findByRole('status', { name: '跟进状态' })
+  expect(status).toHaveTextContent('已暂停 · 客户暂缓')
+  openMenu()
+  expect(detail().queryByRole('menuitem', { name: '暂停跟进…' })).not.toBeInTheDocument()
+  expect(detail().getByRole('menuitem', { name: '恢复跟进' })).toBeVisible()
+  openMenu()
+  fireEvent.click(within(status).getByRole('button', { name: '恢复跟进' }))
+  await waitFor(() =>
+    expect(window.sesAgent.advanceBusinessProgress).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'resume' }))
+  )
+  await waitFor(() => expect(detail().queryByRole('status', { name: '跟进状态' })).not.toBeInTheDocument())
 })

@@ -1,7 +1,7 @@
 import { validateQuestionTemplate } from './question-bank'
 import { validateExperienceProcedure } from './experience-procedure'
 import { createHash, randomUUID } from 'node:crypto'
-import { defaultAgentChatModelKey, resolveAgentChatModel } from '@agent'
+import { businessModel } from './business-model'
 import {
   rankWithExperiences,
   rankingEvidence,
@@ -88,7 +88,7 @@ export function createExperienceLearner(context: Pick<MainIpcContext, 'repositor
   let running = false,
     closed = false
   const activeControllers = new Set<AbortController>()
-  const model = () => resolveAgentChatModel(context.agentChatModelCatalog, defaultAgentChatModelKey)
+  const model = () => businessModel(context, 'checking')
   const tick = async (outerSignal?: AbortSignal) => {
     if (running || closed || !settings().enabled) return
     running = true

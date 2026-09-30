@@ -1748,6 +1748,19 @@ export const applicationLocales = ['ja-JP', 'zh-CN'] as const
 
 export type ApplicationLocale = (typeof applicationLocales)[number]
 
+/**
+ * The operator's model choice per kind of business AI work. Keys come from the Main model catalog; a key the
+ * catalog no longer lists falls back to the default model when used.
+ * - checking: frequent batch checks (case/person match assessments, case intake, mail progress, experience learning)
+ * - writing: text and analysis (recommendation points, introductions, interview questions, work-rule analysis)
+ */
+export interface ApplicationAiModels {
+  checking: string
+  writing: string
+}
+
+export type ApplicationAiModelSlot = keyof ApplicationAiModels
+
 export interface LocalApplicationPreferences {
   version: 'local-application-preferences-v1'
   locale: ApplicationLocale
@@ -1755,6 +1768,16 @@ export interface LocalApplicationPreferences {
   revision: number | null
   updatedAt: string | null
   cloudEligible: false
+  /** Absent until the operator picks models; every slot then uses the default model. */
+  aiModels?: ApplicationAiModels
+  /** Absent until changed: the menu-bar panel is shown and never shows person names. */
+  menuBar?: MenuBarPreferences
+}
+
+/** The menu-bar (macOS) / system-tray (Windows) quick panel. */
+export interface MenuBarPreferences {
+  visible: boolean
+  showPersonNames: boolean
 }
 
 /** Extra labels the operator's partners use for a built-in job-case field. */
@@ -2304,6 +2327,17 @@ export interface ExecuteAgentTurnInput {
 export interface AgentChatModelOption {
   key: string
   displayName: string
+  /** Descriptive speed/cost hint: fast = quick and cheap, strongest = best but slow and expensive. */
+  tier?: 'fast' | 'balanced' | 'strong' | 'strongest'
+}
+
+export interface TestAiModelInput {
+  modelKey: string
+}
+
+export interface TestAiModelResult {
+  modelKey: string
+  latencyMs: number
 }
 
 export type AgentTurnEvent =
@@ -2444,6 +2478,10 @@ export interface AiCommerceStateUpdate {
 export interface SaveLocalApplicationPreferencesInput {
   locale: ApplicationLocale
   expectedRevision: number | null
+  /** Omitted keeps the stored model choice. */
+  aiModels?: ApplicationAiModels
+  /** Omitted keeps the stored menu-bar choice. */
+  menuBar?: MenuBarPreferences
 }
 
 export interface SaveGoogleWorkspaceAdminConfigurationInput {
@@ -2961,6 +2999,8 @@ export interface DesktopApi {
   resolveActionApproval(input: ResolveActionApprovalInput): Promise<ActionApprovalSummary>
   saveLocalOperatorProfile(input: SaveLocalOperatorProfileInput): Promise<LocalOperatorProfile>
   saveLocalApplicationPreferences(input: SaveLocalApplicationPreferencesInput): Promise<LocalApplicationPreferences>
+  /** Sends a tiny fixed prompt (no business data) to one catalog model through the normal privacy gateway. */
+  testAiModel(input: TestAiModelInput): Promise<TestAiModelResult>
   saveJobCaseFieldAliases(input: SaveJobCaseFieldAliasesInput): Promise<JobCaseFieldAliases>
   connectAiCommerce(): Promise<AiCommerceMembershipState>
   getAiCommerceDashboard(): Promise<AiCommerceMembershipState>
@@ -2983,6 +3023,14 @@ export interface DesktopApi {
     input: import('./business-workbench').SavePersonnelIntroductionDraftsInput
   ): Promise<import('./business-workbench').PersonnelIntroductionDraft[]>
   listPersonnelIntroductionDrafts(documentId: string): Promise<import('./business-workbench').PersonnelIntroductionDraft[]>
+  /** 推荐要点 for one person and case, generated on demand by cloud AI and stored per pair. Optional so test doubles need not stub it. */
+  generateRecommendationPoints?(
+    input: import('./recommendation-points').RecommendationPointsQuery
+  ): Promise<import('./recommendation-points').RecommendationPointsView>
+  /** The stored 推荐要点 for the pair, with stale set when the profile or case version changed since generation. */
+  getRecommendationPoints?(
+    input: import('./recommendation-points').RecommendationPointsQuery
+  ): Promise<import('./recommendation-points').RecommendationPointsView>
   /** Optional so test doubles of the whole API need not stub it. */
   exportSkillSheet?(
     input: import('./business-workbench').ExportSkillSheetInput
@@ -3073,6 +3121,8 @@ export interface DesktopApi {
   onGmailSyncCompleted(listener: (completion: GmailScheduledSyncCompletion) => void): () => void
   /** Fired when the operator clicks the OS notice about newly arrived cases. */
   onOpenNewCaseBoard(listener: () => void): () => void
+  /** A place the menu-bar panel asked the main window to open; also delivers one that arrived before subscribing. */
+  onTrayNavigate?(listener: (navigation: import('./tray').TrayNavigation) => void): () => void
   getRecoveryState(): Promise<RecoveryState>
   createRecoveryPackage(input: CreateRecoveryPackageInput): Promise<CreateRecoveryPackageResult>
   snoozeRecoveryReminder(input: SnoozeRecoveryReminderInput): Promise<RecoveryState>
@@ -3148,6 +3198,7 @@ export const ipcChannels = {
   resolveActionApproval: 'action-approval:resolve',
   saveLocalOperatorProfile: 'operator-profile:save',
   saveLocalApplicationPreferences: 'application-preferences:save',
+  testAiModel: 'application-preferences:test-ai-model',
   saveJobCaseFieldAliases: 'job-case-field-aliases:save',
   connectAiCommerce: 'aicommerce:connect',
   getAiCommerceDashboard: 'aicommerce:get-dashboard',
@@ -3162,6 +3213,8 @@ export const ipcChannels = {
   listCaseIntroductionDrafts: 'broadcast:case-introduction-drafts-list',
   savePersonnelIntroductionDrafts: 'personnel:introduction-drafts-save',
   listPersonnelIntroductionDrafts: 'personnel:introduction-drafts-list',
+  generateRecommendationPoints: 'personnel:recommendation-points-generate',
+  getRecommendationPoints: 'personnel:recommendation-points-get',
   exportSkillSheet: 'personnel:skill-sheet-export',
   saveBusinessField: 'business:field-save',
   listAiConversations: 'ai-conversations:list',
@@ -3244,6 +3297,8 @@ export const ipcChannels = {
   syncGoogleWorkspace: 'google-workspace:sync',
   gmailSyncCompleted: 'google-workspace:sync-completed',
   openNewCaseBoard: 'job-cases:open-new-board',
+  trayNavigate: 'tray:navigate',
+  takeTrayNavigation: 'tray:take-navigation',
   getRecoveryState: 'recovery:get-state',
   createRecoveryPackage: 'recovery:create-package',
   snoozeRecoveryReminder: 'recovery:snooze-reminder',

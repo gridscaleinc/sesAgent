@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { beforeAll, expect, it, vi } from 'vitest'
 import { ipcChannels, type DesktopApi } from '@shared/contracts'
+import { trayRoutes } from '@shared'
 
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
@@ -8,8 +9,9 @@ vi.mock('electron', () => ({
 }))
 
 let api: DesktopApi
+let trayNavigationRoutes: string[]
 beforeAll(async () => {
-  await import('./index')
+  ;({ trayNavigationRoutes } = await import('./index'))
   api = vi.mocked(contextBridge.exposeInMainWorld).mock.calls[0]![1] as DesktopApi
 })
 
@@ -66,4 +68,34 @@ it('validates case import progress and removes its scoped listener', () => {
   expect(listener).toHaveBeenCalledTimes(1)
   unsubscribe()
   expect(ipcRenderer.removeListener).toHaveBeenCalledWith(channel, handler)
+})
+
+it('hands the main window menu-bar requests, including one waiting in Main, and drops malformed ones', async () => {
+  const waiting = { id: '44444444-4444-4444-8444-444444444444', route: 'followups', followUpFilter: 'today' }
+  vi.mocked(ipcRenderer.invoke).mockResolvedValueOnce(waiting)
+  const listener = vi.fn()
+  const unsubscribe = api.onTrayNavigate!(listener)
+  expect(ipcRenderer.invoke).toHaveBeenCalledWith(ipcChannels.takeTrayNavigation)
+  await vi.waitFor(() => expect(listener).toHaveBeenCalledWith(waiting))
+  const [channel, handler] = vi.mocked(ipcRenderer.on).mock.calls.at(-1)!
+  expect(channel).toBe(ipcChannels.trayNavigate)
+  const agent = { id: '55555555-5555-4555-8555-555555555555', route: 'agent', text: '今天要跟进什么？' }
+  handler({} as any, agent)
+  expect(listener).toHaveBeenLastCalledWith(agent)
+  for (const invalid of [
+    null,
+    { ...agent, id: 'not-a-uuid' },
+    { ...agent, route: 'settings:privacy' },
+    { ...agent, text: 'x'.repeat(2001) },
+    { ...agent, caseView: 'all' },
+    { ...agent, url: 'https://example.invalid' }
+  ])
+    handler({} as any, invalid)
+  expect(listener).toHaveBeenCalledTimes(2)
+  unsubscribe()
+  expect(ipcRenderer.removeListener).toHaveBeenCalledWith(channel, handler)
+})
+
+it('knows every menu-bar route Main can send', () => {
+  expect(trayNavigationRoutes).toEqual([...trayRoutes])
 })

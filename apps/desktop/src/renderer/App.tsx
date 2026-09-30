@@ -1,7 +1,12 @@
 import { matchFollowUpLabels } from '@shared'
 import { CaseResumeAssessmentPanel } from './components/CaseResumeAssessmentPanel'
 import { useCaseResumeAssessments } from './components/use-case-resume-assessments'
-import { MatchingOpportunities } from './components/MatchingOpportunities'
+import {
+  MatchingOpportunitiesBanner,
+  MatchingOpportunitiesPage,
+  useMatchingOpportunities,
+  type OpportunityGrouping
+} from './components/MatchingOpportunities'
 import { usePersonCaseMatchCounts } from './person-case-match-cache'
 import { BusinessProgressContext, progressPairKey, useBusinessProgressData } from './business-progress-data'
 import { BusinessProgressOverview } from './components/BusinessProgressOverview'
@@ -10,7 +15,7 @@ import type { FollowUpTarget } from './components/follow-up-target'
 import { HrProgressWorkbench } from './components/HrProgressWorkbench'
 import { ResumeImportHistory } from './components/ResumeImportHistory'
 import { HrObjectList } from './components/HrObjectList'
-import { readHrPosition, saveHrPosition, type HrBusinessKind } from './hr-business-navigation'
+import { readHrPosition, saveHrPosition, type HrBusinessKind, type HrListFilter } from './hr-business-navigation'
 import { HrMatchingWorkspace, type HrMatchSource, type IntroductionTarget } from './components/HrMatchingWorkspace'
 import { IntroductionComposer } from './components/IntroductionComposer'
 import { BusinessIntakeWorkspace } from './components/BusinessIntakeWorkspace'
@@ -18,7 +23,7 @@ import { CaseTextImport } from './components/CaseTextImport'
 import { PersonnelWorkspace } from './components/PersonnelWorkspace'
 import { CandidateProfilePanel } from './components/CandidateProfilePanel'
 import './components/business-workbench.css'
-import type { BusinessFeedEntry, TypedAiConversationReference } from '@shared'
+import type { BusinessFeedEntry, MatchingOpportunity, TrayNavigation, TypedAiConversationReference } from '@shared'
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { WorkTask } from '@domain'
 import type {
@@ -71,7 +76,10 @@ export function App() {
   const caseResumes = useCaseResumeAssessments(bootstrap?.preferences.locale ?? 'ja-JP')
   const personCaseMatches = usePersonCaseMatchCounts()
   const [assessmentReviewId, setAssessmentReviewId] = useState<string | null>(null)
-  const [assessmentBack, setAssessmentBack] = useState(false)
+  // 找人 results replace the case list in the main area; the list stays mounted underneath to keep its place.
+  const [casePeopleOpen, setCasePeopleOpen] = useState(false)
+  // While 找案件 results show, the side panel stays closed until something on the results page opens it.
+  const [matchPanelHidden, setMatchPanelHidden] = useState(false)
   const [assessmentFocus, setAssessmentFocus] = useState<string | null>(null)
   const [sideProgressTarget, setSideProgressTarget] = useState<FollowUpTarget | null>(null)
   const [progressFocus, setProgressFocus] = useState<{ kind: HrBusinessKind; id: string; request: number } | null>(null)
@@ -92,6 +100,7 @@ export function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [applicationSettingsOpen, setApplicationSettingsOpen] = useState(false)
   const [applicationSettingsSection, setApplicationSettingsSection] = useState<ApplicationSettingsSection>('general')
+  const [applicationSettingsRequest, setApplicationSettingsRequest] = useState(0)
   const [aiCommerceOpen, setAiCommerceOpen] = useState(false)
   const [aiCommerceCallbackError, setAiCommerceCallbackError] = useState<string | null>(null)
   const [operatorProfileOpen, setOperatorProfileOpen] = useState(false)
@@ -129,6 +138,19 @@ export function App() {
     return () => window.removeEventListener(aiSignInRequestEvent, open)
   }, [])
   const [hrChatRequest, setHrChatRequest] = useState(0)
+  const [trayNavigation, setTrayNavigation] = useState<TrayNavigation | null>(null)
+  const trayNavigationHandled = useRef(new Set<string>())
+  const trayNavigationHandler = useRef<((navigation: TrayNavigation) => void) | null>(null)
+  const [hrListFilterRequest, setHrListFilterRequest] = useState<{ kind: HrBusinessKind; filter: HrListFilter; id: number } | null>(null)
+  // 新匹配机会 is a page of the section it was opened from; results opened from it return to it.
+  const [opportunitiesOpen, setOpportunitiesOpen] = useState(false)
+  const [opportunitiesSection, setOpportunitiesSection] = useState<HrBusinessKind>('case')
+  const [opportunityReturn, setOpportunityReturn] = useState<{ kind: HrBusinessKind; id: string } | null>(null)
+  const opportunities = useMatchingOpportunities(
+    bootstrap !== null && activeView === 'agent' && !hrFollowOpen,
+    bootstrap?.preferences.locale ?? 'ja-JP'
+  )
+  const [followUpFilterRequest, setFollowUpFilterRequest] = useState<{ filter: 'today'; id: number } | null>(null)
   const [caseIntroductionTarget, setCaseIntroductionTarget] = useState<CaseIntroductionTarget | null>(null)
   const caseIntroductionPrepared = useCallback((review: JobCaseReviewSnapshot) => {
     setBootstrap((current) =>
@@ -143,7 +165,7 @@ export function App() {
     )
   }, [])
   const [introductionTarget, setIntroductionTarget] = useState<IntroductionTarget | null>(null)
-  const [agentSideMode, setAgentSideMode] = useState<'intake' | 'personnel' | 'profile' | 'assessment' | null>(null)
+  const [agentSideMode, setAgentSideMode] = useState<'intake' | 'personnel' | 'profile' | null>(null)
   const [agentProfileId, setAgentProfileId] = useState<string | null>(null)
   const [agentFeedSelection, setAgentFeedSelection] = useState<string | null>(() => readHrPosition(hrKind).selected)
   const [agentPersonId, setAgentPersonId] = useState<string>()
@@ -202,6 +224,12 @@ export function App() {
   const commandPaletteAvailable = bootstrap !== null && startupRecovery === null && loadError === null
   const normalSessionReady = bootstrap !== null && startupRecovery === null
   const locale = bootstrap?.preferences.locale ?? 'ja-JP'
+  // The Agent chat and the 批量 intake start on the 批量核对 model; the saved setting applies without a reload.
+  const checkingModelChoice = bootstrap?.preferences.aiModels?.checking
+  const agentDefaultModelKey =
+    checkingModelChoice && bootstrap?.agentChatModels?.some((model) => model.key === checkingModelChoice)
+      ? checkingModelChoice
+      : bootstrap?.defaultAgentChatModelKey
   const t = useMemo(() => localeText(locale === 'zh-CN'), [locale])
   useLayoutEffect(() => {
     document.documentElement.lang = locale
@@ -496,6 +524,21 @@ export function App() {
     }),
     []
   )
+
+  // The menu-bar panel asks for a place in this window; it is applied once the normal session is ready.
+  useEffect(
+    () =>
+      window.sesAgent.onTrayNavigate?.((navigation) => {
+        if (!trayNavigationHandled.current.has(navigation.id)) setTrayNavigation(navigation)
+      }),
+    []
+  )
+  useEffect(() => {
+    if (!trayNavigation || !normalSessionReady || !trayNavigationHandler.current) return
+    trayNavigationHandled.current.add(trayNavigation.id)
+    setTrayNavigation(null)
+    trayNavigationHandler.current(trayNavigation)
+  }, [trayNavigation, normalSessionReady])
 
   if (loadError) {
     return (
@@ -1019,6 +1062,9 @@ export function App() {
     if (switching) {
       closeAgentPanel()
       setHrSource(null)
+      setCasePeopleOpen(false)
+      setOpportunitiesOpen(false)
+      setOpportunityReturn(null)
       setHrBatchStarted(null)
       if (section !== 'follow') setAgentFeedSelection(readHrPosition(section!).selected)
     }
@@ -1086,7 +1132,7 @@ export function App() {
   const openCaseImport = () => openSubpage('case-import', 'case')
 
   const openAgentSystemAccess = (access: AgentSystemAccessBlock) => {
-    setAssessmentBack(false)
+    setMatchPanelHidden(false)
     setSideProgressTarget(null)
     setProgressFocus(null)
     if (access.destination === 'broadcast' && access.reviewId) {
@@ -1102,7 +1148,7 @@ export function App() {
       }
     }
 
-    // 找人 for a case always runs in the case's resume panel beside the list; without a case it opens the case list.
+    // 找人 for a case always opens the case's results page in the main area; without a case it opens the case list.
     if (access.destination === 'matching') {
       const review = access.jobCaseId ? bootstrap.jobCaseReviews.find((item) => item.jobCase?.id === access.jobCaseId) : undefined
       if (review) openCasePeople(review)
@@ -1144,24 +1190,28 @@ export function App() {
     }
   }
   const closeAgentPanel = () => {
-    setAssessmentBack(false)
+    setMatchPanelHidden(false)
     setSideProgressTarget(null)
     setAgentSideMode(null)
     setAgentContextTrail([])
   }
   const openAgentBatch = (text?: string) => {
+    setMatchPanelHidden(false)
     setAgentHomeRequest((value) => value + 1)
     if (text) setAgentBatchSeed({ id: Date.now(), text })
     setAgentSideMode('intake')
     setAgentContextTrail([])
     setActiveView('agent')
   }
-  const openAgentPersonnel = (documentId: string, match = false) => {
+  const openAgentPersonnel = (documentId: string, match = false, selectReviewId?: string) => {
     openAgentSystemAccess({ type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'overview' })
     setAgentPersonId(documentId)
     setAgentSideMode('personnel')
     // A person already being matched is only shown again; the matching workspace never starts a second run for them.
+    // The results take the main area; the person's panel opens again from 「查看人员资料」.
     if (match) {
+      setMatchPanelHidden(true)
+      setCasePeopleOpen(false)
       setHrFollowOpen(false)
       setHrKind('person')
       setAgentFeedSelection(`person:${documentId}`)
@@ -1169,7 +1219,12 @@ export function App() {
       try {
         localStorage.setItem('ses-hr-kind-v2', 'person')
       } catch {}
-      setHrSource({ kind: 'person', id: documentId, requestId: ++feedFocusSequence.current })
+      setHrSource({
+        kind: 'person',
+        id: documentId,
+        requestId: ++feedFocusSequence.current,
+        ...(selectReviewId ? { selectReviewId } : {})
+      })
       setAgentHomeRequest((value) => value + 1)
     }
   }
@@ -1179,14 +1234,17 @@ export function App() {
       return
     }
     // The full profile opens in the right panel beside the list; the talent-pool page stays a library.
+    setMatchPanelHidden(false)
     setAgentProfileId(documentId)
     setAgentSideMode('profile')
     setGovernanceOpen(false)
     setSelectedTask(null)
     setActiveView('agent')
   }
+  /** Opens a case's 找人 results in the main area in place of the case list, with the side panel closed. */
   const openCasePeople = (review: JobCaseReviewSnapshot, files?: File[]) => {
-    setAssessmentBack(false)
+    setMatchPanelHidden(false)
+    setCasePeopleOpen(true)
     setAssessmentReviewId(review.reviewId)
     setAgentFeedSelection(`case:${review.reviewId}`)
     saveHrPosition('case', { selected: `case:${review.reviewId}` })
@@ -1196,7 +1254,7 @@ export function App() {
     setActiveView('agent')
     setSideProgressTarget(null)
     setAgentContextTrail([])
-    setAgentSideMode('assessment')
+    setAgentSideMode(null)
     setAgentHomeRequest((value) => value + 1)
     if (files?.length) {
       try {
@@ -1238,13 +1296,8 @@ export function App() {
         : { type: 'system-access', destination: 'case-review', reviewId: entry.objectId }
     )
   }
-  const agentContextBack = assessmentBack
-    ? () => {
-        setAgentSideMode('assessment')
-        setAgentContextTrail([])
-        setAssessmentBack(false)
-      }
-    : agentContextTrail.length > 1
+  const agentContextBack =
+    agentContextTrail.length > 1
       ? () => {
           const previous = agentContextTrail.at(-2)!
           setAgentContextTrail((trail) => trail.slice(0, -1))
@@ -1271,6 +1324,7 @@ export function App() {
 
   const openApplicationSettings = (section: ApplicationSettingsSection = 'general') => {
     setApplicationSettingsSection(section)
+    setApplicationSettingsRequest((request) => request + 1)
     setApplicationSettingsOpen(true)
   }
 
@@ -1530,6 +1584,19 @@ export function App() {
       keywords: ['案件', 'case', 'review', '案件レビュー', 'eml'],
       icon: 'briefcase',
       run: () => openHrList('case')
+    },
+    {
+      id: 'hr-opportunities',
+      group: '業務',
+      label: { zh: '查看新匹配机会', ja: '新しいマッチング候補を見る' },
+      description: {
+        zh: `后台发现的新组合 ${opportunities.newCount} 个。`,
+        ja: `バックグラウンドで見つけた新しい組み合わせ ${opportunities.newCount}件。`
+      },
+      // i18n-ignore: search keywords match either language
+      keywords: ['新匹配机会', 'マッチング候補', 'opportunity', 'matching', 'マッチング', '机会'],
+      icon: 'users',
+      run: () => openOpportunities()
     },
     {
       id: 'hr-people',
@@ -1890,11 +1957,20 @@ export function App() {
     setHrKind(kind)
     setAgentFeedSelection(readHrPosition(kind).selected)
     setHrSource(null)
+    setCasePeopleOpen(false)
+    setOpportunitiesOpen(false)
+    setOpportunityReturn(null)
     closeAgentPanel()
     setAgentHomeRequest((value) => value + 1)
     try {
       localStorage.setItem('ses-hr-kind-v2', kind)
     } catch {}
+  }
+  const openOpportunities = (section: HrBusinessKind = hrFollowOpen ? 'case' : hrKind) => {
+    openHrList(section)
+    setOpportunitiesSection(section)
+    setOpportunitiesOpen(true)
+    opportunities.reload()
   }
   const returnToHr = () => {
     setActiveView('agent')
@@ -1913,6 +1989,45 @@ export function App() {
     setHrChatRequest((value) => value + 1)
   }
   railShortcuts.current = [() => openHrList('case'), () => openHrList('person'), openFollowUps, openAgentChat]
+  // Each menu-bar panel link opens the screen its number came from.
+  trayNavigationHandler.current = (navigation) => {
+    setCommandPaletteOpen(false)
+    switch (navigation.route) {
+      case 'cases':
+        openHrList('case')
+        if (navigation.caseView === 'unseen') setHrListFilterRequest({ kind: 'case', filter: 'unseen', id: Date.now() })
+        if (navigation.caseView === 'opportunities') openOpportunities('case')
+        return
+      case 'cases:new':
+        openHrList('case')
+        openAgentBatch()
+        return
+      case 'people:import':
+        openHrList('person')
+        void startResumeImport()
+        return
+      case 'followups':
+        openFollowUps()
+        if (navigation.followUpFilter) setFollowUpFilterRequest({ filter: navigation.followUpFilter, id: Date.now() })
+        return
+      case 'agent':
+        openAgentChat()
+        // Prefilled only: the operator reads and sends it.
+        if (navigation.text) setAgentComposerDraft(navigation.text)
+        return
+      case 'ai-member':
+        setApplicationSettingsOpen(false)
+        setAiCommerceOpen(true)
+        return
+      case 'settings:models':
+        setAiCommerceOpen(false)
+        openApplicationSettings('models')
+        return
+      case 'settings:integrations':
+        openApplicationSettings('integrations')
+        return
+    }
+  }
   // 完整人员资料 opens the selected person's full profile beside the list; a case's full record is its detail panel.
   const hrLibraryPerson = hrKind === 'person' ? selectedHrObject('person') : null
   // Person list entries use the person's documentId as objectId; only a result for the current profile counts.
@@ -1922,6 +2037,36 @@ export function App() {
     if (count !== null) personMatchCounts[person.documentId] = count
   }
   const assessmentJob = bootstrap.jobCaseReviews.find((job) => job.reviewId === assessmentReviewId)
+  const caseResultsOpen = casePeopleOpen && hrKind === 'case' && Boolean(assessmentJob) && !hrSource
+  // Results opened from 新匹配机会 go back there; the same results opened another way go back to the list.
+  const caseFromOpportunities = opportunitiesOpen && opportunityReturn?.kind === 'case' && opportunityReturn.id === assessmentJob?.reviewId
+  const personFromOpportunities = opportunitiesOpen && opportunityReturn?.kind === 'person' && opportunityReturn.id === hrSource?.id
+  const returnToOpportunities = () => {
+    setOpportunityReturn(null)
+    setHrKind(opportunitiesSection)
+    setAgentFeedSelection(readHrPosition(opportunitiesSection).selected)
+    setAgentHomeRequest((value) => value + 1)
+    try {
+      localStorage.setItem('ses-hr-kind-v2', opportunitiesSection)
+    } catch {}
+  }
+  /** 按案件 opens the case's 找人 results with this person selected; 按人员 opens the person's 找案件 with this case. */
+  const openOpportunity = (item: MatchingOpportunity, grouping: OpportunityGrouping) => {
+    const person = bootstrap.candidateReviews.find((entry) => entry.documentId === item.documentId)
+    if (!person) return
+    if (grouping === 'person') {
+      openAgentPersonnel(item.documentId, true, item.reviewId)
+      setOpportunityReturn({ kind: 'person', id: item.documentId })
+      return
+    }
+    const review =
+      bootstrap.jobCaseReviews.find((job) => job.reviewId === item.reviewId) ??
+      bootstrap.jobCaseReviews.find((job) => job.jobCase?.id === item.jobCaseId)
+    if (!review) return
+    openCasePeople(review)
+    setAssessmentFocus(caseResumes.addPerson(review, person))
+    setOpportunityReturn({ kind: 'case', id: review.reviewId })
+  }
   // The card counts exactly the people the panel would show; before the panel has data, the saved count from Main.
   const resumeStates = caseResumes.cardStates(bootstrap.candidateReviews, (task) =>
     Boolean(
@@ -2076,9 +2221,13 @@ export function App() {
                     ? t('跟进', '対応記録')
                     : hrSource
                       ? t('为此人员找案件', 'この要員の案件を探す')
-                      : hrKind === 'case'
-                        ? t('案件', '案件')
-                        : t('人员', '要員')
+                      : caseResultsOpen
+                        ? t('为此案件找人', 'この案件の要員を探す')
+                        : opportunitiesOpen
+                          ? t('新匹配机会', '新しいマッチング候補')
+                          : hrKind === 'case'
+                            ? t('案件', '案件')
+                            : t('人员', '要員')
                 }
                 chatRequest={hrChatRequest}
                 businessObject={
@@ -2096,26 +2245,14 @@ export function App() {
                 composerDraft={agentComposerDraft}
                 latestContent={
                   <div className="hr-board">
-                    <div className="hr-list-surface" hidden={Boolean(hrSource) || hrFollowOpen}>
-                      <MatchingOpportunities
-                        active={agentPrimary && !hrSource && !hrFollowOpen}
-                        onOpen={(item) => {
-                          // The opportunity opens on the side of the list it was clicked from: a person's 找案件
-                          // on the person list, the case's 找人 panel with this person on the case list.
-                          if (hrKind === 'person') {
-                            if (bootstrap.candidateReviews.some((person) => person.documentId === item.documentId))
-                              openAgentPersonnel(item.documentId, true)
-                            return
-                          }
-                          const review = bootstrap.jobCaseReviews.find((job) => job.jobCase?.id === item.jobCaseId)
-                          const person = bootstrap.candidateReviews.find((person) => person.documentId === item.documentId)
-                          if (review && person) {
-                            openCasePeople(review)
-                            setAssessmentFocus(caseResumes.addPerson(review, person))
-                          }
-                        }}
+                    <div className="hr-list-surface" hidden={Boolean(hrSource) || caseResultsOpen || hrFollowOpen || opportunitiesOpen}>
+                      <MatchingOpportunitiesBanner
+                        count={opportunities.newCount}
+                        recommended={opportunities.newRecommendedCount}
+                        onOpen={() => openOpportunities(hrKind)}
                       />
                       <HrObjectList
+                        filterRequest={hrListFilterRequest ?? undefined}
                         active={agentPrimary}
                         onAssessResumes={openCaseResumeAssessment}
                         resumeStates={resumeStates}
@@ -2160,6 +2297,94 @@ export function App() {
                         onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
                       />
                     </div>
+                    <div
+                      className="hr-opportunities-surface"
+                      hidden={!opportunitiesOpen || Boolean(hrSource) || caseResultsOpen || hrFollowOpen}
+                    >
+                      <MatchingOpportunitiesPage
+                        state={opportunities}
+                        visible={opportunitiesOpen && !hrSource && !caseResultsOpen && !hrFollowOpen && agentPrimary}
+                        defaultGrouping={opportunitiesSection}
+                        backLabel={
+                          opportunitiesSection === 'case' ? t('返回案件列表', '案件一覧に戻る') : t('返回人员列表', '要員一覧に戻る')
+                        }
+                        onBack={() => openHrList(opportunitiesSection)}
+                        onOpen={openOpportunity}
+                      />
+                    </div>
+                    <div className="hr-match-surface" hidden={!caseResultsOpen || hrFollowOpen}>
+                      {assessmentJob ? (
+                        <CaseResumeAssessmentPanel
+                          job={assessmentJob}
+                          people={bootstrap.candidateReviews}
+                          controller={caseResumes}
+                          focusTaskId={assessmentFocus}
+                          backLabel={caseFromOpportunities ? t('返回新匹配机会', '新しいマッチング候補に戻る') : undefined}
+                          onBack={() => {
+                            setCasePeopleOpen(false)
+                            closeAgentPanel()
+                            if (caseFromOpportunities) returnToOpportunities()
+                            else {
+                              setOpportunitiesOpen(false)
+                              setOpportunityReturn(null)
+                            }
+                          }}
+                          onPerson={(documentId) => openAgentPersonnel(documentId)}
+                          onOpenPersonImport={() => {
+                            openHrList('person')
+                            openAgentBatch()
+                          }}
+                          onSchedule={async (values) => {
+                            await startHrProgress(
+                              values.map((value) => ({
+                                documentId: value.documentId,
+                                reviewId: assessmentJob.reviewId,
+                                pendingConditions: matchFollowUpLabels(
+                                  value.result.qualification,
+                                  value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
+                                  locale === 'zh-CN'
+                                )
+                              }))
+                            )
+                          }}
+                          onOriginal={(documentId) => {
+                            openAgentSystemAccess({
+                              type: 'system-access',
+                              destination: 'original-document',
+                              sourceDocumentId: documentId
+                            })
+                          }}
+                          onPrepare={(value) =>
+                            setIntroductionTarget({
+                              documentId: value.documentId,
+                              reviewId: assessmentJob.reviewId,
+                              profileVersion: value.profileVersion,
+                              jobCaseVersion: value.jobCaseVersion,
+                              assessment: value.result.assessment,
+                              matched: value.result.matched,
+                              pendingConditions: matchFollowUpLabels(
+                                value.result.qualification,
+                                value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
+                                locale === 'zh-CN'
+                              )
+                            })
+                          }
+                          onFollowUp={(value) => {
+                            setAgentSideMode(null)
+                            setMatchPanelHidden(false)
+                            setSideProgressTarget({
+                              documentId: value.documentId,
+                              reviewId: assessmentJob.reviewId,
+                              pendingConditions: matchFollowUpLabels(
+                                value.result.qualification,
+                                value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
+                                locale === 'zh-CN'
+                              )
+                            })
+                          }}
+                        />
+                      ) : null}
+                    </div>
                     <div className="hr-match-surface" hidden={!hrSource || hrFollowOpen}>
                       <HrMatchingWorkspace
                         source={hrSource}
@@ -2178,9 +2403,15 @@ export function App() {
                         onFollowUp={(target) => startHrProgress([target])}
                         onScheduleMany={startHrProgress}
                         onPrepare={setIntroductionTarget}
+                        backLabel={personFromOpportunities ? t('返回新匹配机会', '新しいマッチング候補に戻る') : undefined}
                         onBack={() => {
                           setHrSource(null)
                           closeAgentPanel()
+                          if (personFromOpportunities) returnToOpportunities()
+                          else {
+                            setOpportunitiesOpen(false)
+                            setOpportunityReturn(null)
+                          }
                         }}
                       />
                     </div>
@@ -2225,13 +2456,16 @@ export function App() {
                         </section>
                       ) : null}
                       <HrProgressWorkbench
+                        filterRequest={followUpFilterRequest ?? undefined}
                         active={hrFollowOpen}
                         onSchedule={openInterviewSchedule}
                         onBackToMatches={
                           hrFollowTarget?.reviewId === assessmentReviewId && !hrSource
                             ? () => {
                                 setHrFollowOpen(false)
-                                setAgentSideMode('assessment')
+                                setHrKind('case')
+                                setCasePeopleOpen(true)
+                                closeAgentPanel()
                                 setAgentHomeRequest((value) => value + 1)
                               }
                             : hrSource
@@ -2270,7 +2504,9 @@ export function App() {
                 homeRequestToken={agentHomeRequest}
                 focusRequest={agentFocusRequest}
                 onOpenBatch={openAgentBatch}
-                contextPanelOpen={agentPrimary && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)}
+                contextPanelOpen={
+                  agentPrimary && !(matchPanelHidden && hrSource) && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)
+                }
                 contextPanel={
                   <>
                     {sideProgressTarget ? (
@@ -2300,69 +2536,6 @@ export function App() {
                       />
                     ) : null}
                     <div className="hr-object-context" hidden={Boolean(sideProgressTarget)}>
-                      <div hidden={agentSideMode !== 'assessment'} className="case-resume-panel-surface">
-                        {assessmentJob ? (
-                          <CaseResumeAssessmentPanel
-                            job={assessmentJob}
-                            people={bootstrap.candidateReviews}
-                            controller={caseResumes}
-                            focusTaskId={assessmentFocus}
-                            onClose={closeAgentPanel}
-                            onOpenPersonImport={() => {
-                              openHrList('person')
-                              openAgentBatch()
-                            }}
-                            onSchedule={async (values) => {
-                              await startHrProgress(
-                                values.map((value) => ({
-                                  documentId: value.documentId,
-                                  reviewId: assessmentJob.reviewId,
-                                  pendingConditions: matchFollowUpLabels(
-                                    value.result.qualification,
-                                    value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
-                                    locale === 'zh-CN'
-                                  )
-                                }))
-                              )
-                            }}
-                            onOriginal={(documentId) => {
-                              openAgentSystemAccess({
-                                type: 'system-access',
-                                destination: 'original-document',
-                                sourceDocumentId: documentId
-                              })
-                              setAssessmentBack(true)
-                            }}
-                            onPrepare={(value) =>
-                              setIntroductionTarget({
-                                documentId: value.documentId,
-                                reviewId: assessmentJob.reviewId,
-                                profileVersion: value.profileVersion,
-                                jobCaseVersion: value.jobCaseVersion,
-                                assessment: value.result.assessment,
-                                matched: value.result.matched,
-                                pendingConditions: matchFollowUpLabels(
-                                  value.result.qualification,
-                                  value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
-                                  locale === 'zh-CN'
-                                )
-                              })
-                            }
-                            onFollowUp={(value) => {
-                              setAgentSideMode(null)
-                              setSideProgressTarget({
-                                documentId: value.documentId,
-                                reviewId: assessmentJob.reviewId,
-                                pendingConditions: matchFollowUpLabels(
-                                  value.result.qualification,
-                                  value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
-                                  locale === 'zh-CN'
-                                )
-                              })
-                            }}
-                          />
-                        ) : null}
-                      </div>
                       <div className="agent-business-tools" hidden={agentSideMode !== 'intake' && agentSideMode !== 'personnel'}>
                         <header className="agent-tool-header">
                           {agentSideMode === 'personnel' && agentContextBack ? (
@@ -2418,7 +2591,7 @@ export function App() {
                               ) : null}
                               <BusinessIntakeWorkspace
                                 inputSeed={agentBatchSeed}
-                                modelKey={bootstrap.defaultAgentChatModelKey ?? 'gpt-5.6-luna'}
+                                modelKey={agentDefaultModelKey ?? 'gpt-5.6-luna'}
                                 cases={bootstrap.jobCaseReviews}
                                 candidates={bootstrap.candidateReviews}
                                 onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
@@ -2552,7 +2725,7 @@ export function App() {
                 contextPanelLabel={t('业务工作区', '業務ワークスペース')}
                 newCaseUnseenCount={newCaseDigest?.unseenCount ?? 0}
                 onOpenNewCaseBoard={() => setAgentContextTrail(defaultAgentContextTrail())}
-                defaultModelKey={bootstrap.defaultAgentChatModelKey}
+                defaultModelKey={agentDefaultModelKey}
                 jobCaseReviews={bootstrap.jobCaseReviews}
                 models={bootstrap.agentChatModels}
                 onComposerDraftChange={setAgentComposerDraft}
@@ -2769,6 +2942,7 @@ export function App() {
               bootstrap={bootstrap}
               broadcastActions={broadcastActions}
               initialSection={applicationSettingsSection}
+              sectionRequest={applicationSettingsRequest}
               fieldAliases={bootstrap.jobCaseFieldAliases}
               onSaveFieldAliases={saveJobCaseFieldAliases}
               onConnectGoogleWorkspace={connectGoogleWorkspace}
@@ -2788,6 +2962,7 @@ export function App() {
               }}
               onOpenZoomTestMeeting={() => window.sesAgent.openZoomTestMeeting()}
               onSave={saveLocalApplicationPreferences}
+              onTestAiModel={(modelKey) => window.sesAgent.testAiModel({ modelKey })}
               onSyncGoogleWorkspace={syncGoogleWorkspace}
               preferences={bootstrap.preferences}
             />

@@ -66,7 +66,10 @@ import {
   migrationV60,
   migrationV61,
   migrationV62,
-  migrationV63
+  migrationV63,
+  migrationV64,
+  migrationV65,
+  migrationV66
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
@@ -432,4 +435,7 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 61').get()) database.exec(migrationV61)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 62').get()) database.exec(migrationV62)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 63').get()) database.exec(migrationV63)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 64').get()) database.exec(migrationV64)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 65').get()) database.exec(migrationV65)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 66').get()) database.exec(migrationV66)
 }

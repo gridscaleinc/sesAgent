@@ -64,6 +64,7 @@ export default defineConfig(({ command }) => {
           index: resolve(rootDir, 'apps/desktop/src/main/index.ts'),
           'embedding-worker': resolve(rootDir, 'apps/desktop/src/workers/embedding-worker.ts'),
           'reranker-worker': resolve(rootDir, 'apps/desktop/src/workers/reranker-worker.ts'),
+          'ner-worker': resolve(rootDir, 'apps/desktop/src/workers/ner-worker.ts'),
           'parser-worker': resolve(rootDir, 'apps/desktop/src/workers/parser-worker.ts'),
           'windows-ocr-worker': resolve(rootDir, 'apps/desktop/src/workers/windows-ocr-worker.ts'),
           'tesseract-worker': resolve(rootDir, 'apps/desktop/src/workers/tesseract-worker.ts'),
@@ -80,7 +81,11 @@ export default defineConfig(({ command }) => {
     resolve: { alias },
     build: {
       rollupOptions: {
-        input: resolve(rootDir, 'apps/desktop/src/preload/index.ts'),
+        // Each sandboxed preload must stay a single file: they share no runtime module (see shared/tray-channels.ts).
+        input: {
+          index: resolve(rootDir, 'apps/desktop/src/preload/index.ts'),
+          tray: resolve(rootDir, 'apps/desktop/src/preload/tray.ts')
+        },
         output: {
           entryFileNames: '[name].js',
           format: 'cjs'
@@ -94,7 +99,10 @@ export default defineConfig(({ command }) => {
     plugins: [react(), productionContentSecurityPolicy()],
     build: {
       rollupOptions: {
-        input: resolve(rootDir, 'apps/desktop/src/renderer/index.html')
+        input: {
+          index: resolve(rootDir, 'apps/desktop/src/renderer/index.html'),
+          tray: resolve(rootDir, 'apps/desktop/src/renderer/tray.html')
+        }
       }
     }
   }

@@ -152,7 +152,7 @@ async function prepare(p: Awaited<ReturnType<typeof pair>>, bank?: { id: string;
   )
 }
 try {
-  assert.equal(currentSchemaVersion, 63)
+  assert.equal(currentSchemaVersion, 66)
   repository.controlSystemExperience({ action: 'budget', dailyCallLimit: 60, expectedRevision: 0 })
   const [customer] = repository.saveCustomerIdentity({ name: 'ABC株式会社', aliases: ['ABC', '客户甲'], expectedVersion: 0 })
   const resolved = repository.resolveCustomerIdentity(' ABC ')
@@ -237,6 +237,7 @@ try {
     rulesRevision: 0,
     fingerprint: 'a'.repeat(64),
     score: 70,
+    status: 'recommended' as const,
     reasons: ['Java 项目依据'],
     confirm: ['开始时间']
   }

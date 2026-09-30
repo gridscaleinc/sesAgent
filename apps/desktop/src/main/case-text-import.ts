@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { defaultAgentChatModelKey, resolveAgentChatModel } from '@agent'
+import { businessModel } from './business-model'
 import { createChatPasteJobCaseDraftInputSchema, type ImportCaseTextBatchResult } from '@shared'
 import { effectiveJobCaseFieldAliases } from './app-defaults'
 import { importChatPastedJobCaseText } from './business-text-intake'
@@ -42,7 +42,7 @@ export function createCaseTextBatchImporter(context: Dependencies) {
         text: units.map((unit) => unit.text).join('\n'),
         caseBatch: true,
         aliases: effectiveJobCaseFieldAliases(context.repository).aliases,
-        model: resolveAgentChatModel(context.agentChatModelCatalog, defaultAgentChatModelKey),
+        model: businessModel(context, 'checking'),
         signal: controller.signal,
         onClientRequestId: (id) => {
           remoteId = id

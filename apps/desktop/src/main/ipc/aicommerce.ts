@@ -9,6 +9,7 @@ import {
 } from '@shared'
 import { unconfiguredAiCommerceState } from '../app-defaults'
 import { validateCloudAiResponseForDisplay } from '../cloud-ai-privacy'
+import { recordAiCommerceWallet } from '../tray-data'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 /** Managed AICommerce membership plus the two-phase cloud prompt review flow. */
@@ -25,7 +26,9 @@ export function registerAiCommerceHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.getAiCommerceDashboard, async (event): Promise<AiCommerceMembershipState> => {
     assertTrustedSender(event)
     if (!aiCommerce) return unconfiguredAiCommerceState()
-    return aiCommerce.getDashboard()
+    const state = await aiCommerce.getDashboard()
+    recordAiCommerceWallet(state)
+    return state
   })
 
   ipcMain.handle(ipcChannels.disconnectAiCommerce, async (event): Promise<AiCommerceMembershipState> => {
@@ -69,6 +72,7 @@ export function registerAiCommerceHandlers(context: MainIpcContext) {
     try {
       const execution = await cloudAiReview.execute(input.reviewTicket, currentOperator().operatorId)
       const response = validateCloudAiResponseForDisplay(execution.response)
+      recordAiCommerceWallet(response)
       return {
         ...response,
         removedIdentifierTypes: execution.removedIdentifierTypes

@@ -23,6 +23,9 @@ export const privacyExpertMinimums = Object.freeze({
 export const privacyImplementationPaths = Object.freeze([
   'packages/privacy/src/index.ts',
   'packages/local-ai/src/vision-ocr.ts',
+  'packages/local-ai/src/gliner-ner.ts',
+  'apps/desktop/src/workers/ner-engine.ts',
+  'apps/desktop/src/workers/ner-worker.ts',
   'apps/desktop/src/workers/network-deny.ts',
   'scripts/verify-privacy-expert-dataset.ts',
   'scripts/privacy-expert-evidence.mjs'
@@ -212,6 +215,9 @@ export function privacyExpertReportFailures(report, options = {}) {
   }
   if (expectedPlatform === 'darwin' && !nameDetectionEngines.includes('apple-natural-language')) {
     failures.push('report:apple-name-engine')
+  }
+  if (expectedPlatform === 'win32' && !nameDetectionEngines.includes('gliner-x-small-onnx')) {
+    failures.push('report:gliner-name-engine')
   }
   if (report.releaseEligible !== true || !Array.isArray(report.failures) || report.failures.length > 0) {
     failures.push('report:not-release-eligible')

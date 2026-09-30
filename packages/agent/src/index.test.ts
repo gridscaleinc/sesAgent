@@ -1110,7 +1110,27 @@ describe('local conversational matching agent', () => {
 
   it('exposes controlled Responses and DeepSeek chat models and rejects model or endpoint injection', () => {
     const catalog = loadAgentChatModelCatalog(undefined)
-    expect(catalog.map((model) => model.key)).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'deepseek-v4-flash'])
+    expect(catalog.map((model) => model.key)).toEqual([
+      'gpt-5.6-luna',
+      'gpt-5.6-terra',
+      'gpt-5.6-sol',
+      'gpt-6.1-sol',
+      'gpt-6.1-sol-pro',
+      'gpt-6-sol',
+      'gpt-6-luna',
+      'gpt-6-astra',
+      'deepseek-v4-flash'
+    ])
+    for (const key of ['gpt-6.1-sol', 'gpt-6.1-sol-pro', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6-astra']) {
+      expect(resolveAgentChatModel(catalog, key)).toMatchObject({
+        upstreamModel: key,
+        maxOutputTokens: 1_200,
+        provider: 'openai',
+        endpoint: 'responses'
+      })
+    }
+    expect(resolveAgentChatModel(catalog, 'gpt-6.1-sol-pro')).toMatchObject({ displayName: 'GPT-6.1 Sol Pro', tier: 'strongest' })
+    expect(resolveAgentChatModel(catalog, 'gpt-6-luna').tier).toBe('fast')
     expect(resolveAgentChatModel(catalog, 'gpt-5.6-luna')).toMatchObject({
       upstreamModel: 'gpt-5.6-luna',
       provider: 'openai',

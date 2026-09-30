@@ -6,7 +6,7 @@ import { DuplicateCandidateError } from '@persistence'
 import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import { z } from 'zod'
-import { defaultAgentChatModelKey, resolveAgentChatModel } from '@agent'
+import { businessModel } from '../business-model'
 import {
   prepareCaseIntroductionInputSchema,
   analyzeWorkRuleInputSchema,
@@ -30,7 +30,7 @@ import { assertTrustedSender, type MainIpcContext } from './context'
 export function registerWorkRuleHandlers(context: MainIpcContext) {
   const { repository, agentNarrativeStreamer: cloud, currentOperator } = context
   const previews = new Map<string, { preview: WorkRulePreview; owner: number }>()
-  const model = () => resolveAgentChatModel(context.agentChatModelCatalog, defaultAgentChatModelKey)
+  const model = () => businessModel(context, 'writing')
   const find = createCasePersonnelMatcher(context)
   const assess = async (raw: unknown): Promise<CasePersonAssessment> => {
     const input = assessCasePersonInputSchema.parse(raw)

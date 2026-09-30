@@ -56,6 +56,15 @@ extraResources:
       - tokenizer.model
       - tokenizer.json
       - onnx/model_qint8_avx2.onnx
+  - from: models/knowledgator/gliner-x-small
+    to: models/knowledgator/gliner-x-small
+    filter:
+      - model-manifest.json
+      - gliner_config.json
+      - special_tokens_map.json
+      - tokenizer_config.json
+      - tokenizer.json
+      - onnx/model_quantized.onnx
   - from: THIRD_PARTY_NOTICES.md
     to: THIRD_PARTY_NOTICES.md
   - from: build/privacy-verification

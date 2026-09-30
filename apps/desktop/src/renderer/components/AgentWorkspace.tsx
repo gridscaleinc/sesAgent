@@ -147,14 +147,11 @@ function AgentQuickAction({ description, icon, label, onClick }: AgentQuickActio
   )
 }
 
-const fallbackModels: AgentChatModelOption[] = [
-  { key: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' },
-  { key: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra' },
-  { key: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol' },
-  { key: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' }
-]
+// The model list comes from the Main catalog via bootstrap; this only keeps the picker usable without one.
+const fallbackModels: AgentChatModelOption[] = [{ key: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' }]
 
-const agentModelSessionKey = 'ses-agent-chat-model-key-v1'
+// Only a model the operator picked in the chat is remembered; otherwise the chat follows the 批量核对 setting.
+const agentModelSessionKey = 'ses-agent-chat-model-key-v2'
 
 function newId(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
@@ -2125,19 +2122,27 @@ export function AgentWorkspace({
   })
   const contextPanelResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
   const availableModels = models.length > 0 ? models : fallbackModels
-  const [selectedModelKey, setSelectedModelKey] = useState(() => {
-    let stored: string | null = null
+  const [pickedModelKey, setPickedModelKey] = useState<string | null>(() => {
     try {
-      stored = globalThis.sessionStorage?.getItem(agentModelSessionKey) ?? null
+      return globalThis.sessionStorage?.getItem(agentModelSessionKey) ?? null
     } catch {
-      stored = null
+      return null
     }
-    return availableModels.some((model) => model.key === stored)
-      ? stored!
+  })
+  const selectedModelKey =
+    pickedModelKey !== null && availableModels.some((model) => model.key === pickedModelKey)
+      ? pickedModelKey
       : availableModels.some((model) => model.key === defaultModelKey)
         ? defaultModelKey
         : availableModels[0]!.key
-  })
+  const pickModel = (key: string) => {
+    setPickedModelKey(key)
+    try {
+      globalThis.sessionStorage?.setItem(agentModelSessionKey, key)
+    } catch {
+      /* session persistence is best-effort */
+    }
+  }
   const activeRequestRef = useRef<{ conversationId: string; requestId: string; sequence: number; stopRequested: boolean } | null>(null)
   const copyResetTimerRef = useRef<number | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement>(null)
@@ -2159,20 +2164,6 @@ export function AgentWorkspace({
     currentConversationIdRef.current = history.activeConversationId
     setDraftConversationId(history.activeConversationId)
   }, [history.activeConversationId])
-
-  useEffect(() => {
-    if (availableModels.some((model) => model.key === selectedModelKey)) return
-    const next = availableModels.some((model) => model.key === defaultModelKey) ? defaultModelKey : availableModels[0]!.key
-    setSelectedModelKey(next)
-  }, [availableModels, defaultModelKey, selectedModelKey])
-
-  useEffect(() => {
-    try {
-      globalThis.sessionStorage?.setItem(agentModelSessionKey, selectedModelKey)
-    } catch {
-      /* session persistence is best-effort */
-    }
-  }, [selectedModelKey])
 
   useEffect(
     () => () => {
@@ -3210,7 +3201,7 @@ export function AgentWorkspace({
                       aria-label={t('选择回答模型', '回答モデルを選択')}
                       disabled={workspaceBusy}
                       id="agent-chat-model"
-                      onChange={(event) => setSelectedModelKey(event.target.value)}
+                      onChange={(event) => pickModel(event.target.value)}
                       value={selectedModelKey}
                     >
                       {availableModels.map((model) => (

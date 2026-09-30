@@ -224,7 +224,14 @@ it('lets HR independently introduce or follow up three condition-pending cases w
   const area = screen
   expect(screen.queryByText('紹介できる案件は見つかりませんでした')).not.toBeInTheDocument()
   expect(screen.getByText('3 件の紹介候補')).toBeVisible()
-  for (const [index, card] of area.getAllByRole('article').entries()) {
+  const rows = within(area.getByRole('list', { name: '案件' }))
+    .getAllByRole('button')
+    .filter((item) => item.dataset.matchRow)
+  expect(rows).toHaveLength(3)
+  for (const [index, row] of rows.entries()) {
+    fireEvent.click(row)
+    const card = area.getByRole('article', { name: `Java case ${index}` })
+    fireEvent.click(within(card).getByRole('tab', { name: '要相談 (1)' }))
     expect(within(card).getByText('9月')).toBeVisible()
     fireEvent.click(within(card).getByRole('button', { name: '紹介を準備' }))
     expect(onPrepare).toHaveBeenLastCalledWith(
@@ -238,7 +245,8 @@ it('lets HR independently introduce or follow up three condition-pending cases w
     )
     fireEvent.click(within(card).getByRole('button', { name: '対応を開始' }))
     expect(onFollowUp).toHaveBeenLastCalledWith({ documentId, reviewId: jobs[index]!.reviewId, pendingConditions: ['9月'] })
-    fireEvent.click(within(card).getByRole('button', { name: '案件を見る' }))
+    fireEvent.click(within(card).getByRole('button', { name: /^その他の操作/u }))
+    fireEvent.click(within(within(card).getByRole('menu')).getByRole('menuitem', { name: '案件を見る' }))
     expect(onView).toHaveBeenLastCalledWith('case', jobs[index]!.reviewId)
     await waitFor(() => expect(within(card).getByRole('button', { name: '対応を開始' })).toBeEnabled())
   }
@@ -324,7 +332,9 @@ it('labels ambiguous business values and avoids repeating them from AI confirmat
       onFollowUp={vi.fn()}
     />
   )
-  expect(await screen.findByText('勤務形態：無')).toBeVisible()
+  fireEvent.click(await screen.findByRole('tab', { name: '要相談 (1)' }))
+  expect(screen.getByText('勤務形態：無')).toBeVisible()
+  expect(screen.getByRole('rowheader', { name: 'リモート' })).toBeVisible()
   expect(screen.queryByText('無')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '紹介を準備' }))
   expect(onPrepare).toHaveBeenCalledWith(expect.objectContaining({ pendingConditions: ['勤務形態：無'] }))
@@ -1676,7 +1686,8 @@ it('opens where cases imported from another page landed, and names the case stat
     window.dispatchEvent(new CustomEvent('ses-cases-imported', { detail: { reviewIds: ['n'], working: false } }))
   })
   view.rerender(<HrObjectList kind="case" {...listProps} active />)
-  await waitFor(() => expect(caseTitles()).toEqual(['Case a', 'Case n']))
+  // The re-read after the import event is async and can be slow under a loaded full run.
+  await waitFor(() => expect(caseTitles()).toEqual(['Case a', 'Case n']), { timeout: 3000 })
   expect(screen.getByRole('button', { name: 'すべて' })).toHaveAttribute('aria-pressed', 'true')
   const status = screen.getByRole('combobox', { name: '案件の状態' })
   expect(

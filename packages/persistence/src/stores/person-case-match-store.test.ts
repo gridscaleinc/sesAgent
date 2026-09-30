@@ -130,8 +130,8 @@ describe.skipIf(!nativeSqliteAvailable)('PersonCaseMatchStore via EncryptedAppli
       raw.close()
     }
     const upgraded = handle.reopen()
-    expect(currentSchemaVersion).toBe(63)
-    expect(upgraded.getSchemaVersion()).toBe(63)
+    expect(currentSchemaVersion).toBe(66)
+    expect(upgraded.getSchemaVersion()).toBe(currentSchemaVersion)
     const person = seedImportedPerson(upgraded)
     const job = seedConfirmedCase(upgraded)
     upgraded.savePersonCaseMatchRun(runFor(person.documentId, [item(job.jobCase!.id, job.reviewId, 'recommended')]))

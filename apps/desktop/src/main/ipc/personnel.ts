@@ -1,5 +1,6 @@
 import { saveCaseSearchAssessments } from '../case-search-assessments'
 import { beginIntroductionDraft, createIntroductionGenerator } from '../introduction-generation'
+import { createRecommendationPointsGenerator, getRecommendationPoints } from '../recommendation-points'
 import { saveBusinessField } from '../business-field-editing'
 import { businessProgressCalendar, createBusinessProgressAnalyzer, draftBusinessProgressMessage } from '../business-progress'
 import { writeFile } from 'node:fs/promises'
@@ -22,6 +23,7 @@ import {
   markBusinessFeedSchema,
   personnelMessageInputSchema,
   progressMessageInputSchema,
+  recommendationPointsQuerySchema,
   regenerateIntroductionInputSchema,
   resolvePersonnelMailUpdateSchema,
   saveBusinessFieldInputSchema,
@@ -146,6 +148,16 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.regenerateIntroduction, (event, input) => {
     assertTrustedSender(event)
     return regenerate(regenerateIntroductionInputSchema.parse(input))
+  })
+  // 推荐要点 for one person and case: generated on demand through the redacted cloud path, stored per pair.
+  const generateRecommendationPoints = createRecommendationPointsGenerator(context)
+  ipcMain.handle(ipcChannels.generateRecommendationPoints, (event, input) => {
+    assertTrustedSender(event)
+    return generateRecommendationPoints(recommendationPointsQuerySchema.parse(input))
+  })
+  ipcMain.handle(ipcChannels.getRecommendationPoints, (event, input) => {
+    assertTrustedSender(event)
+    return getRecommendationPoints(context, recommendationPointsQuerySchema.parse(input))
   })
   ipcMain.handle(ipcChannels.saveBusinessField, (event, input) => {
     assertTrustedSender(event)

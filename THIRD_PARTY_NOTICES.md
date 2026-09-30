@@ -28,6 +28,28 @@ SES Agent Desktop includes platform-specific qint8 ONNX weights from
 The model's license and upstream notices remain applicable. This notice does
 not change or replace those terms.
 
+## gliner-x-small
+
+SES Agent Desktop includes the int8-quantized ONNX export and tokenizer of
+`knowledgator/gliner-x-small` at revision
+`d51a0984d11084a55f9df3899d9dbf7704f580f5`, used only for local person-name
+detection before any Cloud AI request. The model is built on `google/mt5-small`
+(Apache-2.0).
+
+- Upstream model: https://huggingface.co/knowledgator/gliner-x-small
+- Authors: Knowledgator Engineering; GLiNER architecture by Urchade Zaratiana et al.
+- Encoder: https://huggingface.co/google/mt5-small — Apache-2.0
+- License identifier: Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)
+- Packaged files: `onnx/model_quantized.onnx`, `tokenizer.json`,
+  `tokenizer_config.json`, `special_tokens_map.json`, `gliner_config.json`
+  (unmodified; each pinned by SHA-256 in `model-manifest.json`)
+- Runtime: ONNX Runtime (onnxruntime-node, MIT) and the Transformers.js
+  tokenizer (@huggingface/transformers, Apache-2.0), in an isolated worker with
+  network access denied; remote model loading is disabled.
+
+The model's license and upstream notices remain applicable. This notice does
+not change or replace those terms.
+
 ## Tesseract.js and offline OCR language data
 
 The Windows offline OCR worker includes fixed local copies of Tesseract.js

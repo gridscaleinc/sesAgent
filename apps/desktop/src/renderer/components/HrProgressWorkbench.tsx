@@ -21,6 +21,7 @@ import {
 import { localizedIpcError, useUiLocale } from '../i18n'
 import { copyTextToClipboard } from '../copy-text'
 import type { FollowUpTarget } from './follow-up-target'
+import { ActionMenu } from './HrObjectList'
 import './hr-followups.css'
 import './hr-progress.css'
 
@@ -113,7 +114,8 @@ export function HrProgressWorkbench({
   onBrowse,
   onSchedule,
   onBackToMatches,
-  onUpdated
+  onUpdated,
+  filterRequest
 }: {
   embedded?: boolean
   onBack?(): void
@@ -128,6 +130,8 @@ export function HrProgressWorkbench({
   onSchedule?(): void
   onBackToMatches?(): void
   onUpdated?(): void
+  /** Opens on one stage filter (the menu-bar panel's 今天要跟进); a new id applies it again. */
+  filterRequest?: { filter: 'today'; id: number }
 }) {
   const zh = useUiLocale() === 'zh-CN',
     t = (cn: string, ja: string) => (zh ? cn : ja)
@@ -148,7 +152,8 @@ export function HrProgressWorkbench({
   const loading = localLoading || Boolean(shared?.loading)
   const [drafts, setDrafts] = useState<Record<string, Draft>>({}),
     [inboxOpen, setInboxOpen] = useState(false),
-    [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
+    [confirmingDelete, setConfirmingDelete] = useState<string | null>(null),
+    [stopping, setStopping] = useState<'pause' | 'close' | null>(null)
   const [message, setMessage] = useState<{
     purpose: ProgressMailPurpose
     recipient: 'person' | 'client'
@@ -213,6 +218,14 @@ export function HrProgressWorkbench({
     setPage(1)
     setMessage(null)
   }, [target, active])
+  useEffect(() => {
+    if (!filterRequest) return
+    setFilter(filterRequest.filter)
+    setSelected(null)
+    setQuery('')
+    setPage(1)
+    setMessage(null)
+  }, [filterRequest?.id])
   const personName = (id: string) => {
     const person = people.find((row) => row.documentId === id)
     return person?.localIdentity?.displayName ?? person?.fileName ?? t('人员已删除', '要員情報なし')
@@ -342,82 +355,86 @@ export function HrProgressWorkbench({
       setBusy(false)
     }
   }
+  /** Resolves true once the command is saved, so a dialog can close only on success. */
   const save = async (command: ProgressCommand, row = current) => {
-    if (!row) return
-    await run(async () => {
-      const rowKey = pairKey(row),
-        sourceDraft = drafts[rowKey] ?? makeDraft(row)
-      const body = {
-        documentId: row.documentId,
-        reviewId: row.reviewId,
-        expectedRevision: sourceDraft.revision,
-        ...command,
-        ...(sourceDraft.messageId && ['coordinate', 'schedule', 'feedback', 'entry'].includes(command.action)
-          ? { sourceMessageId: sourceDraft.messageId }
-          : {})
-      }
-      const requestKey = JSON.stringify(body),
-        mutationId = requests.current.get(requestKey) ?? crypto.randomUUID()
-      requests.current.set(requestKey, mutationId)
-      const value = await window.sesAgent.advanceBusinessProgress({ ...body, mutationId })
-      shared?.publish([value])
-      loadEpoch.current++
-      setLoading(false)
-      setItems((rows) => [value, ...rows.filter((item) => item.id !== value.id)])
-      const historicalSave =
-        command.action === 'feedback' &&
-        Boolean(row.progress?.rounds.some((round) => round.roundNumber === command.roundNumber)) &&
-        (['started', 'closed', 'paused'].includes(row.progress!.stage) || command.roundNumber < row.progress!.rounds.at(-1)!.roundNumber)
-      const fresh = makeDraft(value),
-        baseline = makeDraft(row)
-      const savedDraft = { ...fresh, panel: sourceDraft.panel }
-      const groups: Array<[Array<keyof Draft>, string[]]> = [
-        [
-          ['schedule', 'rebooking'],
-          ['schedule', 'rebook', 'cancel-schedule']
-        ],
-        [['candidateAvailability', 'clientAvailability', 'pending'], ['coordinate']],
-        [['feedback', 'feedbackRoundNumber', 'result', 'next', 'unresolved', 'analysis'], ['feedback']],
-        [
-          ['entry', 'actualDate', 'editingEntry'],
-          ['entry', 'start', 'correct-entry', 'undo-start']
-        ],
-        [['note'], ['note', 'pause', 'close']],
-        [['correctionReason'], ['rebook', 'cancel-schedule', 'correct-entry', 'undo-start']]
-      ]
-      for (const [fields, actions] of groups)
-        if (
-          !actions.includes(command.action) &&
-          fields.some((field) => JSON.stringify(sourceDraft[field]) !== JSON.stringify(baseline[field]))
-        ) {
-          for (const field of fields) Object.assign(savedDraft, { [field]: sourceDraft[field] })
+    if (!row) return false
+    return (
+      (await run(async () => {
+        const rowKey = pairKey(row),
+          sourceDraft = drafts[rowKey] ?? makeDraft(row)
+        const body = {
+          documentId: row.documentId,
+          reviewId: row.reviewId,
+          expectedRevision: sourceDraft.revision,
+          ...command,
+          ...(sourceDraft.messageId && ['coordinate', 'schedule', 'feedback', 'entry'].includes(command.action)
+            ? { sourceMessageId: sourceDraft.messageId }
+            : {})
         }
-      if (historicalSave)
-        Object.assign(savedDraft, {
-          feedbackRoundNumber: sourceDraft.feedbackRoundNumber,
-          feedback: sourceDraft.feedback,
-          result: sourceDraft.result,
-          next: sourceDraft.next,
-          unresolved: sourceDraft.unresolved
-        })
-      if (
-        (command.action === 'feedback' && !historicalSave) ||
-        ['resume', 'pause', 'close', 'start', 'undo-start'].includes(command.action)
-      )
-        savedDraft.panel = fresh.panel
-      if (sourceDraft.messageId && !body.sourceMessageId) savedDraft.messageId = sourceDraft.messageId
-      if (command.action === 'undo-start' && !embedded) {
-        setFilter('entry')
-        setPage(1)
-      }
-      setSelected(rowKey)
-      setDrafts((rows) => ({ ...rows, [rowKey]: savedDraft }))
-      setNotice(t('已保存', '保存しました'))
-      if (body.sourceMessageId) {
-        setMail((rows) => rows.map((item) => (item.id === sourceDraft.messageId ? { ...item, state: 'applied' } : item)))
-      }
-      onUpdated?.()
-    })
+        const requestKey = JSON.stringify(body),
+          mutationId = requests.current.get(requestKey) ?? crypto.randomUUID()
+        requests.current.set(requestKey, mutationId)
+        const value = await window.sesAgent.advanceBusinessProgress({ ...body, mutationId })
+        shared?.publish([value])
+        loadEpoch.current++
+        setLoading(false)
+        setItems((rows) => [value, ...rows.filter((item) => item.id !== value.id)])
+        const historicalSave =
+          command.action === 'feedback' &&
+          Boolean(row.progress?.rounds.some((round) => round.roundNumber === command.roundNumber)) &&
+          (['started', 'closed', 'paused'].includes(row.progress!.stage) || command.roundNumber < row.progress!.rounds.at(-1)!.roundNumber)
+        const fresh = makeDraft(value),
+          baseline = makeDraft(row)
+        const savedDraft = { ...fresh, panel: sourceDraft.panel }
+        const groups: Array<[Array<keyof Draft>, string[]]> = [
+          [
+            ['schedule', 'rebooking'],
+            ['schedule', 'rebook', 'cancel-schedule']
+          ],
+          [['candidateAvailability', 'clientAvailability', 'pending'], ['coordinate']],
+          [['feedback', 'feedbackRoundNumber', 'result', 'next', 'unresolved', 'analysis'], ['feedback']],
+          [
+            ['entry', 'actualDate', 'editingEntry'],
+            ['entry', 'start', 'correct-entry', 'undo-start']
+          ],
+          [['note'], ['note', 'pause', 'close']],
+          [['correctionReason'], ['rebook', 'cancel-schedule', 'correct-entry', 'undo-start']]
+        ]
+        for (const [fields, actions] of groups)
+          if (
+            !actions.includes(command.action) &&
+            fields.some((field) => JSON.stringify(sourceDraft[field]) !== JSON.stringify(baseline[field]))
+          ) {
+            for (const field of fields) Object.assign(savedDraft, { [field]: sourceDraft[field] })
+          }
+        if (historicalSave)
+          Object.assign(savedDraft, {
+            feedbackRoundNumber: sourceDraft.feedbackRoundNumber,
+            feedback: sourceDraft.feedback,
+            result: sourceDraft.result,
+            next: sourceDraft.next,
+            unresolved: sourceDraft.unresolved
+          })
+        if (
+          (command.action === 'feedback' && !historicalSave) ||
+          ['resume', 'pause', 'close', 'start', 'undo-start'].includes(command.action)
+        )
+          savedDraft.panel = fresh.panel
+        if (sourceDraft.messageId && !body.sourceMessageId) savedDraft.messageId = sourceDraft.messageId
+        if (command.action === 'undo-start' && !embedded) {
+          setFilter('entry')
+          setPage(1)
+        }
+        setSelected(rowKey)
+        setDrafts((rows) => ({ ...rows, [rowKey]: savedDraft }))
+        setNotice(t('已保存', '保存しました'))
+        if (body.sourceMessageId) {
+          setMail((rows) => rows.map((item) => (item.id === sourceDraft.messageId ? { ...item, state: 'applied' } : item)))
+        }
+        onUpdated?.()
+        return true
+      })) === true
+    )
   }
   const removeFollowUp = (row: BusinessFollowUp) => {
     void run(async () => {
@@ -513,6 +530,23 @@ export function HrProgressWorkbench({
   }
   const selectedPerson = current ? people.find((row) => row.documentId === current.documentId) : null
   const selectedCase = current ? cases.find((row) => row.reviewId === current.reviewId) : null
+  const stopEvent =
+    current && state && ['paused', 'closed'].includes(state.stage)
+      ? [...current.events].reverse().find((event) => event.action === (state.stage === 'paused' ? 'pause' : 'close'))
+      : undefined
+  const stopRecord = stopEvent ? { reason: stopEvent.note.replace(/^(暂停推进|结束推进)：/, '').trim(), at: stopEvent.recordedAt } : null
+  const day = (value: string) =>
+    new Date(value).toLocaleDateString(zh ? 'zh-CN' : 'ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric'
+    })
+  const openStop = (kind: 'pause' | 'close') => {
+    setError('')
+    setNotice('')
+    setStopping(kind)
+  }
   const panels: Array<[Panel, string]> = [
     ['schedule', t('面试安排', '面談日程')],
     ['questions', t('面试问题', '面談質問')],
@@ -596,7 +630,7 @@ export function HrProgressWorkbench({
           </div>
         </nav>
       ) : null}
-      {error ? (
+      {error && !stopping && !confirmingDelete ? (
         <p role="alert" className="hr-followup-message is-error">
           {error}
         </p>
@@ -768,8 +802,55 @@ export function HrProgressWorkbench({
                 <button disabled={busy} onClick={() => onView('case', current.reviewId)}>
                   {t('查看案件', '案件を見る')}
                 </button>
+                <ActionMenu
+                  label={t('更多跟进操作', 'その他の対応操作')}
+                  triggerClassName="hr-menu-trigger"
+                  trigger={<span aria-hidden="true">⋯</span>}
+                >
+                  {!['closed', 'started', 'paused'].includes(state.stage) ? (
+                    <>
+                      <button role="menuitem" type="button" disabled={busy || stale} onClick={() => openStop('pause')}>
+                        {t('暂停跟进…', '対応を保留…')}
+                      </button>
+                      <button role="menuitem" type="button" disabled={busy || stale} onClick={() => openStop('close')}>
+                        {t('结束跟进…', '対応を終了…')}
+                      </button>
+                    </>
+                  ) : null}
+                  {['paused', 'closed'].includes(state.stage) ? (
+                    <button role="menuitem" type="button" disabled={busy || stale} onClick={() => void save({ action: 'resume' })}>
+                      {t('恢复跟进', '対応を再開')}
+                    </button>
+                  ) : null}
+                  {current.id ? (
+                    <button
+                      role="menuitem"
+                      type="button"
+                      className="is-danger"
+                      disabled={busy}
+                      onClick={() => {
+                        setError('')
+                        setConfirmingDelete(current.id)
+                      }}
+                    >
+                      {t('删除这条跟进（误建或重复）…', 'この対応記録を削除（誤作成・重複）…')}
+                    </button>
+                  ) : null}
+                </ActionMenu>
               </div>
             </header>
+            {['paused', 'closed'].includes(state.stage) ? (
+              <div className={`hr-progress-stopped is-${state.stage}`} role="status" aria-label={t('跟进状态', '対応の状態')}>
+                <p>
+                  <strong>{state.label}</strong>
+                  {stopRecord?.reason ? <> · {stopRecord.reason}</> : null}
+                  {stopRecord ? <> · {day(stopRecord.at)}</> : null}
+                </p>
+                <button disabled={busy || stale} onClick={() => void save({ action: 'resume' })}>
+                  {t('恢复跟进', '対応を再開')}
+                </button>
+              </div>
+            ) : null}
             <div className="hr-progress-track" aria-label={t('业务流程', '業務の流れ')}>
               {[
                 t('推荐', '推薦'),
@@ -1704,64 +1785,9 @@ export function HrProgressWorkbench({
                   >
                     {t('保存沟通记录', '連絡メモを保存')}
                   </button>
-                  {!['closed', 'started', 'paused'].includes(state.stage) ? (
-                    <div className="hr-progress-actions">
-                      <button
-                        disabled={busy || stale || !draft.note.trim()}
-                        onClick={() => void save({ action: 'pause', reason: draft.note })}
-                      >
-                        {t('按此原因暂停', 'この理由で保留')}
-                      </button>
-                      <button
-                        disabled={busy || stale || !draft.note.trim()}
-                        onClick={() => void save({ action: 'close', reason: draft.note })}
-                      >
-                        {t('按此原因结束', 'この理由で終了')}
-                      </button>
-                    </div>
-                  ) : null}
-                  {['paused', 'closed'].includes(state.stage) ? (
-                    <button disabled={busy || stale} onClick={() => void save({ action: 'resume' })}>
-                      {t('恢复跟进', '対応を再開')}
-                    </button>
-                  ) : null}
-                  {current.id ? (
-                    <section className="hr-progress-delete" aria-label={t('删除这条跟进', 'この対応記録を削除')}>
-                      <h4>{t('删除这条跟进', 'この対応記録を削除')}</h4>
-                      {state.stage === 'started' ? (
-                        <p>
-                          {t(
-                            '此人员已进场。请先撤销进场，再删除这条跟进。',
-                            'この要員は参画済みです。参画を取り消してから削除してください。'
-                          )}
-                        </p>
-                      ) : confirmingDelete === current.id ? (
-                        <>
-                          <p className="hr-followup-message is-error">
-                            {t(
-                              `将删除此人员与此案件的跟进、${current.progress?.rounds.length ?? 0} 轮面试记录和关联的跟进邮件，无法恢复。人员和案件本身保留。`,
-                              `この要員と案件の対応記録、面談 ${current.progress?.rounds.length ?? 0} 回分の記録、関連する進捗メールを削除します。元に戻せません。要員と案件は残ります。`
-                            )}
-                          </p>
-                          <div className="hr-progress-actions">
-                            <button className="is-danger" disabled={busy || stale} onClick={() => removeFollowUp(current)}>
-                              {t('确认删除', '削除する')}
-                            </button>
-                            <button disabled={busy} onClick={() => setConfirmingDelete(null)}>
-                              {t('取消', 'キャンセル')}
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <p>{t('用于误建或重复的跟进。', '誤って作成した、または重複した対応記録に使います。')}</p>
-                          <button disabled={busy || stale} onClick={() => setConfirmingDelete(current.id)}>
-                            {t('删除这条跟进…', 'この対応記録を削除…')}
-                          </button>
-                        </>
-                      )}
-                    </section>
-                  ) : null}
+                  <p className="hr-progress-hint">
+                    {t('暂停、结束或删除这条跟进，请使用右上角的「⋯」菜单。', '保留・終了・削除は右上の「⋯」メニューから行えます。')}
+                  </p>
                 </>
               ) : null}
               {message && message.draftKey === key ? (
@@ -1835,6 +1861,67 @@ export function HrProgressWorkbench({
                 </section>
               ) : null}
             </div>
+            {stopping ? (
+              <FollowUpStopDialog
+                kind={stopping}
+                pair={`${personName(current.documentId)} × ${caseName(current.reviewId)}`}
+                busy={busy}
+                stale={stale}
+                error={error}
+                t={t}
+                onCancel={() => setStopping(null)}
+                onSubmit={async (reason) => {
+                  if (await save({ action: stopping, reason })) setStopping(null)
+                }}
+              />
+            ) : null}
+            {current.id && confirmingDelete === current.id ? (
+              <div className="hr-progress-dialog-backdrop">
+                <section
+                  className="hr-progress-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={t('删除这条跟进', 'この対応記録を削除')}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && !busy) {
+                      event.stopPropagation()
+                      setConfirmingDelete(null)
+                    }
+                  }}
+                >
+                  <h3>{t('删除这条跟进', 'この対応記録を削除')}</h3>
+                  <p className="hr-progress-dialog-pair">
+                    {personName(current.documentId)} × {caseName(current.reviewId)}
+                  </p>
+                  {state.stage === 'started' ? (
+                    <p>
+                      {t('此人员已进场。请先撤销进场，再删除这条跟进。', 'この要員は参画済みです。参画を取り消してから削除してください。')}
+                    </p>
+                  ) : (
+                    <>
+                      <p>{t('用于误建或重复的跟进。', '誤って作成した、または重複した対応記録に使います。')}</p>
+                      <p className="hr-followup-message is-error">
+                        {t(
+                          `将删除此人员与此案件的跟进、${current.progress?.rounds.length ?? 0} 轮面试记录和关联的跟进邮件，无法恢复。人员和案件本身保留。`,
+                          `この要員と案件の対応記録、面談 ${current.progress?.rounds.length ?? 0} 回分の記録、関連する進捗メールを削除します。元に戻せません。要員と案件は残ります。`
+                        )}
+                      </p>
+                    </>
+                  )}
+                  {error ? <p role="alert">{error}</p> : null}
+                  <div className="hr-progress-dialog-actions">
+                    <button autoFocus disabled={busy} type="button" onClick={() => setConfirmingDelete(null)}>
+                      {state.stage === 'started' ? t('关闭', '閉じる') : t('取消', 'キャンセル')}
+                    </button>
+                    {state.stage !== 'started' ? (
+                      <button className="is-danger" disabled={busy || stale} type="button" onClick={() => removeFollowUp(current)}>
+                        {t('确认删除', '削除する')}
+                      </button>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+            ) : null}
           </article>
         ) : (
           <div className="hr-followup-detail-placeholder">
@@ -1849,5 +1936,98 @@ export function HrProgressWorkbench({
         )}
       </div>
     </section>
+  )
+}
+
+/** Pausing or ending asks for a reason chip; 其他 needs a written note. */
+function FollowUpStopDialog({
+  kind,
+  pair,
+  busy,
+  stale,
+  error,
+  t,
+  onCancel,
+  onSubmit
+}: {
+  kind: 'pause' | 'close'
+  pair: string
+  busy: boolean
+  stale: boolean
+  error: string
+  t(cn: string, ja: string): string
+  onCancel(): void
+  onSubmit(reason: string): Promise<void>
+}) {
+  const other = t('其他', 'その他')
+  const reasons =
+    kind === 'close'
+      ? [
+          t('人员撤回', '要員が辞退'),
+          t('客户不录用', '客先が不採用'),
+          t('案件已结束或取消', '案件が終了・中止'),
+          t('条件不合', '条件が合わない'),
+          other
+        ]
+      : [t('人员暂时不可', '要員が一時的に対応不可'), t('客户暂缓', '客先が保留'), t('等待资料', '資料待ち'), other]
+  const [reason, setReason] = useState(''),
+    [note, setNote] = useState('')
+  const needsNote = reason === other
+  const ready = Boolean(reason) && (!needsNote || Boolean(note.trim()))
+  const title = kind === 'close' ? t('结束这条跟进', 'この対応を終了') : t('暂停这条跟进', 'この対応を保留')
+  return (
+    <div className="hr-progress-dialog-backdrop">
+      <form
+        className="hr-progress-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !busy) {
+            event.stopPropagation()
+            onCancel()
+          }
+        }}
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!ready || busy || stale) return
+          const text = note.trim()
+          void onSubmit(needsNote ? text : text ? `${reason}：${text}` : reason)
+        }}
+      >
+        <h3>{title}</h3>
+        <p className="hr-progress-dialog-pair">{pair}</p>
+        <fieldset disabled={busy}>
+          <legend>{kind === 'close' ? t('结束原因', '終了の理由') : t('暂停原因', '保留の理由')}</legend>
+          <div className="hr-progress-dialog-chips">
+            {reasons.map((label, index) => (
+              <button key={label} type="button" autoFocus={index === 0} aria-pressed={reason === label} onClick={() => setReason(label)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <label>
+          {needsNote ? t('说明（必填）', '説明（必須）') : t('补充说明（可选）', '補足（任意）')}
+          <textarea
+            disabled={busy}
+            rows={3}
+            maxLength={900}
+            value={note}
+            required={needsNote}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
+        {error ? <p role="alert">{error}</p> : null}
+        <div className="hr-progress-dialog-actions">
+          <button type="button" disabled={busy} onClick={onCancel}>
+            {t('取消', 'キャンセル')}
+          </button>
+          <button className="hr-primary" type="submit" disabled={busy || stale || !ready}>
+            {kind === 'close' ? t('结束跟进', '対応を終了') : t('暂停跟进', '対応を保留')}
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }

@@ -22,8 +22,11 @@ import {
   parsePersonnelCasesAssessmentResponse,
   matchAssessmentInstructions,
   parseAgentMatchAssessmentResponse,
+  matchOpinionNeedsTranslation,
+  applyMatchOpinionTranslation,
   projectCandidateProjectHistory
 } from './agent-cloud-narrative'
+import { currentAiGatewayRejection, onAiGatewaySignalChanged, resetAiGatewaySignal } from './ai-gateway-signal'
 
 const conversationId = '11111111-1111-4111-8111-111111111111'
 const requestId = '22222222-2222-4222-8222-222222222222'
@@ -1238,6 +1241,66 @@ describe('Agent Cloud narrative boundary', () => {
     ])
   })
 
+  it('records an AI gateway credit refusal for the menu-bar panel, rethrows it unchanged, and clears it on the next success', async () => {
+    resetAiGatewaySignal()
+    const sessions = new Map<string, RedactionSessionEvidence>()
+    const repository = {
+      saveRedactionSession: vi.fn((session: RedactionSessionEvidence, _mappings: LocalPiiMapping[]) => sessions.set(session.id, session)),
+      getRedactionSession: vi.fn((id: string) => sessions.get(id) ?? null),
+      appendCloudCallAudit: vi.fn()
+    }
+    const refusal = Object.assign(new Error('There are not enough available AI credits.'), { name: 'AiCommerceRequestError' })
+    const streamResponses = vi
+      .fn()
+      .mockRejectedValueOnce(refusal)
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({ clientRequestId: 'c', responseId: 'r', content: '整理结果', billingModeUsed: 'subscription' })
+    const service = new AgentCloudNarrativeService({
+      repository,
+      localNer: {
+        engine: 'apple-natural-language',
+        detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] })
+      },
+      aiCommerce: {
+        responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses',
+        streamResponses,
+        cancelClientRequest: vi.fn()
+      } as unknown as AiCommerceNativeClient,
+      policyVersion: 'cloud-redaction-v2',
+      loadGates: vi.fn().mockResolvedValue(passedGates()),
+      now: () => new Date('2026-09-30T02:00:00.000Z'),
+      allowLoopbackHttp: false
+    })
+    const expensive: AgentChatModelDefinition = { ...model, key: 'gpt-6-sol', displayName: 'GPT-6 Sol', upstreamModel: 'gpt-6-sol' }
+    const call = () =>
+      service.stream({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        toolName: 'job-case.search.local',
+        userMessage: '最近有什么案件？',
+        assistantMessage,
+        model: expensive,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled: vi.fn(),
+        onDelta: vi.fn()
+      })
+    const changed = vi.fn()
+    const stop = onAiGatewaySignalChanged(changed)
+
+    await expect(call()).rejects.toBe(refusal)
+    expect(currentAiGatewayRejection()).toMatchObject({ reason: 'insufficient-credits', modelKey: 'gpt-6-sol', modelName: 'GPT-6 Sol' })
+    expect(changed).toHaveBeenCalledTimes(1)
+    // A failure the gateway did not decide on leaves the refusal as it was.
+    await expect(call()).rejects.toThrow('network down')
+    expect(currentAiGatewayRejection()).toMatchObject({ reason: 'insufficient-credits' })
+    await expect(call()).resolves.toMatchObject({ content: '整理结果' })
+    expect(currentAiGatewayRejection()).toBeNull()
+    expect(changed).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
   it('routes DeepSeek through the AICommerce account-token native chat SSE path', async () => {
     const sessions = new Map<string, RedactionSessionEvidence>()
     const audits: CloudCallAuditRecord[] = []
@@ -1770,6 +1833,138 @@ describe('match assessment protocol', () => {
     expect(streamResponses.mock.calls[0]![0].instructions).toContain('The UI language is Simplified Chinese')
     expect(appendCloudCallAudit).toHaveBeenCalled()
     expect(onRemoteSettled).toHaveBeenCalledTimes(1)
+  })
+
+  describe('AI opinion in the operator language', () => {
+    const japanese = {
+      fit: 'strong' as const,
+      reason: 'JavaとSQLの経験が証拠付きで確認でき、専門適合度は高い。単価・勤務地は未確認。',
+      gaps: [],
+      confirm: ['単価がスキル見合いで応相談の条件に合意可能か確認']
+    }
+    it('flags only prose written in the other language, not Chinese quoting a Japanese project name', () => {
+      expect(matchOpinionNeedsTranslation(japanese, 'zh-CN')).toBe(true)
+      expect(matchOpinionNeedsTranslation(japanese, 'ja-JP')).toBe(false)
+      const chinese = {
+        ...japanese,
+        reason: '在「日立財務報表システム」中有 Java 和 SQL 的开发经验，技术上符合；单价和工作地点需要确认。',
+        confirm: []
+      }
+      expect(matchOpinionNeedsTranslation(chinese, 'zh-CN')).toBe(false)
+      expect(matchOpinionNeedsTranslation({ ...chinese, reason: '技术上符合，单价和工作地点需要确认。' }, 'ja-JP')).toBe(true)
+      expect(matchOpinionNeedsTranslation({ ...japanese, reason: 'OK', confirm: [] }, 'zh-CN')).toBe(false)
+    })
+    it('keeps the original wherever a translation is incomplete or a placeholder does not restore', () => {
+      const mappings = [{ placeholder: '<PERSON_NAME_001>', originalValue: '山田太郎', identifierType: 'person_name' }] as never
+      const opinions = [japanese, { ...japanese, reason: '<PERSON_NAME_001> の経験' }]
+      const [first, second] = applyMatchOpinionTranslation(
+        [opinions[0]!, { ...opinions[1]!, reason: '山田太郎 の経験' }],
+        JSON.stringify({
+          items: [
+            { id: 'O1', reason: 'Java 与 SQL 经验有依据。', gaps: [], confirm: [] },
+            { id: 'O2', reason: '<PERSON_NAME_001> 的经验', gaps: [], confirm: ['确认单价'] }
+          ]
+        }),
+        mappings
+      )
+      // O1 dropped a confirm entry, so nothing of it is taken; O2 restores the name.
+      expect(first).toEqual(japanese)
+      expect(second).toMatchObject({ reason: '山田太郎 的经验', confirm: ['确认单价'] })
+    })
+    const serviceWith = (streamResponses: ReturnType<typeof vi.fn>) => {
+      const sessions = new Map<string, RedactionSessionEvidence>()
+      return new AgentCloudNarrativeService({
+        repository: {
+          saveRedactionSession: (session) => {
+            sessions.set(session.id, session)
+          },
+          getRedactionSession: (id) => sessions.get(id) ?? null,
+          appendCloudCallAudit: vi.fn()
+        },
+        localNer: {
+          engine: 'apple-natural-language',
+          detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] })
+        },
+        aiCommerce: {
+          responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses',
+          streamResponses,
+          cancelClientRequest: vi.fn()
+        } as unknown as AiCommerceNativeClient,
+        policyVersion: 'cloud-redaction-v2',
+        loadGates: vi.fn().mockResolvedValue(passedGates()),
+        allowLoopbackHttp: false
+      })
+    }
+    const assess = (service: AgentCloudNarrativeService) =>
+      service.assessPersonnelCases({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        model,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled: vi.fn(),
+        person: { facts: [{ label: 'skills', value: 'Java, SQL; private@example.com' }], projects: [] },
+        cases: [
+          {
+            label: 'CASE_1',
+            title: 'Java project',
+            requirements: [{ key: 'required_skills', label: '必須', value: 'Java' }],
+            hardFilters: []
+          }
+        ]
+      })
+    const reply = (content: unknown) => ({
+      clientRequestId: 'remote',
+      responseId: 'response',
+      billingModeUsed: 'subscription' as const,
+      content: JSON.stringify(content)
+    })
+    const review = {
+      assessments: [
+        {
+          case: 'CASE_1',
+          fit: 'strong',
+          met: [{ requirement: 'Java', evidence: 'Java' }],
+          confirm: japanese.confirm,
+          reason: japanese.reason
+        }
+      ]
+    }
+    it('translates a Japanese opinion into the Chinese the operator chose, through the same redaction', async () => {
+      const streamResponses = vi
+        .fn()
+        .mockResolvedValueOnce(reply(review))
+        .mockResolvedValueOnce(
+          reply({
+            items: [
+              {
+                id: 'O1',
+                reason: 'Java 与 SQL 经验有依据，专业匹配度高；单价和工作地点未确认。',
+                gaps: [],
+                confirm: ['确认能否接受按技能面议的单价']
+              }
+            ]
+          })
+        )
+      const result = await assess(serviceWith(streamResponses))
+      expect(streamResponses).toHaveBeenCalledTimes(2)
+      const translation = streamResponses.mock.calls[1]![0]
+      expect(translation.instructions).toContain('Simplified Chinese')
+      expect(translation.instructions).toContain('place and station names')
+      expect(translation.input).toContain('専門適合度')
+      expect(translation.input).not.toContain('private@example.com')
+      expect(result.assessments[0]!.opinion).toMatchObject({
+        fit: 'strong',
+        reason: 'Java 与 SQL 经验有依据，专业匹配度高；单价和工作地点未确认。',
+        confirm: ['确认能否接受按技能面议的单价']
+      })
+    })
+    it('keeps the assessment and the original opinion when the translation call fails', async () => {
+      const streamResponses = vi.fn().mockResolvedValueOnce(reply(review)).mockRejectedValueOnce(new Error('network down'))
+      const result = await assess(serviceWith(streamResponses))
+      expect(result.assessments[0]!.opinion?.reason).toBe(japanese.reason)
+    })
   })
 
   const candidates = [

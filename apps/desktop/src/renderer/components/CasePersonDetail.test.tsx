@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { businessMatchingPolicyVersion, type CasePersonAssessment } from '@shared'
-import { AssessmentCard } from './CaseResumeAssessment'
+import { CasePersonDetail, type MatchDetailTabId } from './CasePersonDetail'
 vi.mock('../i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../i18n')>()
   return {
@@ -70,30 +70,50 @@ beforeEach(() => {
   })
 })
 afterEach(cleanup)
-/** Holds the card's latest assessment the way the resume panel does, so reassessment results replace the card. */
+/** Holds the latest assessment the way the results page does, so reassessment results replace the detail. */
 function Card({ initial, archived }: { initial: CasePersonAssessment; archived?: boolean }) {
   const [value, setValue] = useState(initial)
+  const [tab, setTab] = useState<MatchDetailTabId>('evidence')
   return (
-    <AssessmentCard
+    <CasePersonDetail
       value={value}
       name="resume.pdf"
       jobCaseId="case"
+      reviewId="review"
       archived={archived}
+      blocked=""
+      hasFollowUp={false}
+      tab={tab}
+      onTab={setTab}
+      onBackToList={() => {}}
       stale={value.result.qualification?.policyVersion !== businessMatchingPolicyVersion}
       onRefresh={setValue}
     />
   )
 }
-it('displays a clear unsuitable result for missing required skills', async () => {
+const menu = () => {
+  fireEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  return within(screen.getByRole('menu'))
+}
+const openTab = (name: string) => {
+  fireEvent.click(screen.getByRole('tab', { name }))
+  return within(screen.getByRole('tabpanel'))
+}
+it('displays a clear unsuitable result for missing required skills in the requirement table', async () => {
   render(<Card initial={assessment} />)
   await screen.findByText('不建议向本案提案')
   expect(screen.queryByText('需要确认的地方')).not.toBeInTheDocument()
-  expect(screen.getByText('Java')).toBeInTheDocument()
-  expect(screen.getByText('当前简历未体现此项必需技能或经验。')).toBeInTheDocument()
+  const table = within(screen.getByRole('table', { name: '匹配依据' }))
+  const cells = within(table.getByRole('row', { name: /Java/ })).getAllByRole('cell')
+  expect(table.getByRole('rowheader', { name: '必需技能' })).toBeInTheDocument()
+  expect(cells.map((cell) => cell.textContent)).toEqual(['Java', '—', '✗ 不满足'])
+  // A missing value is only the em dash and the state; no sentence is repeated per requirement.
+  expect(screen.queryByText(/当前简历未体现|人员资料尚未说明/)).not.toBeInTheDocument()
 })
 it('explains a reused archived resume and preserves that notice after reevaluation', async () => {
   render(<Card initial={assessment} archived />)
   await screen.findByText('复用了已归档简历进行本次评估，原记录仍保持归档。')
+  fireEvent.click(menu().getByRole('menuitem', { name: '重新评估（可附要求）' }))
   fireEvent.click(screen.getByRole('button', { name: '重新评估' }))
   await waitFor(() => expect(window.sesAgent.assessCasePerson).toHaveBeenCalledWith({ documentId: 'person', jobCaseId: 'case' }))
   expect(screen.getByText('复用了已归档简历进行本次评估，原记录仍保持归档。')).toBeInTheDocument()
@@ -103,13 +123,14 @@ it('marks old-policy assessments historical and allows reevaluation', async () =
   const historical = structuredClone(assessment)
   historical.result.qualification!.policyVersion = 'mandatory-evidence-v1'
   render(<Card initial={historical} />)
-  await screen.findByText('资料或规则已更新，旧结论已停用。请重新评估。')
-  expect(screen.getByRole('button', { name: '生成面试问题' })).toBeDisabled()
+  expect((await screen.findAllByText('资料或规则已更新，旧结论已停用。请重新评估。'))[0]).toBeVisible()
+  expect(openTab('面试问题').getByRole('button', { name: '生成面试问题' })).toBeDisabled()
+  // A stale result shows the reassessment right away, not behind the menu.
   fireEvent.click(screen.getByRole('button', { name: '重新评估' }))
   await waitFor(() => expect(screen.queryByText('资料或规则已更新，旧结论已停用。请重新评估。')).not.toBeInTheDocument())
 })
 
-it('shows the saved question draft for this person and case again when the card is reopened', async () => {
+it('summarises the saved question draft for this person and case, with the cards behind 「展开」', async () => {
   const draft = {
     id: 'd1',
     documentId: 'person',
@@ -133,17 +154,24 @@ it('shows the saved question draft for this person and case again when the card 
   }
   ;(window.sesAgent as any).getCaseQuestionDraft = vi.fn(async () => ({ draft, stale: false }))
   render(<Card initial={assessment} />)
-  await screen.findByText('请说明 Java 项目中本人负责的范围。')
+  const panel = openTab('面试问题')
+  expect(await panel.findByText('已准备 1 题，开始跟进后带入第一轮。')).toBeVisible()
   expect((window.sesAgent as any).getCaseQuestionDraft).toHaveBeenCalledWith({ documentId: 'person', jobCaseId: 'case' })
-  expect(screen.getByText('已随本人员与案件保存，开始跟进后会带入第一轮面试。')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '重新生成面试问题' })).toBeInTheDocument()
+  // The full questions are not shown at matching time until expanded.
+  expect(panel.getByText('请说明 Java 项目中本人负责的范围。')).not.toBeVisible()
+  fireEvent.click(panel.getByText('展开'))
+  expect(panel.getByText('请说明 Java 项目中本人负责的范围。')).toBeVisible()
+  expect(panel.getByRole('button', { name: '重新生成面试问题' })).toBeInTheDocument()
+  expect(menu().getByRole('menuitem', { name: '重新生成面试问题' })).toBeInTheDocument()
 })
 
-it('reassesses with what HR asked for and shows that request on the resulting card', async () => {
+it('reassesses with what HR asked for and shows that request on the resulting detail', async () => {
   vi.mocked(window.sesAgent.assessCasePerson).mockResolvedValue({ ...assessment, id: 'steered', request: '重点看日语沟通能力' })
   render(<Card initial={assessment} />)
   await screen.findByText('不建议向本案提案')
   expect(screen.queryByText(/本次评估按你的要求侧重/)).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('对 AI 评估的要求')).not.toBeInTheDocument()
+  fireEvent.click(menu().getByRole('menuitem', { name: '重新评估（可附要求）' }))
   fireEvent.change(screen.getByLabelText('对 AI 评估的要求'), { target: { value: ' 重点看日语沟通能力 ' } })
   fireEvent.click(screen.getByRole('button', { name: '重新评估' }))
   await waitFor(() =>
@@ -154,7 +182,26 @@ it('reassesses with what HR asked for and shows that request on the resulting ca
     })
   )
   expect(await screen.findByText('本次评估按你的要求侧重：重点看日语沟通能力')).toBeInTheDocument()
-  expect(screen.getByLabelText('对 AI 评估的要求')).toHaveValue('')
+  expect(screen.queryByLabelText('对 AI 评估的要求')).not.toBeInTheDocument()
+})
+it('records my judgement from the menu on the 记录 tab', async () => {
+  ;(window.sesAgent as any).saveAssessmentFeedback = vi.fn(async () => ({}))
+  render(<Card initial={assessment} />)
+  await screen.findByText('不建议向本案提案')
+  fireEvent.click(menu().getByRole('menuitem', { name: '记录我的判断' }))
+  expect(screen.getByRole('tab', { name: '记录' })).toHaveAttribute('aria-selected', 'true')
+  const panel = within(screen.getByRole('tabpanel'))
+  fireEvent.change(panel.getByRole('combobox', { name: '我的判断' }), { target: { value: 'unsuitable' } })
+  fireEvent.click(panel.getByRole('button', { name: '保存判断' }))
+  await waitFor(() =>
+    expect((window.sesAgent as any).saveAssessmentFeedback).toHaveBeenCalledWith({
+      assessmentId: 'result',
+      decision: 'unsuitable',
+      reason: 'evidence',
+      note: ''
+    })
+  )
+  expect(await screen.findByText('判断已保存，已关联本次评估。')).toBeInTheDocument()
 })
 it('says what the cloud AI settled, not only that it finished', async () => {
   const requirement = assessment.result.qualification!.requirements[0]!
@@ -170,10 +217,11 @@ it('says what the cloud AI settled, not only that it finished', async () => {
     }
   } as CasePersonAssessment
   render(<Card initial={reviewed} />)
-  expect(await screen.findByText(/AI 核实/, { selector: '.is-ai-verified' })).toBeInTheDocument()
-  expect(screen.getByText(/AI 引用简历原文核实了 1 项条件/)).toBeInTheDocument()
+  expect(await screen.findByText(/AI 核实/, { selector: '.is-ai-verified' })).toBeVisible()
+  expect(screen.getByText('決済基盤', { selector: '.requirement-source' })).toBeVisible()
+  expect(openTab('AI 意见').getByText(/AI 引用简历原文核实了 1 项条件/)).toBeVisible()
 })
 it('says plainly when the cloud AI did not change the local result', async () => {
   render(<Card initial={assessment} />)
-  expect(await screen.findByText(/AI 核对了简历原文，没有改变本地核对的结论/)).toBeInTheDocument()
+  expect(await openTab('AI 意见').findByText(/AI 核对了简历原文，没有改变本地核对的结论/)).toBeVisible()
 })

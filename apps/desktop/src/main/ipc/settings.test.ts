@@ -1,7 +1,9 @@
 import { beforeEach, expect, it, vi } from 'vitest'
+import { loadAgentChatModelCatalog } from '@agent'
 import { ipcChannels } from '@shared'
 import { registerSettingsHandlers } from './settings'
 import { assertTrustedSender } from './context'
+import { onApplicationPreferencesSaved } from '../preference-events'
 const mock = vi.hoisted(() => ({ handlers: new Map<string, (event: unknown, raw: unknown) => unknown>() }))
 vi.mock('electron', () => ({ clipboard: {}, ipcMain: { handle: (key: string, handler: any) => mock.handlers.set(key, handler) } }))
 vi.mock('./context', () => ({ assertTrustedSender: vi.fn() }))
@@ -67,4 +69,51 @@ it('still rejects transcript writes, overwriting existing conversations and untr
   })
   expect(() => invoke(input)).toThrow('untrusted')
   expect(repository.saveAiConversation).not.toHaveBeenCalled()
+})
+
+function setupModels(cloud: { probeModel: ReturnType<typeof vi.fn> } | null) {
+  const repository = { saveLocalApplicationPreferences: vi.fn((value) => value) }
+  registerSettingsHandlers({
+    repository,
+    agentChatModelCatalog: loadAgentChatModelCatalog(undefined),
+    agentNarrativeStreamer: cloud
+  } as any)
+  return repository
+}
+it('saves an AI model choice only when both keys are catalog models', () => {
+  const repository = setupModels(null)
+  const save = (aiModels: unknown) =>
+    mock.handlers.get(ipcChannels.saveLocalApplicationPreferences)!({}, { locale: 'ja-JP', expectedRevision: null, aiModels })
+  expect(save({ checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' })).toMatchObject({ aiModels: { writing: 'gpt-6.1-sol-pro' } })
+  expect(() => save({ checking: 'gpt-6-luna', writing: 'gpt-9-unknown' })).toThrow(/可用列表/)
+  expect(repository.saveLocalApplicationPreferences).toHaveBeenCalledTimes(1)
+})
+it('tests one catalog model through the cloud service and reports the round trip', async () => {
+  const probeModel = vi.fn().mockResolvedValue({ latencyMs: 812 })
+  setupModels({ probeModel })
+  const test = (modelKey: string) => mock.handlers.get(ipcChannels.testAiModel)!({}, { modelKey })
+  await expect(test('gpt-6.1-sol')).resolves.toEqual({ modelKey: 'gpt-6.1-sol', latencyMs: 812 })
+  expect(probeModel.mock.calls[0]![0].model).toMatchObject({ key: 'gpt-6.1-sol', upstreamModel: 'gpt-6.1-sol', endpoint: 'responses' })
+  await expect(test('gpt-9-unknown')).rejects.toThrow(/可用列表/)
+  expect(probeModel).toHaveBeenCalledTimes(1)
+})
+it('asks to connect the AI service before testing a model', async () => {
+  setupModels(null)
+  await expect(mock.handlers.get(ipcChannels.testAiModel)!({}, { modelKey: 'gpt-5.6-luna' })).rejects.toThrow(/连接 AI 服务/)
+})
+it('saves the menu-bar choice and tells the menu-bar icon to follow it; an invalid choice is rejected unsaved', () => {
+  const repository = setupModels(null)
+  const listener = vi.fn()
+  const stop = onApplicationPreferencesSaved(listener)
+  const save = (menuBar: unknown) =>
+    mock.handlers.get(ipcChannels.saveLocalApplicationPreferences)!({}, { locale: 'zh-CN', expectedRevision: 2, menuBar })
+  try {
+    expect(save({ visible: false, showPersonNames: true })).toMatchObject({ menuBar: { visible: false, showPersonNames: true } })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(() => save({ visible: false })).toThrow()
+    expect(repository.saveLocalApplicationPreferences).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledTimes(1)
+  } finally {
+    stop()
+  }
 })

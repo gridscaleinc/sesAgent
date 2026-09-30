@@ -104,6 +104,7 @@ try {
     candidate?.parserCompleted === true &&
     candidate?.embeddingCompleted === true &&
     candidate?.rerankerCompleted === true &&
+    candidate?.nerCompleted === true &&
     sandboxLauncher !== null &&
     candidate?.launcherSha256 === sandboxLauncher.sha256
   )

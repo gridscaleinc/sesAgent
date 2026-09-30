@@ -156,21 +156,25 @@ export class BusinessGrowthStore extends DomainStore {
         .filter((f) => f.status !== 'closed')
         .map((f) => `${f.documentId}:${f.reviewId}`)
     )
-    return this.database
-      .prepare<[], { payload: string }>('SELECT payload FROM matching_opportunities')
-      .all()
-      .map((r) => JSON.parse(r.payload) as MatchingOpportunity)
-      .filter(
-        (o) =>
-          !followed.has(`${o.documentId}:${o.reviewId}`) &&
-          !unavailable.has(o.documentId) &&
-          people.get(o.documentId) === o.profileVersion &&
-          cases.get(o.reviewId) === o.jobCaseVersion &&
-          o.rulesRevision === rules &&
-          (includeDismissed || o.state !== 'dismissed')
-      )
-      .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, 100)
+    return (
+      this.database
+        .prepare<[], { payload: string }>('SELECT payload FROM matching_opportunities')
+        .all()
+        .map((r) => JSON.parse(r.payload) as MatchingOpportunity)
+        // Rows saved before the conclusion was stored carry no status; they are not claimed as 可以提案.
+        .map((o) => (o.status === 'recommended' || o.status === 'needs-confirmation' ? o : { ...o, status: 'needs-confirmation' as const }))
+        .filter(
+          (o) =>
+            !followed.has(`${o.documentId}:${o.reviewId}`) &&
+            !unavailable.has(o.documentId) &&
+            people.get(o.documentId) === o.profileVersion &&
+            cases.get(o.reviewId) === o.jobCaseVersion &&
+            o.rulesRevision === rules &&
+            (includeDismissed || o.state !== 'dismissed')
+        )
+        .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 100)
+    )
   }
   saveOpportunities(reviewId: string, items: Omit<MatchingOpportunity, 'id' | 'state' | 'updatedAt'>[]) {
     this.database.transaction(() => {

@@ -825,6 +825,12 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   listPersonCaseMatchRunSummaries() {
     return this.stores.personCaseMatches.listRunSummaries()
   }
+  saveRecommendationPoints(record: import('@shared').RecommendationPointsRecord) {
+    return this.stores.recommendationPoints.save(record)
+  }
+  getRecommendationPoints(documentId: string, reviewId: string) {
+    return this.stores.recommendationPoints.get(documentId, reviewId)
+  }
   saveCaseQuestionDraft(input: import('@shared').CasePersonQuestionDraft) {
     return this.stores.workRules.saveQuestionDraft(input)
   }

@@ -1,5 +1,4 @@
 import { app, ipcMain } from 'electron'
-import { defaultAgentChatModelKey } from '@agent'
 import { googleWorkspaceConfigurationFingerprint } from '@mail'
 import { getPlatformKeyProtection } from '@platform'
 import { hasPendingRestore } from '@recovery'
@@ -13,6 +12,7 @@ import {
   unconfiguredGoogleWorkspaceState
 } from '../app-defaults'
 import { loadCloudPrivacyGates } from '../privacy-gates'
+import { businessModelKey } from '../business-model'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 /** Startup status, relaunch, the renderer bootstrap payload and action approvals. */
@@ -59,8 +59,9 @@ export function registerBootstrapHandlers(context: MainIpcContext) {
       operatorProfile: currentOperator(),
       preferences: effectiveApplicationPreferences(repository),
       jobCaseFieldAliases: effectiveJobCaseFieldAliases(repository),
-      agentChatModels: agentChatModelCatalog.map(({ key, displayName }) => ({ key, displayName })),
-      defaultAgentChatModelKey,
+      agentChatModels: agentChatModelCatalog.map(({ key, displayName, tier }) => ({ key, displayName, ...(tier ? { tier } : {}) })),
+      // The Agent chat starts on the 批量核对 model unless the operator picks another in the chat.
+      defaultAgentChatModelKey: businessModelKey(repository.getLocalApplicationPreferences(), agentChatModelCatalog, 'checking'),
       tasks: repository.listWorkTasks(),
       processingJobs: repository.listProcessingJobs(),
       actionApprovals: repository.listActionApprovals(),

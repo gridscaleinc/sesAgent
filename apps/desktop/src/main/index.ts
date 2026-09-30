@@ -25,7 +25,10 @@ import {
 } from '@aicommerce'
 import { EncryptedFileVault } from '@files'
 import {
+  collectLocalPersonNameCandidates,
   createLocalAiRuntime,
+  disposeLocalPersonNameDetector,
+  localNerModel,
   LocalEmbeddingWorkerClient,
   localEmbeddingModel,
   LocalRerankerWorkerClient,
@@ -68,8 +71,10 @@ import {
   type ProcessingJobSummary,
   type RecoveryPreviewResult,
   type ConfirmRecoveryResult,
+  type ApplicationLocale,
   type StagedLocalFile,
-  type StartupStatus
+  type StartupStatus,
+  type TrayNavigation
 } from '@shared'
 import { shouldRunReleaseAgentSmoke } from './startup-smoke'
 import { effectiveOperatorProfile, gmailSyncConfigurationFromAdmin, loadManagedGoogleWorkspaceConfiguration } from './app-defaults'
@@ -94,6 +99,13 @@ import { registerRecoveryHandlers } from './ipc/recovery'
 import { registerResumeImportHandlers } from './ipc/resume-import'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerWorkTaskHandlers } from './ipc/work-tasks'
+import { cloudPrivacyGateLoadOptions, gmailSyncState } from './app-defaults'
+import { loadCloudPrivacyGates } from './privacy-gates'
+import { onApplicationPreferencesSaved } from './preference-events'
+import { createTrayController, type TrayController } from './tray'
+import { createTraySummarySource, recordAiCommerceWallet } from './tray-data'
+import { onAiGatewaySignalChanged } from './ai-gateway-signal'
+import { defaultMenuBarPreferences } from './tray-summary'
 
 const releaseSmokeMode = process.env.SES_RELEASE_SMOKE === '1'
 const windowsPackageWorkerSmokeMode = process.env.SES_WINDOWS_PACKAGE_WORKER_SMOKE === '1'
@@ -135,17 +147,70 @@ let encryptedFileVault: EncryptedFileVault | null = null
 let applicationMasterKey: Buffer | null = null
 let localEmbeddingWorker: LocalEmbeddingWorkerClient | null = null
 let localRerankerWorker: LocalRerankerWorkerClient | null = null
+let localPersonNameDetector: LocalPersonNameDetectorPort | null = null
 let processingDispatcherStop: (() => void) | null = null
 
 let activeAiCommerceClient: AiCommerceNativeClient | null = null
 const queuedAiCommerceCallbackUrls: string[] = []
 let aiCommerceCallbackDelivery: Promise<void> = Promise.resolve()
 
+// The main window, as opposed to the menu-bar panel: pushes, focus and "reopen on activate" only concern it.
+let mainWindow: BrowserWindow | null = null
+let trayController: TrayController | null = null
+let stopPreferenceListener: (() => void) | null = null
+// A place the menu-bar panel asked for while the main window was still loading; kept briefly for the renderer to take.
+let pendingTrayNavigation: TrayNavigation | null = null
+let pendingTrayNavigationTimer: ReturnType<typeof setTimeout> | null = null
+
+function currentMainWindow(): BrowserWindow | null {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+}
+
+function sendToMainWindow(channel: string, payload?: unknown): void {
+  currentMainWindow()?.webContents.send(channel, payload)
+}
+
 function focusMainWindow(): void {
-  const window = BrowserWindow.getAllWindows()[0]
+  const window = currentMainWindow()
   if (!window) return
   if (window.isMinimized()) window.restore()
   window.focus()
+}
+
+function holdTrayNavigation(navigation: TrayNavigation | null): void {
+  pendingTrayNavigation = navigation
+  if (pendingTrayNavigationTimer) clearTimeout(pendingTrayNavigationTimer)
+  pendingTrayNavigationTimer = navigation ? setTimeout(() => holdTrayNavigation(null), 30_000) : null
+}
+
+/** Shows the main window (creating it when closed) and hands it the place the menu-bar panel asked for, if any. */
+function openMainWindowFromTray(navigation: TrayNavigation | null): void {
+  let window = currentMainWindow()
+  if (!window) {
+    holdTrayNavigation(navigation)
+    window = createMainWindow()
+  } else if (navigation && window.webContents.isLoading()) {
+    holdTrayNavigation(navigation)
+  } else if (navigation) {
+    window.webContents.send(ipcChannels.trayNavigate, navigation)
+  }
+  if (window.isMinimized()) window.restore()
+  window.show()
+  if (process.platform === 'darwin') app.focus({ steal: true })
+  window.focus()
+}
+
+function registerTrayNavigationHandoff(): void {
+  ipcMain.removeHandler(ipcChannels.takeTrayNavigation)
+  ipcMain.handle(ipcChannels.takeTrayNavigation, (event): TrayNavigation | null => {
+    assertTrustedSender(event)
+    // Not cleared on read: a renderer that re-subscribes (development StrictMode) takes it again; ids dedupe.
+    return pendingTrayNavigation
+  })
+}
+
+function systemLocale(): ApplicationLocale {
+  return app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'ja-JP'
 }
 
 function receiveAiCommerceProtocolUrl(rawUrl: string): void {
@@ -158,15 +223,13 @@ function receiveAiCommerceProtocolUrl(rawUrl: string): void {
   aiCommerceCallbackDelivery = aiCommerceCallbackDelivery.then(async () => {
     try {
       const state = await client.completeConnect(rawUrl)
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send(ipcChannels.aiCommerceStateChanged, { state, error: null })
-      }
+      recordAiCommerceWallet(state)
+      sendToMainWindow(ipcChannels.aiCommerceStateChanged, { state, error: null })
+      trayController?.refresh()
     } catch (cause) {
       const state = await client.getState()
       const error = cause instanceof Error ? cause.message : 'Member Center のログインを完了できませんでした。'
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send(ipcChannels.aiCommerceStateChanged, { state, error })
-      }
+      sendToMainWindow(ipcChannels.aiCommerceStateChanged, { state, error })
     }
   })
 }
@@ -319,15 +382,29 @@ async function initializeServices(): Promise<{
             grantReadRoots: windowsAppContainerGrantRoots
           }
         : undefined
+    const nerModelDirectory = app.isPackaged
+      ? join(process.resourcesPath, 'models', 'knowledgator', 'gliner-x-small')
+      : join(process.cwd(), 'models', 'knowledgator', 'gliner-x-small')
+    // The worker verifies every file hash before loading; only presence is checked here.
+    const glinerNer =
+      existsSync(join(nerModelDirectory, 'model-manifest.json')) && existsSync(join(nerModelDirectory, 'onnx', 'model_quantized.onnx'))
+        ? {
+            workerPath: join(__dirname, 'ner-worker.js'),
+            modelDirectory: nerModelDirectory,
+            onGlinerUnavailable: () => console.warn('[local-ner] GLiNER unavailable; Apple NaturalLanguage names only.')
+          }
+        : undefined
     const localAi = createLocalAiRuntime(
       process.platform === 'darwin'
         ? {
             macExecutablePath: app.isPackaged
               ? join(process.resourcesPath, 'native', 'macos', 'ses-vision-ocr')
-              : join(process.cwd(), 'build', 'native', 'macos', 'ses-vision-ocr')
+              : join(process.cwd(), 'build', 'native', 'macos', 'ses-vision-ocr'),
+            glinerNer
           }
         : process.platform === 'win32'
           ? {
+              glinerNer,
               windowsOcrSandboxLauncherPath: existsSync(windowsOcrSandboxLauncherPath) ? windowsOcrSandboxLauncherPath : undefined,
               windowsOcrWorkerPath: join(__dirname, 'windows-ocr-worker.js'),
               windowsTesseractWorkerPath: join(__dirname, 'tesseract-worker.js'),
@@ -344,6 +421,7 @@ async function initializeServices(): Promise<{
       console.info('[local-ai-ready]', {
         platform: process.platform,
         ocrEngine: localAi.ocr?.engine ?? null,
+        nameDetectionEngine: localAi.personNameDetector?.engine ?? null,
         status: localAi.status,
         rawPersonalDataCloudEligible: false
       })
@@ -566,20 +644,20 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
     },
     runSync: () => googleWorkspaceSync.startGmailSync(),
     onCompleted: (counts) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send(ipcChannels.gmailSyncCompleted, counts)
-      }
+      sendToMainWindow(ipcChannels.gmailSyncCompleted, counts)
+      trayController?.refresh()
     },
     onImported: (counts) => {
       // HR may not be looking at the app when mail lands. Counts only - case
       // content never enters an OS notification.
-      if (counts.imported > 0 && BrowserWindow.getFocusedWindow() === null && Notification.isSupported()) {
+      const focused = BrowserWindow.getFocusedWindow()
+      if (counts.imported > 0 && (focused === null || focused !== currentMainWindow()) && Notification.isSupported()) {
         const notice = new Notification({
           title: 'SES Agent',
           body: `メール ${counts.imported}件・人材取込 ${counts.personnelImported ?? 0}件`
         })
         notice.on('click', () => {
-          const window = BrowserWindow.getAllWindows()[0]
+          const window = currentMainWindow()
           if (!window) return
           if (window.isMinimized()) window.restore()
           window.show()
@@ -658,6 +736,12 @@ function createMainWindow(): BrowserWindow {
   })
 
   window.once('ready-to-show', () => window.show())
+  mainWindow = window
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null
+    // The hidden menu-bar panel would otherwise keep a Windows app alive with no window.
+    if (process.platform !== 'darwin') app.quit()
+  })
 
   if (!app.isPackaged || releaseSmokeMode) {
     window.webContents.on('preload-error', (_event, preloadPath, error) => {
@@ -954,6 +1038,15 @@ async function runWindowsPackageWorkerSmoke(services: Awaited<ReturnType<typeof 
     (rerankerScores.get('relevant') ?? Number.NEGATIVE_INFINITY) > (rerankerScores.get('irrelevant') ?? Number.POSITIVE_INFINITY)
   if (!rerankerCompleted) throw new Error('The packaged local reranker did not rank the relevant passage first.')
 
+  if (!services.localNer || services.localNer.engine !== 'gliner-x-small-onnx') {
+    throw new Error('The packaged AppContainer name detector is unavailable.')
+  }
+  const nerSample = '候補者：佐々木健一（Java 7年）\n候选人王小明\nCandidate: Priya Raman'
+  const nerResult = await services.localNer.detectNames(nerSample)
+  const nerNames = collectLocalPersonNameCandidates(nerSample, nerResult)
+  const nerCompleted = nerResult.networkAccess === false && ['佐々木健一', '王小明', 'Priya Raman'].every((name) => nerNames.includes(name))
+  if (!nerCompleted) throw new Error('The packaged AppContainer name detector missed the synthetic names.')
+
   const fixturePath = process.env.SES_WINDOWS_PACKAGE_OCR_FIXTURE_PATH?.trim() || null
   let ocrCompleted = false
   let ocrEngine: string | null = null
@@ -981,6 +1074,8 @@ async function runWindowsPackageWorkerSmoke(services: Awaited<ReturnType<typeof 
       embeddingDimension: localEmbeddingModel.dimension,
       rerankerCompleted,
       rerankerModel: localRerankerModel.id,
+      nerCompleted,
+      nerModel: localNerModel.id,
       ocrCompleted,
       ocrEngine,
       ocrStatus: services.localAiStatus,
@@ -1051,6 +1146,7 @@ async function startApplication(): Promise<void> {
     applicationRepository = services.repository
     localEmbeddingWorker = services.embeddingWorker
     localRerankerWorker = services.rerankerWorker
+    localPersonNameDetector = services.localNer
     encryptedFileVault = services.fileVault
     applicationMasterKey = services.masterKey
     attachAiCommerceClient(services.aiCommerce)
@@ -1076,13 +1172,19 @@ async function startApplication(): Promise<void> {
     await prepareOriginalOpenRoot(services.userDataPath)
     await registerOriginalDocumentProtocol(applicationRepository, encryptedFileVault)
     if (usesBundledRenderer()) await registerAppProtocol()
+    registerTrayNavigationHandoff()
     createMainWindow()
     startingServices = null
+    startTray(services)
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+      if (!currentMainWindow()) createMainWindow()
     })
   } catch (error: unknown) {
+    stopPreferenceListener?.()
+    stopPreferenceListener = null
+    trayController?.dispose()
+    trayController = null
     processingDispatcherStop?.()
     processingDispatcherStop = null
     startingServices?.embeddingWorker.dispose()
@@ -1122,14 +1224,16 @@ async function startApplication(): Promise<void> {
       console.info('[startup-storage-unavailable]', message)
       registerStartupRecoveryIpcHandlers(userDataPath)
       if (usesBundledRenderer()) await registerAppProtocol()
+      registerTrayNavigationHandoff()
       createMainWindow()
+      startRecoveryTray()
       console.info('[startup-recovery-ready]', {
         reason: 'local-storage-unavailable',
         activeDataPreserved: true,
         networkAccess: false
       })
       app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+        if (!currentMainWindow()) createMainWindow()
       })
       return
     }
@@ -1139,9 +1243,55 @@ async function startApplication(): Promise<void> {
   }
 }
 
+/** The menu-bar / system-tray panel over the unlocked local data. */
+function startTray(services: Awaited<ReturnType<typeof initializeServices>>): void {
+  const { repository, aiCommerce, googleWorkspace, gmailSyncConfig } = services
+  const loadSummary = createTraySummarySource({
+    repository,
+    aiCommerce,
+    gmailState: async () => (googleWorkspace ? gmailSyncState(repository, await googleWorkspace.getState(), gmailSyncConfig) : null),
+    privacyQualityGatePassed: async () => (await loadCloudPrivacyGates(cloudPrivacyGateLoadOptions())).qualityGate.status === 'passed'
+  })
+  trayController = createTrayController({
+    loadSummary,
+    dataRevision: () => repository.getLocalDataRevision().revision,
+    visible: () => (repository.getLocalApplicationPreferences()?.menuBar ?? defaultMenuBarPreferences).visible,
+    locale: () => repository.getLocalApplicationPreferences()?.locale ?? systemLocale(),
+    navigate: openMainWindowFromTray,
+    showMain: () => openMainWindowFromTray(null),
+    preloadPath: join(__dirname, '../preload/tray.js'),
+    rendererUrl: usesBundledRenderer() ? undefined : process.env.ELECTRON_RENDERER_URL
+  })
+  const stopPreferences = onApplicationPreferencesSaved(() => trayController?.applyVisibility())
+  // A cloud call the AI gateway refused (or accepted again) changes the panel's AI alert at once.
+  const stopGatewaySignal = onAiGatewaySignalChanged(() => trayController?.refresh())
+  stopPreferenceListener = () => {
+    stopPreferences()
+    stopGatewaySignal()
+  }
+}
+
+/** While the local data cannot be opened the panel only says so and offers to open the recovery screen. */
+function startRecoveryTray(): void {
+  trayController = createTrayController({
+    loadSummary: async () => ({ status: 'not-ready', locale: systemLocale(), generatedAt: new Date().toISOString() }),
+    dataRevision: () => null,
+    visible: () => true,
+    locale: systemLocale,
+    navigate: openMainWindowFromTray,
+    showMain: () => openMainWindowFromTray(null),
+    preloadPath: join(__dirname, '../preload/tray.js'),
+    rendererUrl: usesBundledRenderer() ? undefined : process.env.ELECTRON_RENDERER_URL
+  })
+}
+
 app.whenReady().then(startApplication)
 
 app.on('before-quit', () => {
+  stopPreferenceListener?.()
+  stopPreferenceListener = null
+  trayController?.dispose()
+  trayController = null
   attachAiCommerceClient(null)
   processingDispatcherStop?.()
   processingDispatcherStop = null
@@ -1152,6 +1302,8 @@ app.on('before-quit', () => {
   localEmbeddingWorker = null
   localRerankerWorker?.dispose()
   localRerankerWorker = null
+  disposeLocalPersonNameDetector(localPersonNameDetector)
+  localPersonNameDetector = null
   encryptedFileVault = null
   clearOriginalOpenRoot()
   applicationMasterKey?.fill(0)

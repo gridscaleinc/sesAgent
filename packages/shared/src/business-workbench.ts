@@ -194,7 +194,7 @@ export interface PersonnelCaseMatchResult {
     status: 'reviewed' | 'partial' | 'unavailable' | 'failed' | 'not-needed'
     reviewedCount: number
     modelName: string | null
-    reason?: 'policy-refresh' | 'service-unavailable' | 'request-failed' | 'no-valid-result'
+    reason?: 'policy-refresh' | 'service-unavailable' | 'request-failed' | 'no-valid-result' | 'insufficient-credits' | 'sign-in-required'
   }
 }
 
@@ -467,3 +467,16 @@ export const exportSkillSheetInputSchema = z
   .strict()
 export type ExportSkillSheetInput = z.infer<typeof exportSkillSheetInputSchema>
 export type ExportSkillSheetResult = { cancelled: true; fileName: null } | { cancelled: false; fileName: string }
+
+/** Names the AI gateway failures an operator can act on (top up credits, sign in); anything else stays a generic failure. */
+export function cloudFailureReason(error: unknown): 'insufficient-credits' | 'sign-in-required' | 'request-failed' {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  if (/INSUFFICIENT_CREDITS|not enough available AI credits/iu.test(message)) return 'insufficient-credits'
+  if (
+    /MEMBER_SIGN_IN_REQUIRED|MEMBER_SESSION_EXPIRED|TOKEN_INVALID|TOKEN_REVOKED|token_expired|Please sign in to Member Center/iu.test(
+      message
+    )
+  )
+    return 'sign-in-required'
+  return 'request-failed'
+}

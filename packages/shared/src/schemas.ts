@@ -1018,6 +1018,18 @@ export const saveLocalOperatorProfileInputSchema = z.object({
   expectedRevision: z.number().int().positive().nullable()
 })
 
+/** Same shape as a Main catalog key; whether the catalog still lists it is checked in Main. */
+export const aiModelKeySchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u)
+
+export const applicationAiModelsSchema = z
+  .object({
+    checking: aiModelKeySchema,
+    writing: aiModelKeySchema
+  })
+  .strict()
+
+export const menuBarPreferencesSchema = z.object({ visible: z.boolean(), showPersonNames: z.boolean() }).strict()
+
 export const localApplicationPreferencesSchema = z
   .object({
     version: z.literal('local-application-preferences-v1'),
@@ -1025,7 +1037,9 @@ export const localApplicationPreferencesSchema = z
     configured: z.boolean(),
     revision: z.number().int().positive().nullable(),
     updatedAt: z.string().datetime().nullable(),
-    cloudEligible: z.literal(false)
+    cloudEligible: z.literal(false),
+    aiModels: applicationAiModelsSchema.optional(),
+    menuBar: menuBarPreferencesSchema.optional()
   })
   .superRefine((value, context) => {
     if (value.configured && (value.revision === null || value.updatedAt === null)) {
@@ -1038,8 +1052,12 @@ export const localApplicationPreferencesSchema = z
 
 export const saveLocalApplicationPreferencesInputSchema = z.object({
   locale: z.enum(applicationLocales),
-  expectedRevision: z.number().int().positive().nullable()
+  expectedRevision: z.number().int().positive().nullable(),
+  aiModels: applicationAiModelsSchema.optional(),
+  menuBar: menuBarPreferencesSchema.optional()
 })
+
+export const testAiModelInputSchema = z.object({ modelKey: aiModelKeySchema }).strict()
 
 /** A label as written before the colon: short, single-line, no colon of its own. */
 const jobCaseFieldAliasSchema = z

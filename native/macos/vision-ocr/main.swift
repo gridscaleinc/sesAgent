@@ -187,26 +187,22 @@ func runOcr() throws -> OcrOutput {
     )
 }
 
-func runNameDetection() throws -> NameDetectionOutput {
-    let input = FileHandle.standardInput.readDataToEndOfFile()
-    guard input.count <= 2 * 1024 * 1024, let text = String(data: input, encoding: .utf8) else {
-        throw OcrError.inputTooLarge
-    }
+/// One tagger pass over the whole input. `languages` are hints for ranges of
+/// it; ranges without a hint use the tagger's automatic detection. Returns
+/// person-name entities with UTF-16 offsets into the input.
+func personalNames(in text: String, languages: [(NLLanguage, Range<String.Index>)]) -> [NameEntity] {
     let tagger = NLTagger(tagSchemes: [.nameType])
     tagger.string = text
-    tagger.setLanguage(.english, range: text.startIndex..<text.endIndex)
+    for (language, range) in languages {
+        tagger.setLanguage(language, range: range)
+    }
     var entities: [NameEntity] = []
     let options: NLTagger.Options = [.omitWhitespace, .omitPunctuation, .joinNames]
-    tagger.enumerateTags(
-        in: text.startIndex..<text.endIndex,
-        unit: .word,
-        scheme: .nameType,
-        options: options
-    ) { tag, range in
+    tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .nameType, options: options) { tag, tokenRange in
         guard tag == .personalName else { return true }
-        let value = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = String(text[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
         guard value.count >= 2 else { return true }
-        let nsRange = NSRange(range, in: text)
+        let nsRange = NSRange(tokenRange, in: text)
         entities.append(
             NameEntity(
                 text: value,
@@ -217,10 +213,48 @@ func runNameDetection() throws -> NameDetectionOutput {
         )
         return true
     }
+    return entities
+}
+
+/// The dominant language NLLanguageRecognizer finds for each non-empty
+/// paragraph, when it finds one.
+func paragraphLanguages(in text: String) -> [(NLLanguage, Range<String.Index>)] {
+    var hints: [(NLLanguage, Range<String.Index>)] = []
+    let recognizer = NLLanguageRecognizer()
+    text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.byParagraphs, .substringNotRequired]) { _, range, _, _ in
+        let paragraph = String(text[range])
+        guard !paragraph.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        recognizer.reset()
+        recognizer.processString(paragraph)
+        if let language = recognizer.dominantLanguage, language != .undetermined { hints.append((language, range)) }
+    }
+    return hints
+}
+
+func runNameDetection() throws -> NameDetectionOutput {
+    let input = FileHandle.standardInput.readDataToEndOfFile()
+    guard input.count <= 2 * 1024 * 1024, let text = String(data: input, encoding: .utf8) else {
+        throw OcrError.inputTooLarge
+    }
+    let whole = text.startIndex..<text.endIndex
+    // The union of three passes: forcing English alone never finds Japanese
+    // or Chinese names; automatic detection misses some romanized names in
+    // mixed text; and per-paragraph hints from NLLanguageRecognizer catch
+    // Chinese names inside otherwise Japanese or English documents.
+    var entities = personalNames(in: text, languages: [(.english, whole)])
+    entities.append(contentsOf: personalNames(in: text, languages: []))
+    let hints = paragraphLanguages(in: text)
+    if !hints.isEmpty {
+        entities.append(contentsOf: personalNames(in: text, languages: hints))
+    }
+    var seen = Set<String>()
+    let unique = entities
+        .sorted { ($0.startUtf16, $0.endUtf16) < ($1.startUtf16, $1.endUtf16) }
+        .filter { seen.insert("\($0.startUtf16):\($0.endUtf16):\($0.text)").inserted }
     return NameDetectionOutput(
         version: "apple-nl-ner-v1",
         engine: "apple-natural-language",
-        entities: entities,
+        entities: unique,
         networkAccess: false,
         requiresHumanConfirmation: true
     )

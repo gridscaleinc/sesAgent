@@ -1,0 +1,109 @@
+/* 推荐要点: the detail tab of both matching directions and the compact list in the introduction composer. */
+.recommendation-points {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.recommendation-points-empty {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.recommendation-points-empty p {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.recommendation-points-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.recommendation-points-header > button {
+  margin-left: auto;
+}
+.recommendation-points-label {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 600;
+}
+.recommendation-points-stale {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: var(--amber-faint);
+  color: var(--amber);
+  font-size: 12px;
+}
+.recommendation-points-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+}
+.recommendation-points-list li {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.recommendation-points-list p {
+  margin: 0;
+  color: var(--ink-secondary);
+}
+.recommendation-point-source {
+  color: var(--muted);
+  font-size: 11px;
+}
+.recommendation-points-progress,
+.recommendation-points-error p {
+  margin: 0;
+  font-size: 12px;
+}
+.recommendation-points-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.recommendation-points-picker {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-faint);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+  max-height: 180px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.recommendation-points-picker ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+.recommendation-points-picker li > span {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.recommendation-points-picker li > button {
+  margin-left: 8px;
+  padding: 2px 8px;
+}
+.recommendation-points-picker .recommendation-points-link {
+  justify-self: start;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--forest);
+  text-decoration: underline;
+}

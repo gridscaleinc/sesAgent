@@ -76,6 +76,22 @@ describe('interview progression assistance', () => {
     expect(projection.projection).not.toContain('person@example.com')
     expect(projection.projection).not.toContain(documentId)
   })
+  it('reads mail progress with the 批量核对 model the operator chose', async () => {
+    const { context, repository, agentNarrativeStreamer } = setup()
+    Object.assign(repository, {
+      getLocalApplicationPreferences: () => ({ aiModels: { checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' } })
+    })
+    await createBusinessProgressAnalyzer(context)({
+      documentId,
+      reviewId,
+      expectedRevision: 1,
+      roundNumber: 1,
+      text: '客户说：一面通过，需要二面',
+      lang: 'zh'
+    })
+    const call = agentNarrativeStreamer.analyzeBusinessProgress.mock.calls[0]![0] as unknown as { model: { key: string } }
+    expect(call.model.key).toBe('gpt-6-luna')
+  })
   it('rejects unsupported evidence and rejects stale results', async () => {
     const { context, agentNarrativeStreamer, repository } = setup()
     agentNarrativeStreamer.analyzeBusinessProgress.mockResolvedValueOnce({ ...analysis, evidence: '全部通过' })

@@ -1,4 +1,3 @@
-import { BusinessMatchEvidence } from './BusinessMatchEvidence'
 import { AiOpinion } from './AiOpinion'
 import { InterviewEvidencePanel } from './InterviewEvidencePanel'
 import { RankingReason } from './RankingReason'
@@ -12,9 +11,10 @@ import type {
   CandidateReviewSnapshot,
   JobCaseReviewSnapshot,
   PersonnelCaseMatch,
+  PersonnelCaseMatchResult,
   CandidateMatchAssessment
 } from '@shared'
-import { businessMatchingPolicyVersion, isPersonnelAvailable, qualificationStatus, matchFollowUpLabels } from '@shared'
+import { businessMatchingPolicyVersion, isPersonnelAvailable, qualificationStatus, matchFollowUpLabels, proposalConclusion } from '@shared'
 import { consumeMatchingIntent } from '../hr-matching-intents'
 import {
   isPersonCaseMatchBusy,
@@ -28,8 +28,27 @@ import {
   usePersonCaseMatchCounts,
   type PersonCaseMatchEntry
 } from '../person-case-match-cache'
-import { localizedIpcError, useLocaleText } from '../i18n'
+import { localizedCandidateFieldLabel, localizedIpcError, useLocaleText } from '../i18n'
 import type { FollowUpTarget } from './follow-up-target'
+import { ActionMenu } from './HrObjectList'
+import {
+  ConclusionBadge,
+  ExcludedSection,
+  MatchBackButton,
+  MatchDetail,
+  MatchResultList,
+  MatchResultRow,
+  MatchResultsBody,
+  MatchResultsPage,
+  Popover,
+  RequirementChips,
+  conclusionTone,
+  shortConclusion
+} from './MatchResultsLayout'
+import { FollowUpTab, MatchEvidenceTab, followUpItems } from './RequirementTable'
+import { AppliedRules, InterviewQuestionsSection, RelatedProjects, relatedProjects, useCaseQuestionDraft } from './MatchDetailSections'
+import { tokyoDateTime } from './use-case-resume-assessments'
+import { RecommendationPointsTab } from './RecommendationPoints'
 import './hr-matching.css'
 
 /** One 「找案件」 click for a person; a new requestId is a new click. */
@@ -37,6 +56,8 @@ export interface HrMatchSource {
   kind: 'person'
   id: string
   requestId: number
+  /** The case to select once the results show (e.g. the pair opened from 新匹配机会). */
+  selectReviewId?: string
 }
 export interface IntroductionTarget {
   documentId: string
@@ -64,6 +85,7 @@ export function HrMatchingWorkspace({
   onView,
   onPrepare,
   onBack,
+  backLabel,
   onFollowUp,
   onScheduleMany,
   onContinue
@@ -80,7 +102,10 @@ export function HrMatchingWorkspace({
   onFollowUp(target: FollowUpTarget): void | Promise<void>
   onScheduleMany?(targets: FollowUpTarget[]): void | Promise<void>
   onPrepare(target: IntroductionTarget): void
+  /** Returns to where the results were opened from: the person list unless `backLabel` names another page. */
   onBack(): void
+  /** The back button's wording when the results were not opened from the person list (e.g. 返回新匹配机会). */
+  backLabel?: string
 }) {
   const exposureRoot = useRef<HTMLElement>(null)
   const progress = useBusinessProgress()
@@ -116,6 +141,8 @@ export function HrMatchingWorkspace({
   const [selected, setSelected] = useState<Record<string, string>>({})
   const [checked, setChecked] = useState<Record<string, string[]>>({})
   const [starting, setStarting] = useState(false)
+  const [tab, setTab] = useState('evidence')
+  const [showDetail, setShowDetail] = useState(false)
   const startLock = useRef(false)
   // null until the business states load: matching waits so an unavailable person is never run.
   const [businessStates, setBusinessStates] = useState<Map<string, CandidateBusinessStatus> | null>(null)
@@ -148,6 +175,12 @@ export function HrMatchingWorkspace({
   )
   const applied = useRef<number | null>(null)
   const sourceId = source?.id ?? ''
+  // A requested case is selected (and its detail shown) each time a new request asks for it.
+  useEffect(() => {
+    if (!source?.selectReviewId) return
+    setSelected((state) => ({ ...state, [source.id]: source.selectReviewId! }))
+    setShowDetail(true)
+  }, [source?.requestId])
   // The person's stored run is looked up (from this session or Main) before deciding whether to run again.
   const [storedLoaded, setStoredLoaded] = useState<string | null>(null)
   useEffect(() => {
@@ -210,11 +243,6 @@ export function HrMatchingWorkspace({
       row.appliedRules?.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
       zh
     )
-  const openDetails = (row: Row) => {
-    recordExperienceOpened(row.experienceRunId)
-    setSelected((state) => ({ ...state, [sourceId]: row.id }))
-    onView('case', row.id)
-  }
   const prepare = (row: Row) => {
     if (stale || pending || !valid || !current) return
     setSelected((state) => ({ ...state, [sourceId]: row.id }))
@@ -321,7 +349,7 @@ export function HrMatchingWorkspace({
     : !person || person.recordStatus !== 'active'
       ? {
           text: t('此人员资料已停用或已删除，无法找案件。', 'この要員情報は停止または削除されているため、案件を探せません。'),
-          action: t('返回人员列表', '要員一覧に戻る'),
+          action: backLabel ?? t('返回人员列表', '要員一覧に戻る'),
           run: onBack
         }
       : businessStatus === 'assigned' || businessStatus === 'paused'
@@ -357,306 +385,463 @@ export function HrMatchingWorkspace({
     })
   // Kept results show at once; their actions wait until the person's status is confirmed.
   const busyActions = starting || stale || pending || !valid
-  const card = (row: Row, rank: number, confirmation: boolean) => (
-    <MatchResultCard
-      key={row.id}
-      row={row}
-      documentId={source.id}
-      rank={rank}
-      confirmation={confirmation}
-      isSelected={selected[sourceId] === row.id}
-      selectable={Boolean(onScheduleMany)}
-      checked={(checked[sourceId] ?? []).includes(row.id)}
-      disabled={busyActions}
-      prepareDisabled={busyActions || !current}
-      existing={existing(row)}
-      progressNow={progress?.now}
-      onToggle={() => toggle(row)}
-      onOpen={() => openDetails(row)}
-      onPrepare={() => prepare(row)}
-      onStart={() => void start([row])}
-    />
-  )
   const excludedCount = saved?.result.excludedCount ?? 0
   const ownCompanyExcluded = saved?.result.ownCompanyExcludedCount ?? 0
-  return (
-    <section ref={exposureRoot} className="hr-matching-workspace" aria-label={t('为此人员找案件', 'この要員の案件を探す')}>
-      <header className="hr-match-source">
-        <button type="button" onClick={onBack}>
-          ← {t('返回人员列表', '要員一覧に戻る')}
-        </button>
-        <small>{t('为此人员找案件', 'この要員の案件を探す')}</small>
-        <button className="hr-source-title" onClick={() => onView('person', source.id)} type="button">
-          {title}
-        </button>
-        <p>
-          {(person?.fields ?? [])
-            .filter((field) => ['skills', 'rate', 'location', 'availability'].includes(field.key) && field.value)
-            .map((field) => field.value)
-            .join(' · ')}
-        </p>
-        <button className="hr-primary" type="button" disabled={starting || pending || !valid} onClick={() => void run(source.id)}>
-          {running ? t('正在找案件…', '案件を探しています…') : saved ? t('重新找案件', '案件を再検索') : t('找案件', '案件を探す')}
-        </button>
-        {stored && !running ? (
-          <small className="hr-match-last-run">
-            {t('上次找案件', '前回の検索')}：{tokyoTime(stored.ranAt)}
-          </small>
-        ) : null}
-      </header>
-      <div className="hr-match-results">
-        {!ready ? (
-          <p role="status" className="hr-match-progress">
-            {t('正在确认人员状态…', '要員の状態を確認しています…')}
-          </p>
-        ) : null}
-        {unavailable ? (
-          <p role="alert" className="hr-match-unavailable">
-            {unavailable.text}{' '}
-            <button type="button" onClick={unavailable.run}>
-              {unavailable.action}
-            </button>
-          </p>
-        ) : null}
-        {rulesRevision === 'failed' ? (
-          <p role="alert" className="hr-match-rules-error">
-            {t(
-              '规则读取失败，暂时无法确认结果是否使用了最新规则。',
-              'ルールを読み込めなかったため、最新のルールで評価したか確認できません。'
-            )}{' '}
-            <button
-              type="button"
-              onClick={() => {
-                setRulesRevision('loading')
-                loadRules(() => true)
-              }}
-            >
-              {t('重试', '再試行')}
-            </button>
-          </p>
-        ) : null}
-        {running ? (
-          <p role="status" className="hr-match-progress">
-            {partial[sourceId] ? t('正在评估匹配度…', '適合度を評価しています…') : t('正在找案件…', '案件を探しています…')}{' '}
-            <button
-              type="button"
-              onClick={() =>
-                void window.sesAgent.cancelBusinessMatching({ kind: 'person', id: source.id }).catch((cause) =>
-                  setErrors((state) => ({
-                    ...state,
-                    [sourceId]: localizedIpcError(
-                      locale,
-                      cause,
-                      t('无法停止找案件，请重试。', '案件の検索を停止できませんでした。もう一度お試しください。')
-                    )
-                  }))
-                )
+  const showResults = Boolean(saved && current && (valid || !ready))
+  const listed = showResults ? [...recommendedRows, ...confirmationRows] : []
+  const currentRow = listed.find((row) => row.id === selected[sourceId]) ?? listed[0]
+  const choose = (row: Row, pointer: boolean) => {
+    if (row.id !== currentRow?.id) recordExperienceOpened(row.experienceRunId)
+    setSelected((state) => ({ ...state, [sourceId]: row.id }))
+    if (pointer) setShowDetail(true)
+  }
+  const resultRow = (row: Row, rank: number) => {
+    const follow = existing(row)
+    const settled = row.qualification?.requirements.filter((item) => item.aiVerified).length ?? 0
+    return (
+      <MatchResultRow
+        key={row.id}
+        id={row.id}
+        title={caseTitle(row.job!)}
+        selected={row.id === currentRow?.id}
+        onSelect={() => choose(row, true)}
+        experienceRun={row.experienceRunId}
+        rank={rank + 1}
+        badge={<ConclusionBadge tone={conclusionTone(row.qualification)}>{shortConclusion(row.qualification, t)}</ConclusionBadge>}
+        chips={<RequirementChips qualification={row.qualification} />}
+        select={
+          onScheduleMany
+            ? {
+                label: t('选择此案件', 'この案件を選択'),
+                checked: (checked[sourceId] ?? []).includes(row.id),
+                disabled: busyActions || Boolean(follow),
+                onChange: () => toggle(row)
               }
-            >
-              {t('停止', '停止')}
-            </button>
-          </p>
-        ) : null}
-        {errors[sourceId] ? <p role="alert">{errors[sourceId]}</p> : null}
-        {stale ? (
-          <p role="status" className="hr-match-stale">
-            {t('人员、案件资料或 AI 规则已更新，需要重新找案件。', '情報またはAIルールが更新されました。案件を再検索してください。')}
-          </p>
-        ) : null}
-        {saved && current && (valid || !ready) ? (
-          <>
-            <div className="hr-results-status">
-              <strong>
-                {recommendedRows.length} {t('个推荐案件', '件の紹介候補')}
-              </strong>
-              {confirmationRows.length ? (
-                <strong className="hr-conditions-count">
-                  {confirmationRows.length} {t('个案件需补充确认', '件は確認が必要')}
-                </strong>
+            : null
+        }
+        tags={
+          (follow && progress) || settled ? (
+            <>
+              {follow && progress ? (
+                <span className="match-tag is-follow">{progressPresentation(follow, progress.now, zh).label}</span>
               ) : null}
-              <span>
-                {saved.result.cloud.status === 'reviewed'
-                  ? t('AI 已评估', 'AI評価済み')
-                  : saved.result.cloud.status === 'partial'
-                    ? t('部分结果已评估', '一部の結果を評価済み')
-                    : t('按条件核对', '条件照合')}
-              </span>
-            </div>
-            <p className="hr-match-coverage">
-              {t('已检索', '検索済み')} {saved.result.searchedCount ?? saved.result.localMatchCount} · {t('AI 已评估', 'AI評価済み')}{' '}
-              {saved.result.cloud.reviewedCount}
-              {excludedCount ? ` · ${t('已排除', '除外')} ${excludedCount}` : ''}
-            </p>
-            {excludedCount || ownCompanyExcluded || saved.result.cloud.modelName ? (
-              <details className="hr-match-meta">
-                <summary>{t('详情', '詳細')}</summary>
-                {saved.result.excludedRequirements?.length ? (
-                  <p>
-                    {t('排除原因（缺少依据或不符合的要求）', '除外理由（根拠不足・条件不一致）')}：
-                    {saved.result.excludedRequirements.join('、')}
-                  </p>
-                ) : null}
-                {ownCompanyExcluded ? (
-                  <p>{t(`${ownCompanyExcluded} 个案件因仅限自社人员而排除`, `自社要員限定のため ${ownCompanyExcluded} 件を除外`)}</p>
-                ) : null}
-                {saved.result.cloud.modelName ? (
-                  <p>
-                    {t('评估模型', '評価モデル')}：{saved.result.cloud.modelName}
-                  </p>
-                ) : null}
-              </details>
-            ) : null}
-            {!running && ['failed', 'unavailable'].includes(saved.result.cloud.status) ? (
-              <p className="hr-match-notice" role="status">
-                {t(
+              {settled ? <span className="match-tag">{t(`AI 核实 ${settled}`, `AI確認 ${settled}`)}</span> : null}
+            </>
+          ) : null
+        }
+      />
+    )
+  }
+  const summaryFields = (person?.fields ?? []).filter(
+    (field) => ['skills', 'rate', 'location', 'availability'].includes(field.key) && field.value
+  )
+  const header = (
+    <>
+      <MatchBackButton label={backLabel ?? t('返回人员列表', '要員一覧に戻る')} onClick={onBack} />
+      <h2 className="match-page-title">{title}</h2>
+      <Popover label={t('人员概要', '要員の概要')} trigger={t('概要', '概要')}>
+        {summaryFields.length ? (
+          <dl className="match-popover-fields">
+            {summaryFields.map((field) => (
+              <div key={field.key}>
+                <dt>{localizedCandidateFieldLabel(locale, field)}</dt>
+                <dd>{field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="match-muted">{t('人员资料中还没有技能、单价等概要。', '要員情報にスキル・単価などの概要がまだありません。')}</p>
+        )}
+        <button type="button" onClick={() => onView('person', source.id)}>
+          {t('查看人员资料', '要員情報を見る')}
+        </button>
+      </Popover>
+      <span className="match-page-spacer" />
+      <button className="hr-primary" type="button" disabled={starting || pending || !valid} onClick={() => void run(source.id)}>
+        {running ? t('正在找案件…', '案件を探しています…') : saved ? t('重新找案件', '案件を再検索') : t('找案件', '案件を探す')}
+      </button>
+    </>
+  )
+  const status = (
+    <>
+      {running ? (
+        <span role="status" className="hr-match-progress">
+          {partial[sourceId] ? t('正在评估匹配度…', '適合度を評価しています…') : t('正在找案件…', '案件を探しています…')}{' '}
+          <button
+            type="button"
+            onClick={() =>
+              void window.sesAgent.cancelBusinessMatching({ kind: 'person', id: source.id }).catch((cause) =>
+                setErrors((state) => ({
+                  ...state,
+                  [sourceId]: localizedIpcError(
+                    locale,
+                    cause,
+                    t('无法停止找案件，请重试。', '案件の検索を停止できませんでした。もう一度お試しください。')
+                  )
+                }))
+              )
+            }
+          >
+            {t('停止', '停止')}
+          </button>
+        </span>
+      ) : null}
+      {stored && !running ? (
+        <span className="hr-match-last-run">
+          {t('上次找案件', '前回の検索')}：{tokyoTime(stored.ranAt)}
+        </span>
+      ) : null}
+      {saved && showResults ? (
+        <>
+          <strong>
+            {recommendedRows.length} {t('个推荐案件', '件の紹介候補')}
+          </strong>
+          {confirmationRows.length ? (
+            <strong className="hr-conditions-count">
+              {confirmationRows.length} {t('个案件需补充确认', '件は確認が必要')}
+            </strong>
+          ) : null}
+          <span className="hr-match-coverage">
+            {t('已检索', '検索済み')} {saved.result.searchedCount ?? saved.result.localMatchCount} · {t('AI 已评估', 'AI評価済み')}{' '}
+            {saved.result.cloud.reviewedCount}
+            {excludedCount ? ` · ${t('已排除', '除外')} ${excludedCount}` : ''}
+          </span>
+          <span>
+            {saved.result.cloud.status === 'reviewed'
+              ? t('AI 已评估', 'AI評価済み')
+              : saved.result.cloud.status === 'partial'
+                ? t('部分结果已评估', '一部の結果を評価済み')
+                : t('按条件核对', '条件照合')}
+          </span>
+        </>
+      ) : null}
+    </>
+  )
+  const notices = (
+    <>
+      {!ready ? (
+        <p role="status" className="hr-match-progress">
+          {t('正在确认人员状态…', '要員の状態を確認しています…')}
+        </p>
+      ) : null}
+      {unavailable ? (
+        <p role="alert" className="hr-match-unavailable">
+          {unavailable.text}{' '}
+          <button type="button" onClick={unavailable.run}>
+            {unavailable.action}
+          </button>
+        </p>
+      ) : null}
+      {rulesRevision === 'failed' ? (
+        <p role="alert" className="hr-match-rules-error">
+          {t(
+            '规则读取失败，暂时无法确认结果是否使用了最新规则。',
+            'ルールを読み込めなかったため、最新のルールで評価したか確認できません。'
+          )}{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setRulesRevision('loading')
+              loadRules(() => true)
+            }}
+          >
+            {t('重试', '再試行')}
+          </button>
+        </p>
+      ) : null}
+      {errors[sourceId] ? <p role="alert">{errors[sourceId]}</p> : null}
+      {stale ? (
+        <p role="status" className="hr-match-stale">
+          {t('人员、案件资料或 AI 规则已更新，需要重新找案件。', '情報またはAIルールが更新されました。案件を再検索してください。')}
+        </p>
+      ) : null}
+      {saved && showResults && !running && ['failed', 'unavailable'].includes(saved.result.cloud.status) ? (
+        <p className="hr-match-notice" role="status">
+          {saved.result.cloud.reason === 'insufficient-credits'
+            ? t(
+                'AI 额度不足，先显示按条件核对的结果。请在 AI 会员中心充值后点击「重新找案件」。',
+                'AIクレジットが不足しているため、条件照合の結果を表示しています。AI会員センターでチャージしてから「案件を再検索」してください。'
+              )
+            : saved.result.cloud.reason === 'sign-in-required'
+              ? t(
+                  'AI 未登录，先显示按条件核对的结果。登录 AI 会员后点击「重新找案件」。',
+                  'AIにログインしていないため、条件照合の結果を表示しています。AI会員にログインしてから「案件を再検索」してください。'
+                )
+              : t(
                   'AI 评估未完成，先显示按条件核对的结果。可点击「重新找案件」重试。',
                   'AI評価は未完了のため、条件照合の結果を表示しています。「案件を再検索」で再試行できます。'
                 )}
+        </p>
+      ) : null}
+    </>
+  )
+  const list =
+    saved && showResults ? (
+      <>
+        {!listed.length && !running && !stale ? (
+          <div className="hr-empty hr-match-empty" role="status">
+            <strong>{t('暂无推荐案件', '紹介できる案件は見つかりませんでした')}</strong>
+            <p>
+              {t(
+                '当前档案中没有找到具备全部必需条件依据的匹配结果。',
+                '現在の情報では、すべての必須条件を満たす根拠が見つかりませんでした。'
+              )}
+            </p>
+            {saved.result.excludedRequirements?.length ? (
+              <p>
+                {t('缺少依据或存在冲突的要求', '根拠不足・条件不一致')}：{saved.result.excludedRequirements.join('、')}
               </p>
             ) : null}
-            {!recommendedRows.length && !confirmationRows.length && !running && !stale ? (
-              <div className="hr-empty hr-match-empty" role="status">
-                <strong>{t('暂无推荐案件', '紹介できる案件は見つかりませんでした')}</strong>
-                <p>
-                  {t(
-                    '当前档案中没有找到具备全部必需条件依据的匹配结果。',
-                    '現在の情報では、すべての必須条件を満たす根拠が見つかりませんでした。'
-                  )}
-                </p>
-                {saved.result.excludedRequirements?.length ? (
-                  <p>
-                    {t('缺少依据或存在冲突的要求', '根拠不足・条件不一致')}：{saved.result.excludedRequirements.join('、')}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-            {onScheduleMany && recommendedRows.length + confirmationRows.length > 1 ? (
-              <div className="hr-match-batch">
-                <span>{t('可多选，每个案件分别跟进', '複数選択でき、案件ごとに対応します')}</span>
-                {selectedRows.length ? (
-                  <button disabled={busyActions} onClick={() => void start(selectedRows)}>
-                    {starting
-                      ? t(`正在开始跟进（${selectedRows.length}）`, `開始中（${selectedRows.length}）`)
-                      : t(`为选中案件开始跟进（${selectedRows.length}）`, `選択した案件の対応を開始（${selectedRows.length}）`)}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {recommendedRows.map((row, rank) => card(row, rank, false))}
-            {confirmationRows.length ? (
-              <section className="hr-match-confirmation" aria-label={t('需补充确认的案件', '確認が必要な案件')}>
-                <header>
-                  <h3>
-                    {t('需补充确认的案件', '確認が必要な案件')} <span>{confirmationRows.length}</span>
-                  </h3>
-                  <p>
-                    {t(
-                      '以下案件的要求与该人员资料对比时缺少技术或语言依据，需要补充确认；确认事项会带入跟进。',
-                      '以下の案件は、この要員の情報と照合すると技術または言語の根拠が不足しています。確認事項は対応記録に引き継がれます。'
-                    )}
-                  </p>
-                </header>
-                {confirmationRows.map((row, rank) => card(row, rank, true))}
-              </section>
-            ) : null}
-          </>
+          </div>
         ) : null}
-      </div>
-    </section>
+        {onScheduleMany && selectedRows.length ? (
+          <button type="button" className="match-batch" disabled={busyActions} onClick={() => void start(selectedRows)}>
+            {starting
+              ? t(`正在开始跟进（${selectedRows.length}）`, `開始中（${selectedRows.length}）`)
+              : t(`为选中案件开始跟进（${selectedRows.length}）`, `選択した案件の対応を開始（${selectedRows.length}）`)}
+          </button>
+        ) : null}
+        {listed.length ? (
+          <MatchResultList
+            label={t('案件', '案件')}
+            onMove={(id) => {
+              const row = listed.find((item) => item.id === id)
+              if (row) choose(row, false)
+            }}
+          >
+            {recommendedRows.map((row, rank) => resultRow(row, rank))}
+            {confirmationRows.length ? (
+              <li className="match-group-head" role="presentation">
+                <strong>
+                  {t('需补充确认的案件', '確認が必要な案件')} <span>{confirmationRows.length}</span>
+                </strong>
+                <small>
+                  {t(
+                    '缺少技术或语言依据，需要补充确认；确认事项会带入跟进。',
+                    '技術または言語の根拠が不足しています。確認事項は対応記録に引き継がれます。'
+                  )}
+                </small>
+              </li>
+            ) : null}
+            {confirmationRows.map((row, rank) => resultRow(row, rank))}
+          </MatchResultList>
+        ) : null}
+        <ExcludedSection count={excludedCount + ownCompanyExcluded}>
+          {saved.result.excludedRequirements?.length ? (
+            <p>
+              {t('排除原因（缺少依据或不符合的要求）', '除外理由（根拠不足・条件不一致）')}：{saved.result.excludedRequirements.join('、')}
+            </p>
+          ) : null}
+          {ownCompanyExcluded ? (
+            <p>{t(`${ownCompanyExcluded} 个案件因仅限自社人员而排除`, `自社要員限定のため ${ownCompanyExcluded} 件を除外`)}</p>
+          ) : null}
+        </ExcludedSection>
+      </>
+    ) : null
+  return (
+    <MatchResultsPage
+      label={t('为此人员找案件', 'この要員の案件を探す')}
+      rootRef={exposureRoot}
+      className="person-cases-page"
+      header={header}
+      status={status}
+      notices={notices}
+      body={
+        <MatchResultsBody
+          list={list}
+          showDetail={showDetail && Boolean(currentRow)}
+          detail={
+            currentRow ? (
+              <CaseMatchDetail
+                key={currentRow.id}
+                row={currentRow}
+                person={person}
+                documentId={source.id}
+                ranAt={stored?.ranAt ?? null}
+                cloud={saved!.result.cloud}
+                tab={tab}
+                onTab={setTab}
+                onBackToList={() => setShowDetail(false)}
+                disabled={busyActions}
+                prepareDisabled={busyActions || !current}
+                pointsBlocked={
+                  !valid
+                    ? t('此人员当前不可用于提案。', 'この要員は現在提案に使えません。')
+                    : stale || !current
+                      ? t('匹配结果已过期，请先重新找案件。', 'マッチング結果が古くなっています。先に案件を探し直してください。')
+                      : ''
+                }
+                existing={existing(currentRow)}
+                progressNow={progress?.now}
+                onPrepare={() => prepare(currentRow)}
+                onStart={() => void start([currentRow])}
+                onViewCase={() => {
+                  recordExperienceOpened(currentRow.experienceRunId)
+                  onView('case', currentRow.id)
+                }}
+                onViewPerson={() => onView('person', source.id)}
+              />
+            ) : null
+          }
+        />
+      }
+    />
   )
 }
 
-/** One matched case: next actions first, evidence visible, AI/rule internals under 「详情」. */
-function MatchResultCard({
+const caseTitle = (job: JobCaseReviewSnapshot) => job.fields.find((field) => field.key === 'title')?.value ?? job.redactedSubject
+
+/** The selected case for a person: next steps in the header, the evaluation in tabs. */
+function CaseMatchDetail({
   row,
+  person,
   documentId,
-  rank,
-  confirmation,
-  isSelected,
-  selectable,
-  checked,
+  ranAt,
+  cloud,
+  tab,
+  onTab,
+  onBackToList,
   disabled,
   prepareDisabled,
+  pointsBlocked,
   existing,
   progressNow,
-  onToggle,
-  onOpen,
   onPrepare,
-  onStart
+  onStart,
+  onViewCase,
+  onViewPerson
 }: {
   row: PersonnelCaseMatch & { id: string; job?: JobCaseReviewSnapshot }
+  person?: CandidateReviewSnapshot
   /** The person being matched. */
   documentId: string
-  rank: number
-  confirmation: boolean
-  isSelected: boolean
-  selectable: boolean
-  checked: boolean
+  ranAt: string | null
+  cloud: PersonnelCaseMatchResult['cloud']
+  tab: string
+  onTab(id: string): void
+  onBackToList(): void
   disabled: boolean
   prepareDisabled: boolean
+  /** Why 推荐要点 cannot be generated now (person unavailable, result outdated); empty when they can. */
+  pointsBlocked: string
   existing?: BusinessFollowUp
   progressNow?: Date
-  onToggle(): void
-  onOpen(): void
   onPrepare(): void
   onStart(): void
+  onViewCase(): void
+  onViewPerson(): void
 }) {
   const { zh, t } = useLocaleText()
-  const title = row.job!.fields.find((field) => field.key === 'title')?.value ?? row.job!.redactedSubject
-  const questions = row.appliedRules?.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text)
-  return (
-    <article
-      className={`hr-result-card${confirmation ? ' hr-confirmation-row' : ''}${isSelected ? ' is-selected' : ''}`}
-      data-experience-run={row.experienceRunId}
-      data-experience-rank={rank + 1}
-      aria-current={isSelected ? 'true' : undefined}
-    >
-      <div className="hr-result-head">
-        {selectable ? (
-          <label className="hr-match-select">
-            <input type="checkbox" disabled={disabled || Boolean(existing)} checked={checked} onChange={onToggle} />
-            {t('选择此案件', 'この案件を選択')}
-          </label>
-        ) : null}
-        <button className="hr-result-title" type="button" onClick={onOpen}>
-          {title}
-        </button>
-        {existing && progressNow ? (
-          <p className="hr-existing-progress">
-            {t('已有跟进', '対応記録あり')} · {progressPresentation(existing, progressNow, zh).label}
+  const title = caseTitle(row.job!)
+  const questions = row.appliedRules?.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text) ?? []
+  const follow = followUpItems(row.qualification, questions)
+  const followTotal = follow.items.length + follow.questions.length
+  const draft = useCaseQuestionDraft(documentId, row.jobCaseId)
+  const [notice, setNotice] = useState('')
+  const exposureRoot = useRef<HTMLElement>(null)
+  useExperienceExposure(exposureRoot, row.experienceRunId ?? '')
+  const tabs = [
+    { id: 'evidence', label: t('匹配依据', 'マッチングの根拠'), content: <MatchEvidenceTab qualification={row.qualification} /> },
+    {
+      id: 'points',
+      label: t('推荐要点', '推薦ポイント'),
+      content: <RecommendationPointsTab documentId={documentId} reviewId={row.job!.reviewId} blocked={pointsBlocked} />
+    },
+    {
+      id: 'follow-up',
+      label: followTotal ? t(`需沟通 (${followTotal})`, `要相談 (${followTotal})`) : t('需沟通', '要相談'),
+      content: <FollowUpTab qualification={row.qualification} questions={questions} />
+    },
+    {
+      id: 'ai',
+      label: t('AI 意见', 'AIの意見'),
+      content: (
+        <div className="match-ai">
+          <AiOpinion opinion={row.assessment?.opinion} zh={zh} />
+          <p className="match-muted">
+            {cloud.status === 'reviewed'
+              ? t('已完成云端 AI 评估', 'Cloud AI評価済み')
+              : cloud.status === 'partial'
+                ? t('部分结果已完成云端 AI 评估', '一部の結果のみCloud AI評価済み')
+                : t('当前显示本地规则核对结果。', 'ローカル照合結果を表示しています。')}
+            {cloud.modelName ? ` · ${t('评估模型', '評価モデル')}：${cloud.modelName}` : ''}
           </p>
-        ) : null}
-      </div>
-      <div className="hr-result-actions">
-        <button className="hr-primary" disabled={prepareDisabled} type="button" onClick={onPrepare}>
-          {t('准备介绍', '紹介を準備')}
-        </button>
-        <button type="button" disabled={disabled} onClick={onStart}>
-          {existing ? t('继续跟进', '対応を続ける') : t('开始跟进', '対応を開始')}
-        </button>
-        <button type="button" onClick={onOpen}>
-          {t('查看案件', '案件を見る')}
-        </button>
-      </div>
-      <BusinessMatchEvidence qualification={row.qualification} questions={questions} zh={zh} />
-      <AiOpinion opinion={row.assessment?.opinion} zh={zh} />
-      <details className="hr-result-details">
-        <summary>{t('详情', '詳細')}</summary>
-        <InterviewEvidencePanel documentId={documentId} reviewId={row.job!.reviewId} />
-        <RankingReason ranking={row.ranking} zh={zh} />
-        {row.appliedRules?.length ? (
-          <div className="work-rule-applied">
-            <strong>{t('本次采用的规则', '今回適用したルール')}</strong>
-            <ul>
-              {row.appliedRules.map((rule, i) => (
-                <li key={i}>
-                  v{rule.revision} · {rule.text}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </details>
-    </article>
+          <RankingReason ranking={row.ranking} zh={zh} />
+          <AppliedRules rules={row.appliedRules} />
+        </div>
+      )
+    },
+    ...(draft.questions.length
+      ? [
+          {
+            id: 'questions',
+            label: t('面试问题', '面談質問'),
+            content: <InterviewQuestionsSection questions={draft.questions} stale={draft.stale} error={draft.error} onCopied={setNotice} />
+          }
+        ]
+      : []),
+    {
+      id: 'record',
+      label: t('记录', '記録'),
+      content: (
+        <div className="match-record">
+          {ranAt ? (
+            <p className="case-assessment-time">
+              {t('评估时间', '評価日時')}：{tokyoDateTime(ranAt, zh)}
+            </p>
+          ) : null}
+          <RelatedProjects projects={relatedProjects(person, row.qualification?.requirements ?? [])} />
+          <InterviewEvidencePanel documentId={documentId} reviewId={row.job!.reviewId} />
+        </div>
+      )
+    }
+  ]
+  return (
+    <MatchDetail
+      label={title}
+      rootRef={exposureRoot}
+      experienceRun={row.experienceRunId}
+      title={title}
+      badge={<ConclusionBadge tone={conclusionTone(row.qualification)}>{proposalConclusion(row.qualification, zh)}</ConclusionBadge>}
+      status={
+        existing && progressNow ? (
+          <span className="match-detail-status">
+            {t('已有跟进', '対応記録あり')} · {progressPresentation(existing, progressNow, zh).label}
+          </span>
+        ) : null
+      }
+      tab={tab}
+      onTab={onTab}
+      tabs={tabs}
+      onBackToList={onBackToList}
+      notice={
+        <>
+          {draft.error && !draft.questions.length ? <p role="alert">{draft.error}</p> : null}
+          {notice ? <p role="status">{notice}</p> : null}
+        </>
+      }
+      actions={
+        <>
+          <button className="hr-primary" disabled={prepareDisabled} type="button" onClick={onPrepare}>
+            {t('准备介绍', '紹介を準備')}
+          </button>
+          <button type="button" disabled={disabled} onClick={onStart}>
+            {existing ? t('继续跟进', '対応を続ける') : t('开始跟进', '対応を開始')}
+          </button>
+          <ActionMenu
+            label={t('更多操作', 'その他の操作')}
+            trigger={<span aria-hidden="true">⋯</span>}
+            triggerClassName="match-menu-trigger"
+          >
+            <button type="button" role="menuitem" onClick={onViewCase}>
+              {t('查看案件', '案件を見る')}
+            </button>
+            <button type="button" role="menuitem" onClick={onViewPerson}>
+              {t('查看人员资料', '要員情報を見る')}
+            </button>
+          </ActionMenu>
+        </>
+      }
+    />
   )
 }

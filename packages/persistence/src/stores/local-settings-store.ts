@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
+  applicationAiModelsSchema,
+  menuBarPreferencesSchema,
   jobCaseFieldAliasesSchema,
   localApplicationPreferencesSchema,
   localOperatorProfileSchema,
@@ -8,9 +10,11 @@ import {
   saveLocalOperatorProfileInputSchema
 } from '@shared'
 import {
+  type ApplicationAiModels,
   type JobCaseFieldAliases,
   type LocalApplicationPreferences,
   type LocalOperatorProfile,
+  type MenuBarPreferences,
   type SaveJobCaseFieldAliasesInput,
   type SaveLocalApplicationPreferencesInput,
   type SaveLocalOperatorProfileInput
@@ -68,18 +72,22 @@ export class LocalSettingsStore extends DomainStore {
   getLocalApplicationPreferences(): LocalApplicationPreferences | null {
     const row = this.database
       .prepare<[], LocalApplicationPreferencesRow>(
-        `SELECT locale, revision, updated_at
+        `SELECT locale, revision, updated_at, ai_models, menu_bar
          FROM local_application_preferences WHERE singleton = 1`
       )
       .get()
     if (!row) return null
+    const aiModels = storedAiModels(row.ai_models)
+    const menuBar = storedMenuBar(row.menu_bar)
     return localApplicationPreferencesSchema.parse({
       version: 'local-application-preferences-v1',
       locale: row.locale,
       configured: true,
       revision: row.revision,
       updatedAt: row.updated_at,
-      cloudEligible: false
+      cloudEligible: false,
+      ...(aiModels ? { aiModels } : {}),
+      ...(menuBar ? { menuBar } : {})
     })
   }
 
@@ -91,17 +99,29 @@ export class LocalSettingsStore extends DomainStore {
     }
     const timestamp = now.toISOString()
     const nextRevision = (current?.revision ?? 0) + 1
+    // A save that does not mention models or the menu bar (the language switch) keeps the stored choices.
+    const aiModels = input.aiModels ?? current?.aiModels
+    const menuBar = input.menuBar ?? current?.menuBar
     this.database
       .prepare(
         `INSERT INTO local_application_preferences(
-           singleton, locale, revision, created_at, updated_at
-         ) VALUES (1, ?, ?, ?, ?)
+           singleton, locale, revision, created_at, updated_at, ai_models, menu_bar
+         ) VALUES (1, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(singleton) DO UPDATE SET
            locale = excluded.locale,
            revision = excluded.revision,
-           updated_at = excluded.updated_at`
+           updated_at = excluded.updated_at,
+           ai_models = excluded.ai_models,
+           menu_bar = excluded.menu_bar`
       )
-      .run(input.locale, nextRevision, timestamp, timestamp)
+      .run(
+        input.locale,
+        nextRevision,
+        timestamp,
+        timestamp,
+        aiModels ? JSON.stringify(aiModels) : null,
+        menuBar ? JSON.stringify(menuBar) : null
+      )
     const saved = this.getLocalApplicationPreferences()
     if (!saved) throw new Error('表示設定を再読み込みできませんでした。')
     return saved
@@ -144,5 +164,27 @@ export class LocalSettingsStore extends DomainStore {
     const saved = this.getJobCaseFieldAliases()
     if (!saved) throw new Error('案件項目の別名を再読み込みできませんでした。')
     return saved
+  }
+}
+
+/** The stored model choice, or none when it is absent or no longer readable (the default models then apply). */
+function storedAiModels(value: string | null): ApplicationAiModels | undefined {
+  if (value === null) return undefined
+  try {
+    const parsed = applicationAiModelsSchema.safeParse(JSON.parse(value))
+    return parsed.success ? parsed.data : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The stored menu-bar choice, or none when it is absent or no longer readable (the defaults then apply). */
+function storedMenuBar(value: string | null): MenuBarPreferences | undefined {
+  if (value === null) return undefined
+  try {
+    const parsed = menuBarPreferencesSchema.safeParse(JSON.parse(value))
+    return parsed.success ? parsed.data : undefined
+  } catch {
+    return undefined
   }
 }

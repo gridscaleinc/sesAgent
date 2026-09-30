@@ -433,6 +433,7 @@ try {
   db.pragma('foreign_keys=OFF')
   db.exec('BEGIN IMMEDIATE')
   for (const table of [
+    'recommendation_points',
     'person_case_match_run_items',
     'person_case_match_runs',
     'personnel_introduction_drafts',
@@ -471,6 +472,8 @@ try {
     DROP INDEX job_case_sources_intake_fingerprint;
     ALTER TABLE parsed_documents DROP COLUMN intake_fingerprint;
     ALTER TABLE job_case_sources DROP COLUMN intake_fingerprint;
+    ALTER TABLE local_application_preferences DROP COLUMN ai_models;
+    ALTER TABLE local_application_preferences DROP COLUMN menu_bar;
   `)
   // v60 added backup-revision triggers to tables that already existed at v44.
   for (const { name } of db
@@ -496,7 +499,7 @@ try {
   assert.equal((db.pragma('foreign_key_check') as unknown[]).length, 0)
   db.close()
   repository = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(currentSchemaVersion, 63)
+  assert.equal(currentSchemaVersion, 66)
   assert.equal(repository.getSchemaVersion(), currentSchemaVersion)
   assert.equal(repository.getPersonnelWorkspace().states.length, 0)
   assert.equal(repository.getPersonnelWorkspace().templates.length, 2)

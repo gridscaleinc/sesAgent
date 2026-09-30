@@ -25,6 +25,7 @@ import { ProposalStore } from './proposal-store'
 import type { StoreRegistry } from './registry'
 import { WorkTaskStore } from './work-task-store'
 import { PersonCaseMatchStore } from './person-case-match-store'
+import { RecommendationPointsStore } from './recommendation-points-store'
 
 export type { StoreContext } from './base'
 export type { StoreRegistry } from './registry'
@@ -65,7 +66,8 @@ export function createStoreRegistry(options: { database: Database.Database; data
     processingJobs: new ProcessingJobStore(context),
     proposals: new ProposalStore(context),
     workTasks: new WorkTaskStore(context),
-    personCaseMatches: new PersonCaseMatchStore(context)
+    personCaseMatches: new PersonCaseMatchStore(context),
+    recommendationPoints: new RecommendationPointsStore(context)
   }
 
   context.stores = stores

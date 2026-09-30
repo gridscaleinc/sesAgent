@@ -5,7 +5,15 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createConnection, createServer } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import * as XLSX from 'xlsx'
-import { LocalEmbeddingWorkerClient, LocalRerankerWorkerClient, localEmbeddingModel, localRerankerModel } from '@local-ai'
+import {
+  collectLocalPersonNameCandidates,
+  LocalEmbeddingWorkerClient,
+  LocalNerWorkerClient,
+  LocalRerankerWorkerClient,
+  localEmbeddingModel,
+  localNerModel,
+  localRerankerModel
+} from '@local-ai'
 import { ParserWorkerClient } from '@parsers/worker-client'
 import type { StagedLocalFile } from '@shared/contracts'
 
@@ -17,6 +25,8 @@ const rerankerWorkerPath = resolve(root, 'out/main/reranker-worker.js')
 const networkProbePath = resolve(root, 'out/main/windows-network-probe.js')
 const modelDirectory = resolve(root, 'models/Xenova/multilingual-e5-small')
 const rerankerModelDirectory = resolve(root, 'models/hotchpotch/japanese-reranker-tiny-v2')
+const nerWorkerPath = resolve(root, 'out/main/ner-worker.js')
+const nerModelDirectory = resolve(root, 'models/knowledgator/gliner-x-small')
 
 if (process.platform !== 'win32' || process.arch !== 'x64') {
   process.stdout.write(
@@ -171,6 +181,27 @@ try {
   reranker.dispose()
 }
 
+const ner = new LocalNerWorkerClient({
+  workerPath: nerWorkerPath,
+  modelDirectory: nerModelDirectory,
+  windowsSandbox,
+  timeoutMs: 180_000,
+  idleUnloadMs: 0
+})
+let nerCompleted = false
+try {
+  const sample = '候補者：佐々木健一（Java 7年）\n候选人王小明\n技術者：グエン・ヴァン・ナム\nCandidate: Priya Raman'
+  const detection = await ner.detectNames(sample)
+  assert.equal(detection.networkAccess, false)
+  const names = collectLocalPersonNameCandidates(sample, detection)
+  for (const name of ['佐々木健一', '王小明', 'グエン・ヴァン・ナム', 'Priya Raman']) {
+    assert.ok(names.includes(name), `AppContainer NER missed a synthetic name (${name.length} chars)`)
+  }
+  nerCompleted = true
+} finally {
+  ner.dispose()
+}
+
 const launcherBytes = await readFile(launcherPath)
 const evidence = {
   version: 'windows-release-evidence-v1',
@@ -186,6 +217,7 @@ const evidence = {
   parserCompleted: true,
   embeddingCompleted,
   rerankerCompleted,
+  nerCompleted,
   launcherSha256: createHash('sha256').update(launcherBytes).digest('hex')
 }
 await mkdir(resolve(root, 'build/windows-verification'), { recursive: true })
@@ -200,6 +232,8 @@ process.stdout.write(
     embeddingDimension: localEmbeddingModel.dimension,
     rerankerCompleted: evidence.rerankerCompleted,
     rerankerModel: localRerankerModel.id,
+    nerCompleted: evidence.nerCompleted,
+    nerModel: localNerModel.id,
     kernelNetworkIsolationVerified: true,
     mechanism: evidence.mechanism,
     releaseEligible: true

@@ -187,6 +187,20 @@ describe('local application preferences schemas', () => {
     ).toBe(false)
   })
 
+  it('accepts an optional AI model choice per slot and rejects malformed keys', () => {
+    expect(saveLocalApplicationPreferencesInputSchema.parse({ locale: 'ja-JP', expectedRevision: null })).not.toHaveProperty('aiModels')
+    expect(
+      saveLocalApplicationPreferencesInputSchema.parse({
+        locale: 'ja-JP',
+        expectedRevision: 1,
+        aiModels: { checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' }
+      }).aiModels
+    ).toEqual({ checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' })
+    for (const aiModels of [{ checking: 'gpt-6-luna' }, { checking: 'https://evil.invalid', writing: 'gpt-6-sol' }]) {
+      expect(saveLocalApplicationPreferencesInputSchema.safeParse({ locale: 'ja-JP', expectedRevision: 1, aiModels }).success).toBe(false)
+    }
+  })
+
   it('keeps the local-only persistence state coherent', () => {
     expect(
       localApplicationPreferencesSchema.safeParse({

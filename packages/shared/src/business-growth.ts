@@ -43,7 +43,10 @@ export interface MatchingOpportunity {
   rulesRevision: number
   fingerprint: string
   score: number
+  /** The local matching conclusion; excluded pairs are never stored. Rows saved before it existed read as 'needs-confirmation'. */
+  status: 'recommended' | 'needs-confirmation'
   reasons: string[]
+  /** Only the core (technical / language) requirements still unmet; business terms are left to the full assessment. */
   confirm: string[]
   updatedAt: string
   state: 'new' | 'seen' | 'dismissed'

@@ -3,9 +3,9 @@ import { experienceBundle, experienceContext, matchingExperienceInput } from './
 import { withLearningForeground } from './learning-activity'
 import { emptyWorkRules, evaluateWithWorkRules, workRuleContext } from './work-rule-matching'
 import { randomUUID } from 'node:crypto'
-import { defaultAgentChatModelKey, resolveAgentChatModel } from '@agent'
+import { businessModel } from './business-model'
 import { candidateBenchmarkQueryFromJobCase } from '@job-cases'
-import { proposalConclusion, candidateProfileSourceInputSchema, type CasePersonnelMatchResult } from '@shared'
+import { proposalConclusion, candidateProfileSourceInputSchema, cloudFailureReason, type CasePersonnelMatchResult } from '@shared'
 import { effectiveApplicationPreferences } from './app-defaults'
 import { casePeopleShortlistSize } from './agent-cloud-narrative'
 import type { MainIpcContext } from './ipc/context'
@@ -178,7 +178,7 @@ export function createCasePersonnelMatcher(
       if (result.items.length) result.cloud.reason = 'service-unavailable'
       return finish()
     }
-    const model = resolveAgentChatModel(context.agentChatModelCatalog, defaultAgentChatModelKey)
+    const model = businessModel(context, 'checking')
     const controller = new AbortController()
     const abort = () => controller.abort()
     options?.signal?.addEventListener('abort', abort, { once: true })
@@ -287,8 +287,12 @@ export function createCasePersonnelMatcher(
         modelName: count ? model.displayName : null,
         ...(count !== result.items.length ? { reason: 'no-valid-result' as const } : {})
       }
-    } catch {
-      result.cloud = { status: 'failed', reason: 'request-failed', reviewedCount: 0, modelName: null }
+    } catch (error) {
+      // Local diagnostics only: the error name and a bounded message, never request content.
+      console.warn('[cloud-assessment-failed]', {
+        reason: (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 200)
+      })
+      result.cloud = { status: 'failed', reason: cloudFailureReason(error), reviewedCount: 0, modelName: null }
     } finally {
       clearTimeout(timeout)
       removeAbort()

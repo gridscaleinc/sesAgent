@@ -162,7 +162,17 @@ describe('personnel case matching', () => {
     const failed = setup(async () => {
       throw new Error('offline')
     })
-    expect((await createPersonnelCaseMatcher(failed.context)(documentId)).cloud.status).toBe('failed')
+    expect((await createPersonnelCaseMatcher(failed.context)(documentId)).cloud).toMatchObject({
+      status: 'failed',
+      reason: 'request-failed'
+    })
+    const broke = setup(async () => {
+      throw new Error('AiCommerceRequestError: There are not enough available AI credits.')
+    })
+    expect((await createPersonnelCaseMatcher(broke.context)(documentId)).cloud).toMatchObject({
+      status: 'failed',
+      reason: 'insufficient-credits'
+    })
   })
   it('deduplicates clicks and rejects stale personnel after the cloud reply', async () => {
     let finish!: (result: AgentMatchAssessmentResult) => void

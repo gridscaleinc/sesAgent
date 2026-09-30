@@ -30,17 +30,31 @@ import { MacWechatVisibleReader, WechatVisibleScopeTokenStore, resolveWechatAcce
  * Rejects any IPC request that did not originate from the application's own
  * renderer. Every handler calls this first; it is the process trust boundary.
  */
-export function assertTrustedSender(event: IpcMainInvokeEvent): void {
+export function assertTrustedSender(event: Pick<IpcMainInvokeEvent, 'senderFrame' | 'sender'>): void {
   const senderUrl = event.senderFrame?.url ?? event.sender.getURL()
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL
-
-  if (!app.isPackaged && developmentUrl) {
-    if (new URL(senderUrl).origin === new URL(developmentUrl).origin) return
-  } else if (senderUrl.startsWith('ses-agent://app/')) {
-    return
-  }
-
+  // The menu-bar panel is served from the same origin but may only use its own few tray channels.
+  if (isAppRendererUrl(senderUrl) && !isTrayPanelUrl(senderUrl)) return
   throw new Error('Blocked IPC request from an untrusted renderer.')
+}
+
+/** The app's own renderer origin: the dev server while developing, otherwise the bundled ses-agent://app/. */
+export function isAppRendererUrl(senderUrl: string): boolean {
+  const developmentUrl = process.env.ELECTRON_RENDERER_URL
+  try {
+    if (!app.isPackaged && developmentUrl) return new URL(senderUrl).origin === new URL(developmentUrl).origin
+    return senderUrl.startsWith('ses-agent://app/')
+  } catch {
+    return false
+  }
+}
+
+/** The menu-bar / system-tray quick panel page. */
+export function isTrayPanelUrl(senderUrl: string): boolean {
+  try {
+    return isAppRendererUrl(senderUrl) && new URL(senderUrl).pathname === '/tray.html'
+  } catch {
+    return false
+  }
 }
 
 /** Long-lived services and configuration resolved once during startup. */

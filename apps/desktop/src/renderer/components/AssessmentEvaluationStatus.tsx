@@ -17,8 +17,8 @@ export function AssessmentEvaluationStatus({ value, zh }: { value: CasePersonAss
         {' · '}
         {settled
           ? t(
-              `AI 引用简历原文核实了 ${settled} 项条件（已在上方标注「AI 核实」）。`,
-              `AIが履歴書の原文で ${settled} 件の条件を確認しました（上に「AI確認」と表示）。`
+              `AI 引用简历原文核实了 ${settled} 项条件（已在「匹配依据」中标注「AI 核实」）。`,
+              `AIが履歴書の原文で ${settled} 件の条件を確認しました（「マッチングの根拠」に「AI確認」と表示）。`
             )
           : t('AI 核对了简历原文，没有改变本地核对的结论。', 'AIが履歴書の原文を確認し、ローカル照合の結論は変わりませんでした。')}
       </p>
@@ -48,6 +48,24 @@ export function AssessmentEvaluationStatus({ value, zh }: { value: CasePersonAss
         {t(
           '云端未返回此人的有效评估，当前显示本地核对结果。可重新评估。',
           'この要員の有効なCloud評価が返されませんでした。ローカル照合結果を表示しています。再評価できます。'
+        )}
+      </p>
+    )
+  if (cloud.reason === 'insufficient-credits')
+    return (
+      <p role="alert">
+        {t(
+          'AI 额度不足，本次未完成云端评估，当前显示本地核对结果。请在 AI 会员中心充值后重新评估。',
+          'AIクレジットが不足しているため、Cloud評価を実行できませんでした。ローカル照合結果を表示しています。AI会員センターでチャージしてから再評価してください。'
+        )}
+      </p>
+    )
+  if (cloud.reason === 'sign-in-required')
+    return (
+      <p role="alert">
+        {t(
+          'AI 未登录，本次未完成云端评估，当前显示本地核对结果。登录 AI 会员后可重新评估。',
+          'AIにログインしていないため、Cloud評価を実行できませんでした。ローカル照合結果を表示しています。AI会員にログインしてから再評価してください。'
         )}
       </p>
     )

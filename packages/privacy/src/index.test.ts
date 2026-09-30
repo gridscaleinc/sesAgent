@@ -43,6 +43,20 @@ describe('local redaction and DLP', () => {
     expect(result.payload?.removedTypes).toEqual(['person_name', 'phone', 'private_email'])
   })
 
+  it('replaces katakana name parts only at katakana boundaries, never inside another katakana word', () => {
+    const result = redactTextForCloud('ベトナム出身のグエン・ヴァン・ナムさん。ナムさんはグエンヴァンナムとも書きます。', {
+      sourceVersion: 'resume:sha256:katakana',
+      knownPersonNames: ['グエン・ヴァン・ナム', 'グエンヴァンナム', 'グエン', 'ヴァン', 'ナム'],
+      personNameReviewCompleted: true,
+      sessionId: '4a4e4318-ab28-4d63-b49d-95f44fbcbe9f',
+      now: new Date('2026-07-17T00:00:00.000Z')
+    })
+    const content = result.payload?.content ?? ''
+    expect(content).toContain('ベトナム出身の')
+    expect(content).not.toMatch(/グエン|ヴァン|ナムさん/u)
+    expect(content).toMatch(/^ベトナム出身の<PERSON_NAME_\d{3}>さん。<PERSON_NAME_\d{3}>さんは<PERSON_NAME_\d{3}>とも書きます。$/u)
+  })
+
   it('detects and redacts common full-width Japanese contact formats', () => {
     const result = redactTextForCloud(
       '電話：０９０－１２３４－５６７８\nメール：taro＠example．com\n〒１５０－０００１ 東京都渋谷区\n生年月日：１９９０年１月２日',

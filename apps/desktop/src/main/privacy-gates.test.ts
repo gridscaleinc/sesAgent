@@ -41,6 +41,7 @@ function qualityReport(platform: NodeJS.Platform, arch: string, overrides: Json 
     networkAccess: false,
     failures: [],
     appleNer: platform === 'darwin' ? { verified: true } : { required: false },
+    ...(platform === 'win32' ? { glinerNer: { required: true, verified: true, engine: 'gliner-x-small-onnx' } } : {}),
     ...overrides
   }
 }
@@ -225,7 +226,8 @@ describe('loadCloudPrivacyGates (packaged)', () => {
     ['cloud identifiers', { cloudDirectIdentifiers: 1 }, 'quality:data-boundary'],
     ['network access', { networkAccess: true }, 'quality:data-boundary'],
     ['recorded failures', { failures: ['case-7'] }, 'quality:failures'],
-    ['apple NER on macOS', { appleNer: { verified: false } }, 'quality:apple-ner']
+    ['apple NER on macOS', { appleNer: { verified: false } }, 'quality:apple-ner'],
+    ['a GLiNER run that did not verify on macOS', { glinerNer: { required: true, verified: false } }, 'quality:gliner-ner']
   ])('blocks cloud use when the quality report fails on %s', async (_label, override, code) => {
     const snapshot = await loadCloudPrivacyGates(
       await packagedFixture({
@@ -243,7 +245,7 @@ describe('loadCloudPrivacyGates (packaged)', () => {
       await packagedFixture({
         platform: 'win32',
         arch: 'x64',
-        expert: expertReport('win32', 'x64', { nameDetectionEngines: ['label-and-form-rules'] })
+        expert: expertReport('win32', 'x64', { nameDetectionEngines: ['label-and-form-rules', 'gliner-x-small-onnx'] })
       })
     )
     expect(passing.qualityGate.status).toBe('passed')
@@ -259,6 +261,32 @@ describe('loadCloudPrivacyGates (packaged)', () => {
     )
     expect(failing.qualityGate.failureCodes).toContain('quality:windows-ner-contract')
     expect(failing.binding).toBeNull()
+  })
+
+  it('passes a macOS report that ran Apple NL alone, when the GLiNER model was not bundled', async () => {
+    const snapshot = await loadCloudPrivacyGates(
+      await packagedFixture({ quality: qualityReport('darwin', 'arm64', { glinerNer: { required: false, verified: false } }) })
+    )
+    expect(snapshot.qualityGate.status).toBe('passed')
+  })
+
+  it.each<[string, Json]>([
+    ['no GLiNER result', { glinerNer: undefined }],
+    ['an unverified GLiNER smoke', { glinerNer: { required: true, verified: false, engine: 'gliner-x-small-onnx' } }],
+    ['GLiNER marked optional', { glinerNer: { required: false, verified: true, engine: 'gliner-x-small-onnx' } }],
+    ['a different engine', { glinerNer: { required: true, verified: true, engine: 'windows-local-ner' } }]
+  ])('blocks Windows cloud use with %s', async (_label, override) => {
+    const snapshot = await loadCloudPrivacyGates(
+      await packagedFixture({
+        platform: 'win32',
+        arch: 'x64',
+        quality: qualityReport('win32', 'x64', override),
+        expert: expertReport('win32', 'x64', { nameDetectionEngines: ['label-and-form-rules', 'gliner-x-small-onnx'] })
+      })
+    )
+    expect(snapshot.qualityGate.status).toBe('not-verified')
+    expect(snapshot.qualityGate.failureCodes).toContain('quality:gliner-ner')
+    expect(snapshot.binding).toBeNull()
   })
 
   it('rejects a quality report that differs from the one hashed into the manifest', async () => {

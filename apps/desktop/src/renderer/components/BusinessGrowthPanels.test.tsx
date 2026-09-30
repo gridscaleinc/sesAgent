@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { CustomerIdentitiesPanel } from './CustomerIdentitiesPanel'
-import { MatchingOpportunities } from './MatchingOpportunities'
 import { InterviewEvidencePanel } from './InterviewEvidencePanel'
 vi.mock('../i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../i18n')>()
@@ -26,30 +25,6 @@ it('saves customer aliases with the displayed version and lets a conflict surfac
   fireEvent.submit(container.querySelector('form')!)
   await screen.findByRole('alert')
   expect(saveCustomerIdentity).toHaveBeenCalledWith({ id: 'c', expectedVersion: 2, name: 'ABC', aliases: ['客户乙'] })
-})
-it('opens only an opportunity whose fingerprint was accepted by Main', async () => {
-  const row = {
-      id: 'o',
-      fingerprint: 'hash',
-      state: 'new',
-      documentId: 'p',
-      reviewId: 'r',
-      personName: '人员甲',
-      caseTitle: 'Java',
-      reasons: ['Java 项目'],
-      confirm: ['开始时间']
-    },
-    open = vi.fn(),
-    control = vi.fn().mockRejectedValueOnce(new Error('推荐已更新')).mockResolvedValue([row])
-  api({ listMatchingOpportunities: vi.fn(async () => [row]), controlMatchingOpportunity: control })
-  render(<MatchingOpportunities active onOpen={open} />)
-  fireEvent.click(await screen.findByText('新匹配机会 (1)'))
-  fireEvent.click(screen.getByRole('button', { name: '查看匹配' }))
-  await screen.findByRole('alert')
-  expect(open).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: '查看匹配' }))
-  await waitFor(() => expect(open).toHaveBeenCalledWith(row))
-  expect(control).toHaveBeenLastCalledWith({ id: 'o', fingerprint: 'hash', action: 'seen' })
 })
 it('loads interview evidence only when expanded and clearly keeps recorded claims unverified', async () => {
   const getPairInterviewEvidence = vi.fn(async () => [

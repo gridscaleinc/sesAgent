@@ -3,34 +3,6 @@
   color: #7a8b7e;
   font-size: 11px;
 }
-.hr-result-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-.hr-result-head .hr-existing-progress {
-  margin: 0;
-}
-.hr-result-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0 12px;
-}
-.hr-result-details,
-.hr-match-meta {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.hr-result-details > summary,
-.hr-match-meta > summary {
-  cursor: pointer;
-}
-.hr-match-meta p {
-  margin: 6px 0 0;
-}
 .hr-match-unavailable button,
 .hr-match-rules-error button {
   margin-left: 6px;

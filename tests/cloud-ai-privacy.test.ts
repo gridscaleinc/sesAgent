@@ -17,6 +17,14 @@ describe('Cloud AI privacy runtime gate', () => {
     ).toBe(localNer)
   })
 
+  it.each(['apple-natural-language', 'gliner-x-small-onnx', 'local-ner-union'])(
+    'accepts the %s person-name detector once the gates pass',
+    (engine) => {
+      const localNer = { engine }
+      expect(requireCloudAiPrivacyRuntime({ qualityGateStatus: 'passed', qualityEvidenceBound: true, localNer })).toBe(localNer)
+    }
+  )
+
   it('fails closed when the packaged privacy quality report is unavailable', () => {
     expect(() =>
       requireCloudAiPrivacyRuntime({

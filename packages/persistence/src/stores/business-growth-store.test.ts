@@ -64,6 +64,7 @@ describe.skipIf(!nativeSqliteAvailable)('BusinessGrowthStore via EncryptedApplic
         rulesRevision: 0,
         fingerprint: 'a'.repeat(64),
         score: 70,
+        status: 'recommended' as const,
         reasons: ['Java 项目依据'],
         confirm: ['开始时间']
       }
@@ -79,6 +80,29 @@ describe.skipIf(!nativeSqliteAvailable)('BusinessGrowthStore via EncryptedApplic
       item = repository.listMatchingOpportunities().find((row) => row.documentId === person.documentId)!
       expect(item.state).toBe('new')
       expect(() => repository.controlMatchingOpportunity({ id: item.id, fingerprint: 'a'.repeat(64), action: 'seen' })).toThrow(/更新/)
+    })
+
+    it('reads a row saved before the conclusion was stored as needs-confirmation', () => {
+      const { repository } = handle
+      const person = seedImportedPerson(repository)
+      const job = seedConfirmedCase(repository)
+      const legacy = {
+        documentId: person.documentId,
+        reviewId: job.reviewId,
+        profileVersion: person.profile!.version,
+        jobCaseVersion: job.jobCase!.version,
+        jobCaseId: job.jobCase!.id,
+        personName: 'p',
+        caseTitle: 'c',
+        rulesRevision: 0,
+        fingerprint: 'd'.repeat(64),
+        score: 50,
+        reasons: ['Java'],
+        confirm: ['单价']
+      }
+      repository.saveMatchingOpportunities(job.reviewId, [legacy as never])
+      const [item] = handle.reopen().listMatchingOpportunities()
+      expect(item).toMatchObject({ status: 'needs-confirmation', state: 'new', confirm: ['单价'] })
     })
 
     it('hides opportunities whose person is no longer available or already followed up', () => {
@@ -97,6 +121,7 @@ describe.skipIf(!nativeSqliteAvailable)('BusinessGrowthStore via EncryptedApplic
           rulesRevision: 0,
           fingerprint: 'c'.repeat(64),
           score: 50,
+          status: 'needs-confirmation',
           reasons: [],
           confirm: []
         }

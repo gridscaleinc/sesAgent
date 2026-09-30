@@ -140,3 +140,61 @@ it('exports a general skill sheet without a case and stays quiet when the save i
   await waitFor(() => expect(window.sesAgent.exportSkillSheet).toHaveBeenCalledWith({ documentId, profileVersion: 1 }))
   expect(screen.queryByText(/を書き出し、Finderで表示しました/u)).not.toBeInTheDocument()
 })
+
+const pointsRecord = {
+  documentId,
+  reviewId,
+  profileVersion: 1,
+  jobCaseVersion: 1,
+  locale: 'ja-JP' as const,
+  points: [
+    {
+      headline: '損保の基本設計経験',
+      detail: '契約管理システム刷新でPLとして基本設計を担当。',
+      project: '契約管理刷新',
+      quote: '基本設計を担当'
+    },
+    { headline: 'Java 8年', detail: 'Java と Spring Boot で8年の開発経験。', project: null, quote: 'Java 8年' }
+  ],
+  emptyReason: null,
+  generatedAt: '2026-09-30T01:05:00.000Z',
+  modelName: null
+}
+
+it('inserts a stored 推荐要点 at the end, then at the cursor HR placed', async () => {
+  Object.assign(window.sesAgent, {
+    getRecommendationPoints: vi.fn(async () => ({ record: pointsRecord, stale: false })),
+    generateRecommendationPoints: vi.fn()
+  })
+  renderComposer()
+  const body = screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement
+  await waitFor(() => expect(body).toHaveValue('Saved intro'))
+  const picker = await screen.findByRole('complementary', { name: '推薦ポイント' })
+  await waitFor(() => expect(picker).toHaveTextContent('損保の基本設計経験'))
+  fireEvent.click(screen.getByRole('button', { name: '挿入：損保の基本設計経験' }))
+  expect(body).toHaveValue('Saved intro\n・損保の基本設計経験：契約管理システム刷新でPLとして基本設計を担当。')
+  body.setSelectionRange(5, 5)
+  fireEvent.select(body)
+  fireEvent.click(screen.getByRole('button', { name: '挿入：Java 8年' }))
+  expect(body.value.startsWith('Saved\n・Java 8年：Java と Spring Boot で8年の開発経験。\n intro')).toBe(true)
+  expect(window.sesAgent.getRecommendationPoints).toHaveBeenCalledWith({ documentId, reviewId })
+})
+
+it('offers to generate 推荐要点 in place when none are current', async () => {
+  Object.assign(window.sesAgent, {
+    getRecommendationPoints: vi.fn(async () => ({ record: { ...pointsRecord, profileVersion: 0 }, stale: true })),
+    generateRecommendationPoints: vi.fn(async () => ({ record: pointsRecord, stale: false }))
+  })
+  renderComposer()
+  fireEvent.click(await screen.findByRole('button', { name: '先に推薦ポイントを生成' }))
+  expect(window.sesAgent.generateRecommendationPoints).toHaveBeenCalledWith({ documentId, reviewId })
+  expect(await screen.findByRole('button', { name: '挿入：Java 8年' })).toBeVisible()
+})
+
+it('shows no 推荐要点 section for a general introduction without a case', async () => {
+  Object.assign(window.sesAgent, { getRecommendationPoints: vi.fn(), generateRecommendationPoints: vi.fn() })
+  renderComposer(false)
+  await waitFor(() => expect(window.sesAgent.listPersonnelIntroductionDrafts).toHaveBeenCalled())
+  expect(screen.queryByRole('complementary', { name: '推薦ポイント' })).not.toBeInTheDocument()
+  expect(window.sesAgent.getRecommendationPoints).not.toHaveBeenCalled()
+})

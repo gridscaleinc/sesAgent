@@ -5,6 +5,12 @@ import { AgentWorkspace } from './AgentWorkspace'
 
 const conversationId = '11111111-1111-4111-8111-111111111111'
 const jobCaseId = '22222222-2222-4222-8222-222222222222'
+const catalogModels = [
+  { key: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna', tier: 'fast' as const },
+  { key: 'gpt-5.6-terra', displayName: 'GPT-5.6 Terra', tier: 'balanced' as const },
+  { key: 'gpt-6-luna', displayName: 'GPT-6 Luna', tier: 'fast' as const },
+  { key: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash', tier: 'fast' as const }
+]
 
 function snapshot(messages: AiConversationSnapshot['messages']): AiConversationSnapshot {
   return {
@@ -830,7 +836,7 @@ describe('AgentWorkspace', () => {
       cancelAgentTurn: vi.fn()
     } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
-    render(<AgentWorkspace onOpenMatching={vi.fn()} />)
+    render(<AgentWorkspace models={catalogModels} onOpenMatching={vi.fn()} />)
 
     expect(await screen.findByRole('option', { name: 'DeepSeek V4 Flash' })).toBeInTheDocument()
     const input = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
@@ -941,7 +947,7 @@ describe('AgentWorkspace', () => {
       onAgentTurnEvent
     } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
-    render(<AgentWorkspace onOpenMatching={vi.fn()} />)
+    render(<AgentWorkspace models={catalogModels} onOpenMatching={vi.fn()} />)
 
     const selector = await screen.findByRole('combobox', { name: '回答モデルを選択' })
     fireEvent.change(selector, { target: { value: 'gpt-5.6-terra' } })
@@ -1044,6 +1050,22 @@ describe('AgentWorkspace', () => {
     await waitFor(() => expect(cancelAgentTurn).toHaveBeenCalledTimes(1))
   })
 
+  it('lists the catalog models and starts on the 批量核对 model until the operator picks one in the chat', async () => {
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } as DesktopApi
+    })
+    const view = render(<AgentWorkspace defaultModelKey="gpt-6-luna" models={catalogModels} onOpenMatching={vi.fn()} />)
+    const selector = (await screen.findByRole('combobox', { name: '回答モデルを選択' })) as HTMLSelectElement
+    expect([...selector.options].map((option) => option.value)).toEqual(catalogModels.map((model) => model.key))
+    expect(selector.value).toBe('gpt-6-luna')
+    view.rerender(<AgentWorkspace defaultModelKey="gpt-5.6-terra" models={catalogModels} onOpenMatching={vi.fn()} />)
+    expect(selector.value).toBe('gpt-5.6-terra')
+    fireEvent.change(selector, { target: { value: 'deepseek-v4-flash' } })
+    view.rerender(<AgentWorkspace defaultModelKey="gpt-6-luna" models={catalogModels} onOpenMatching={vi.fn()} />)
+    expect(selector.value).toBe('deepseek-v4-flash')
+  })
+
   it('does not expose the selected model name in transient planning status text', async () => {
     const executeAgentTurn = vi.fn(() => new Promise<never>(() => undefined))
     const api = {
@@ -1053,7 +1075,7 @@ describe('AgentWorkspace', () => {
       cancelAgentTurn: vi.fn()
     } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
-    render(<AgentWorkspace onOpenMatching={vi.fn()} />)
+    render(<AgentWorkspace models={catalogModels} onOpenMatching={vi.fn()} />)
 
     const selector = await screen.findByRole('combobox', { name: '回答モデルを選択' })
     fireEvent.change(selector, { target: { value: 'deepseek-v4-flash' } })

@@ -1,4 +1,4 @@
-import { defaultAgentChatModelKey, resolveAgentChatModel } from '@agent'
+import { businessModel } from './business-model'
 import {
   analyzeBusinessProgressSchema,
   nextBusinessRound,
@@ -48,7 +48,7 @@ export function createBusinessProgressAnalyzer(context: MainIpcContext) {
         await context.agentNarrativeStreamer.analyzeBusinessProgress({
           projection,
           lang: input.lang,
-          model: resolveAgentChatModel(context.agentChatModelCatalog, defaultAgentChatModelKey),
+          model: businessModel(context, 'checking'),
           signal: AbortSignal.timeout(60000)
         })
       )

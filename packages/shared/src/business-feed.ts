@@ -43,3 +43,19 @@ export function changedBusinessFields(
     .filter((field) => (previous.get(field.key) ?? null) !== field.value)
     .map((field) => ({ key: field.key, before: previous.get(field.key) ?? null, after: field.value }))
 }
+
+export const businessObjectKey = (entry: Pick<BusinessFeedEntry, 'kind' | 'objectId'>) => `${entry.kind}:${entry.objectId}`
+/** The newest entry per object, newest first; the HR lists and the menu-bar summary both read the feed through this. */
+export function currentBusinessObjects(entries: BusinessFeedEntry[]) {
+  const current = new Map<string, BusinessFeedEntry>()
+  for (const entry of entries) {
+    const key = businessObjectKey(entry)
+    if (!current.has(key) || Date.parse(current.get(key)!.occurredAt) < Date.parse(entry.occurredAt)) current.set(key, entry)
+  }
+  return (
+    [...current.values()]
+      // Ended cases stay listable under their own status filter; archived people leave the list.
+      .filter((entry) => !entry.archived || entry.kind === 'case')
+      .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || businessObjectKey(a).localeCompare(businessObjectKey(b)))
+  )
+}

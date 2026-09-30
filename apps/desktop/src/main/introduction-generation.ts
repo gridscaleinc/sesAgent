@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { defaultAgentChatModelKey, resolveAgentChatModel } from '@agent'
+import { businessModel } from './business-model'
 import {
   applicableWorkRules,
   baseExperienceSkills,
@@ -46,12 +46,22 @@ function load(context: Context, input: RegenerateIntroductionInput) {
         input.style === 'brief'
       ).text
     : undefined
+  // 推荐要点 HR generated for this pair, offered only while written for the current profile and case version.
+  const stored =
+    person && job?.jobCase && input.kind === 'person' && input.caseContext
+      ? context.repository.getRecommendationPoints?.(input.id, job.reviewId)
+      : null
+  const recommendationPoints =
+    stored && stored.profileVersion === person?.profileVersion && stored.jobCaseVersion === job?.jobCase?.version
+      ? stored.points.map(({ headline, detail, project, quote }) => ({ headline, detail, project, quote }))
+      : []
   // Cloud writing needs business facts only. Keep database IDs and source metadata
   // local: UUID fragments can also resemble postal codes to the independent DLP.
   const projection = JSON.stringify({
     operatorRequest: input.request ?? null,
     customerMailTemplate,
     hrRules: hrRules.map(({ kind, text }) => ({ kind, text })),
+    ...(recommendationPoints.length ? { recommendationPoints } : {}),
     task: input.kind === 'case' ? 'Introduce this job opening' : 'Introduce this person, referring to the case if provided',
     person: person
       ? {
@@ -139,7 +149,7 @@ export function createIntroductionGenerator(context: Context) {
     const promise = withLearningForeground(async () => {
       const value = load(context, input)
       if (!context.agentNarrativeStreamer) throw new Error('请先连接云端 AI。')
-      const model = resolveAgentChatModel(context.agentChatModelCatalog, defaultAgentChatModelKey)
+      const model = businessModel(context, 'writing')
       const generated = await context.agentNarrativeStreamer.regenerateIntroduction({
         projection: value.projection,
         experienceSkills: value.bundle.instructions,

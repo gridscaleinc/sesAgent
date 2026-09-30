@@ -10,15 +10,18 @@ import {
   type SaveJobCaseFieldAliasesInput,
   type SaveLocalApplicationPreferencesInput,
   type SaveLocalOperatorProfileInput,
+  type TestAiModelResult,
   aiConversationContextSchema,
   deleteAiConversationsInputSchema,
   ipcChannels,
   saveAiConversationInputSchema,
   saveJobCaseFieldAliasesInputSchema,
   saveLocalApplicationPreferencesInputSchema,
-  saveLocalOperatorProfileInputSchema
+  saveLocalOperatorProfileInputSchema,
+  testAiModelInputSchema
 } from '@shared'
 import { effectiveApplicationPreferences } from '../app-defaults'
+import { applicationPreferencesSaved } from '../preference-events'
 import { assertTrustedSender, type MainIpcContext } from './context'
 import { hydrateConversationResumeFacts } from './resume-import'
 
@@ -31,7 +34,12 @@ export function registerSettingsHandlers(context: MainIpcContext) {
     clipboard.writeText(z.string().min(1).max(20_000).parse(rawText))
   })
 
-  const { repository } = context
+  const { repository, agentChatModelCatalog } = context
+  const catalogModel = (key: string) => {
+    const model = agentChatModelCatalog.find((candidate) => candidate.key === key)
+    if (!model) throw new Error('所选 AI 模型不在可用列表中。 / 選択したAIモデルは利用可能な一覧にありません。')
+    return model
+  }
   ipcMain.handle(ipcChannels.saveLocalOperatorProfile, (event, rawInput): LocalOperatorProfile => {
     assertTrustedSender(event)
     const input: SaveLocalOperatorProfileInput = saveLocalOperatorProfileInputSchema.parse(rawInput)
@@ -41,7 +49,23 @@ export function registerSettingsHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.saveLocalApplicationPreferences, (event, rawInput): LocalApplicationPreferences => {
     assertTrustedSender(event)
     const input: SaveLocalApplicationPreferencesInput = saveLocalApplicationPreferencesInputSchema.parse(rawInput)
-    return repository.saveLocalApplicationPreferences(input)
+    if (input.aiModels) {
+      catalogModel(input.aiModels.checking)
+      catalogModel(input.aiModels.writing)
+    }
+    const saved = repository.saveLocalApplicationPreferences(input)
+    applicationPreferencesSaved()
+    return saved
+  })
+
+  ipcMain.handle(ipcChannels.testAiModel, async (event, rawInput): Promise<TestAiModelResult> => {
+    assertTrustedSender(event)
+    const input = testAiModelInputSchema.parse(rawInput)
+    const model = catalogModel(input.modelKey)
+    const cloud = context.agentNarrativeStreamer
+    if (!cloud) throw new Error('请先连接 AI 服务，再测试模型。 / AIに接続してからモデルをテストしてください。')
+    const { latencyMs } = await cloud.probeModel({ model, signal: AbortSignal.timeout(60_000) })
+    return { modelKey: model.key, latencyMs }
   })
 
   ipcMain.handle(ipcChannels.saveJobCaseFieldAliases, (event, rawInput): JobCaseFieldAliases => {

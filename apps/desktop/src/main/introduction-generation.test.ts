@@ -252,3 +252,17 @@ it('still blocks a residual postal address in proposal business facts before any
   expect(fixture.streamResponses).not.toHaveBeenCalled()
   expect(fixture.repository.saveExperienceRun).not.toHaveBeenCalled()
 })
+
+it('writes with the 文案与分析 model the operator chose, not the 批量核对 one', async () => {
+  const cloud = vi.fn(async (_input: { model: { key: string } }) => 'Generated')
+  const generate = createIntroductionGenerator({
+    repository: {
+      getCurrentCandidateProfile: () => ({ profileVersion: 1, fields: [], projectExperiences: [] }),
+      getLocalApplicationPreferences: () => ({ aiModels: { checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' } })
+    },
+    agentNarrativeStreamer: { regenerateIntroduction: cloud },
+    agentChatModelCatalog: loadAgentChatModelCatalog()
+  } as any)
+  await generate({ kind: 'person', id, version: 1, lang: 'ja', style: 'standard' })
+  expect(cloud.mock.calls[0]?.[0]?.model.key).toBe('gpt-6.1-sol-pro')
+})

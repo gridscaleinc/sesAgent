@@ -1,5 +1,6 @@
 // @vitest-environment node
 import type { DocumentIR } from '@parsers'
+import { redactTextForCloud } from '@privacy'
 import {
   collectLocalPersonNameCandidates,
   createLocalAiRuntime,
@@ -199,6 +200,93 @@ describe('collectLocalPersonNameCandidates', () => {
   })
 })
 
+function detected(text: string, names: string[], engine: 'apple-natural-language' | 'gliner-x-small-onnx' = 'gliner-x-small-onnx') {
+  const entities = names.map((name) => {
+    const startUtf16 = text.indexOf(name)
+    return { text: name, startUtf16, endUtf16: startUtf16 + name.length, tag: 'personalName' as const }
+  })
+  return nameDetectionResultSchema.parse(
+    engine === 'apple-natural-language'
+      ? { version: 'apple-nl-ner-v1', engine, networkAccess: false, requiresHumanConfirmation: true, entities }
+      : {
+          version: 'gliner-ner-v1',
+          engine,
+          modelRevision: 'd51a0984d11084a55f9df3899d9dbf7704f580f5',
+          networkAccess: false,
+          requiresHumanConfirmation: true,
+          entities
+        }
+  )
+}
+
+function redacted(text: string, candidates: string[]): string {
+  return redactTextForCloud(text, {
+    sourceVersion: 'katakana-name-test',
+    knownPersonNames: candidates,
+    personNameReviewCompleted: true,
+    now: new Date('2026-09-30T00:00:00.000Z')
+  }).redactedContent
+}
+
+describe('katakana names joined by ・ or ＝', () => {
+  it.each([
+    ['要員：グエン・ヴァン・ナム（ベトナム国籍）\nナムさんは PHP 5年', 'グエン・ヴァン・ナム', ['グエン', 'ヴァン', 'ナム']],
+    [
+      'エンジニアのマイケル・ジョンソンさんは英語が堪能です。ジョンソンさんは来週面談。',
+      'マイケル・ジョンソン',
+      ['マイケル', 'ジョンソン']
+    ],
+    ['担当：ジャン＝ポール・サルトル', 'ジャン＝ポール・サルトル', ['ジャン', 'ポール', 'サルトル']]
+  ])('redacts %s including partial mentions', (text, name, parts) => {
+    const candidates = collectLocalPersonNameCandidates(text, detected(text, [name]))
+    expect(candidates).toEqual(expect.arrayContaining([name, ...parts]))
+    const output = redacted(text, candidates)
+    // Ordinary katakana words that merely contain a part (ベトナム ⊃ ナム) stay readable.
+    if (text.includes('ベトナム')) expect(output).toContain('ベトナム')
+    const withoutWords = output.replaceAll('ベトナム', '')
+    for (const value of [name, ...parts]) expect(withoutWords).not.toContain(value)
+  })
+
+  it('widens a model entity that covers only one katakana part', () => {
+    const text = '技術者：グエン・ヴァン・ナム（N1）'
+    expect(collectLocalPersonNameCandidates(text, detected(text, ['グエン']))).toContain('グエン・ヴァン・ナム')
+    expect(collectLocalPersonNameCandidates(text, detected(text, ['ナム']))).toContain('グエン・ヴァン・ナム')
+  })
+
+  it('accepts a labeled katakana name without a model', () => {
+    expect(collectLocalPersonNameCandidates('氏名：マイケル・ジョンソン')).toEqual(
+      expect.arrayContaining(['マイケル・ジョンソン', 'ジョンソン'])
+    )
+  })
+
+  it('still rejects ・ between kanji or Latin words and other structural characters', () => {
+    for (const value of ['設計・構築', '技術・人文知識・国際業務', 'Java・Python', 'グエン/ナム', 'マイケル@example', 'ナム:1']) {
+      expect(collectLocalPersonNameCandidates(value, detected(value, [value]))).toEqual([])
+    }
+    expect(collectLocalPersonNameCandidates('在留資格：技術・人文知識・国際業務')).toEqual([])
+    expect(collectLocalPersonNameCandidates('クラウド基盤の設計・構築を担当')).toEqual([])
+  })
+})
+
+describe('obvious non-names from a model', () => {
+  it('drops job titles made only of role words', () => {
+    const text = 'Project: Tokyo Metro 運行管理 / Role: Backend Engineer / Stack: Go\nRole: SRE\nインフラエンジニア募集'
+    expect(collectLocalPersonNameCandidates(text, detected(text, ['Backend Engineer', 'SRE', 'インフラエンジニア']))).toEqual([])
+  })
+
+  it('drops an e-mail local part but keeps the same word used as a name elsewhere', () => {
+    const email = 'メール：hanako＠example．jp'
+    expect(collectLocalPersonNameCandidates(email, detected(email, ['hanako']))).toEqual([])
+    const both = '連絡先 kenta@example.jp\nkenta は来週参画'
+    expect(collectLocalPersonNameCandidates(both, detected(both, ['kenta']))).toEqual(['kenta'])
+  })
+
+  it('keeps real names that contain a role-like word', () => {
+    const text = 'Candidate: Chief Keef and Engineer Lee'
+    expect(collectLocalPersonNameCandidates(text, detected(text, ['Chief Keef', 'Engineer Lee']))).toEqual(['Chief Keef', 'Engineer Lee'])
+  })
+})
+
 describe('parseLocalHelperJson', () => {
   it('accepts one frame or one byte-identical duplicate frame only', () => {
     expect(parseLocalHelperJson('{"networkAccess":false}\n')).toEqual({ networkAccess: false })
@@ -247,6 +335,68 @@ describe('createLocalAiRuntime', () => {
     expect(
       collectLocalPersonNameCandidates(['[SHEET:履歴書!A5] 氏名', '[SHEET:履歴書!D5] 山田太郎', '[SHEET:履歴書!J5] 男'].join('\n'))
     ).toContain('山田太郎')
+  })
+
+  const glinerNer = {
+    workerPath: '/Applications/SES Agent Desktop.app/Contents/Resources/app.asar/out/main/ner-worker.js',
+    modelDirectory: '/Applications/SES Agent Desktop.app/Contents/Resources/models/knowledgator/gliner-x-small'
+  }
+
+  it('uses Apple NL ∪ GLiNER on macOS when the model is bundled, and Apple NL alone otherwise', () => {
+    const union = createLocalAiRuntime({ platform: 'darwin', macExecutablePath: '/tmp/ses-vision-ocr', glinerNer })
+    expect(union.personNameDetector?.engine).toBe('local-ner-union')
+    const appleOnly = createLocalAiRuntime({ platform: 'darwin', macExecutablePath: '/tmp/ses-vision-ocr' })
+    expect(appleOnly.personNameDetector?.engine).toBe('apple-natural-language')
+  })
+
+  it('gives Windows a GLiNER detector only inside the AppContainer launcher', () => {
+    const windowsGlinerNer = {
+      workerPath: 'C:\\Program Files\\SESAI\\resources\\app.asar\\out\\main\\ner-worker.js',
+      modelDirectory: 'C:\\Program Files\\SESAI\\resources\\models\\knowledgator\\gliner-x-small'
+    }
+    const launcher = 'C:\\Program Files\\SESAI\\resources\\native\\windows\\ocr\\ses-ocr-sandbox.exe'
+    const withLauncher = createLocalAiRuntime({
+      platform: 'win32',
+      windowsOcrSandboxLauncherPath: launcher,
+      windowsAppContainerGrantRoots: ['C:\\Program Files\\SESAI'],
+      glinerNer: windowsGlinerNer
+    })
+    expect(withLauncher.personNameDetector?.engine).toBe('gliner-x-small-onnx')
+    expect(withLauncher.status).toBe('pii-rules-active-ocr-unavailable')
+    // No launcher, no grant roots, or no model: no detector, so Cloud AI stays blocked.
+    expect(
+      createLocalAiRuntime({ platform: 'win32', windowsAppContainerGrantRoots: ['C:\\SESAI'], glinerNer: windowsGlinerNer })
+        .personNameDetector
+    ).toBeNull()
+    expect(
+      createLocalAiRuntime({ platform: 'win32', windowsOcrSandboxLauncherPath: launcher, glinerNer: windowsGlinerNer }).personNameDetector
+    ).toBeNull()
+    expect(
+      createLocalAiRuntime({ platform: 'win32', windowsOcrSandboxLauncherPath: launcher, windowsAppContainerGrantRoots: ['C:\\SESAI'] })
+        .personNameDetector
+    ).toBeNull()
+  })
+
+  it('keeps the GLiNER detector alongside verified Windows OCR', () => {
+    const runtime = createLocalAiRuntime({
+      platform: 'win32',
+      windowsOcrSandboxLauncherPath: 'C:\\Program Files\\SESAI\\resources\\native\\windows\\ocr\\ses-ocr-sandbox.exe',
+      windowsOcrWorkerPath: 'C:\\Program Files\\SESAI\\windows-ocr-worker.js',
+      windowsTesseractWorkerPath: 'C:\\Program Files\\SESAI\\tesseract-worker.js',
+      windowsTessdataPath: 'C:\\Program Files\\SESAI\\resources\\native\\windows\\ocr\\tessdata',
+      windowsOcrResourceManifestPath: 'C:\\Program Files\\SESAI\\resources\\native\\windows\\ocr\\resource-manifest.json',
+      windowsAppContainerGrantRoots: ['C:\\Program Files\\SESAI'],
+      windowsNetworkIsolation: 'windows-kernel-network-verified',
+      glinerNer: {
+        workerPath: 'C:\\Program Files\\SESAI\\ner-worker.js',
+        modelDirectory: 'C:\\Program Files\\SESAI\\resources\\models\\knowledgator\\gliner-x-small'
+      }
+    })
+    expect(runtime).toMatchObject({
+      ocr: { engine: 'windows-tesseract-wasm' },
+      personNameDetector: { engine: 'gliner-x-small-onnx' },
+      status: 'windows-ocr-and-pii-rules-active'
+    })
   })
 
   it('reports a bundled-but-disabled Windows OCR runtime before kernel isolation is verified', () => {

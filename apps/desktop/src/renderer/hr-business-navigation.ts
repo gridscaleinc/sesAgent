@@ -1,19 +1,7 @@
-import type { BusinessFeedEntry } from '@shared'
+import { businessObjectKey, currentBusinessObjects } from '@shared'
 export type HrBusinessKind = 'case' | 'person'
-export const businessObjectKey = (entry: Pick<BusinessFeedEntry, 'kind' | 'objectId'>) => `${entry.kind}:${entry.objectId}`
-export function currentBusinessObjects(entries: BusinessFeedEntry[]) {
-  const current = new Map<string, BusinessFeedEntry>()
-  for (const entry of entries) {
-    const key = businessObjectKey(entry)
-    if (!current.has(key) || Date.parse(current.get(key)!.occurredAt) < Date.parse(entry.occurredAt)) current.set(key, entry)
-  }
-  return (
-    [...current.values()]
-      // Ended cases stay listable under their own status filter; archived people leave the list.
-      .filter((entry) => !entry.archived || entry.kind === 'case')
-      .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || businessObjectKey(a).localeCompare(businessObjectKey(b)))
-  )
-}
+// The newest entry per object is shared with Main (the menu-bar summary counts the same 未读 as this list).
+export { businessObjectKey, currentBusinessObjects }
 
 export type HrTimeRange = 'today' | '7d' | '30d' | 'all'
 export type HrListFilter = 'working' | 'all' | 'unseen' | 'later'

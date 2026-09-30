@@ -52,7 +52,11 @@ export interface AgentChatModelDefinition {
   maxOutputTokens: number
   provider: 'openai' | 'deepseek'
   endpoint: 'responses' | 'chat-completions'
+  /** Descriptive only, for the model pickers: fast = quick and cheap, strongest = best but slow and expensive. */
+  tier?: AgentChatModelTier
 }
+
+export type AgentChatModelTier = 'fast' | 'balanced' | 'strong' | 'strongest'
 
 const agentChatModelExtensionSchema = z
   .array(
@@ -76,7 +80,8 @@ const defaultAgentChatModels: AgentChatModelDefinition[] = [
     upstreamModel: 'gpt-5.6-luna',
     maxOutputTokens: 1_200,
     provider: 'openai',
-    endpoint: 'responses'
+    endpoint: 'responses',
+    tier: 'fast'
   },
   {
     key: 'gpt-5.6-terra',
@@ -84,12 +89,58 @@ const defaultAgentChatModels: AgentChatModelDefinition[] = [
     upstreamModel: 'gpt-5.6-terra',
     maxOutputTokens: 1_200,
     provider: 'openai',
-    endpoint: 'responses'
+    endpoint: 'responses',
+    tier: 'balanced'
   },
   {
     key: 'gpt-5.6-sol',
     displayName: 'GPT-5.6 Sol',
     upstreamModel: 'gpt-5.6-sol',
+    maxOutputTokens: 1_200,
+    provider: 'openai',
+    endpoint: 'responses',
+    tier: 'strong'
+  },
+  {
+    key: 'gpt-6.1-sol',
+    displayName: 'GPT-6.1 Sol',
+    upstreamModel: 'gpt-6.1-sol',
+    maxOutputTokens: 1_200,
+    provider: 'openai',
+    endpoint: 'responses',
+    tier: 'strong'
+  },
+  {
+    key: 'gpt-6.1-sol-pro',
+    displayName: 'GPT-6.1 Sol Pro',
+    upstreamModel: 'gpt-6.1-sol-pro',
+    maxOutputTokens: 1_200,
+    provider: 'openai',
+    endpoint: 'responses',
+    tier: 'strongest'
+  },
+  {
+    key: 'gpt-6-sol',
+    displayName: 'GPT-6 Sol',
+    upstreamModel: 'gpt-6-sol',
+    maxOutputTokens: 1_200,
+    provider: 'openai',
+    endpoint: 'responses',
+    tier: 'strong'
+  },
+  {
+    key: 'gpt-6-luna',
+    displayName: 'GPT-6 Luna',
+    upstreamModel: 'gpt-6-luna',
+    maxOutputTokens: 1_200,
+    provider: 'openai',
+    endpoint: 'responses',
+    tier: 'fast'
+  },
+  {
+    key: 'gpt-6-astra',
+    displayName: 'GPT-6 Astra',
+    upstreamModel: 'gpt-6-astra',
     maxOutputTokens: 1_200,
     provider: 'openai',
     endpoint: 'responses'
@@ -100,7 +151,8 @@ const defaultAgentChatModels: AgentChatModelDefinition[] = [
     upstreamModel: 'deepseek-v4-flash',
     maxOutputTokens: 4_096,
     provider: 'deepseek',
-    endpoint: 'chat-completions'
+    endpoint: 'chat-completions',
+    tier: 'fast'
   }
 ]
 

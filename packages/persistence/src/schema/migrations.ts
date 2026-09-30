@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 63
+export const currentSchemaVersion = 66
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2632,5 +2632,56 @@ BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%
     .join('\n') +
   `
 INSERT INTO schema_migrations(version,applied_at) VALUES(63,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// 推荐要点: the latest AI-drafted selling points per person and case, each citing a verbatim fragment of the
+// person's own material. Removed with the person and with the case review (foreign keys); a changed profile or
+// case version marks them stale when read.
+export const migrationV64 =
+  `
+BEGIN IMMEDIATE;
+CREATE TABLE recommendation_points (
+ document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
+ review_id TEXT NOT NULL REFERENCES job_case_review_states(review_id) ON DELETE CASCADE,
+ profile_version INTEGER NOT NULL,
+ job_case_version INTEGER NOT NULL,
+ locale TEXT NOT NULL CHECK (locale IN ('ja-JP','zh-CN')),
+ points TEXT NOT NULL,
+ empty_reason TEXT,
+ model_name TEXT,
+ generated_at TEXT NOT NULL,
+ PRIMARY KEY (document_id, review_id)
+);
+CREATE INDEX recommendation_points_review ON recommendation_points(review_id);
+` +
+  ['INSERT', 'UPDATE', 'DELETE']
+    .map(
+      (
+        operation
+      ) => `CREATE TRIGGER backup_revision_recommendation_points_${operation.toLowerCase()} AFTER ${operation} ON recommendation_points
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+    )
+    .join('\n') +
+  `
+INSERT INTO schema_migrations(version,applied_at) VALUES(64,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// The operator's AI model choice per kind of business work (批量核对 / 文案与分析), stored as validated JSON.
+// NULL keeps the default model for every slot, which is what an upgraded database starts with.
+export const migrationV65 = `
+BEGIN IMMEDIATE;
+ALTER TABLE local_application_preferences ADD COLUMN ai_models TEXT;
+INSERT INTO schema_migrations(version,applied_at) VALUES(65,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// The menu-bar / system-tray panel choice (shown, and whether it names people), stored as validated JSON.
+// NULL keeps the defaults (shown, no person names), which is what an upgraded database starts with.
+export const migrationV66 = `
+BEGIN IMMEDIATE;
+ALTER TABLE local_application_preferences ADD COLUMN menu_bar TEXT;
+INSERT INTO schema_migrations(version,applied_at) VALUES(66,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
 `

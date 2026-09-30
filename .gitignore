@@ -14,6 +14,9 @@ models/**
 !models/hotchpotch/
 !models/hotchpotch/japanese-reranker-tiny-v2/
 !models/hotchpotch/japanese-reranker-tiny-v2/model-manifest.json
+!models/knowledgator/
+!models/knowledgator/gliner-x-small/
+!models/knowledgator/gliner-x-small/model-manifest.json
 .DS_Store
 *.log
 .env

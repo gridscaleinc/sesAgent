@@ -8,19 +8,24 @@ import type {
   ApplicationLocale,
   BootstrapPayload,
   LocalApplicationPreferences,
-  SaveLocalApplicationPreferencesInput
+  MenuBarPreferences,
+  SaveLocalApplicationPreferencesInput,
+  TestAiModelResult
 } from '@shared'
 import { jobCaseFieldCanonicalLabels, jobCaseFieldKeys } from '@shared'
 import { BroadcastSettingsSection, type BroadcastSettingsActions } from './BroadcastSettingsSection'
+import { AiModelSettingsSection } from './AiModelSettingsSection'
 import { Icon, type IconName } from './Icon'
 import { GmailSyncFeedback } from './GmailSyncFeedback'
 import { localizedIpcError, useLocaleText, localizedJobCaseFieldLabel } from '../i18n'
 
-export type ApplicationSettingsSection = 'experience' | 'general' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
+export type ApplicationSettingsSection = 'experience' | 'general' | 'models' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
 
 interface ApplicationSettingsDialogProps {
   bootstrap: BootstrapPayload
   initialSection?: ApplicationSettingsSection
+  /** Changes on each request to show initialSection, so asking again for the same section while open still goes there. */
+  sectionRequest?: number
   preferences: LocalApplicationPreferences
   onClose(): void
   onConnectGoogleWorkspace(): Promise<void>
@@ -30,6 +35,8 @@ interface ApplicationSettingsDialogProps {
   onOpenOperatorProfile(): void
   onOpenZoomTestMeeting?(): Promise<unknown>
   onSave(input: SaveLocalApplicationPreferencesInput): Promise<LocalApplicationPreferences>
+  /** Sends a tiny fixed prompt to one catalog model; absent, the 测试模型 buttons are disabled. */
+  onTestAiModel?(modelKey: string): Promise<TestAiModelResult>
   onSyncGoogleWorkspace(): Promise<void>
   fieldAliases?: JobCaseFieldAliases
   onSaveFieldAliases?(input: SaveJobCaseFieldAliasesInput): Promise<JobCaseFieldAliases>
@@ -80,6 +87,12 @@ function languageOptions(t: LocaleText): Array<{ locale: ApplicationLocale; name
 function settingsSections(t: LocaleText): Array<{ id: ApplicationSettingsSection; label: string; detail: string; icon: IconName }> {
   return [
     { id: 'general', label: t('常规设置', '一般設定'), detail: t('语言与本机用户', '言語と本機ユーザー'), icon: 'settings' },
+    {
+      id: 'models',
+      label: t('AI 模型', 'AIモデル'),
+      detail: t('批量核对与文案分析', '一括確認と文章・分析'),
+      icon: 'sparkles'
+    },
     { id: 'experience', label: t('系统经验', 'システムの経験'), detail: t('自动学习与核实方法', '自動学習と確認方法'), icon: 'sparkles' },
     { id: 'fields', label: t('案件字段', '案件項目'), detail: t('字段别名', '項目の別名'), icon: 'briefcase' },
     { id: 'broadcast', label: t('群发', '配信'), detail: t('文案模板', '紹介文テンプレート'), icon: 'mail' },
@@ -96,6 +109,7 @@ function settingsSections(t: LocaleText): Array<{ id: ApplicationSettingsSection
 export function ApplicationSettingsDialog({
   bootstrap,
   initialSection = 'general',
+  sectionRequest,
   preferences,
   onClose,
   onConnectGoogleWorkspace,
@@ -105,6 +119,7 @@ export function ApplicationSettingsDialog({
   onOpenOperatorProfile,
   onOpenZoomTestMeeting,
   onSave,
+  onTestAiModel,
   onSyncGoogleWorkspace,
   fieldAliases,
   onSaveFieldAliases,
@@ -136,7 +151,7 @@ export function ApplicationSettingsDialog({
     }
   }
 
-  useEffect(() => setActiveSection(initialSection), [initialSection])
+  useEffect(() => setActiveSection(initialSection), [initialSection, sectionRequest])
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -170,6 +185,20 @@ export function ApplicationSettingsDialog({
     } else if (!event.shiftKey && document.activeElement === last) {
       event.preventDefault()
       first.focus()
+    }
+  }
+
+  const menuBar = preferences.menuBar ?? { visible: true, showPersonNames: false }
+  const saveMenuBar = async (next: MenuBarPreferences) => {
+    if (busy) return
+    setBusy('menu-bar')
+    setError(null)
+    try {
+      await onSave({ locale: preferences.locale, expectedRevision: preferences.revision, menuBar: next })
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('无法保存菜单栏设置。', 'メニューバーの設定を保存できませんでした。')))
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -291,6 +320,43 @@ export function ApplicationSettingsDialog({
                     )
                   })}
                 </section>
+                <section aria-labelledby="menu-bar-settings-title" className="settings-toggle-group">
+                  <div className="language-choice-heading">
+                    <Icon name="clock" size={16} />
+                    <span id="menu-bar-settings-title">{t('菜单栏', 'メニューバー')}</span>
+                  </div>
+                  {[
+                    {
+                      key: 'visible' as const,
+                      label: t('在菜单栏显示 SES Agent', 'メニューバーに SES Agent を表示'),
+                      detail: t(
+                        '点击图标查看今天要跟进的事项；Windows 上显示在任务栏通知区域。',
+                        'アイコンから今日の対応を確認できます。Windows ではタスクバーの通知領域に表示します。'
+                      )
+                    },
+                    {
+                      key: 'showPersonNames' as const,
+                      label: t('菜单栏面板显示人员姓名', 'メニューバーのパネルに要員の氏名を表示'),
+                      detail: t(
+                        '关闭时只显示案件名和「1 名人员」，避免他人看到屏幕时泄露姓名。',
+                        'オフの間は案件名と「要員 1 名」だけを表示し、画面をのぞかれても氏名は出ません。'
+                      )
+                    }
+                  ].map((option) => (
+                    <label className="settings-toggle" key={option.key}>
+                      <input
+                        checked={menuBar[option.key]}
+                        disabled={busy !== null}
+                        onChange={(event) => void saveMenuBar({ ...menuBar, [option.key]: event.target.checked })}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>{option.label}</strong>
+                        <small>{option.detail}</small>
+                      </span>
+                    </label>
+                  ))}
+                </section>
                 <button className="settings-link-card" onClick={onOpenOperatorProfile} type="button">
                   <span className="settings-link-icon">
                     <Icon name="users" size={18} />
@@ -316,6 +382,19 @@ export function ApplicationSettingsDialog({
                   </span>
                 </div>
               </section>
+            ) : null}
+
+            {activeSection === 'models' ? (
+              <AiModelSettingsSection
+                disabled={busy !== null}
+                models={
+                  bootstrap.agentChatModels?.length ? bootstrap.agentChatModels : [{ key: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' }]
+                }
+                onOpenAiCommerce={onOpenAiCommerce}
+                onSave={onSave}
+                onTestAiModel={onTestAiModel}
+                preferences={preferences}
+              />
             ) : null}
 
             {activeSection === 'fields' ? (

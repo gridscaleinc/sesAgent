@@ -87,6 +87,7 @@ try {
     CREATE INDEX candidate_match_runs_task_idx
       ON candidate_match_runs(task_id, created_at DESC);
     DROP TABLE job_case_working_set;
+    DROP TABLE recommendation_points;
     DROP TABLE person_case_match_run_items;
     DROP TABLE person_case_match_runs;
     DROP TABLE case_introduction_drafts;
@@ -111,7 +112,7 @@ try {
     DROP TABLE business_priority_projections;
     ALTER TABLE candidate_match_results DROP COLUMN result_snapshot_json;
     ALTER TABLE candidate_records DROP COLUMN in_talent_library;
-    DELETE FROM schema_migrations WHERE version IN (25, 36, 37, 38, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63);
+    DELETE FROM schema_migrations WHERE version IN (25, 36, 37, 38, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64);
     COMMIT;
   `)
   policyLegacy.pragma('foreign_keys=ON')
@@ -202,6 +203,7 @@ try {
     DROP TABLE candidate_evaluation_reports;
     DROP TABLE candidate_evaluation_datasets;
     DROP TABLE job_case_working_set;
+    DROP TABLE recommendation_points;
     DROP TABLE person_case_match_run_items;
     DROP TABLE person_case_match_runs;
     DROP TABLE case_introduction_drafts;
@@ -244,7 +246,7 @@ try {
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_hash;
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_status;
     ALTER TABLE cloud_call_audits DROP COLUMN gate_policy_version;
-    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63);
+    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66);
     COMMIT;
   `)
   assert.equal(legacy.prepare<{ version: number }>('SELECT max(version) AS version FROM schema_migrations').get()?.version, 13)
@@ -396,7 +398,7 @@ try {
     'an upgraded v13 database must end with the same tables, columns, indexes and triggers as a fresh install'
   )
   assert.equal(triggerCount, freshTriggerCount)
-  assert.equal(triggerCount, 255)
+  assert.equal(triggerCount, 258)
   assert.ok(
     upgradedShape.includes('trigger:backup_revision_candidate_project_review_audits_v60_insert'),
     'v60 backup-revision triggers were not created'
@@ -406,6 +408,7 @@ try {
   assert.ok(upgradedShape.includes('table:personnel_introduction_drafts'), 'v62 personnel introduction drafts table was not created')
   assert.ok(upgradedShape.includes('table:person_case_match_runs'), 'v63 person to case match runs table was not created')
   assert.ok(upgradedShape.includes('table:person_case_match_run_items'), 'v63 person to case match items table was not created')
+  assert.ok(upgradedShape.includes('table:recommendation_points'), 'v64 recommendation points table was not created')
   assert.equal(
     recoveryColumns.some((column) => column.name === 'data_revision'),
     true
@@ -517,6 +520,16 @@ try {
   assert.equal(
     localApplicationPreferencesColumns.some((column) => column.name === 'revision'),
     true
+  )
+  assert.equal(
+    localApplicationPreferencesColumns.some((column) => column.name === 'ai_models'),
+    true,
+    'v65 AI model choice column was not added'
+  )
+  assert.equal(
+    localApplicationPreferencesColumns.some((column) => column.name === 'menu_bar'),
+    true,
+    'v66 menu-bar choice column was not added'
   )
   assert.equal(
     proposalFollowUpColumns.some((column) => column.name === 'occurred_on'),

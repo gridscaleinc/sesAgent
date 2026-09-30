@@ -77,6 +77,11 @@ assert.equal(
   true,
   'The Windows package is missing the fixed local reranker model.'
 )
+assert.equal(
+  resources.some((resource) => resource.from?.includes('knowledgator/gliner-x-small')),
+  true,
+  'The Windows package is missing the fixed local person-name detector model.'
+)
 const privacyEvidenceResource = resources.find((resource) => resource.from?.includes('build/privacy-verification'))
 assert.equal(
   privacyEvidenceResource?.filter?.includes('privacy-quality-report.json'),
@@ -111,6 +116,7 @@ for (const worker of [
   'apps/desktop/src/workers/parser-worker.ts',
   'apps/desktop/src/workers/embedding-worker.ts',
   'apps/desktop/src/workers/reranker-worker.ts',
+  'apps/desktop/src/workers/ner-worker.ts',
   'apps/desktop/src/workers/windows-ocr-worker.ts',
   'apps/desktop/src/workers/tesseract-worker.ts'
 ]) {
