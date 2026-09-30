@@ -1,12 +1,16 @@
 import type { BusinessFeedEntry, MarkBusinessFeedInput } from './business-feed'
-import type { PersonnelWorkspace, PersonnelTemplate, PersonnelMessageInput, PersonnelCopy, CandidateBusinessState, SetCandidateBusinessStateInput, PersonnelCaseMatch } from './business-workbench'
+import type {
+  PersonnelWorkspace,
+  PersonnelTemplate,
+  PersonnelMessageInput,
+  PersonnelCopy,
+  CandidateBusinessState,
+  SetCandidateBusinessStateInput,
+  PersonnelCaseMatch
+} from './business-workbench'
 import type { SignedWorkTaskPreview, WorkTask } from '@domain'
 
-export type WorkTaskScopeId =
-  | 'confirmed-candidate-pool'
-  | 'selected-files'
-  | 'selected-gmail-message'
-  | 'selected-case'
+export type WorkTaskScopeId = 'confirmed-candidate-pool' | 'selected-files' | 'selected-gmail-message' | 'selected-case'
 
 export interface WorkTaskInput {
   instruction: string
@@ -42,8 +46,18 @@ export type DomainToolName =
   | 'gmail.sync.read'
   | 'wechat.visible.read'
   | 'proposal.export'
+  | 'skill-sheet.export'
 
-export type ActionRunStatus = 'proposed' | 'awaiting_approval' | 'awaiting_foreground_confirmation' | 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'blocked'
+export type ActionRunStatus =
+  | 'proposed'
+  | 'awaiting_approval'
+  | 'awaiting_foreground_confirmation'
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'blocked'
 
 /** A deliberately redacted projection. Never put request bodies, names, email, or paths here. */
 export interface ActionApprovalSummary {
@@ -215,7 +229,8 @@ export interface StagedLocalFile {
 }
 
 export interface ResumeAnalysisSummary {
-  analysisVersion: 'resume-analysis-v1' | 'resume-analysis-v2' | 'resume-analysis-v3' | 'resume-analysis-v4' | 'resume-analysis-v5' | 'resume-analysis-v6'
+  analysisVersion:
+    'resume-analysis-v1' | 'resume-analysis-v2' | 'resume-analysis-v3' | 'resume-analysis-v4' | 'resume-analysis-v5' | 'resume-analysis-v6'
   fileToken: string
   fileName: string
   status: 'requires-pii-review' | 'requires-local-ocr' | 'ready-for-field-review'
@@ -228,7 +243,8 @@ export interface ResumeAnalysisSummary {
   }
   detectedIdentifiers: Array<{ type: string; count: number }>
   localProcessing: {
-    ocr: 'not-required' | 'apple-vision-completed' | 'windows-media-ocr-completed' | 'windows-tesseract-wasm-completed' | 'requires-local-ocr'
+    ocr:
+      'not-required' | 'apple-vision-completed' | 'windows-media-ocr-completed' | 'windows-tesseract-wasm-completed' | 'requires-local-ocr'
     ocrPages: number
     personNameCandidates: number
     networkAccess: false
@@ -299,7 +315,8 @@ export interface CandidateProfileSummary {
   containsDirectIdentifiers: boolean
 }
 
-export type CandidateRecruitingStatus = 'pending-review' | 'ready-for-recruiting' | 'recruiting' | 'passed' | 'rejected' | 'withdrawn' | 'no-show' | 'on-hold'
+export type CandidateRecruitingStatus =
+  'pending-review' | 'ready-for-recruiting' | 'recruiting' | 'passed' | 'rejected' | 'withdrawn' | 'no-show' | 'on-hold'
 export type TalentPoolMembershipStatus = 'none' | 'eligible' | 'suspended' | 'removed'
 export type CandidateRecordStatus = 'active' | 'archived' | 'deleted'
 
@@ -478,13 +495,7 @@ export interface CandidateMatchRunSummary {
   evaluation: CandidateMatchEvaluationSummary
 }
 
-export type MatchRunValidity =
-  | 'current'
-  | 'stale_job_case'
-  | 'stale_candidate_pool'
-  | 'stale_model'
-  | 'stale_policy'
-  | 'invalidated'
+export type MatchRunValidity = 'current' | 'stale_job_case' | 'stale_candidate_pool' | 'stale_model' | 'stale_policy' | 'invalidated'
 
 export type BusinessPriorityLevel = 'high' | 'normal' | 'follow_up' | 'paused'
 
@@ -535,6 +546,15 @@ export interface CandidateMatchAssessment {
   reason: string
   modelKey: string
   assessedAt: string
+  /** What the model itself wrote, before any evidence check. Shown only as unverified AI opinion; never decides a match. */
+  opinion?: MatchAiOpinion
+}
+
+export interface MatchAiOpinion {
+  fit: CandidateMatchAssessmentFit
+  reason: string
+  gaps: string[]
+  confirm: string[]
 }
 
 export interface MatchingHomeResult {
@@ -684,12 +704,7 @@ export interface CandidateDeletionPreview {
   warningCodes: string[]
 }
 
-export type DeletionComponentStatus =
-  | 'deleted'
-  | 'not_present'
-  | 'expired_pending'
-  | 'crypto_erased'
-  | 'failed'
+export type DeletionComponentStatus = 'deleted' | 'not_present' | 'expired_pending' | 'crypto_erased' | 'failed'
 
 export interface DeletionReportComponents {
   database: DeletionComponentStatus
@@ -778,11 +793,7 @@ export interface SesCandidateBenchmark {
   cases: SesCandidateBenchmarkCase[]
 }
 
-export type CandidateEvaluationQualityStatus =
-  | 'passed'
-  | 'failed'
-  | 'insufficient-cases'
-  | 'invalid-references'
+export type CandidateEvaluationQualityStatus = 'passed' | 'failed' | 'insufficient-cases' | 'invalid-references'
 
 export interface CandidateEvaluationCaseResult {
   caseId: string
@@ -964,14 +975,7 @@ export const candidateInterviewStages = [
 
 export type CandidateInterviewStage = (typeof candidateInterviewStages)[number]
 
-export const candidateInterviewDecisions = [
-  'passed',
-  'next-round',
-  'on-hold',
-  'failed',
-  'no-show',
-  'withdrawn'
-] as const
+export const candidateInterviewDecisions = ['passed', 'next-round', 'on-hold', 'failed', 'no-show', 'withdrawn'] as const
 
 export type CandidateInterviewDecision = (typeof candidateInterviewDecisions)[number]
 
@@ -982,8 +986,8 @@ export const candidateInterviewQuestionSources = ['standard', 'resume', 'inherit
 export type CandidateInterviewQuestionSource = (typeof candidateInterviewQuestionSources)[number]
 
 export interface CandidateInterviewQuestion {
-  bankQuestionId?:string
-  bankVersion?:number
+  bankQuestionId?: string
+  bankVersion?: number
   experienceRunId?: string
   requirement?: string
   evidence?: string
@@ -1351,6 +1355,10 @@ export interface ImportCaseTextBatchResult {
   failed: number
   remainingText: string
   reviewIds: string[]
+  /** Review ids of the cases this batch newly created (a subset of reviewIds, excluding duplicates). */
+  createdReviewIds?: string[]
+  /** Pasted passages the AI recognised as personnel introductions (要員営業), reported and never saved as cases. */
+  skippedPersonnel?: number
 }
 
 export interface PrepareWechatVisibleReadResult {
@@ -1424,20 +1432,9 @@ export interface ImportAtsCsvCandidatesResult {
   items: AtsCsvImportItemResult[]
 }
 
-export type ProposalDraftStatus =
-  | 'awaiting_review'
-  | 'approved'
-  | 'exported'
-  | 'export_unknown'
+export type ProposalDraftStatus = 'awaiting_review' | 'approved' | 'exported' | 'export_unknown'
 
-export const proposalFollowUpStages = [
-  'sent',
-  'replied',
-  'interview',
-  'accepted',
-  'declined',
-  'withdrawn'
-] as const
+export const proposalFollowUpStages = ['sent', 'replied', 'interview', 'accepted', 'declined', 'withdrawn'] as const
 
 export type ProposalFollowUpStage = (typeof proposalFollowUpStages)[number]
 
@@ -1998,12 +1995,12 @@ export interface AgentJobCaseCardsBlock {
   cards: AgentJobCaseCard[]
 }
 
-export type AgentCloudReviewSkipCode = 'cloud-unavailable' | 'no-job-case' | 'no-candidates' | 'nothing-matched' | 'no-verdict' | 'cloud-error'
+export type AgentCloudReviewSkipCode =
+  'cloud-unavailable' | 'no-job-case' | 'no-candidates' | 'nothing-matched' | 'no-verdict' | 'cloud-error'
 
 /** Whether the cloud review ran for a match run, and why not when it did not. */
 export type AgentCloudReviewOutcome =
-  | { status: 'reviewed'; reviewedCount: number }
-  | { status: 'skipped'; code: AgentCloudReviewSkipCode; reason: string | null }
+  { status: 'reviewed'; reviewedCount: number } | { status: 'skipped'; code: AgentCloudReviewSkipCode; reason: string | null }
 
 export interface AgentCandidateMatchCardsBlock {
   type: 'candidate-match-cards'
@@ -2588,9 +2585,9 @@ export type BroadcastRatePolicy = (typeof broadcastRatePolicies)[number]
 export const broadcastForbiddenFieldKeys = ['contract_chain', 'payment_terms'] as const
 export type BroadcastForbiddenFieldKey = (typeof broadcastForbiddenFieldKeys)[number]
 export type BroadcastTemplateFieldKey = Exclude<JobCaseFieldKey, BroadcastForbiddenFieldKey>
-export const broadcastTemplateFieldKeys: readonly BroadcastTemplateFieldKey[] = jobCaseFieldKeys
-  .filter((key): key is BroadcastTemplateFieldKey =>
-    !(broadcastForbiddenFieldKeys as readonly string[]).includes(key))
+export const broadcastTemplateFieldKeys: readonly BroadcastTemplateFieldKey[] = jobCaseFieldKeys.filter(
+  (key): key is BroadcastTemplateFieldKey => !(broadcastForbiddenFieldKeys as readonly string[]).includes(key)
+)
 
 export type BroadcastTemplateLine =
   | { kind: 'field'; field: BroadcastTemplateFieldKey; labelJa: string; labelZh: string; on: boolean }
@@ -2797,9 +2794,6 @@ export interface BootstrapPayload {
   operatorProfile: LocalOperatorProfile
   preferences: LocalApplicationPreferences
   jobCaseFieldAliases?: JobCaseFieldAliases
-  featureFlags?: {
-    conversationalMatchingEnabled: boolean
-  }
   agentChatModels?: AgentChatModelOption[]
   defaultAgentChatModelKey?: string
   tasks: WorkTask[]
@@ -2814,7 +2808,11 @@ export interface BootstrapPayload {
   privacy: {
     policyVersion: string
     cloudGateway: 'enforced'
-    localAi: 'vision-ocr-and-pii-active' | 'windows-ocr-and-pii-rules-active' | 'windows-ocr-bundled-isolation-pending' | 'pii-rules-active-ocr-unavailable'
+    localAi:
+      | 'vision-ocr-and-pii-active'
+      | 'windows-ocr-and-pii-rules-active'
+      | 'windows-ocr-bundled-isolation-pending'
+      | 'pii-rules-active-ocr-unavailable'
     qualityGate: {
       status: 'passed' | 'not-verified'
       datasetVersion: 'ses-privacy-regression-v1' | null
@@ -2863,28 +2861,41 @@ export interface BootstrapPayload {
 
 /** Result of the one-step resume import entry point. */
 export type BeginResumeImportResult =
-  | { cancelled: true; task: null; files: [] }
-  | { cancelled: false; task: WorkTask; files: StagedLocalFile[] }
+  { cancelled: true; task: null; files: [] } | { cancelled: false; task: WorkTask; files: StagedLocalFile[] }
 
 export interface DesktopApi {
   getBusinessFeed(): Promise<BusinessFeedEntry[]>
   markBusinessFeed(input: MarkBusinessFeedInput): Promise<BusinessFeedEntry[]>
   setCaseWorking(input: import('./business-feed').SetCaseWorkingInput): Promise<{ reviewId: string; working: boolean }>
-  listPersonnelMailUpdates(documentId:string): Promise<import('./personnel-mail-updates').PersonnelMailUpdate[]>
-  resolvePersonnelMailUpdate(input:import('./personnel-mail-updates').ResolvePersonnelMailUpdateInput): Promise<void>
+  listPersonnelMailUpdates(documentId: string): Promise<import('./personnel-mail-updates').PersonnelMailUpdate[]>
+  resolvePersonnelMailUpdate(input: import('./personnel-mail-updates').ResolvePersonnelMailUpdateInput): Promise<void>
   getPersonnelWorkspace(): Promise<PersonnelWorkspace>
   savePersonnelTemplate(input: PersonnelTemplate): Promise<PersonnelTemplate[]>
-  beginBusinessProgress(input: import('./business-progress').BeginBusinessProgressInput): Promise<import('./business-workbench').BusinessFollowUp[]>
-  advanceBusinessProgress(input: import('./business-progress').AdvanceBusinessProgressInput): Promise<import('./business-workbench').BusinessFollowUp>
-  deleteBusinessFollowUp(input: import('./business-progress').DeleteBusinessFollowUpInput): Promise<import('./business-progress').DeleteBusinessFollowUpResult>
-  analyzeBusinessProgress(input: import('./business-progress').AnalyzeBusinessProgressInput): Promise<import('./business-progress').ProgressAnalysis>
-  draftBusinessProgressMessage(input: import('./business-progress').ProgressMessageInput): Promise<{ text: string; recipient: string | null }>
-  openBusinessProgressEmail(input: import('./business-progress').ProgressMessageInput): Promise<{ opened: true; recipientPrefilled: boolean }>
+  beginBusinessProgress(
+    input: import('./business-progress').BeginBusinessProgressInput
+  ): Promise<import('./business-workbench').BusinessFollowUp[]>
+  advanceBusinessProgress(
+    input: import('./business-progress').AdvanceBusinessProgressInput
+  ): Promise<import('./business-workbench').BusinessFollowUp>
+  deleteBusinessFollowUp(
+    input: import('./business-progress').DeleteBusinessFollowUpInput
+  ): Promise<import('./business-progress').DeleteBusinessFollowUpResult>
+  analyzeBusinessProgress(
+    input: import('./business-progress').AnalyzeBusinessProgressInput
+  ): Promise<import('./business-progress').ProgressAnalysis>
+  draftBusinessProgressMessage(
+    input: import('./business-progress').ProgressMessageInput
+  ): Promise<{ text: string; recipient: string | null }>
+  openBusinessProgressEmail(
+    input: import('./business-progress').ProgressMessageInput
+  ): Promise<{ opened: true; recipientPrefilled: boolean }>
   exportBusinessProgressCalendar(input: { followUpId: string; expectedRevision: number }): Promise<{ cancelled: boolean }>
   listBusinessProgressMail(): Promise<import('./business-progress').BusinessProgressMail[]>
   updateBusinessProgressMail(input: { id: string; followUpId?: string; state?: 'applied' | 'dismissed' }): Promise<void>
   listBusinessFollowUps(): Promise<import('./business-workbench').BusinessFollowUp[]>
-  saveBusinessFollowUp(input: import('./business-workbench').SaveBusinessFollowUpInput): Promise<import('./business-workbench').BusinessFollowUp>
+  saveBusinessFollowUp(
+    input: import('./business-workbench').SaveBusinessFollowUpInput
+  ): Promise<import('./business-workbench').BusinessFollowUp>
   onBusinessMatchingProgress(listener: (progress: BusinessMatchingProgress) => void): () => void
   cancelBusinessMatching(input: { kind: 'case' | 'person'; id: string }): Promise<void>
   setCandidateOwnCompany(input: SetCandidateOwnCompanyInput): Promise<CandidateReviewSnapshot>
@@ -2892,37 +2903,59 @@ export interface DesktopApi {
   validatePersonnelMessage(input: PersonnelMessageInput): Promise<PersonnelMessageInput>
   recordPersonnelCopy(input: PersonnelMessageInput): Promise<PersonnelCopy>
   openPersonnelEmail(input: PersonnelMessageInput): Promise<{ opened: true; recipientPrefilled?: boolean }>
-  listCustomerIdentities():Promise<import('./business-growth').CustomerIdentity[]>
-  saveCustomerIdentity(input:import('./business-growth').CustomerIdentityInput):Promise<import('./business-growth').CustomerIdentity[]>
-  getInterviewAnswers(id:string):Promise<import('./business-growth').InterviewAnswers|null>
-  getPairInterviewEvidence(input:{documentId:string;reviewId:string}):Promise<import('./business-growth').PairInterviewEvidence[]>
-  listMatchingOpportunities():Promise<import('./business-growth').MatchingOpportunity[]>
-  controlMatchingOpportunity(input:{id:string;fingerprint:string;action:'seen'|'dismissed'}):Promise<import('./business-growth').MatchingOpportunity[]>
-  getQuestionBankHistory(id:string):Promise<import('./business-growth').QuestionBankRevision[]>
-  restoreQuestionBankVersion(input:{id:string;expectedVersion:number;version:number}):Promise<import('./question-bank').BankQuestion[]>
-  listQuestionBank(query?:import('./question-bank').QuestionBankQuery):Promise<import('./question-bank').BankQuestion[]>
-  controlQuestionBank(input:import('./question-bank').QuestionBankControl):Promise<import('./question-bank').BankQuestion[]>
+  listCustomerIdentities(): Promise<import('./business-growth').CustomerIdentity[]>
+  saveCustomerIdentity(input: import('./business-growth').CustomerIdentityInput): Promise<import('./business-growth').CustomerIdentity[]>
+  getInterviewAnswers(id: string): Promise<import('./business-growth').InterviewAnswers | null>
+  getPairInterviewEvidence(input: { documentId: string; reviewId: string }): Promise<import('./business-growth').PairInterviewEvidence[]>
+  listMatchingOpportunities(): Promise<import('./business-growth').MatchingOpportunity[]>
+  controlMatchingOpportunity(input: {
+    id: string
+    fingerprint: string
+    action: 'seen' | 'dismissed'
+  }): Promise<import('./business-growth').MatchingOpportunity[]>
+  getQuestionBankHistory(id: string): Promise<import('./business-growth').QuestionBankRevision[]>
+  restoreQuestionBankVersion(input: {
+    id: string
+    expectedVersion: number
+    version: number
+  }): Promise<import('./question-bank').BankQuestion[]>
+  listQuestionBank(query?: import('./question-bank').QuestionBankQuery): Promise<import('./question-bank').BankQuestion[]>
+  controlQuestionBank(input: import('./question-bank').QuestionBankControl): Promise<import('./question-bank').BankQuestion[]>
   getSystemExperience(): Promise<import('./system-experience').SystemExperienceSnapshot>
-  controlSystemExperience(input: import('./system-experience').ExperienceControl): Promise<import('./system-experience').SystemExperienceSnapshot>
-  getSystemExperienceDetails(id: string): Promise<{history: import('./system-experience').SystemExperience[]; evidence: Array<Pick<import('./system-experience').ExperienceEvent,'id'|'text'|'kind'|'createdAt'|'documentId'|'reviewId'>>}>
-  recordExperienceExposure(input: {runId:string;action:'shown'|'opened';rank?:number}): Promise<void>
+  controlSystemExperience(
+    input: import('./system-experience').ExperienceControl
+  ): Promise<import('./system-experience').SystemExperienceSnapshot>
+  getSystemExperienceDetails(id: string): Promise<{
+    history: import('./system-experience').SystemExperience[]
+    evidence: Array<Pick<import('./system-experience').ExperienceEvent, 'id' | 'text' | 'kind' | 'createdAt' | 'documentId' | 'reviewId'>>
+  }>
+  recordExperienceExposure(input: { runId: string; action: 'shown' | 'opened'; rank?: number }): Promise<void>
   listWorkRules(): Promise<import('./ai-work-rules').WorkRuleLibrary>
   getWorkRuleHistory(id: string): Promise<import('./ai-work-rules').WorkRuleRecord[]>
   analyzeWorkRule(input: import('./ai-work-rules').AnalyzeWorkRuleInput): Promise<import('./ai-work-rules').WorkRulePreview>
   saveWorkRule(input: import('./ai-work-rules').SaveWorkRuleInput): Promise<import('./ai-work-rules').WorkRuleRecord>
   changeWorkRule(input: import('./ai-work-rules').ChangeWorkRuleInput): Promise<import('./ai-work-rules').WorkRuleRecord>
   assessCasePerson(input: import('./ai-work-rules').AssessCasePersonInput): Promise<import('./ai-work-rules').CasePersonAssessment>
-  listCasePersonAssessments(input: import('./ai-work-rules').AssessCasePersonInput): Promise<import('./ai-work-rules').CasePersonAssessment[]>
   prepareCaseAssessment(input: PrepareCaseIntroductionInput): Promise<JobCaseReviewSnapshot>
   listCaseAssessments(jobCaseId: string): Promise<import('./ai-work-rules').CasePersonAssessment[]>
+  /** 「查看人员 (n)」 counts for every active case with saved assessments, so the case list survives a restart. */
+  listCaseSearchSummaries(): Promise<import('./business-workbench').CaseSearchSummary[]>
   getCaseQuestionDraft(input: import('./ai-work-rules').CaseQuestionDraftQuery): Promise<import('./ai-work-rules').CaseQuestionDraftView>
   onCaseResumeImportProgress(listener: (progress: import('./ai-work-rules').CaseResumeImportProgress) => void): () => void
   addCandidateToLibrary(input: { documentId: string; profileVersion: number }): Promise<CandidateReviewSnapshot>
-  importResumeForCase(input: { requestId?: string; jobCaseId: string; file: { name: string; bytes: Uint8Array } }): Promise<{ person: CandidateReviewSnapshot; assessment: import('./ai-work-rules').CasePersonAssessment | null; error: string | null }>
+  importResumeForCase(input: {
+    requestId?: string
+    jobCaseId: string
+    file: { name: string; bytes: Uint8Array }
+  }): Promise<{ person: CandidateReviewSnapshot; assessment: import('./ai-work-rules').CasePersonAssessment | null; error: string | null }>
   saveAssessmentFeedback(input: import('./ai-work-rules').AssessmentFeedbackInput): Promise<void>
   generateRuleQuestions(input: import('./ai-work-rules').GenerateRuleQuestionsInput): Promise<import('./ai-work-rules').RuleQuestionsResult>
   findPersonnelForCase(jobCaseId: string): Promise<import('./business-workbench').CasePersonnelMatchResult>
   findCasesForPersonnel(documentId: string): Promise<import('./business-workbench').PersonnelCaseMatchResult>
+  /** The person's latest stored 找案件 run, or null; the caller still checks every version before reusing it. */
+  getPersonnelCaseMatchRun(documentId: string): Promise<import('./business-workbench').StoredPersonnelCaseMatchRun | null>
+  /** Badge data for every person with a stored 找案件 run. */
+  listPersonnelCaseMatchRunSummaries(): Promise<import('./business-workbench').PersonnelCaseMatchRunSummary[]>
   getStartupStatus(): Promise<StartupStatus>
   getBootstrap(): Promise<BootstrapPayload>
   resolveActionApproval(input: ResolveActionApprovalInput): Promise<ActionApprovalSummary>
@@ -2936,8 +2969,24 @@ export interface DesktopApi {
   openAiCommerceMemberCenter(): Promise<{ opened: true }>
   prepareAiCommerceCloudPrompt(input: PrepareAiCommerceCloudPromptInput): Promise<PrepareAiCommerceCloudPromptResult>
   executeAiCommerceCloudPrompt(input: ExecuteAiCommerceCloudPromptInput): Promise<AiCommerceCloudPromptResult>
-  regenerateIntroduction(input: import('./business-workbench').RegenerateIntroductionInput): Promise<{ text: string; experienceRunId?: string }>
-  beginIntroductionDraft(input: import('./business-workbench').RegenerateIntroductionInput & {text:string}): Promise<{text:string;experienceRunId:string;hasExperience:boolean}>
+  regenerateIntroduction(
+    input: import('./business-workbench').RegenerateIntroductionInput
+  ): Promise<{ text: string; experienceRunId?: string }>
+  beginIntroductionDraft(
+    input: import('./business-workbench').RegenerateIntroductionInput & { text: string }
+  ): Promise<{ text: string; experienceRunId: string; hasExperience: boolean }>
+  saveCaseIntroductionDrafts(
+    input: import('./business-workbench').SaveCaseIntroductionDraftsInput
+  ): Promise<import('./business-workbench').CaseIntroductionDraft[]>
+  listCaseIntroductionDrafts(reviewId: string): Promise<import('./business-workbench').CaseIntroductionDraft[]>
+  savePersonnelIntroductionDrafts(
+    input: import('./business-workbench').SavePersonnelIntroductionDraftsInput
+  ): Promise<import('./business-workbench').PersonnelIntroductionDraft[]>
+  listPersonnelIntroductionDrafts(documentId: string): Promise<import('./business-workbench').PersonnelIntroductionDraft[]>
+  /** Optional so test doubles of the whole API need not stub it. */
+  exportSkillSheet?(
+    input: import('./business-workbench').ExportSkillSheetInput
+  ): Promise<import('./business-workbench').ExportSkillSheetResult>
   saveBusinessField(input: import('./business-workbench').SaveBusinessFieldInput): Promise<{ version: number }>
   listAiConversations(context: AiConversationContext): Promise<AiConversationSnapshot[]>
   saveAiConversation(input: SaveAiConversationInput): Promise<AiConversationSnapshot>
@@ -3016,7 +3065,9 @@ export interface DesktopApi {
   connectGoogleWorkspace(): Promise<GoogleWorkspaceState>
   diagnoseGoogleWorkspace(): Promise<GoogleWorkspaceReadinessReport>
   runGoogleWorkspaceOnlineAcceptance(): Promise<GoogleWorkspaceOnlineAcceptanceReport>
-  saveGoogleWorkspaceAdminConfiguration(input: SaveGoogleWorkspaceAdminConfigurationInput): Promise<SaveGoogleWorkspaceAdminConfigurationResult>
+  saveGoogleWorkspaceAdminConfiguration(
+    input: SaveGoogleWorkspaceAdminConfigurationInput
+  ): Promise<SaveGoogleWorkspaceAdminConfigurationResult>
   disconnectGoogleWorkspace(): Promise<GoogleWorkspaceState>
   syncGoogleWorkspace(): Promise<GmailSyncState>
   onGmailSyncCompleted(listener: (completion: GmailScheduledSyncCompletion) => void): () => void
@@ -3060,24 +3111,32 @@ export const ipcChannels = {
   recordPersonnelCopy: 'personnel:record-copy',
   openPersonnelEmail: 'personnel:open-email',
   findCasesForPersonnel: 'personnel:find-cases',
-  listCustomerIdentities:'growth:customers',saveCustomerIdentity:'growth:customer-save',getInterviewAnswers:'growth:answers',getPairInterviewEvidence:'growth:pair-evidence',
-  listMatchingOpportunities:'growth:opportunities',controlMatchingOpportunity:'growth:opportunity-control',getQuestionBankHistory:'question-bank:history',restoreQuestionBankVersion:'question-bank:restore',
-  listQuestionBank:'question-bank:list',
-  controlQuestionBank:'question-bank:control',
-  getSystemExperience:'system-experience:list',
-  controlSystemExperience:'system-experience:control',
-  getSystemExperienceDetails:'system-experience:details',
-  recordExperienceExposure:'system-experience:exposure',
+  getPersonnelCaseMatchRun: 'personnel:case-match-run',
+  listPersonnelCaseMatchRunSummaries: 'personnel:case-match-runs',
+  listCustomerIdentities: 'growth:customers',
+  saveCustomerIdentity: 'growth:customer-save',
+  getInterviewAnswers: 'growth:answers',
+  getPairInterviewEvidence: 'growth:pair-evidence',
+  listMatchingOpportunities: 'growth:opportunities',
+  controlMatchingOpportunity: 'growth:opportunity-control',
+  getQuestionBankHistory: 'question-bank:history',
+  restoreQuestionBankVersion: 'question-bank:restore',
+  listQuestionBank: 'question-bank:list',
+  controlQuestionBank: 'question-bank:control',
+  getSystemExperience: 'system-experience:list',
+  controlSystemExperience: 'system-experience:control',
+  getSystemExperienceDetails: 'system-experience:details',
+  recordExperienceExposure: 'system-experience:exposure',
   listWorkRules: 'ai-work-rules:list',
   getWorkRuleHistory: 'ai-work-rules:history',
   analyzeWorkRule: 'ai-work-rules:analyze',
   saveWorkRule: 'ai-work-rules:save',
   changeWorkRule: 'ai-work-rules:change',
   assessCasePerson: 'case-person:assess',
-  listCasePersonAssessments: 'case-person:history',
   addCandidateToLibrary: 'case-person:add-to-library',
   importResumeForCase: 'case-person:import',
   listCaseAssessments: 'case-person:case-history',
+  listCaseSearchSummaries: 'case-person:search-summaries',
   getCaseQuestionDraft: 'case-person:question-draft',
   prepareCaseAssessment: 'case-person:prepare-case',
   caseResumeImportProgress: 'case-person:import-progress',
@@ -3099,6 +3158,11 @@ export const ipcChannels = {
   executeAiCommerceCloudPrompt: 'aicommerce:execute-cloud-prompt',
   regenerateIntroduction: 'business:introduction-regenerate',
   beginIntroductionDraft: 'business:introduction-begin',
+  saveCaseIntroductionDrafts: 'broadcast:case-introduction-drafts-save',
+  listCaseIntroductionDrafts: 'broadcast:case-introduction-drafts-list',
+  savePersonnelIntroductionDrafts: 'personnel:introduction-drafts-save',
+  listPersonnelIntroductionDrafts: 'personnel:introduction-drafts-list',
+  exportSkillSheet: 'personnel:skill-sheet-export',
   saveBusinessField: 'business:field-save',
   listAiConversations: 'ai-conversations:list',
   saveAiConversation: 'ai-conversations:save',

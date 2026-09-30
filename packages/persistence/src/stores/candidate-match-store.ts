@@ -1,11 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { type ConfirmedJobCase, confirmedJobCaseSchema } from '@job-cases'
-import {
-  type MatchRuntimeIdentity,
-  candidatePoolFingerprint,
-  evaluateMatchRunValidity,
-  projectBusinessPriority
-} from '@matching'
+import { type MatchRuntimeIdentity, candidatePoolFingerprint, evaluateMatchRunValidity, projectBusinessPriority } from '@matching'
 import { candidateProfileSchema } from '@resume'
 import {
   candidateMatchAssessmentSchema,
@@ -122,21 +117,26 @@ export class CandidateMatchStore extends DomainStore {
       algorithmVersion: row.algorithm_version,
       hardFilterPolicyVersion: row.hard_filter_policy_version,
       resultSetHash: row.result_set_hash,
-      binding: row.job_case_id && row.job_case_version && row.candidate_pool_fingerprint &&
-        row.candidate_profile_versions_json && row.embedding_model_id && row.embedding_model_revision &&
+      binding:
+        row.job_case_id &&
+        row.job_case_version &&
+        row.candidate_pool_fingerprint &&
+        row.candidate_profile_versions_json &&
+        row.embedding_model_id &&
+        row.embedding_model_revision &&
         row.validity_policy_version === 'match-run-validity-v1'
-        ? {
-            jobCaseId: row.job_case_id,
-            jobCaseVersion: row.job_case_version,
-            candidatePoolFingerprint: row.candidate_pool_fingerprint,
-            candidateProfileVersions: JSON.parse(row.candidate_profile_versions_json) as Array<{ id: string; version: number }>,
-            embeddingModelId: row.embedding_model_id,
-            embeddingModelRevision: row.embedding_model_revision,
-            rerankerModelId: row.reranker_model_id,
-            rerankerModelRevision: row.reranker_model_revision,
-            policyVersion: 'match-run-validity-v1'
-          }
-        : null,
+          ? {
+              jobCaseId: row.job_case_id,
+              jobCaseVersion: row.job_case_version,
+              candidatePoolFingerprint: row.candidate_pool_fingerprint,
+              candidateProfileVersions: JSON.parse(row.candidate_profile_versions_json) as Array<{ id: string; version: number }>,
+              embeddingModelId: row.embedding_model_id,
+              embeddingModelRevision: row.embedding_model_revision,
+              rerankerModelId: row.reranker_model_id,
+              rerankerModelRevision: row.reranker_model_revision,
+              policyVersion: 'match-run-validity-v1'
+            }
+          : null,
       createdAt: row.created_at,
       evaluation: candidateMatchEvaluation(this.listCandidateMatchResultRows(row.id))
     })
@@ -151,57 +151,62 @@ export class CandidateMatchStore extends DomainStore {
     const run = this.getCandidateMatchRunSummary(runId)
     const rows = this.listCandidateMatchResultRows(runId)
     const row = resultId
-      ? rows.find((item) => item.id === resultId) ?? null
-      : rows.find((item) => item.result_rank === (rank ?? 1)) ?? rows[0] ?? null
+      ? (rows.find((item) => item.id === resultId) ?? null)
+      : (rows.find((item) => item.result_rank === (rank ?? 1)) ?? rows[0] ?? null)
     const activeJobCase = run.binding
-      ? this.stores.jobCases.listActiveJobCases().find((item) => item.id === run.binding?.jobCaseId && item.version === run.binding?.jobCaseVersion) ?? null
+      ? (this.stores.jobCases
+          .listActiveJobCases()
+          .find((item) => item.id === run.binding?.jobCaseId && item.version === run.binding?.jobCaseVersion) ?? null)
       : null
     const jobCaseExists = run.binding
       ? Boolean(this.database.prepare<[string], { id: string }>('SELECT id FROM job_cases WHERE id = ?').get(run.binding.jobCaseId))
       : false
     const poolFingerprint = candidatePoolFingerprint(this.stores.candidates.listEligibleTalentProfiles())
-    const validity: AgentEntityStatus = !run.binding || !jobCaseExists || !row
-      ? 'deleted'
-      : !activeJobCase
-        ? 'stale'
-      : evaluateMatchRunValidity(run, {
-          ...runtimeIdentity,
-          jobCaseId: activeJobCase.id,
-          jobCaseVersion: activeJobCase.version,
-          candidatePoolFingerprint: poolFingerprint,
-          explicitlyInvalidated: false
-        }) === 'current' ? 'current' : 'stale'
+    const validity: AgentEntityStatus =
+      !run.binding || !jobCaseExists || !row
+        ? 'deleted'
+        : !activeJobCase
+          ? 'stale'
+          : evaluateMatchRunValidity(run, {
+                ...runtimeIdentity,
+                jobCaseId: activeJobCase.id,
+                jobCaseVersion: activeJobCase.version,
+                candidatePoolFingerprint: poolFingerprint,
+                explicitlyInvalidated: false
+              }) === 'current'
+            ? 'current'
+            : 'stale'
     const snapshot = row?.result_snapshot_json
-      ? JSON.parse(row.result_snapshot_json) as (MatchingHomeResult['fit'] & { anonymousLabel: string })
+      ? (JSON.parse(row.result_snapshot_json) as MatchingHomeResult['fit'] & { anonymousLabel: string })
       : null
     const matched = snapshot?.matchedTerms ?? []
     const missing = snapshot?.missing ?? (snapshot?.hardFilterUnknownCount ? ['硬条件仍有未知项'] : [])
-    const hardFilterStatus = snapshot?.hardFilterStatus
-      ?? (snapshot?.hardFilterUnknownCount ? 'unknown' : 'passed')
-    const candidate = row && snapshot
-      ? {
-          reference: {
-            kind: 'match-result' as const,
-            objectId: row.id,
-            objectVersion: null,
-            resultHash: row.result_hash,
-            ordinal: row.result_rank,
-            label: snapshot.anonymousLabel,
-            target: `match-result:${row.id}`
-          },
-          candidateProfileId: row.candidate_profile_id,
-          runId,
-          rank: row.result_rank,
-          anonymousLabel: snapshot.anonymousLabel,
-          fitScore: snapshot.matchScore,
-          matched,
-          missing,
-          hardFilterStatus,
-          projectEvidence: snapshot.projectEvidence?.summary ?? null,
-          status: validity,
-          assessment: this.listCandidateMatchAssessments(runId).get(row.id) ?? null
-        }
-      : null
+    const hardFilterStatus = snapshot?.hardFilterStatus ?? (snapshot?.hardFilterUnknownCount ? 'unknown' : 'passed')
+    const candidate =
+      row && snapshot
+        ? {
+            reference: {
+              kind: 'match-result' as const,
+              objectId: row.id,
+              objectVersion: null,
+              resultHash: row.result_hash,
+              ordinal: row.result_rank,
+              label: snapshot.anonymousLabel,
+              target: `match-result:${row.id}`
+            },
+            candidateProfileId: row.candidate_profile_id,
+            runId,
+            rank: row.result_rank,
+            anonymousLabel: snapshot.anonymousLabel,
+            fitScore: snapshot.matchScore,
+            matched,
+            missing,
+            hardFilterStatus,
+            projectEvidence: snapshot.projectEvidence?.summary ?? null,
+            status: validity,
+            assessment: this.listCandidateMatchAssessments(runId).get(row.id) ?? null
+          }
+        : null
     return {
       runId,
       resultHash: run.resultSetHash,
@@ -246,9 +251,12 @@ export class CandidateMatchStore extends DomainStore {
     }
     const profile = candidateProfileSchema.parse(JSON.parse(profileRow.profile_json))
     const field = (key: string): string | null => profile.fields.find((item) => item.key === key)?.value ?? null
-    const validity: AgentEntityStatus = matchFacts.validity === 'deleted'
-      ? 'deleted'
-      : matchFacts.validity === 'stale' || profileRow.status !== 'current' ? 'stale' : 'current'
+    const validity: AgentEntityStatus =
+      matchFacts.validity === 'deleted'
+        ? 'deleted'
+        : matchFacts.validity === 'stale' || profileRow.status !== 'current'
+          ? 'stale'
+          : 'current'
     return {
       runId,
       validity,
@@ -301,10 +309,14 @@ export class CandidateMatchStore extends DomainStore {
       }
     }
     const profile = candidateProfileSchema.parse(JSON.parse(profileRow.profile_json))
-    const validity: AgentEntityStatus = matchFacts.validity === 'deleted'
-      ? 'deleted'
-      : matchFacts.validity === 'stale' || profileRow.status !== 'current' ? 'stale' : 'current'
-    const interviews = this.stores.candidateInterviews.listCandidateInterviews()
+    const validity: AgentEntityStatus =
+      matchFacts.validity === 'deleted'
+        ? 'deleted'
+        : matchFacts.validity === 'stale' || profileRow.status !== 'current'
+          ? 'stale'
+          : 'current'
+    const interviews = this.stores.candidateInterviews
+      .listCandidateInterviews()
       .filter((interview) => interview.sourceDocumentId === profile.sourceDocumentId)
       .slice(0, 40)
       .map((interview) => ({
@@ -346,52 +358,62 @@ export class CandidateMatchStore extends DomainStore {
     const task = this.stores.workTasks.getWorkTask(taskId)
     if (!task || task.type !== 'MATCH_CANDIDATES') throw new Error('Candidate match task was not found.')
     const algorithmVersion = matches[0]?.retrieval.strategy ?? runtimeIdentity?.algorithmVersion ?? 'hard-filter-hybrid-rrf-v1'
-    const hardFilterPolicyVersion = matches[0]?.retrieval.hardFilterPolicyVersion ?? runtimeIdentity?.hardFilterPolicyVersion ?? 'tri-state-v3'
+    const hardFilterPolicyVersion =
+      matches[0]?.retrieval.hardFilterPolicyVersion ?? runtimeIdentity?.hardFilterPolicyVersion ?? 'tri-state-v3'
     const jobCaseBinding = task.contextBindings.find((binding) => binding.objectType === 'job-case') ?? null
     const jobCase = jobCaseBinding
-      ? this.stores.jobCases.listActiveJobCases().find((item) => item.id === jobCaseBinding.objectId) ?? null
+      ? (this.stores.jobCases.listActiveJobCases().find((item) => item.id === jobCaseBinding.objectId) ?? null)
       : null
     const pool = this.stores.candidates.listEligibleTalentProfiles()
     const profileVersions = pool
       .map((profile) => ({ id: profile.id, version: profile.profileVersion }))
       .toSorted((left, right) => left.id.localeCompare(right.id) || left.version - right.version)
-    const binding = runtimeIdentity && jobCase && jobCaseBinding?.version === String(jobCase.version)
-      ? {
-          jobCaseId: jobCase.id,
-          jobCaseVersion: jobCase.version,
-          candidatePoolFingerprint: candidatePoolFingerprint(pool),
-          candidateProfileVersions: profileVersions,
-          embeddingModelId: runtimeIdentity.embeddingModelId,
-          embeddingModelRevision: runtimeIdentity.embeddingModelRevision,
-          rerankerModelId: runtimeIdentity.rerankerModelId,
-          rerankerModelRevision: runtimeIdentity.rerankerModelRevision,
-          policyVersion: 'match-run-validity-v1' as const
-        }
-      : null
+    const binding =
+      runtimeIdentity && jobCase && jobCaseBinding?.version === String(jobCase.version)
+        ? {
+            jobCaseId: jobCase.id,
+            jobCaseVersion: jobCase.version,
+            candidatePoolFingerprint: candidatePoolFingerprint(pool),
+            candidateProfileVersions: profileVersions,
+            embeddingModelId: runtimeIdentity.embeddingModelId,
+            embeddingModelRevision: runtimeIdentity.embeddingModelRevision,
+            rerankerModelId: runtimeIdentity.rerankerModelId,
+            rerankerModelRevision: runtimeIdentity.rerankerModelRevision,
+            policyVersion: 'match-run-validity-v1' as const
+          }
+        : null
     const prepared = matches.map((match, index) => ({
       match,
       rank: match.retrieval.rank ?? index + 1,
-      resultHash: createHash('sha256').update(JSON.stringify({
-        candidateProfileId: match.id,
-        candidateProfileVersion: match.version,
-        matchedTerms: match.matchedTerms,
-        evidence: match.evidence,
-        projectEvidence: match.projectEvidence,
-        retrieval: match.retrieval
-      })).digest('hex')
+      resultHash: createHash('sha256')
+        .update(
+          JSON.stringify({
+            candidateProfileId: match.id,
+            candidateProfileVersion: match.version,
+            matchedTerms: match.matchedTerms,
+            evidence: match.evidence,
+            projectEvidence: match.projectEvidence,
+            retrieval: match.retrieval
+          })
+        )
+        .digest('hex')
     }))
-    const resultSetHash = createHash('sha256').update(JSON.stringify({
-      query: query.normalize('NFKC').trim(),
-      algorithmVersion,
-      hardFilterPolicyVersion,
-      binding,
-      results: prepared.map((result) => ({
-        candidateProfileId: result.match.id,
-        candidateProfileVersion: result.match.version,
-        resultHash: result.resultHash,
-        rank: result.rank
-      }))
-    })).digest('hex')
+    const resultSetHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          query: query.normalize('NFKC').trim(),
+          algorithmVersion,
+          hardFilterPolicyVersion,
+          binding,
+          results: prepared.map((result) => ({
+            candidateProfileId: result.match.id,
+            candidateProfileVersion: result.match.version,
+            resultHash: result.resultHash,
+            rank: result.rank
+          }))
+        })
+      )
+      .digest('hex')
     const timestamp = now.toISOString()
     const existing = this.database
       .prepare<[string, string], CandidateMatchRunRow>(
@@ -416,13 +438,23 @@ export class CandidateMatchStore extends DomainStore {
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(
-            runId, taskId, query, algorithmVersion, hardFilterPolicyVersion, resultSetHash,
-            binding?.jobCaseId ?? null, binding?.jobCaseVersion ?? null,
+            runId,
+            taskId,
+            query,
+            algorithmVersion,
+            hardFilterPolicyVersion,
+            resultSetHash,
+            binding?.jobCaseId ?? null,
+            binding?.jobCaseVersion ?? null,
             binding?.candidatePoolFingerprint ?? null,
             binding ? JSON.stringify(binding.candidateProfileVersions) : null,
-            binding?.embeddingModelId ?? null, binding?.embeddingModelRevision ?? null,
-            binding?.rerankerModelId ?? null, binding?.rerankerModelRevision ?? null,
-            binding?.policyVersion ?? null, timestamp, timestamp
+            binding?.embeddingModelId ?? null,
+            binding?.embeddingModelRevision ?? null,
+            binding?.rerankerModelId ?? null,
+            binding?.rerankerModelRevision ?? null,
+            binding?.policyVersion ?? null,
+            timestamp,
+            timestamp
           )
         for (const result of prepared) {
           this.database
@@ -484,9 +516,16 @@ export class CandidateMatchStore extends DomainStore {
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        randomUUID(), result.id, run.id, result.candidate_profile_id, projected.ruleVersion,
-        projected.level, JSON.stringify(projected.reasons), JSON.stringify(projected.inputs),
-        projected.inputSnapshotHash, generatedAt
+        randomUUID(),
+        result.id,
+        run.id,
+        result.candidate_profile_id,
+        projected.ruleVersion,
+        projected.level,
+        JSON.stringify(projected.reasons),
+        JSON.stringify(projected.inputs),
+        projected.inputSnapshotHash,
+        generatedAt
       )
     const row = this.database
       .prepare<[string, string, string], BusinessPriorityProjectionRow>(
@@ -503,9 +542,7 @@ export class CandidateMatchStore extends DomainStore {
     jobCase: ConfirmedJobCase
   ): ReturnType<typeof projectBusinessPriority> {
     const profileRow = this.database
-      .prepare<[string], CandidateProfileRow>(
-        "SELECT profile_json, status FROM candidate_profiles WHERE id = ? AND status = 'current'"
-      )
+      .prepare<[string], CandidateProfileRow>("SELECT profile_json, status FROM candidate_profiles WHERE id = ? AND status = 'current'")
       .get(result.candidate_profile_id)
     if (!profileRow) throw new Error('Current candidate profile was not found for business priority.')
     const profile = candidateProfileSchema.parse(JSON.parse(profileRow.profile_json))
@@ -541,14 +578,8 @@ export class CandidateMatchStore extends DomainStore {
     return businessPriorityProjectionFromRow(row, now)
   }
 
-  refreshBusinessPriorityProjectionsForPair(
-    jobCaseId: string,
-    candidateProfileId: string,
-    now = new Date()
-  ): void {
-    const jobCaseRow = this.database
-      .prepare<[string], JobCaseRow>('SELECT case_json, status FROM job_cases WHERE id = ?')
-      .get(jobCaseId)
+  refreshBusinessPriorityProjectionsForPair(jobCaseId: string, candidateProfileId: string, now = new Date()): void {
+    const jobCaseRow = this.database.prepare<[string], JobCaseRow>('SELECT case_json, status FROM job_cases WHERE id = ?').get(jobCaseId)
     if (!jobCaseRow) return
     const jobCase = confirmedJobCaseSchema.parse(JSON.parse(jobCaseRow.case_json))
     const rows = this.database
@@ -567,10 +598,7 @@ export class CandidateMatchStore extends DomainStore {
     }
   }
 
-  getMatchingHomeProjection(
-    runtimeIdentity: MatchRuntimeIdentity,
-    now = new Date()
-  ): MatchingHomeProjection {
+  getMatchingHomeProjection(runtimeIdentity: MatchRuntimeIdentity, now = new Date()): MatchingHomeProjection {
     const jobCases = this.stores.jobCases.listActiveJobCases()
     const pool = this.stores.candidates.listEligibleTalentProfiles()
     if (jobCases.length === 0 || pool.length === 0) {
@@ -601,13 +629,15 @@ export class CandidateMatchStore extends DomainStore {
         )
         .get(jobCase.id)
       const run = row ? this.getCandidateMatchRunSummary(row.id) : null
-      const validity: MatchingHomeProjection['jobCases'][number]['validity'] = run ? evaluateMatchRunValidity(run, {
-        ...runtimeIdentity,
-        jobCaseId: jobCase.id,
-        jobCaseVersion: jobCase.version,
-        candidatePoolFingerprint: poolFingerprint,
-        explicitlyInvalidated: Boolean(row?.invalidated_at)
-      }) : 'not_run'
+      const validity: MatchingHomeProjection['jobCases'][number]['validity'] = run
+        ? evaluateMatchRunValidity(run, {
+            ...runtimeIdentity,
+            jobCaseId: jobCase.id,
+            jobCaseVersion: jobCase.version,
+            candidatePoolFingerprint: poolFingerprint,
+            explicitlyInvalidated: Boolean(row?.invalidated_at)
+          })
+        : 'not_run'
       return {
         jobCase,
         run,
@@ -615,9 +645,10 @@ export class CandidateMatchStore extends DomainStore {
         createdAt: run?.createdAt ?? null
       }
     })
-    const current = projectedCases
-      .filter((item) => item.run !== null && item.validity === 'current')
-      .toSorted((left, right) => (right.createdAt ?? '').localeCompare(left.createdAt ?? ''))[0] ?? null
+    const current =
+      projectedCases
+        .filter((item) => item.run !== null && item.validity === 'current')
+        .toSorted((left, right) => (right.createdAt ?? '').localeCompare(left.createdAt ?? ''))[0] ?? null
     const selected = current ?? projectedCases[0]!
     let currentRun: MatchingHomeProjection['currentRun'] = null
     if (current?.run) {
@@ -627,25 +658,27 @@ export class CandidateMatchStore extends DomainStore {
       const results = rows.flatMap((row): MatchingHomeResult[] => {
         if (!row.result_snapshot_json) return []
         const snapshot = JSON.parse(row.result_snapshot_json) as MatchingHomeResult['fit'] & { anonymousLabel: string }
-        return [{
-          matchResultId: row.id,
-          matchResultHash: row.result_hash,
-          candidateProfileId: row.candidate_profile_id,
-          candidateProfileVersion: row.candidate_profile_version,
-          anonymousLabel: snapshot.anonymousLabel,
-          fit: {
-            rank: snapshot.rank,
-            matchScore: snapshot.matchScore,
-            matchedTerms: snapshot.matchedTerms,
-            termCoverage: snapshot.termCoverage,
-            hardFilterUnknownCount: snapshot.hardFilterUnknownCount,
-            evidence: snapshot.evidence,
-            projectEvidence: snapshot.projectEvidence
-          },
-          feedback: candidateMatchFeedbackFromRow(row),
-          businessPriority: this.getPersistedBusinessPriorityProjection(row, current.jobCase, now),
-          assessment: assessments.get(row.id) ?? null
-        }]
+        return [
+          {
+            matchResultId: row.id,
+            matchResultHash: row.result_hash,
+            candidateProfileId: row.candidate_profile_id,
+            candidateProfileVersion: row.candidate_profile_version,
+            anonymousLabel: snapshot.anonymousLabel,
+            fit: {
+              rank: snapshot.rank,
+              matchScore: snapshot.matchScore,
+              matchedTerms: snapshot.matchedTerms,
+              termCoverage: snapshot.termCoverage,
+              hardFilterUnknownCount: snapshot.hardFilterUnknownCount,
+              evidence: snapshot.evidence,
+              projectEvidence: snapshot.projectEvidence
+            },
+            feedback: candidateMatchFeedbackFromRow(row),
+            businessPriority: this.getPersistedBusinessPriorityProjection(row, current.jobCase, now),
+            assessment: assessments.get(row.id) ?? null
+          }
+        ]
       })
       currentRun = { run: activeRun, validity: 'current', results }
     }
@@ -664,11 +697,7 @@ export class CandidateMatchStore extends DomainStore {
     }
   }
 
-  setBusinessPriorityOverride(
-    rawInput: SetBusinessPriorityOverrideInput,
-    actor: string,
-    now = new Date()
-  ): BusinessPriorityProjection {
+  setBusinessPriorityOverride(rawInput: SetBusinessPriorityOverrideInput, actor: string, now = new Date()): BusinessPriorityProjection {
     const input = setBusinessPriorityOverrideInputSchema.parse(rawInput)
     if (new Date(input.expiresAt).getTime() <= now.getTime()) {
       throw new Error('Business priority override expiry must be in the future.')

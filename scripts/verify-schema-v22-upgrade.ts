@@ -14,9 +14,23 @@ const databaseKey = randomBytes(32)
 const mappingKey = randomBytes(32)
 const reviewId = '923320d0-23b1-43a1-815d-6764d7cd73c5'
 
+function describeSchemaShape(database: Database.Database): string[] {
+  const objects = database
+    .prepare<[], { type: string; name: string }>("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
+    .all()
+  const shape = objects.map((object) => `${object.type}:${object.name}`)
+  for (const object of objects.filter((candidate) => candidate.type === 'table')) {
+    const columns = database.pragma(`table_info("${object.name}")`) as Array<{ name: string }>
+    for (const column of columns) shape.push(`column:${object.name}.${column.name}`)
+  }
+  return shape.sort()
+}
+
 try {
   const sampleOnlyRepository = new EncryptedApplicationRepository({
-    path: join(temporaryDirectory, 'sample-only.db'), databaseKey, mappingKey
+    path: join(temporaryDirectory, 'sample-only.db'),
+    databaseKey,
+    mappingKey
   })
   for (const sample of createSampleTasks('2026-07-19T00:00:00.000Z')) sampleOnlyRepository.saveWorkTask(sample)
   assert.equal(sampleOnlyRepository.getLocalDataRevision().revision, 0, 'built-in sample tasks caused a false backup reminder')
@@ -25,18 +39,15 @@ try {
 
   const policyUpgradePath = join(temporaryDirectory, 'policy-upgrade.db')
   const policyRepository = new EncryptedApplicationRepository({
-    path: policyUpgradePath, databaseKey, mappingKey
+    path: policyUpgradePath,
+    databaseKey,
+    mappingKey
   })
-  const legacyMatchTask = createSampleTasks('2026-07-19T00:00:00.000Z')
-    .find((task) => task.type === 'MATCH_CANDIDATES')
+  const legacyMatchTask = createSampleTasks('2026-07-19T00:00:00.000Z').find((task) => task.type === 'MATCH_CANDIDATES')
   assert.ok(legacyMatchTask, 'match-candidate sample task is unavailable')
   policyRepository.saveWorkTask(legacyMatchTask)
-  const legacyMatchRunId = policyRepository.saveCandidateMatchRun(
-    legacyMatchTask.id,
-    'Java AWS',
-    [],
-    new Date('2026-07-19T00:00:30.000Z')
-  ).run.id
+  const legacyMatchRunId = policyRepository.saveCandidateMatchRun(legacyMatchTask.id, 'Java AWS', [], new Date('2026-07-19T00:00:30.000Z'))
+    .run.id
   policyRepository.close()
 
   const policyLegacy = new Database(policyUpgradePath)
@@ -75,6 +86,11 @@ try {
     ALTER TABLE candidate_match_runs_v24 RENAME TO candidate_match_runs;
     CREATE INDEX candidate_match_runs_task_idx
       ON candidate_match_runs(task_id, created_at DESC);
+    DROP TABLE job_case_working_set;
+    DROP TABLE person_case_match_run_items;
+    DROP TABLE person_case_match_runs;
+    DROP TABLE case_introduction_drafts;
+    DROP TABLE personnel_introduction_drafts;
     DROP TABLE customer_identities;
     DROP TABLE interview_answers;
     DROP TABLE matching_opportunities;
@@ -95,45 +111,52 @@ try {
     DROP TABLE business_priority_projections;
     ALTER TABLE candidate_match_results DROP COLUMN result_snapshot_json;
     ALTER TABLE candidate_records DROP COLUMN in_talent_library;
-    DELETE FROM schema_migrations WHERE version IN (25, 36, 37, 38, 52, 53, 54, 55, 56, 57, 58);
+    DELETE FROM schema_migrations WHERE version IN (25, 36, 37, 38, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63);
     COMMIT;
   `)
   policyLegacy.pragma('foreign_keys=ON')
   policyLegacy.close()
 
   const policyUpgraded = new EncryptedApplicationRepository({
-    path: policyUpgradePath, databaseKey, mappingKey
+    path: policyUpgradePath,
+    databaseKey,
+    mappingKey
   })
   const preservedLegacyMatchRun = policyUpgraded.getCandidateMatchRunSummary(legacyMatchRunId)
   assert.equal(preservedLegacyMatchRun.hardFilterPolicyVersion, 'tri-state-v2')
   policyUpgraded.close()
 
   const repository = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  const processed = createRedactedManualJobCaseSource({
-    subject: 'Java 案件',
-    body: '必須スキル：Java / AWS\n単価：90万円/月'
-  }, '3742dd12-101f-4fbb-85eb-cd5c7b169d3c', [], new Date('2026-07-19T00:00:00.000Z'))
-  const draft = extractJobCaseDraft(processed.source, reviewId, new Date('2026-07-19T00:00:00.000Z'))
-  repository.saveRedactedJobCaseSourceAndDraft(
-    processed.redaction.session,
-    processed.redaction.mappings,
-    processed.source,
-    draft
+  const processed = createRedactedManualJobCaseSource(
+    {
+      subject: 'Java 案件',
+      body: '必須スキル：Java / AWS\n単価：90万円/月'
+    },
+    '3742dd12-101f-4fbb-85eb-cd5c7b169d3c',
+    [],
+    new Date('2026-07-19T00:00:00.000Z')
   )
-  repository.recordRecoveryEvent('backup-created', {
-    version: 'ses-recovery-v1',
-    backupId: '44794ba1-67d8-44b6-8b1c-293ef4885125',
-    createdAt: '2026-07-19T00:01:00.000Z',
-    sourcePlatform: 'darwin',
-    sourceArch: 'arm64',
-    schemaVersion: 26,
-    databaseBytes: 4096,
-    vaultObjectCount: 0,
-    vaultBytes: 0,
-    totalBytes: 4096,
-    googleWorkspaceCredentialIncluded: false,
-    cloudDataIncluded: false
-  }, '7'.repeat(64), new Date('2026-07-19T00:01:00.000Z'))
+  const draft = extractJobCaseDraft(processed.source, reviewId, new Date('2026-07-19T00:00:00.000Z'))
+  repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, processed.source, draft)
+  repository.recordRecoveryEvent(
+    'backup-created',
+    {
+      version: 'ses-recovery-v1',
+      backupId: '44794ba1-67d8-44b6-8b1c-293ef4885125',
+      createdAt: '2026-07-19T00:01:00.000Z',
+      sourcePlatform: 'darwin',
+      sourceArch: 'arm64',
+      schemaVersion: 26,
+      databaseBytes: 4096,
+      vaultObjectCount: 0,
+      vaultBytes: 0,
+      totalBytes: 4096,
+      googleWorkspaceCredentialIncluded: false,
+      cloudDataIncluded: false
+    },
+    '7'.repeat(64),
+    new Date('2026-07-19T00:01:00.000Z')
+  )
   repository.close()
 
   const legacy = new Database(databasePath)
@@ -178,6 +201,11 @@ try {
     DROP TABLE candidate_evaluation_drafts;
     DROP TABLE candidate_evaluation_reports;
     DROP TABLE candidate_evaluation_datasets;
+    DROP TABLE job_case_working_set;
+    DROP TABLE person_case_match_run_items;
+    DROP TABLE person_case_match_runs;
+    DROP TABLE case_introduction_drafts;
+    DROP TABLE personnel_introduction_drafts;
     DROP TABLE customer_identities;
     DROP TABLE interview_answers;
     DROP TABLE matching_opportunities;
@@ -216,7 +244,7 @@ try {
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_hash;
     ALTER TABLE cloud_call_audits DROP COLUMN review_ticket_status;
     ALTER TABLE cloud_call_audits DROP COLUMN gate_policy_version;
-    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58);
+    DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63);
     COMMIT;
   `)
   assert.equal(legacy.prepare<{ version: number }>('SELECT max(version) AS version FROM schema_migrations').get()?.version, 13)
@@ -235,42 +263,56 @@ try {
   )
   upgraded.saveWorkTask(upgradeTask)
   assert.ok(upgraded.getLocalDataRevision().revision > revisionBeforeMutation, 'v14 data revision triggers did not fire')
-  const googleWorkspaceConfiguration = upgraded.saveGoogleWorkspaceAdminConfiguration({
-    clientId: '1234567890-abcdefghijklmnop.apps.googleusercontent.com',
-    workspaceDomain: 'Company.CO.JP',
-    labelIds: ['INBOX', 'Label_SES'],
-    query: '案件 OR 要員',
-    lookbackDays: 30,
-    maxMessagesPerRun: 200,
-    expectedRevision: null,
-    readonlyAcknowledged: true
-  }, 'schema-upgrade-verifier', new Date('2026-07-19T00:03:00.000Z'))
+  const googleWorkspaceConfiguration = upgraded.saveGoogleWorkspaceAdminConfiguration(
+    {
+      clientId: '1234567890-abcdefghijklmnop.apps.googleusercontent.com',
+      workspaceDomain: 'Company.CO.JP',
+      labelIds: ['INBOX', 'Label_SES'],
+      query: '案件 OR 要員',
+      lookbackDays: 30,
+      maxMessagesPerRun: 200,
+      expectedRevision: null,
+      readonlyAcknowledged: true
+    },
+    'schema-upgrade-verifier',
+    new Date('2026-07-19T00:03:00.000Z')
+  )
   assert.equal(googleWorkspaceConfiguration.workspaceDomain, 'company.co.jp')
   assert.equal(googleWorkspaceConfiguration.revision, 1)
-  const operatorProfile = upgraded.saveLocalOperatorProfile({
-    displayName: '移行検証担当',
-    roleLabel: 'SES営業担当',
-    expectedRevision: null
-  }, new Date('2026-07-19T00:03:30.000Z'))
+  const operatorProfile = upgraded.saveLocalOperatorProfile(
+    {
+      displayName: '移行検証担当',
+      roleLabel: 'SES営業担当',
+      expectedRevision: null
+    },
+    new Date('2026-07-19T00:03:30.000Z')
+  )
   assert.equal(operatorProfile.configured, true)
   assert.equal(operatorProfile.revision, 1)
   assert.equal(operatorProfile.cloudEligible, false)
-  const applicationPreferences = upgraded.saveLocalApplicationPreferences({
-    locale: 'zh-CN', expectedRevision: null
-  }, new Date('2026-07-19T00:03:45.000Z'))
+  const applicationPreferences = upgraded.saveLocalApplicationPreferences(
+    {
+      locale: 'zh-CN',
+      expectedRevision: null
+    },
+    new Date('2026-07-19T00:03:45.000Z')
+  )
   assert.equal(applicationPreferences.locale, 'zh-CN')
   assert.equal(applicationPreferences.revision, 1)
   assert.equal(applicationPreferences.cloudEligible, false)
-  const processingJob = upgraded.enqueueProcessingJob({
-    type: 'candidate-match',
-    workTaskId: upgradeTask.id,
-    taskStepId: upgradeTask.steps[1]!.id,
-    idempotencyKey: '8'.repeat(64),
-    requestFingerprint: '9'.repeat(64),
-    payloadRef: `work-task:${upgradeTask.id}:candidate-match`,
-    replayPolicy: 'safe-local',
-    maxAttempts: 3
-  }, new Date('2026-07-19T00:04:00.000Z'))
+  const processingJob = upgraded.enqueueProcessingJob(
+    {
+      type: 'candidate-match',
+      workTaskId: upgradeTask.id,
+      taskStepId: upgradeTask.steps[1]!.id,
+      idempotencyKey: '8'.repeat(64),
+      requestFingerprint: '9'.repeat(64),
+      payloadRef: `work-task:${upgradeTask.id}:candidate-match`,
+      replayPolicy: 'safe-local',
+      maxAttempts: 3
+    },
+    new Date('2026-07-19T00:04:00.000Z')
+  )
   assert.equal(processingJob.status, 'queued')
   upgraded.close()
 
@@ -278,31 +320,39 @@ try {
   inspected.pragma("cipher='sqlcipher'")
   inspected.pragma('legacy=4')
   inspected.key(databaseKey)
-  const triggerCount = inspected
-    .prepare<[], { count: number }>("SELECT count(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'backup_revision_%'")
-    .get()?.count ?? 0
+  const triggerCount =
+    inspected
+      .prepare<[], { count: number }>(
+        "SELECT count(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'backup_revision_%'"
+      )
+      .get()?.count ?? 0
   const recoveryColumns = inspected.pragma('table_info(recovery_events)') as Array<{ name: string }>
   const embeddingColumns = inspected.pragma('table_info(candidate_profile_embeddings)') as Array<{ name: string }>
   const projectEmbeddingColumns = inspected.pragma('table_info(candidate_project_embeddings)') as Array<{ name: string }>
   const projectAuditColumns = inspected.pragma('table_info(candidate_project_review_audits)') as Array<{ name: string }>
   const matchRunColumns = inspected.pragma('table_info(candidate_match_runs)') as Array<{ name: string }>
-  const matchRunSql = inspected
-    .prepare<[], { sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'candidate_match_runs'")
-    .get()?.sql ?? ''
+  const matchRunSql =
+    inspected.prepare<[], { sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'candidate_match_runs'").get()
+      ?.sql ?? ''
   const matchResultColumns = inspected.pragma('table_info(candidate_match_results)') as Array<{ name: string }>
   const jobCaseSourceColumns = inspected.pragma('table_info(job_case_sources)') as Array<{ name: string }>
-  const jobCaseSourceSql = inspected
-    .prepare<[], { sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'job_case_sources'")
-    .get()?.sql ?? ''
-  const businessPriorityTableCount = inspected
-    .prepare<[], { count: number }>("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'business_priority_projections'")
-    .get()?.count ?? 0
+  const jobCaseSourceSql =
+    inspected.prepare<[], { sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'job_case_sources'").get()?.sql ??
+    ''
+  const businessPriorityTableCount =
+    inspected
+      .prepare<[], { count: number }>(
+        "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'business_priority_projections'"
+      )
+      .get()?.count ?? 0
   const evaluationDatasetColumns = inspected.pragma('table_info(candidate_evaluation_datasets)') as Array<{ name: string }>
   const evaluationReportColumns = inspected.pragma('table_info(candidate_evaluation_reports)') as Array<{ name: string }>
   const evaluationDraftColumns = inspected.pragma('table_info(candidate_evaluation_drafts)') as Array<{ name: string }>
   const evaluationDraftCaseColumns = inspected.pragma('table_info(candidate_evaluation_draft_cases)') as Array<{ name: string }>
   const evaluationDraftLabelColumns = inspected.pragma('table_info(candidate_evaluation_draft_labels)') as Array<{ name: string }>
-  const googleWorkspaceConfigurationColumns = inspected.pragma('table_info(google_workspace_admin_configuration)') as Array<{ name: string }>
+  const googleWorkspaceConfigurationColumns = inspected.pragma('table_info(google_workspace_admin_configuration)') as Array<{
+    name: string
+  }>
   const processingJobColumns = inspected.pragma('table_info(processing_jobs)') as Array<{ name: string }>
   const googleWorkspaceAcceptanceColumns = inspected.pragma('table_info(google_workspace_acceptance_reports)') as Array<{ name: string }>
   const localOperatorProfileColumns = inspected.pragma('table_info(local_operator_profile)') as Array<{ name: string }>
@@ -312,54 +362,182 @@ try {
   const talentPoolMembershipColumns = inspected.pragma('table_info(talent_pool_memberships)') as Array<{ name: string }>
   const aiConversationColumns = inspected.pragma('table_info(ai_conversations)') as Array<{ name: string }>
   const cloudCallAuditColumns = inspected.pragma('table_info(cloud_call_audits)') as Array<{ name: string }>
-  const candidateProfileSql = inspected
-    .prepare<[], { sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'candidate_profiles'")
-    .get()?.sql ?? ''
-  const retiredCandidateLifecycle = inspected
-    .prepare<[], { count: number }>("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'candidate_lifecycle'")
-    .get()?.count ?? 0
-  const talentEligibilityTriggerCount = inspected
-    .prepare<[], { count: number }>("SELECT count(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'talent_pool_memberships_require_current_profile_%'")
-    .get()?.count ?? 0
+  const candidateProfileSql =
+    inspected.prepare<[], { sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'candidate_profiles'").get()
+      ?.sql ?? ''
+  const retiredCandidateLifecycle =
+    inspected
+      .prepare<[], { count: number }>("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'candidate_lifecycle'")
+      .get()?.count ?? 0
+  const talentEligibilityTriggerCount =
+    inspected
+      .prepare<[], { count: number }>(
+        "SELECT count(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'talent_pool_memberships_require_current_profile_%'"
+      )
+      .get()?.count ?? 0
   const violations = inspected.pragma('foreign_key_check') as unknown[]
+  const upgradedShape = describeSchemaShape(inspected)
   inspected.close()
-  assert.equal(triggerCount, 230)
-  assert.equal(recoveryColumns.some((column) => column.name === 'data_revision'), true)
-  assert.equal(embeddingColumns.some((column) => column.name === 'vector_blob'), true)
-  assert.equal(projectEmbeddingColumns.some((column) => column.name === 'project_id'), true)
-  assert.equal(projectAuditColumns.some((column) => column.name === 'confirmed_json'), true)
-  assert.equal(matchRunColumns.some((column) => column.name === 'result_set_hash'), true)
-  assert.equal(matchRunColumns.some((column) => column.name === 'hard_filter_policy_version'), true)
-  assert.equal(matchRunColumns.some((column) => column.name === 'job_case_id'), true)
-  assert.equal(matchRunColumns.some((column) => column.name === 'candidate_pool_fingerprint'), true)
-  assert.equal(matchRunColumns.some((column) => column.name === 'validity_policy_version'), true)
+  const fresh = new Database(join(temporaryDirectory, 'sample-only.db'))
+  fresh.pragma("cipher='sqlcipher'")
+  fresh.pragma('legacy=4')
+  fresh.key(databaseKey)
+  const freshShape = describeSchemaShape(fresh)
+  const freshTriggerCount =
+    fresh
+      .prepare<[], { count: number }>(
+        "SELECT count(*) AS count FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'backup_revision_%'"
+      )
+      .get()?.count ?? 0
+  fresh.close()
+  assert.deepEqual(
+    upgradedShape,
+    freshShape,
+    'an upgraded v13 database must end with the same tables, columns, indexes and triggers as a fresh install'
+  )
+  assert.equal(triggerCount, freshTriggerCount)
+  assert.equal(triggerCount, 255)
+  assert.ok(
+    upgradedShape.includes('trigger:backup_revision_candidate_project_review_audits_v60_insert'),
+    'v60 backup-revision triggers were not created'
+  )
+  assert.ok(upgradedShape.includes('table:job_case_working_set'), 'v59 working set table was not created')
+  assert.ok(upgradedShape.includes('table:case_introduction_drafts'), 'v61 case introduction drafts table was not created')
+  assert.ok(upgradedShape.includes('table:personnel_introduction_drafts'), 'v62 personnel introduction drafts table was not created')
+  assert.ok(upgradedShape.includes('table:person_case_match_runs'), 'v63 person to case match runs table was not created')
+  assert.ok(upgradedShape.includes('table:person_case_match_run_items'), 'v63 person to case match items table was not created')
+  assert.equal(
+    recoveryColumns.some((column) => column.name === 'data_revision'),
+    true
+  )
+  assert.equal(
+    embeddingColumns.some((column) => column.name === 'vector_blob'),
+    true
+  )
+  assert.equal(
+    projectEmbeddingColumns.some((column) => column.name === 'project_id'),
+    true
+  )
+  assert.equal(
+    projectAuditColumns.some((column) => column.name === 'confirmed_json'),
+    true
+  )
+  assert.equal(
+    matchRunColumns.some((column) => column.name === 'result_set_hash'),
+    true
+  )
+  assert.equal(
+    matchRunColumns.some((column) => column.name === 'hard_filter_policy_version'),
+    true
+  )
+  assert.equal(
+    matchRunColumns.some((column) => column.name === 'job_case_id'),
+    true
+  )
+  assert.equal(
+    matchRunColumns.some((column) => column.name === 'candidate_pool_fingerprint'),
+    true
+  )
+  assert.equal(
+    matchRunColumns.some((column) => column.name === 'validity_policy_version'),
+    true
+  )
   assert.match(matchRunSql, /hard-filter-hybrid-local-rerank-v1/u)
-  assert.equal(matchResultColumns.some((column) => column.name === 'feedback_revision'), true)
-  assert.equal(matchResultColumns.some((column) => column.name === 'result_snapshot_json'), true)
-  assert.equal(jobCaseSourceColumns.some((column) => column.name === 'business_fingerprint'), true)
+  assert.equal(
+    matchResultColumns.some((column) => column.name === 'feedback_revision'),
+    true
+  )
+  assert.equal(
+    matchResultColumns.some((column) => column.name === 'result_snapshot_json'),
+    true
+  )
+  assert.equal(
+    jobCaseSourceColumns.some((column) => column.name === 'business_fingerprint'),
+    true
+  )
   assert.match(jobCaseSourceSql, /'chat-paste'/u)
   assert.match(jobCaseSourceSql, /'wechat-visible'/u)
   assert.equal(businessPriorityTableCount, 1)
-  assert.equal(evaluationDatasetColumns.some((column) => column.name === 'dataset_hash'), true)
-  assert.equal(evaluationReportColumns.some((column) => column.name === 'report_json'), true)
-  assert.equal(evaluationDraftColumns.some((column) => column.name === 'revision'), true)
-  assert.equal(evaluationDraftCaseColumns.some((column) => column.name === 'pool_reviewed'), true)
-  assert.equal(evaluationDraftLabelColumns.some((column) => column.name === 'expected_project_evidence'), true)
-  assert.equal(googleWorkspaceConfigurationColumns.some((column) => column.name === 'client_id'), true)
-  assert.equal(googleWorkspaceConfigurationColumns.some((column) => column.name === 'revision'), true)
-  assert.equal(processingJobColumns.some((column) => column.name === 'lease_token'), true)
-  assert.equal(processingJobColumns.some((column) => column.name === 'replay_policy'), true)
-  assert.equal(googleWorkspaceAcceptanceColumns.some((column) => column.name === 'configuration_fingerprint'), true)
-  assert.equal(googleWorkspaceAcceptanceColumns.some((column) => column.name === 'report_json'), true)
-  assert.equal(localOperatorProfileColumns.some((column) => column.name === 'operator_id'), true)
-  assert.equal(localOperatorProfileColumns.some((column) => column.name === 'revision'), true)
-  assert.equal(localApplicationPreferencesColumns.some((column) => column.name === 'locale'), true)
-  assert.equal(localApplicationPreferencesColumns.some((column) => column.name === 'revision'), true)
-  assert.equal(proposalFollowUpColumns.some((column) => column.name === 'occurred_on'), true)
-  assert.equal(proposalFollowUpColumns.some((column) => column.name === 'cloud_eligible'), true)
-  assert.equal(candidateRecordColumns.some((column) => column.name === 'recruiting_status'), true)
-  assert.equal(talentPoolMembershipColumns.some((column) => column.name === 'admitted_interview_id'), true)
-  assert.equal(aiConversationColumns.some((column) => column.name === 'payload_json'), true)
+  assert.equal(
+    evaluationDatasetColumns.some((column) => column.name === 'dataset_hash'),
+    true
+  )
+  assert.equal(
+    evaluationReportColumns.some((column) => column.name === 'report_json'),
+    true
+  )
+  assert.equal(
+    evaluationDraftColumns.some((column) => column.name === 'revision'),
+    true
+  )
+  assert.equal(
+    evaluationDraftCaseColumns.some((column) => column.name === 'pool_reviewed'),
+    true
+  )
+  assert.equal(
+    evaluationDraftLabelColumns.some((column) => column.name === 'expected_project_evidence'),
+    true
+  )
+  assert.equal(
+    googleWorkspaceConfigurationColumns.some((column) => column.name === 'client_id'),
+    true
+  )
+  assert.equal(
+    googleWorkspaceConfigurationColumns.some((column) => column.name === 'revision'),
+    true
+  )
+  assert.equal(
+    processingJobColumns.some((column) => column.name === 'lease_token'),
+    true
+  )
+  assert.equal(
+    processingJobColumns.some((column) => column.name === 'replay_policy'),
+    true
+  )
+  assert.equal(
+    googleWorkspaceAcceptanceColumns.some((column) => column.name === 'configuration_fingerprint'),
+    true
+  )
+  assert.equal(
+    googleWorkspaceAcceptanceColumns.some((column) => column.name === 'report_json'),
+    true
+  )
+  assert.equal(
+    localOperatorProfileColumns.some((column) => column.name === 'operator_id'),
+    true
+  )
+  assert.equal(
+    localOperatorProfileColumns.some((column) => column.name === 'revision'),
+    true
+  )
+  assert.equal(
+    localApplicationPreferencesColumns.some((column) => column.name === 'locale'),
+    true
+  )
+  assert.equal(
+    localApplicationPreferencesColumns.some((column) => column.name === 'revision'),
+    true
+  )
+  assert.equal(
+    proposalFollowUpColumns.some((column) => column.name === 'occurred_on'),
+    true
+  )
+  assert.equal(
+    proposalFollowUpColumns.some((column) => column.name === 'cloud_eligible'),
+    true
+  )
+  assert.equal(
+    candidateRecordColumns.some((column) => column.name === 'recruiting_status'),
+    true
+  )
+  assert.equal(
+    talentPoolMembershipColumns.some((column) => column.name === 'admitted_interview_id'),
+    true
+  )
+  assert.equal(
+    aiConversationColumns.some((column) => column.name === 'payload_json'),
+    true
+  )
   for (const column of [
     'quality_gate_report_hash',
     'expert_attestation_hash',
@@ -367,7 +545,10 @@ try {
     'review_ticket_status',
     'gate_policy_version'
   ]) {
-    assert.equal(cloudCallAuditColumns.some((candidate) => candidate.name === column), true)
+    assert.equal(
+      cloudCallAuditColumns.some((candidate) => candidate.name === column),
+      true
+    )
   }
   assert.match(candidateProfileSql, /'current', 'stale', 'superseded'/u)
   assert.doesNotMatch(candidateProfileSql, /'active'/u)
@@ -375,36 +556,41 @@ try {
   assert.equal(talentEligibilityTriggerCount, 2)
   assert.equal(violations.length, 0)
 
-  process.stdout.write(`${JSON.stringify({
-    fromSchema: 13,
-    toSchema: currentSchemaVersion,
-    existingReviewPreserved: true,
-    sampleTasksIgnored: true,
-    legacyBackupConservativelyStale: true,
-    revisionTriggerCount: triggerCount,
-    embeddingCacheCreated: true,
-    projectExperienceSchemaCreated: true,
-    candidateMatchFeedbackSchemaCreated: true,
-    candidateEvaluationSchemaCreated: true,
-    candidateEvaluationAuthoringSchemaCreated: true,
-    googleWorkspaceAdminConfigurationSchemaCreated: true,
-    processingJobQueueSchemaCreated: true,
-    googleWorkspaceAcceptanceSchemaCreated: true,
-    localOperatorProfileSchemaCreated: true,
-    localApplicationPreferencesSchemaCreated: true,
-    proposalFollowUpSchemaCreated: true,
-    aiConversationSchemaCreated: true,
-    candidateAdmissionSchemaCreated: true,
-    retiredCandidateLifecycleRemoved: true,
-    hardFilterPolicyVersioned: true,
-    legacyTriStateV2RunPreserved: true,
-    legacyRrfRunPreservedAcrossV25: true,
-    matchingHomeValiditySchemaCreated: true,
-    businessPriorityProjectionSchemaCreated: true,
-    chatPasteSourceSchemaCreated: true,
-    wechatVisibleSourceSchemaCreated: true,
-    foreignKeyViolations: violations.length
-  })}\n`)
+  process.stdout.write(
+    `${JSON.stringify({
+      fromSchema: 13,
+      toSchema: currentSchemaVersion,
+      existingReviewPreserved: true,
+      sampleTasksIgnored: true,
+      legacyBackupConservativelyStale: true,
+      revisionTriggerCount: triggerCount,
+      embeddingCacheCreated: true,
+      projectExperienceSchemaCreated: true,
+      candidateMatchFeedbackSchemaCreated: true,
+      candidateEvaluationSchemaCreated: true,
+      candidateEvaluationAuthoringSchemaCreated: true,
+      googleWorkspaceAdminConfigurationSchemaCreated: true,
+      processingJobQueueSchemaCreated: true,
+      googleWorkspaceAcceptanceSchemaCreated: true,
+      localOperatorProfileSchemaCreated: true,
+      localApplicationPreferencesSchemaCreated: true,
+      proposalFollowUpSchemaCreated: true,
+      aiConversationSchemaCreated: true,
+      candidateAdmissionSchemaCreated: true,
+      retiredCandidateLifecycleRemoved: true,
+      hardFilterPolicyVersioned: true,
+      legacyTriStateV2RunPreserved: true,
+      legacyRrfRunPreservedAcrossV25: true,
+      matchingHomeValiditySchemaCreated: true,
+      businessPriorityProjectionSchemaCreated: true,
+      chatPasteSourceSchemaCreated: true,
+      wechatVisibleSourceSchemaCreated: true,
+      jobCaseWorkingSetSchemaCreated: true,
+      v60BackupRevisionTriggersCreated: true,
+      schemaShapeMatchesFreshInstall: true,
+      foreignKeyViolations: violations.length
+    })}\n`
+  )
 } finally {
   databaseKey.fill(0)
   mappingKey.fill(0)

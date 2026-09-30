@@ -15,22 +15,30 @@ const preferences: LocalApplicationPreferences = {
 const bootstrap = {
   appVersion: '0.1.0',
   operatorProfile: {
-    configured: false, displayName: '本機ユーザー', roleLabel: 'プロフィール未設定'
+    configured: false,
+    displayName: '本機ユーザー',
+    roleLabel: 'プロフィール未設定'
   },
   gmail: {
-    status: 'not-connected', configuration: 'required', accountEmail: null
+    status: 'not-connected',
+    configuration: 'required',
+    accountEmail: null
   },
   gmailSync: {
-    configuration: 'required', lastSyncedAt: null
+    configuration: 'required',
+    lastSyncedAt: null
   },
   aiCommerce: {
-    connection: 'not-connected', memberDisplayName: null, capabilities: []
+    connection: 'not-connected',
+    memberDisplayName: null,
+    capabilities: []
   },
   privacy: {
     cloudGateway: 'enforced'
   },
   storage: {
-    engine: 'sqlcipher-compatible', keyProtection: 'macos-keychain'
+    engine: 'sqlcipher-compatible',
+    keyProtection: 'macos-keychain'
   }
 } as unknown as BootstrapPayload
 
@@ -68,7 +76,15 @@ describe('ApplicationSettingsDialog', () => {
   })
 
   it('keeps every external connection under the integrations section', () => {
-    render(<ApplicationSettingsDialog {...integrationProps} initialSection="integrations" onClose={vi.fn()} onSave={vi.fn()} preferences={preferences} />)
+    render(
+      <ApplicationSettingsDialog
+        {...integrationProps}
+        initialSection="integrations"
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        preferences={preferences}
+      />
+    )
     expect(screen.getByRole('heading', { name: '外部システム' })).toBeInTheDocument()
     expect(screen.getByText('Google メール')).toBeInTheDocument()
     expect(screen.getByText('AICommerce Cloud AI')).toBeInTheDocument()
@@ -79,19 +95,23 @@ describe('ApplicationSettingsDialog', () => {
 
   it('lets HR start the product-managed Gmail authorization with one button', async () => {
     const onConnectGoogleWorkspace = vi.fn().mockResolvedValue(undefined)
-    render(<ApplicationSettingsDialog
-      {...integrationProps}
-      bootstrap={{
-        ...bootstrap,
-        gmail: { ...bootstrap.gmail, configuration: 'ready', workspaceDomain: null },
-        gmailSync: { ...bootstrap.gmailSync, configuration: 'ready', labelIds: ['INBOX'], query: '案件 OR 募集' }
-      } as unknown as BootstrapPayload}
-      initialSection="integrations"
-      onClose={vi.fn()}
-      onConnectGoogleWorkspace={onConnectGoogleWorkspace}
-      onSave={vi.fn()}
-      preferences={preferences}
-    />)
+    render(
+      <ApplicationSettingsDialog
+        {...integrationProps}
+        bootstrap={
+          {
+            ...bootstrap,
+            gmail: { ...bootstrap.gmail, configuration: 'ready', workspaceDomain: null },
+            gmailSync: { ...bootstrap.gmailSync, configuration: 'ready', labelIds: ['INBOX'], query: '案件 OR 募集' }
+          } as unknown as BootstrapPayload
+        }
+        initialSection="integrations"
+        onClose={vi.fn()}
+        onConnectGoogleWorkspace={onConnectGoogleWorkspace}
+        onSave={vi.fn()}
+        preferences={preferences}
+      />
+    )
 
     expect(screen.getByRole('note')).toHaveTextContent(/件名・送信者・本文・日時・Label/u)
     expect(screen.getByRole('note')).toHaveTextContent(/履歴書添付/u)
@@ -103,9 +123,21 @@ describe('ApplicationSettingsDialog', () => {
 
   it('saves partner labels as aliases of the built-in case fields with an optimistic revision', async () => {
     const onSaveFieldAliases = vi.fn().mockResolvedValue({
-      version: 'job-case-field-aliases-v1', aliases: { rate: ['単金', '金額'] }, configured: true, revision: 1, updatedAt: '2026-08-26T00:00:00.000Z'
+      version: 'job-case-field-aliases-v1',
+      aliases: { rate: ['単金', '金額'] },
+      configured: true,
+      revision: 1,
+      updatedAt: '2026-08-26T00:00:00.000Z'
     })
-    render(<ApplicationSettingsDialog {...integrationProps} onClose={vi.fn()} onSave={vi.fn()} onSaveFieldAliases={onSaveFieldAliases} preferences={preferences} />)
+    render(
+      <ApplicationSettingsDialog
+        {...integrationProps}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onSaveFieldAliases={onSaveFieldAliases}
+        preferences={preferences}
+      />
+    )
 
     fireEvent.click(screen.getByRole('button', { name: /案件項目/ }))
     expect(screen.getByRole('heading', { name: '案件項目の別名' })).toBeInTheDocument()

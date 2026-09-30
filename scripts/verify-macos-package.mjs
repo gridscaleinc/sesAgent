@@ -33,11 +33,14 @@ const cloudEnforcementManifestPath = join(resourcesPath, 'verification', 'cloud-
 const userDataPath = await mkdtemp(join(tmpdir(), 'ses-agent-package-smoke-'))
 
 function unexpectedMacOsStderr(value) {
-  return value.split('\n').filter((line) => {
-    const message = line.trim()
-    if (!message) return false
-    return !/error messaging the mach port for IMKCFRunLoopWakeUpReliable$/u.test(message)
-  }).join('\n')
+  return value
+    .split('\n')
+    .filter((line) => {
+      const message = line.trim()
+      if (!message) return false
+      return !/error messaging the mach port for IMKCFRunLoopWakeUpReliable$/u.test(message)
+    })
+    .join('\n')
 }
 
 async function inspectMachO(path, label) {
@@ -51,7 +54,8 @@ async function verifyEmbeddingModel() {
     manifest.modelId !== 'Xenova/multilingual-e5-small' ||
     manifest.revision !== '761b726dd34fb83930e26aab4e9ac3899aa1fa78' ||
     manifest.embeddingDimension !== 384
-  ) throw new Error('Packaged embedding model manifest is invalid.')
+  )
+    throw new Error('Packaged embedding model manifest is invalid.')
   for (const file of manifest.files) {
     const path = join(embeddingModelPath, file.path)
     const metadata = await stat(path)
@@ -71,8 +75,11 @@ async function verifyRerankerModel() {
     manifest.schemaVersion !== 'local-reranker-model-v1' ||
     manifest.modelId !== 'hotchpotch/japanese-reranker-tiny-v2' ||
     manifest.revision !== 'ba95175a4d53058816b971f31929f10c5cad8560' ||
-    manifest.license !== 'MIT' || manifest.maximumSequenceLength !== 512 || manifest.maximumCandidates !== 20
-  ) throw new Error('Packaged reranker model manifest is invalid.')
+    manifest.license !== 'MIT' ||
+    manifest.maximumSequenceLength !== 512 ||
+    manifest.maximumCandidates !== 20
+  )
+    throw new Error('Packaged reranker model manifest is invalid.')
   const expectedFiles = manifest.files.filter((file) => file.platform === 'all' || file.platform === 'darwin-arm64')
   for (const file of expectedFiles) {
     const path = join(rerankerModelPath, file.path)
@@ -96,14 +103,19 @@ async function verifyRerankerModel() {
 async function runPackagedReranker() {
   return new Promise((resolveResult, reject) => {
     const workerPath = join(asarPath, 'out', 'main', 'reranker-worker.js')
-    const child = spawn('/usr/bin/sandbox-exec', [
-      '-p', '(version 1) (allow default) (deny network*)', executablePath, workerPath, '--stdio'
-    ], {
-      env: {
-        ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', LANG: 'ja_JP.UTF-8', TZ: 'Asia/Tokyo'
-      },
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
+    const child = spawn(
+      '/usr/bin/sandbox-exec',
+      ['-p', '(version 1) (allow default) (deny network*)', executablePath, workerPath, '--stdio'],
+      {
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          NODE_ENV: 'production',
+          LANG: 'ja_JP.UTF-8',
+          TZ: 'Asia/Tokyo'
+        },
+        stdio: ['pipe', 'pipe', 'pipe']
+      }
+    )
     const stderr = []
     let stdout = Buffer.alloc(0)
     let settled = false
@@ -128,10 +140,14 @@ async function runPackagedReranker() {
         const relevant = result.scores?.find((score) => score.id === 'relevant')?.score
         const irrelevant = result.scores?.find((score) => score.id === 'irrelevant')?.score
         if (
-          result.ok !== true || result.networkAccess !== false ||
+          result.ok !== true ||
+          result.networkAccess !== false ||
           result.modelId !== 'hotchpotch/japanese-reranker-tiny-v2' ||
-          typeof relevant !== 'number' || typeof irrelevant !== 'number' || relevant <= irrelevant
-        ) throw new Error(`Packaged local reranker returned an unexpected result: ${JSON.stringify(result)}`)
+          typeof relevant !== 'number' ||
+          typeof irrelevant !== 'number' ||
+          relevant <= irrelevant
+        )
+          throw new Error(`Packaged local reranker returned an unexpected result: ${JSON.stringify(result)}`)
         finish(() => resolveResult(result))
       } catch (error) {
         finish(() => reject(error))
@@ -141,27 +157,26 @@ async function runPackagedReranker() {
     child.once('exit', (code) => {
       if (!settled) finish(() => reject(new Error(`Packaged local reranker exited (${code}): ${Buffer.concat(stderr).toString('utf8')}`)))
     })
-    child.stdin.end(`${JSON.stringify({
-      id: 'macos-package-reranker-smoke',
-      kind: 'rerank',
-      query: 'AWS と Terraform によるクラウド基盤設計',
-      candidates: [
-        { id: 'relevant', text: 'AWS Terraform を用いたクラウド基盤の設計と構築を担当' },
-        { id: 'irrelevant', text: '飲食店での接客と店舗運営を担当' }
-      ],
-      modelDirectory: rerankerModelPath
-    })}\n`)
+    child.stdin.end(
+      `${JSON.stringify({
+        id: 'macos-package-reranker-smoke',
+        kind: 'rerank',
+        query: 'AWS と Terraform によるクラウド基盤設計',
+        candidates: [
+          { id: 'relevant', text: 'AWS Terraform を用いたクラウド基盤の設計と構築を担当' },
+          { id: 'irrelevant', text: '飲食店での接客と店舗運営を担当' }
+        ],
+        modelDirectory: rerankerModelPath
+      })}\n`
+    )
   })
 }
 
 async function runNativeNer() {
   return new Promise((resolveResult, reject) => {
-    const child = spawn('/usr/bin/sandbox-exec', [
-      '-p',
-      '(version 1) (allow default) (deny network*)',
-      helperPath,
-      '--detect-names'
-    ], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn('/usr/bin/sandbox-exec', ['-p', '(version 1) (allow default) (deny network*)', helperPath, '--detect-names'], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
     const stdout = []
     const stderr = []
     const timeout = setTimeout(() => {
@@ -181,9 +196,11 @@ async function runNativeNer() {
         const result = JSON.parse(Buffer.concat(stdout).toString('utf8'))
         const detectedNames = Array.isArray(result.entities) ? result.entities.map((entity) => entity.text) : []
         if (
-          result.networkAccess !== false || result.engine !== 'apple-natural-language' ||
+          result.networkAccess !== false ||
+          result.engine !== 'apple-natural-language' ||
           result.requiresHumanConfirmation !== true ||
-          !detectedNames.includes('Tim Cook') || !detectedNames.includes('Satya Nadella')
+          !detectedNames.includes('Tim Cook') ||
+          !detectedNames.includes('Satya Nadella')
         ) {
           throw new Error('Packaged local NER helper returned an unsafe or unexpected capability declaration.')
         }
@@ -199,16 +216,27 @@ async function runNativeNer() {
 async function verifyPrivacyQualityReport() {
   const report = JSON.parse(await readFile(privacyQualityReportPath, 'utf8'))
   if (
-    report.version !== 'ses-privacy-quality-report-v1' || report.datasetVersion !== 'ses-privacy-regression-v1' ||
+    report.version !== 'ses-privacy-quality-report-v1' ||
+    report.datasetVersion !== 'ses-privacy-regression-v1' ||
     report.datasetSha256 !== '83ce7ac64d07337b41bdd303450c97cc894e74fcf36730bcade60cbb2bf9cb4e' ||
-    report.syntheticOnly !== true || report.humanLabeledDataset !== false ||
-    report.platform !== 'darwin' || report.arch !== 'arm64' || report.caseCount !== 28 ||
-    report.expectedIdentifiers !== 30 || report.detectedIdentifiers !== 30 ||
-    report.identifierRecall !== 1 || report.redactionPrecision !== 1 ||
-    report.residualLeakCount !== 0 || report.safeCaseFalsePositiveCount !== 0 ||
-    report.failedClosedCases !== 4 || report.cloudDirectIdentifiers !== 0 ||
-    report.networkAccess !== false || report.appleNer?.verified !== true || report.releaseEligible !== true
-  ) throw new Error('Packaged privacy quality report is missing, stale, or incomplete.')
+    report.syntheticOnly !== true ||
+    report.humanLabeledDataset !== false ||
+    report.platform !== 'darwin' ||
+    report.arch !== 'arm64' ||
+    report.caseCount !== 28 ||
+    report.expectedIdentifiers !== 30 ||
+    report.detectedIdentifiers !== 30 ||
+    report.identifierRecall !== 1 ||
+    report.redactionPrecision !== 1 ||
+    report.residualLeakCount !== 0 ||
+    report.safeCaseFalsePositiveCount !== 0 ||
+    report.failedClosedCases !== 4 ||
+    report.cloudDirectIdentifiers !== 0 ||
+    report.networkAccess !== false ||
+    report.appleNer?.verified !== true ||
+    report.releaseEligible !== true
+  )
+    throw new Error('Packaged privacy quality report is missing, stale, or incomplete.')
   return report
 }
 
@@ -223,13 +251,19 @@ async function verifyPrivacyExpertReport() {
   if (
     report.version !== 'ses-privacy-expert-quality-report-v2' ||
     report.datasetVersion !== 'ses-privacy-expert-dataset-v1' ||
-    report.humanLabeledDataset !== true || report.syntheticOnly !== false ||
-    report.locale !== 'ja-JP' || report.platform !== 'darwin' || report.arch !== 'arm64' ||
-    report.containsCaseContent !== false || report.cloudDirectIdentifiers !== 0 || report.networkAccess !== false ||
+    report.humanLabeledDataset !== true ||
+    report.syntheticOnly !== false ||
+    report.locale !== 'ja-JP' ||
+    report.platform !== 'darwin' ||
+    report.arch !== 'arm64' ||
+    report.containsCaseContent !== false ||
+    report.cloudDirectIdentifiers !== 0 ||
+    report.networkAccess !== false ||
     !/^[a-f0-9]{64}$/u.test(report.datasetSha256 ?? '') ||
     !/^[a-f0-9]{64}$/u.test(report.privacyImplementationSha256 ?? '') ||
     !/^[a-f0-9]{64}$/u.test(report.cloudEnforcementSha256 ?? '')
-  ) throw new Error('Packaged human-labeled privacy report violates its aggregate-only contract.')
+  )
+    throw new Error('Packaged human-labeled privacy report violates its aggregate-only contract.')
   if (requireExpertReport && privacyExpertReportFailures(report, { platform: 'darwin', arch: 'arm64' }).length > 0) {
     throw new Error('Packaged human-labeled privacy report did not pass the formal release threshold.')
   }
@@ -242,16 +276,20 @@ async function verifyCloudEnforcementManifest(privacyExpert) {
     readFile(privacyQualityReportPath),
     privacyExpert ? readFile(privacyExpertReportPath) : Promise.resolve(null)
   ])
-  const hash = (bytes) => bytes ? createHash('sha256').update(bytes).digest('hex') : null
+  const hash = (bytes) => (bytes ? createHash('sha256').update(bytes).digest('hex') : null)
   const runtimeBundleFiles = Array.isArray(manifest.runtimeBundleFiles) ? manifest.runtimeBundleFiles : []
   const runtimeBundleSetHash = createHash('sha256')
   const runtimeBundlePaths = new Set()
   for (const file of runtimeBundleFiles) {
     if (
-      typeof file.path !== 'string' || typeof file.sha256 !== 'string' ||
+      typeof file.path !== 'string' ||
+      typeof file.sha256 !== 'string' ||
       (!file.path.startsWith('out/main/') && !file.path.startsWith('out/preload/')) ||
-      file.path.includes('..') || file.path.includes('\\') || runtimeBundlePaths.has(file.path)
-    ) throw new Error('Packaged Cloud enforcement manifest contains an unsafe runtime bundle path.')
+      file.path.includes('..') ||
+      file.path.includes('\\') ||
+      runtimeBundlePaths.has(file.path)
+    )
+      throw new Error('Packaged Cloud enforcement manifest contains an unsafe runtime bundle path.')
     const bytes = extractFile(asarPath, file.path)
     if (hash(bytes) !== file.sha256) throw new Error(`Packaged runtime bundle is stale: ${file.path}`)
     runtimeBundleSetHash.update(file.path).update('\0').update(bytes).update('\0')
@@ -259,15 +297,18 @@ async function verifyCloudEnforcementManifest(privacyExpert) {
   }
   if (
     manifest.version !== 'ses-cloud-enforcement-manifest-v2' ||
-    manifest.platform !== 'darwin' || manifest.arch !== 'arm64' ||
-    !runtimeBundlePaths.has('out/main/index.js') || !runtimeBundlePaths.has('out/preload/index.js') ||
+    manifest.platform !== 'darwin' ||
+    manifest.arch !== 'arm64' ||
+    !runtimeBundlePaths.has('out/main/index.js') ||
+    !runtimeBundlePaths.has('out/preload/index.js') ||
     manifest.runtimeBundleSetSha256 !== runtimeBundleSetHash.digest('hex') ||
     manifest.qualityReportSha256 !== hash(qualityReportBytes) ||
     manifest.expertReportSha256 !== hash(expertReportBytes) ||
     !/^[a-f0-9]{64}$/u.test(manifest.privacyImplementationSha256 ?? '') ||
     !/^[a-f0-9]{64}$/u.test(manifest.cloudEnforcementSourceSha256 ?? '') ||
     manifest.qualityGateBound !== true
-  ) throw new Error('Packaged Cloud enforcement manifest is missing, stale, or incomplete.')
+  )
+    throw new Error('Packaged Cloud enforcement manifest is missing, stale, or incomplete.')
   const expertFailures = privacyExpert
     ? privacyExpertReportFailures(privacyExpert, {
         platform: 'darwin',
@@ -280,11 +321,11 @@ async function verifyCloudEnforcementManifest(privacyExpert) {
   if (
     manifest.expertAttestationBound !== expertBound ||
     manifest.releaseEligible !== true ||
-    (privacyExpert && (
-      privacyExpert.privacyImplementationSha256 !== manifest.privacyImplementationSha256 ||
-      privacyExpert.cloudEnforcementSha256 !== manifest.cloudEnforcementSourceSha256
-    ))
-  ) throw new Error('Packaged expert evidence is not bound to the Cloud enforcement manifest.')
+    (privacyExpert &&
+      (privacyExpert.privacyImplementationSha256 !== manifest.privacyImplementationSha256 ||
+        privacyExpert.cloudEnforcementSha256 !== manifest.cloudEnforcementSourceSha256))
+  )
+    throw new Error('Packaged expert evidence is not bound to the Cloud enforcement manifest.')
   if (requireExpertReport && !expertBound) {
     throw new Error(`Packaged optional expert evidence was explicitly required but is not valid: ${expertFailures.join(',')}`)
   }
@@ -298,12 +339,9 @@ function parseAgentSmoke(output) {
   return JSON.parse(json)
 }
 
-async function launchSmoke(featureMode = 'default', agentSmokeConversationId = null) {
+async function launchSmoke(agentSmokeConversationId = null) {
   return new Promise((resolveResult, reject) => {
     const env = { ...process.env, SES_RELEASE_SMOKE: '1' }
-    if (featureMode === 'enabled') env.SES_CONVERSATIONAL_MATCHING_ENABLED = '1'
-    else if (featureMode === 'disabled') env.SES_CONVERSATIONAL_MATCHING_ENABLED = '0'
-    else delete env.SES_CONVERSATIONAL_MATCHING_ENABLED
     if (agentSmokeConversationId) env.SES_AGENT_SMOKE_CONVERSATION_ID = agentSmokeConversationId
     else delete env.SES_AGENT_SMOKE_CONVERSATION_ID
     const child = spawn(executablePath, [`--user-data-dir=${userDataPath}`], {
@@ -387,10 +425,7 @@ async function launchKeyLossRecoverySmoke() {
 }
 
 async function runPackagedEmlParser() {
-  const { stdout, stderr } = await run(executablePath, [
-    resolve('scripts/verify-packaged-eml-worker.mjs'),
-    asarPath
-  ], {
+  const { stdout, stderr } = await run(executablePath, [resolve('scripts/verify-packaged-eml-worker.mjs'), asarPath], {
     env: { ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', LANG: 'ja_JP.UTF-8', TZ: 'Asia/Tokyo' },
     maxBuffer: 4 * 1024 * 1024
   })
@@ -403,7 +438,8 @@ async function runPackagedEmlParser() {
     result.externalContentLoaded !== false ||
     result.attachmentPersisted !== false ||
     result.rawFileCloudEligible !== false
-  ) throw new Error('Packaged EML worker violated its local privacy contract.')
+  )
+    throw new Error('Packaged EML worker violated its local privacy contract.')
   return result
 }
 
@@ -437,7 +473,10 @@ try {
     throw new Error('Packaged WeChat helper does not support the declared macOS 13 minimum.')
   }
   const { stdout: wechatNetworkProbe } = await run('/usr/bin/sandbox-exec', [
-    '-p', '(version 1) (allow default) (deny network*)', wechatHelperPath, '--network-probe'
+    '-p',
+    '(version 1) (allow default) (deny network*)',
+    wechatHelperPath,
+    '--network-probe'
   ])
   const wechatNetworkEvidence = JSON.parse(wechatNetworkProbe)
   if (
@@ -445,14 +484,17 @@ try {
     wechatNetworkEvidence.loopbackDeniedBySandbox !== true ||
     wechatNetworkEvidence.externalDeniedBySandbox !== true ||
     wechatNetworkEvidence.helperNetworkAccess !== false
-  ) throw new Error('Packaged WeChat helper network isolation probe failed.')
+  )
+    throw new Error('Packaged WeChat helper network isolation probe failed.')
 
-  const { stdout: asarEntries } = await run(process.execPath, [
-    resolve('node_modules/@electron/asar/bin/asar.js'),
-    'list',
-    asarPath
-  ])
-  for (const expected of ['/out/main/index.js', '/out/main/embedding-worker.js', '/out/main/reranker-worker.js', '/out/preload/index.js', '/out/renderer/index.html']) {
+  const { stdout: asarEntries } = await run(process.execPath, [resolve('node_modules/@electron/asar/bin/asar.js'), 'list', asarPath])
+  for (const expected of [
+    '/out/main/index.js',
+    '/out/main/embedding-worker.js',
+    '/out/main/reranker-worker.js',
+    '/out/preload/index.js',
+    '/out/renderer/index.html'
+  ]) {
     if (!asarEntries.includes(expected)) throw new Error(`Packaged ASAR is missing ${expected}.`)
   }
   const asarEntryList = asarEntries.split('\n').filter(Boolean)
@@ -466,26 +508,41 @@ try {
     .map((entry) => extractFile(asarPath, entry.slice(1)).toString('utf8'))
     .join('\n')
   if (
-    !packagedMainSource.includes('agent:execute-turn') || !packagedMainSource.includes('agent:cancel-turn') ||
-    !packagedMainSource.includes('agent:turn-event') || !packagedMainSource.includes('response.output_text.delta') ||
-    !packagedMainSource.includes('/v1/ai/native/openai/v1/responses') || !packagedMainSource.includes('gpt-5.6-luna') ||
-    !packagedMainSource.includes('deepseek-v4-flash') || !packagedMainSource.includes('/v1/chat/completions') ||
-    !packagedMainSource.includes('stream_options') || !packagedMainSource.includes('search_job_cases') ||
-    !packagedMainSource.includes('read_candidate_profile') || !packagedMainSource.includes('read_candidate_interviews') ||
-    !packagedMainSource.includes('candidate.profile.read.local') || !packagedMainSource.includes('candidate.interview.read.local') ||
+    !packagedMainSource.includes('agent:execute-turn') ||
+    !packagedMainSource.includes('agent:cancel-turn') ||
+    !packagedMainSource.includes('agent:turn-event') ||
+    !packagedMainSource.includes('response.output_text.delta') ||
+    !packagedMainSource.includes('/v1/ai/native/openai/v1/responses') ||
+    !packagedMainSource.includes('gpt-5.6-luna') ||
+    !packagedMainSource.includes('deepseek-v4-flash') ||
+    !packagedMainSource.includes('/v1/chat/completions') ||
+    !packagedMainSource.includes('stream_options') ||
+    !packagedMainSource.includes('search_job_cases') ||
+    !packagedMainSource.includes('read_candidate_profile') ||
+    !packagedMainSource.includes('read_candidate_interviews') ||
+    !packagedMainSource.includes('candidate.profile.read.local') ||
+    !packagedMainSource.includes('candidate.interview.read.local') ||
     !packagedMainSource.includes('AI 未按受控规划 JSON 协议返回') ||
     !packagedMainSource.includes('ses-agent-direct-answer-context-v2') ||
-    !packagedMainSource.includes('CONVERSATION_CONTEXT_MISMATCH') || !packagedMainSource.includes('job-case.search.local') ||
-    !packagedPreloadSource.includes('executeAgentTurn') || !packagedPreloadSource.includes('cancelAgentTurn') || !packagedPreloadSource.includes('onAgentTurnEvent') ||
-    !packagedRendererSource.includes('conversationalMatchingEnabled') || !packagedRendererSource.includes('发送下一条消息时，Agent 会读取此工作区的最新本机数据') ||
-    !packagedRendererSource.includes('DeepSeek V4 Flash') || !packagedRendererSource.includes('正在理解问题并选择 Tool') ||
+    !packagedMainSource.includes('CONVERSATION_CONTEXT_MISMATCH') ||
+    !packagedMainSource.includes('job-case.search.local') ||
+    !packagedPreloadSource.includes('executeAgentTurn') ||
+    !packagedPreloadSource.includes('cancelAgentTurn') ||
+    !packagedPreloadSource.includes('onAgentTurnEvent') ||
+    !packagedRendererSource.includes('hr-business-nav') ||
+    !packagedRendererSource.includes('发送下一条消息时，Agent 会读取此工作区的最新本机数据') ||
+    !packagedRendererSource.includes('DeepSeek V4 Flash') ||
+    !packagedRendererSource.includes('正在理解问题并选择 Tool') ||
     !packagedRendererSource.includes('matching-page')
-  ) throw new Error('Packaged ASAR is missing the Agent Main/Preload/Renderer surface or classic matching fallback.')
+  )
+    throw new Error('Packaged ASAR is missing the Agent Main/Preload/Renderer surface or classic matching fallback.')
   if (packagedRendererSource.includes('DeepSeek V4 Flash 正在理解问题并选择 Tool')) {
     throw new Error('Packaged Agent progress text exposes a concrete model name.')
   }
   for (const forbiddenGmailCapability of [
-    '/gmail/v1/users/me/drafts', '/gmail/v1/users/me/messages/send', '/gmail/v1/users/me/drafts/send',
+    '/gmail/v1/users/me/drafts',
+    '/gmail/v1/users/me/messages/send',
+    '/gmail/v1/users/me/drafts/send',
     'client_secret'
   ]) {
     if (packagedMainSource.includes(forbiddenGmailCapability)) {
@@ -516,13 +573,7 @@ try {
     }
   }
 
-  const { stdout: nativeModules } = await run('/usr/bin/find', [
-    join(resourcesPath, 'app.asar.unpacked'),
-    '-name',
-    '*.node',
-    '-type',
-    'f'
-  ])
+  const { stdout: nativeModules } = await run('/usr/bin/find', [join(resourcesPath, 'app.asar.unpacked'), '-name', '*.node', '-type', 'f'])
   const nativeModulePaths = nativeModules.trim().split('\n').filter(Boolean)
   if (nativeModulePaths.length === 0) throw new Error('No unpacked native database module was found.')
   if (!nativeModulePaths.some((path) => path.endsWith('onnxruntime_binding.node'))) {
@@ -541,78 +592,79 @@ try {
   const defaultLaunch = await launchSmoke()
   if (
     defaultLaunch.agentSmoke.bridge !== 'object' ||
-    defaultLaunch.agentSmoke.conversationalMatchingEnabled !== true ||
     defaultLaunch.agentSmoke.turnStatus !== 'failed' ||
     defaultLaunch.agentSmoke.planningFailedClosed !== true ||
     defaultLaunch.agentSmoke.saved !== true ||
     typeof defaultLaunch.agentSmoke.conversationId !== 'string'
-  ) throw new Error(`Packaged default Agent entry smoke failed: ${JSON.stringify(defaultLaunch.agentSmoke)}`)
-  const classicFallbackLaunch = await launchSmoke('disabled')
-  if (
-    classicFallbackLaunch.agentSmoke.bridge !== 'object' ||
-    classicFallbackLaunch.agentSmoke.conversationalMatchingEnabled !== false ||
-    classicFallbackLaunch.agentSmoke.classicMatchingPath !== true
-  ) throw new Error(`Packaged explicit classic fallback smoke failed: ${JSON.stringify(classicFallbackLaunch.agentSmoke)}`)
-  const agentDeleteLaunch = await launchSmoke('default', defaultLaunch.agentSmoke.conversationId)
+  )
+    throw new Error(`Packaged default Agent entry smoke failed: ${JSON.stringify(defaultLaunch.agentSmoke)}`)
+  const agentDeleteLaunch = await launchSmoke(defaultLaunch.agentSmoke.conversationId)
   if (
     agentDeleteLaunch.agentSmoke.bridge !== 'object' ||
-    agentDeleteLaunch.agentSmoke.conversationalMatchingEnabled !== true ||
     agentDeleteLaunch.agentSmoke.reopened !== true ||
     agentDeleteLaunch.agentSmoke.deleted !== true ||
     agentDeleteLaunch.agentSmoke.remaining !== false
-  ) throw new Error(`Packaged Agent restart/read/delete smoke failed: ${JSON.stringify(agentDeleteLaunch.agentSmoke)}`)
+  )
+    throw new Error(`Packaged Agent restart/read/delete smoke failed: ${JSON.stringify(agentDeleteLaunch.agentSmoke)}`)
   const database = await readFile(join(userDataPath, 'data', 'ses-agent.db'))
   if (database.subarray(0, 16).toString('utf8') === 'SQLite format 3\u0000') {
     throw new Error('Packaged smoke database is not encrypted.')
   }
   const recoveryLaunch = await launchKeyLossRecoverySmoke()
 
-  process.stdout.write(`${JSON.stringify({
-    appPath,
-    bundleIdentifier: 'jp.sesai.agentdesktop',
-    nativeModules: nativeModulePaths.length,
-    localEmbeddingModel: embeddingModel.modelId,
-    localEmbeddingDimension: embeddingModel.embeddingDimension,
-    localEmbeddingIntegrity: true,
-    localRerankerModel: rerankerModel.modelId,
-    localRerankerIntegrity: true,
-    packagedRerankerCompleted: reranker.ok === true,
-    privacyQualityDataset: privacyQuality.datasetVersion,
-    privacyQualitySyntheticOnly: privacyQuality.syntheticOnly,
-    privacyIdentifierRecall: privacyQuality.identifierRecall,
-    privacyRedactionPrecision: privacyQuality.redactionPrecision,
-    privacyResidualLeaks: privacyQuality.residualLeakCount,
-    privacyExpertRequired: requireExpertReport,
-    privacyExpertStatus: privacyExpert?.releaseEligible === true ? 'passed' : 'not-verified',
-    privacyExpertCases: privacyExpert?.caseCount ?? 0,
-    cloudEnforcementRuntimeBundleSetSha256: cloudEnforcement.runtimeBundleSetSha256,
-    cloudEnforcementReleaseEligible: cloudEnforcement.releaseEligible,
-    gmailApiContract: 'get-only',
-    gmailIncrementalEvents: ['messageAdded', 'labelAdded'],
-    gmailClientSecretPath: false,
-    localNerEngine: ner.engine,
-    localNerNetworkAccess: ner.networkAccess,
-    localNerExpectedNamesDetected: true,
-    packagedEmlParser: eml.version,
-    emlAttachmentPersisted: eml.attachmentPersisted,
-    schemaVersion: expectedSchemaVersion,
-    encryptedDatabase: true,
-    rendererReady: defaultLaunch.output.includes('[renderer-ready]') && classicFallbackLaunch.output.includes('[renderer-ready]') && agentDeleteLaunch.output.includes('[renderer-ready]'),
-    agentBridge: true,
-    agentDefaultChatEntry: true,
-    agentExplicitClassicFallback: true,
-    aiPlannedToolRouting: true,
-    agentToolCatalogDriven: true,
-    agentCandidateProfileRead: true,
-    agentCandidateInterviewRead: true,
-    agentProgressHidesConcreteModel: true,
-    agentPlanningFailsClosedWithoutCloud: true,
-    deepSeekModelAvailable: true,
-    agentConversationSaveRestartDelete: true,
-    keyLossRecoveryModeReady: recoveryLaunch.output.includes('[startup-recovery-ready]'),
-    activeDataPreservedOnKeyLoss: true,
-    stderr: [defaultLaunch.errors.trim(), classicFallbackLaunch.errors.trim(), agentDeleteLaunch.errors.trim(), recoveryLaunch.errors.trim()].filter(Boolean).join('\n') || null
-  }, null, 2)}\n`)
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        appPath,
+        bundleIdentifier: 'jp.sesai.agentdesktop',
+        nativeModules: nativeModulePaths.length,
+        localEmbeddingModel: embeddingModel.modelId,
+        localEmbeddingDimension: embeddingModel.embeddingDimension,
+        localEmbeddingIntegrity: true,
+        localRerankerModel: rerankerModel.modelId,
+        localRerankerIntegrity: true,
+        packagedRerankerCompleted: reranker.ok === true,
+        privacyQualityDataset: privacyQuality.datasetVersion,
+        privacyQualitySyntheticOnly: privacyQuality.syntheticOnly,
+        privacyIdentifierRecall: privacyQuality.identifierRecall,
+        privacyRedactionPrecision: privacyQuality.redactionPrecision,
+        privacyResidualLeaks: privacyQuality.residualLeakCount,
+        privacyExpertRequired: requireExpertReport,
+        privacyExpertStatus: privacyExpert?.releaseEligible === true ? 'passed' : 'not-verified',
+        privacyExpertCases: privacyExpert?.caseCount ?? 0,
+        cloudEnforcementRuntimeBundleSetSha256: cloudEnforcement.runtimeBundleSetSha256,
+        cloudEnforcementReleaseEligible: cloudEnforcement.releaseEligible,
+        gmailApiContract: 'get-only',
+        gmailIncrementalEvents: ['messageAdded', 'labelAdded'],
+        gmailClientSecretPath: false,
+        localNerEngine: ner.engine,
+        localNerNetworkAccess: ner.networkAccess,
+        localNerExpectedNamesDetected: true,
+        packagedEmlParser: eml.version,
+        emlAttachmentPersisted: eml.attachmentPersisted,
+        schemaVersion: expectedSchemaVersion,
+        encryptedDatabase: true,
+        rendererReady: defaultLaunch.output.includes('[renderer-ready]') && agentDeleteLaunch.output.includes('[renderer-ready]'),
+        agentBridge: true,
+        agentDefaultChatEntry: true,
+        agentExplicitClassicFallback: true,
+        aiPlannedToolRouting: true,
+        agentToolCatalogDriven: true,
+        agentCandidateProfileRead: true,
+        agentCandidateInterviewRead: true,
+        agentProgressHidesConcreteModel: true,
+        agentPlanningFailsClosedWithoutCloud: true,
+        deepSeekModelAvailable: true,
+        agentConversationSaveRestartDelete: true,
+        keyLossRecoveryModeReady: recoveryLaunch.output.includes('[startup-recovery-ready]'),
+        activeDataPreservedOnKeyLoss: true,
+        stderr:
+          [defaultLaunch.errors.trim(), agentDeleteLaunch.errors.trim(), recoveryLaunch.errors.trim()].filter(Boolean).join('\n') || null
+      },
+      null,
+      2
+    )}\n`
+  )
 } finally {
   await rm(userDataPath, { recursive: true, force: true })
 }

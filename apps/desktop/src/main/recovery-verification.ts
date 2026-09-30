@@ -9,12 +9,11 @@ import type { StagedRecoveryPackage } from '@recovery'
  * Opens a staged recovery package with its own derived keys and proves the
  * database and the encrypted vault agree before anything is activated.
  */
-export async function verifyStagedRecovery(
-  staged: StagedRecoveryPackage,
-  currentSchemaVersion: number
-): Promise<void> {
+export async function verifyStagedRecovery(staged: StagedRecoveryPackage, currentSchemaVersion: number): Promise<void> {
   if (staged.manifest.source.schemaVersion > currentSchemaVersion) {
-    throw new Error(`この復元パッケージは新しい Schema v${staged.manifest.source.schemaVersion} で作成されています。アプリを更新してください。`)
+    throw new Error(
+      `この復元パッケージは新しい Schema v${staged.manifest.source.schemaVersion} で作成されています。アプリを更新してください。`
+    )
   }
   const keys = deriveApplicationKeys(staged.masterKey)
   const repository = new EncryptedApplicationRepository({

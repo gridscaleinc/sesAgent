@@ -20,6 +20,7 @@ import type { PrivacyStore } from './privacy-store'
 import type { ProcessingJobStore } from './processing-job-store'
 import type { ProposalStore } from './proposal-store'
 import type { WorkTaskStore } from './work-task-store'
+import type { PersonCaseMatchStore } from './person-case-match-store'
 
 export interface StoreRegistry {
   growth: BusinessGrowthStore
@@ -44,4 +45,5 @@ export interface StoreRegistry {
   readonly processingJobs: ProcessingJobStore
   readonly proposals: ProposalStore
   readonly workTasks: WorkTaskStore
+  readonly personCaseMatches: PersonCaseMatchStore
 }

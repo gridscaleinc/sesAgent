@@ -13,8 +13,10 @@ if (
   manifest.modelId !== 'hotchpotch/japanese-reranker-tiny-v2' ||
   manifest.revision !== 'ba95175a4d53058816b971f31929f10c5cad8560' ||
   manifest.license !== 'MIT' ||
-  manifest.maximumSequenceLength !== 512 || manifest.maximumCandidates !== 20
-) throw new Error('Reranker model manifest contract is invalid.')
+  manifest.maximumSequenceLength !== 512 ||
+  manifest.maximumCandidates !== 20
+)
+  throw new Error('Reranker model manifest contract is invalid.')
 
 for (const file of manifest.files) {
   const path = join(modelDirectory, file.path)
@@ -26,13 +28,15 @@ for (const file of manifest.files) {
   }
 }
 
-process.stdout.write(`${JSON.stringify({
-  modelId: manifest.modelId,
-  revision: manifest.revision,
-  license: manifest.license,
-  maximumSequenceLength: manifest.maximumSequenceLength,
-  maximumCandidates: manifest.maximumCandidates,
-  files: manifest.files.length,
-  networkAccess: false,
-  integrity: 'verified'
-})}\n`)
+process.stdout.write(
+  `${JSON.stringify({
+    modelId: manifest.modelId,
+    revision: manifest.revision,
+    license: manifest.license,
+    maximumSequenceLength: manifest.maximumSequenceLength,
+    maximumCandidates: manifest.maximumCandidates,
+    files: manifest.files.length,
+    networkAccess: false,
+    integrity: 'verified'
+  })}\n`
+)

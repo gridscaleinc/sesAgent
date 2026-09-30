@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
-import {
-  LocalEmbeddingWorkerClient,
-  LocalRerankerWorkerClient,
-  localEmbeddingModel,
-  localRerankerModel
-} from '@local-ai'
+import { LocalEmbeddingWorkerClient, LocalRerankerWorkerClient, localEmbeddingModel, localRerankerModel } from '@local-ai'
 import {
   evaluateSesCandidateBenchmark,
   LocalHybridCandidateRetrieval,
@@ -25,29 +20,45 @@ const rerankerWorker = new LocalRerankerWorkerClient({
 })
 const cache: CandidateEmbeddingCacheRecord[] = []
 const projectCache: Array<CandidateEmbeddingCacheRecord & { projectId: string }> = []
-const retrieval = new LocalHybridCandidateRetrieval(worker, {
-  listCandidateProfileEmbeddings: () => cache,
-  saveCandidateProfileEmbeddings: (records) => cache.push(...records.map((record) => ({
-    ...record,
-    updatedAt: '2026-07-20T00:00:00.000Z'
-  }))),
-  listCandidateProjectEmbeddings: () => projectCache,
-  saveCandidateProjectEmbeddings: (records) => projectCache.push(...records.map((record) => ({
-    ...record,
-    updatedAt: '2026-07-20T00:00:00.000Z'
-  })))
-}, {
-  modelId: localEmbeddingModel.id,
-  modelRevision: localEmbeddingModel.revision,
-  dimension: localEmbeddingModel.dimension
-}, rerankerWorker)
+const retrieval = new LocalHybridCandidateRetrieval(
+  worker,
+  {
+    listCandidateProfileEmbeddings: () => cache,
+    saveCandidateProfileEmbeddings: (records) =>
+      cache.push(
+        ...records.map((record) => ({
+          ...record,
+          updatedAt: '2026-07-20T00:00:00.000Z'
+        }))
+      ),
+    listCandidateProjectEmbeddings: () => projectCache,
+    saveCandidateProjectEmbeddings: (records) =>
+      projectCache.push(
+        ...records.map((record) => ({
+          ...record,
+          updatedAt: '2026-07-20T00:00:00.000Z'
+        }))
+      )
+  },
+  {
+    modelId: localEmbeddingModel.id,
+    modelRevision: localEmbeddingModel.revision,
+    dimension: localEmbeddingModel.dimension
+  },
+  rerankerWorker
+)
 
 const profileId = (index: number): string => `${index.toString(16).padStart(8, '0')}-0000-4000-8000-${String(index).padStart(12, '0')}`
-const profile = (index: number, skills: string, role: string, project?: {
-  title: string
-  summary: string
-  technologies: string[]
-}): CandidateProfile => ({
+const profile = (
+  index: number,
+  skills: string,
+  role: string,
+  project?: {
+    title: string
+    summary: string
+    technologies: string[]
+  }
+): CandidateProfile => ({
   schemaVersion: 'candidate-profile-v1',
   id: profileId(index),
   sourceDocumentId: profileId(index),
@@ -64,15 +75,19 @@ const profile = (index: number, skills: string, role: string, project?: {
     { key: 'location', label: '希望勤務地', value: '首都圏', sourceLabels: [`Fixture ${index}`] },
     { key: 'work_authorization', label: '就労資格', value: '就労制限なし', sourceLabels: [`Fixture ${index}`] }
   ],
-  projectExperiences: project ? [{
-    id: profileId(index + 20_000),
-    title: project.title,
-    period: '2023年4月〜2025年3月',
-    role,
-    technologies: project.technologies,
-    summary: project.summary,
-    sourceLabels: [`Fixture project ${index}`]
-  }] : [],
+  projectExperiences: project
+    ? [
+        {
+          id: profileId(index + 20_000),
+          title: project.title,
+          period: '2023年4月〜2025年3月',
+          role,
+          technologies: project.technologies,
+          summary: project.summary,
+          sourceLabels: [`Fixture project ${index}`]
+        }
+      ]
+    : [],
   confirmedAt: '2026-07-20T00:00:00.000Z',
   confirmedBy: `fixture-reviewer-${index}`,
   containsDirectIdentifiers: false
@@ -137,7 +152,11 @@ try {
   assert.equal(projectCache.length, relevant.length, 'project segments were not cached exactly once')
   assert.equal(retrieved, cases.length, `fixed semantic fixture missed a relevant profile at K=20: ${ranks.join(',')}`)
   assert.equal(projectEvidenceHits, cases.length, 'relevant results did not expose project-level evidence')
-  assert.equal(cache.some((record) => JSON.stringify(record).includes('fixture-reviewer')), false, 'reviewer identity entered the vector cache')
+  assert.equal(
+    cache.some((record) => JSON.stringify(record).includes('fixture-reviewer')),
+    false,
+    'reviewer identity entered the vector cache'
+  )
   const benchmark: SesCandidateBenchmark = {
     version: 'ses-candidate-benchmark-v1',
     id: 'd5a8372a-f701-4862-8f5d-4278c116fe3c',
@@ -174,25 +193,27 @@ try {
   assert.equal(qualityReport.metrics.recallAt20, 1)
   assert.equal(qualityReport.metrics.projectEvidenceCoverageAt20, 1)
   assert.equal(JSON.stringify(qualityReport).includes(cases[0]!.query), false, 'quality report retained raw query text')
-  console.info(JSON.stringify({
-    engine: 'hard-filter-bm25-vector-rrf-local-rerank-v1',
-    modelId: `${localEmbeddingModel.id}+${localRerankerModel.id}`,
-    profiles: profiles.length,
-    cases: cases.length,
-    recallAt20: retrieved / cases.length,
-    relevantRanks: ranks,
-    elapsedMs,
-    cacheEntries: cache.length,
-    projectCacheEntries: projectCache.length,
-    projectEvidenceHits,
-    qualityGateStatus: qualityReport.status,
-    qualityGateCases: qualityReport.metrics.caseCount,
-    qualityGateNdcgAt20: qualityReport.metrics.ndcgAt20,
-    hardFilterPolicyVersion: qualityReport.hardFilterPolicyVersion,
-    networkAccess: false,
-    kernelNetworkSandbox: process.platform === 'darwin',
-    humanLabeledDataset: false
-  }))
+  console.info(
+    JSON.stringify({
+      engine: 'hard-filter-bm25-vector-rrf-local-rerank-v1',
+      modelId: `${localEmbeddingModel.id}+${localRerankerModel.id}`,
+      profiles: profiles.length,
+      cases: cases.length,
+      recallAt20: retrieved / cases.length,
+      relevantRanks: ranks,
+      elapsedMs,
+      cacheEntries: cache.length,
+      projectCacheEntries: projectCache.length,
+      projectEvidenceHits,
+      qualityGateStatus: qualityReport.status,
+      qualityGateCases: qualityReport.metrics.caseCount,
+      qualityGateNdcgAt20: qualityReport.metrics.ndcgAt20,
+      hardFilterPolicyVersion: qualityReport.hardFilterPolicyVersion,
+      networkAccess: false,
+      kernelNetworkSandbox: process.platform === 'darwin',
+      humanLabeledDataset: false
+    })
+  )
 } finally {
   worker.dispose()
   rerankerWorker.dispose()

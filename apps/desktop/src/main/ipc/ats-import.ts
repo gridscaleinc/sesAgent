@@ -25,7 +25,16 @@ export function registerAtsImportHandlers(context: MainIpcContext) {
     const selection = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options)
     const path = selection.filePaths[0]
     if (selection.canceled || !path) {
-      return { cancelled: true, fileName: null, rowCount: 0, importedCount: 0, duplicateCount: 0, skippedCount: 0, failedCount: 0, items: [] }
+      return {
+        cancelled: true,
+        fileName: null,
+        rowCount: 0,
+        importedCount: 0,
+        duplicateCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        items: []
+      }
     }
     const bytes = await readFile(path)
     if (bytes.length > 5 * 1024 * 1024) throw new Error('CSV は 5MB までです。')
@@ -47,7 +56,9 @@ export function registerAtsImportHandlers(context: MainIpcContext) {
       fileName: basename(path),
       rowCount: rows.length,
       importedCount: items.filter((item) => item.outcome === 'created').length,
-      duplicateCount: items.filter((item) => item.outcome === 'existing-review' || item.outcome === 'already-imported' || item.outcome === 'archived').length,
+      duplicateCount: items.filter(
+        (item) => item.outcome === 'existing-review' || item.outcome === 'already-imported' || item.outcome === 'archived'
+      ).length,
       skippedCount: skipped,
       failedCount: items.filter((item) => item.outcome === 'failed').length,
       items

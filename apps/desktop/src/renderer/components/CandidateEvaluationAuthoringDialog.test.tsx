@@ -18,44 +18,52 @@ const workspace: CandidateEvaluationAuthoringWorkspace = {
     reviewerCount: 1,
     createdAt: '2026-07-20T00:00:00.000Z',
     updatedAt: '2026-07-20T00:01:00.000Z',
-    cases: [{
-      id: caseId,
-      jobCaseId,
-      jobCaseVersion: 1,
-      jobCaseTitle: '決済基盤 Java 案件',
-      query: 'required_skills: Java AWS | role: PL',
-      poolReviewed: true,
-      reviewerDisplayName: '検証担当者',
-      reviewedAt: '2026-07-20T00:01:00.000Z',
-      status: 'ready',
-      relevantCandidates: [{
-        profileId,
-        profileVersion: 1,
-        anonymousLabel: '候補者 1F6DDE32',
-        expectedProjectEvidence: true,
-        status: 'active'
-      }]
-    }]
+    cases: [
+      {
+        id: caseId,
+        jobCaseId,
+        jobCaseVersion: 1,
+        jobCaseTitle: '決済基盤 Java 案件',
+        query: 'required_skills: Java AWS | role: PL',
+        poolReviewed: true,
+        reviewerDisplayName: '検証担当者',
+        reviewedAt: '2026-07-20T00:01:00.000Z',
+        status: 'ready',
+        relevantCandidates: [
+          {
+            profileId,
+            profileVersion: 1,
+            anonymousLabel: '候補者 1F6DDE32',
+            expectedProjectEvidence: true,
+            status: 'active'
+          }
+        ]
+      }
+    ]
   },
-  jobCases: [{
-    id: jobCaseId,
-    version: 1,
-    title: '決済基盤 Java 案件',
-    query: 'required_skills: Java AWS | role: PL'
-  }],
-  candidates: [{
-    id: profileId,
-    version: 1,
-    anonymousLabel: '候補者 1F6DDE32',
-    skills: 'Java, AWS',
-    experienceYears: '7年',
-    availability: '即日',
-    rate: '85万円/月',
-    japaneseLevel: 'N1',
-    workStyle: '週3リモート',
-    role: 'PL',
-    projectExperienceCount: 2
-  }]
+  jobCases: [
+    {
+      id: jobCaseId,
+      version: 1,
+      title: '決済基盤 Java 案件',
+      query: 'required_skills: Java AWS | role: PL'
+    }
+  ],
+  candidates: [
+    {
+      id: profileId,
+      version: 1,
+      anonymousLabel: '候補者 1F6DDE32',
+      skills: 'Java, AWS',
+      experienceYears: '7年',
+      availability: '即日',
+      rate: '85万円/月',
+      japaneseLevel: 'N1',
+      workStyle: '週3リモート',
+      role: 'PL',
+      projectExperienceCount: 2
+    }
+  ]
 }
 
 describe('CandidateEvaluationAuthoringDialog', () => {
@@ -65,16 +73,18 @@ describe('CandidateEvaluationAuthoringDialog', () => {
       workspace,
       state: { dataset: null, latestReport: null }
     })
-    render(<CandidateEvaluationAuthoringDialog
-      loading={false}
-      onClose={vi.fn()}
-      onCreateDraft={vi.fn()}
-      onDeleteCase={vi.fn()}
-      onEvaluate={onEvaluate}
-      onSaveCase={onSaveCase}
-      onWorkspaceChange={vi.fn()}
-      workspace={workspace}
-    />)
+    render(
+      <CandidateEvaluationAuthoringDialog
+        loading={false}
+        onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
+        onDeleteCase={vi.fn()}
+        onEvaluate={onEvaluate}
+        onSaveCase={onSaveCase}
+        onWorkspaceChange={vi.fn()}
+        workspace={workspace}
+      />
+    )
 
     expect(screen.getByRole('dialog', { name: '専門家ラベルセットを作成' })).toBeInTheDocument()
     expect(screen.getByText('Cloud送信なし · 原文なし · Query Hashのみ報告保存')).toBeInTheDocument()
@@ -82,14 +92,16 @@ describe('CandidateEvaluationAuthoringDialog', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: /候補者 1F6DDE32/ })).toBeChecked())
     expect(screen.getByRole('checkbox', { name: /Active候補者 1件を母集団として確認した/ })).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: '案件ラベルを暗号化保存' }))
-    await waitFor(() => expect(onSaveCase).toHaveBeenCalledWith({
-      draftId,
-      expectedRevision: 2,
-      jobCaseId,
-      relevantCandidateProfileIds: [profileId],
-      expectedProjectEvidenceProfileIds: [profileId],
-      poolReviewed: true
-    }))
+    await waitFor(() =>
+      expect(onSaveCase).toHaveBeenCalledWith({
+        draftId,
+        expectedRevision: 2,
+        jobCaseId,
+        relevantCandidateProfileIds: [profileId],
+        expectedProjectEvidenceProfileIds: [profileId],
+        poolReviewed: true
+      })
+    )
 
     fireEvent.click(screen.getByRole('button', { name: '現在の 1 ケースを端末内評価' }))
     await waitFor(() => expect(onEvaluate).toHaveBeenCalledWith({ draftId, expectedRevision: 2 }))
@@ -98,16 +110,18 @@ describe('CandidateEvaluationAuthoringDialog', () => {
   it('creates the encrypted local draft before labels are added', async () => {
     const emptyWorkspace: CandidateEvaluationAuthoringWorkspace = { ...workspace, draft: null }
     const onCreateDraft = vi.fn().mockResolvedValue(workspace)
-    render(<CandidateEvaluationAuthoringDialog
-      loading={false}
-      onClose={vi.fn()}
-      onCreateDraft={onCreateDraft}
-      onDeleteCase={vi.fn()}
-      onEvaluate={vi.fn()}
-      onSaveCase={vi.fn()}
-      onWorkspaceChange={vi.fn()}
-      workspace={emptyWorkspace}
-    />)
+    render(
+      <CandidateEvaluationAuthoringDialog
+        loading={false}
+        onClose={vi.fn()}
+        onCreateDraft={onCreateDraft}
+        onDeleteCase={vi.fn()}
+        onEvaluate={vi.fn()}
+        onSaveCase={vi.fn()}
+        onWorkspaceChange={vi.fn()}
+        workspace={emptyWorkspace}
+      />
+    )
     fireEvent.change(screen.getByLabelText('評価セット名'), { target: { value: 'Tokyo SES Pilot v1' } })
     fireEvent.click(screen.getByRole('button', { name: '暗号化草稿を作成' }))
     await waitFor(() => expect(onCreateDraft).toHaveBeenCalledWith({ name: 'Tokyo SES Pilot v1' }))

@@ -66,8 +66,15 @@ function jobCaseReviewFixture(reviewId: string, overrides: Partial<JobCaseReview
     fields: jobCaseFieldKeys.map((key) => {
       const value = key === 'title' ? 'Java 案件' : key === 'rate' ? '～65万円' : null
       return {
-        key, label: key, originalValue: value, value, confidence: value ? 0.8 : 0,
-        status: value ? 'needs_review' : 'missing', sourceLabels: [], changed: false, changeReason: null
+        key,
+        label: key,
+        originalValue: value,
+        value,
+        confidence: value ? 0.8 : 0,
+        status: value ? 'needs_review' : 'missing',
+        sourceLabels: [],
+        changed: false,
+        changeReason: null
       }
     }),
     warningCodes: ['DETERMINISTIC_EXTRACTION_REQUIRES_REVIEW'],
@@ -90,13 +97,25 @@ function sendableReviewFixture(index: number): JobCaseReviewSnapshot {
     fields: jobCaseFieldKeys.map((key) => {
       const value = key === 'title' ? `Java 案件 ${index}` : key === 'required_skills' ? 'Java' : key === 'rate' ? '～65万円' : null
       return {
-        key, label: key, originalValue: value, value, confidence: value ? 1 : 0,
-        status: value ? 'confirmed' as const : 'missing' as const, sourceLabels: [], changed: false, changeReason: null
+        key,
+        label: key,
+        originalValue: value,
+        value,
+        confidence: value ? 1 : 0,
+        status: value ? ('confirmed' as const) : ('missing' as const),
+        sourceLabels: [],
+        changed: false,
+        changeReason: null
       }
     }),
     jobCase: {
-      id: caseId, sourceReviewId: reviewId, version: 1, status: 'active',
-      confirmedAt: '2026-08-25T01:00:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false
+      id: caseId,
+      sourceReviewId: reviewId,
+      version: 1,
+      status: 'active',
+      confirmedAt: '2026-08-25T01:00:00.000Z',
+      confirmedBy: 'HR',
+      containsDirectIdentifiers: false
     }
   })
 }
@@ -109,14 +128,18 @@ const searchPlanningResult = {
   }
 }
 
-function input(message: string, id = requestId, options: {
-  conversationId?: string
-  expectedConversationRevision?: number | null
-  selectedCandidateDocumentId?: string | null
-  selectedJobCaseRef?: ExecuteAgentTurnInput['selectedJobCaseRef']
-  activeSystemAccess?: ExecuteAgentTurnInput['activeSystemAccess']
-  attachmentFileTokens?: string[]
-} = {}): ExecuteAgentTurnInput {
+function input(
+  message: string,
+  id = requestId,
+  options: {
+    conversationId?: string
+    expectedConversationRevision?: number | null
+    selectedCandidateDocumentId?: string | null
+    selectedJobCaseRef?: ExecuteAgentTurnInput['selectedJobCaseRef']
+    activeSystemAccess?: ExecuteAgentTurnInput['activeSystemAccess']
+    attachmentFileTokens?: string[]
+  } = {}
+): ExecuteAgentTurnInput {
   return {
     conversationId: options.conversationId ?? conversationId,
     message,
@@ -140,28 +163,36 @@ function invoke(channel: string, rawInput: unknown, sender = defaultSender): unk
   return handler({ sender } as unknown as IpcMainInvokeEvent, rawInput)
 }
 
-function createDependencies(options: {
-  enabled?: boolean
-  initialConversation?: AiConversationSnapshot
-  runCandidateMatchTask?: AgentIpcDependencies['runCandidateMatchTask']
-  cancelMatchTask?: AgentIpcDependencies['cancelMatchTask']
-  narrativeStreamer?: AgentNarrativeStreamer | null
-  executeBusinessTextIntake?: AgentIpcDependencies['executeBusinessTextIntake']
-  jobCaseReviews?: JobCaseReviewSnapshot[]
-  caseBroadcastCopies?: CaseBroadcastCopy[]
-} = {}): AgentIpcDependencies {
-  const conversations = new Map<string, AiConversationSnapshot>(options.initialConversation ? [[options.initialConversation.id, options.initialConversation]] : [])
+function createDependencies(
+  options: {
+    initialConversation?: AiConversationSnapshot
+    runCandidateMatchTask?: AgentIpcDependencies['runCandidateMatchTask']
+    cancelMatchTask?: AgentIpcDependencies['cancelMatchTask']
+    narrativeStreamer?: AgentNarrativeStreamer | null
+    executeBusinessTextIntake?: AgentIpcDependencies['executeBusinessTextIntake']
+    jobCaseReviews?: JobCaseReviewSnapshot[]
+    caseBroadcastCopies?: CaseBroadcastCopy[]
+  } = {}
+): AgentIpcDependencies {
+  const conversations = new Map<string, AiConversationSnapshot>(
+    options.initialConversation ? [[options.initialConversation.id, options.initialConversation]] : []
+  )
   // Mirrors the store contract: a run binds to exactly one (conversation,
   // turn) pair, and a run created half-bound - conversation without turn - can
   // never be completed. That half-bound shape is what broke the intake.
   const actionRuns = new Map<string, { conversationId: string | null; turnId: string | null }>()
   const repository = {
-    listActiveJobCases: vi.fn(() => [{
-      id: jobCaseId,
-      version: 2,
-      confirmedAt: new Date().toISOString(), // Recent-search fixture must not age out of the thirty-day window.
-      fields: [{ key: 'title', value: 'Java 案件' }, { key: 'required_skills', value: 'Java' }]
-    }]),
+    listActiveJobCases: vi.fn(() => [
+      {
+        id: jobCaseId,
+        version: 2,
+        confirmedAt: new Date().toISOString(), // Recent-search fixture must not age out of the thirty-day window.
+        fields: [
+          { key: 'title', value: 'Java 案件' },
+          { key: 'required_skills', value: 'Java' }
+        ]
+      }
+    ]),
     getAiConversation: vi.fn((id: string) => conversations.get(id) ?? null),
     saveAiConversation: vi.fn((saveInput: SaveAiConversationInput) => {
       const conversation: AiConversationSnapshot = {
@@ -195,8 +226,15 @@ function createDependencies(options: {
       candidate: { candidateProfileId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
       profile: {
         profileVersion: 2,
-        skills: 'Java', experienceYears: '8年', availability: '即日', rate: '90万円', japaneseLevel: 'N1',
-        workStyle: 'リモート', role: 'バックエンド', location: '東京', workAuthorization: '就労制限なし',
+        skills: 'Java',
+        experienceYears: '8年',
+        availability: '即日',
+        rate: '90万円',
+        japaneseLevel: 'N1',
+        workStyle: 'リモート',
+        role: 'バックエンド',
+        location: '東京',
+        workAuthorization: '就労制限なし',
         projectExperiences: []
       }
     })),
@@ -205,21 +243,25 @@ function createDependencies(options: {
     listCandidateInterviews: vi.fn(() => []),
     listJobCaseReviews: vi.fn(() => options.jobCaseReviews ?? []),
     listSeenJobCaseReviewIds: vi.fn((): string[] => []),
-    getJobCaseReview: vi.fn((reviewId: string) =>
-      (options.jobCaseReviews ?? []).find((review) => review.reviewId === reviewId) ?? jobCaseReviewFixture(reviewId)),
+    getJobCaseReview: vi.fn(
+      (reviewId: string) => (options.jobCaseReviews ?? []).find((review) => review.reviewId === reviewId) ?? jobCaseReviewFixture(reviewId)
+    ),
     listBroadcastTemplates: vi.fn(() => [builtInBroadcastTemplate()]),
     listAllCaseBroadcasts: vi.fn((): CaseBroadcastRecord[] => []),
     listCaseBroadcasts: vi.fn((): CaseBroadcastRecord[] => []),
     listAllCaseBroadcastCopies: vi.fn(() => options.caseBroadcastCopies ?? []),
-    listCaseBroadcastCopies: vi.fn((reviewId: string) =>
-      (options.caseBroadcastCopies ?? []).filter((copy) => copy.reviewId === reviewId)),
+    listCaseBroadcastCopies: vi.fn((reviewId: string) => (options.caseBroadcastCopies ?? []).filter((copy) => copy.reviewId === reviewId)),
     getAgentJobCaseDraftFacts: vi.fn((reviewId: string, label: string) => agentJobCaseDraftFacts(jobCaseReviewFixture(reviewId), label)),
     listWorkTasks: vi.fn(() => []),
     getWorkTask: vi.fn(() => null),
     listActionApprovals: vi.fn(() => []),
     saveCandidateMatchAssessments: vi.fn(() => 1),
     getMatchingHomeProjection: vi.fn(() => ({
-      state: 'onboarding', eligibleCandidateCount: 0, selectedJobCaseId: null, jobCases: [], currentRun: null
+      state: 'onboarding',
+      eligibleCandidateCount: 0,
+      selectedJobCaseId: null,
+      jobCases: [],
+      currentRun: null
     }))
   } as unknown as EncryptedApplicationRepository
   const actionOrchestrator = {
@@ -243,10 +285,16 @@ function createDependencies(options: {
         return { kind: 'tool' as const, action: { toolName: 'candidate.profile.read.local' as const, arguments: { rank: null } } }
       }
       if (/记录成案件|案件として登録/u.test(planInput.userMessage)) {
-        return { kind: 'tool' as const, action: { toolName: 'job-case.conversation-import.local' as const, arguments: {} as Record<string, never> } }
+        return {
+          kind: 'tool' as const,
+          action: { toolName: 'job-case.conversation-import.local' as const, arguments: {} as Record<string, never> }
+        }
       }
       if (/詳細|详情/u.test(planInput.userMessage)) {
-        return { kind: 'tool' as const, action: { toolName: 'job-case.search.local' as const, arguments: { operation: 'detail' as const, ordinal: null } } }
+        return {
+          kind: 'tool' as const,
+          action: { toolName: 'job-case.search.local' as const, arguments: { operation: 'detail' as const, ordinal: null } }
+        }
       }
       if (/匹配|候補者/u.test(planInput.userMessage)) {
         return { kind: 'tool' as const, action: { toolName: 'candidate.match.local' as const, arguments: { ordinal: null } } }
@@ -254,15 +302,20 @@ function createDependencies(options: {
       if (/なぜ|为什么/u.test(planInput.userMessage)) {
         return { kind: 'tool' as const, action: { toolName: 'match-run.read.local' as const, arguments: { rank: 1 } } }
       }
-      return { kind: 'tool' as const, action: { toolName: 'job-case.search.local' as const, arguments: { operation: 'search' as const, query: null, recent: true } } }
+      return {
+        kind: 'tool' as const,
+        action: { toolName: 'job-case.search.local' as const, arguments: { operation: 'search' as const, query: null, recent: true } }
+      }
     }),
     streamAnswer: vi.fn(async (streamInput) => {
       streamInput.onClientRequestId('direct-answer-client-request')
       streamInput.onDelta('AI 直接回答。')
       streamInput.onRemoteSettled()
       return {
-        clientRequestId: 'direct-answer-client-request', responseId: 'direct-answer-response',
-        content: 'AI 直接回答。', billingModeUsed: 'subscription' as const
+        clientRequestId: 'direct-answer-client-request',
+        responseId: 'direct-answer-response',
+        content: 'AI 直接回答。',
+        billingModeUsed: 'subscription' as const
       }
     }),
     stream: vi.fn(async (streamInput) => {
@@ -270,7 +323,10 @@ function createDependencies(options: {
       streamInput.onDelta('AI 整理结果。')
       streamInput.onRemoteSettled()
       return {
-        clientRequestId: 'client-request-123', responseId: 'response-123', content: 'AI 整理结果。', billingModeUsed: 'subscription' as const
+        clientRequestId: 'client-request-123',
+        responseId: 'response-123',
+        content: 'AI 整理结果。',
+        billingModeUsed: 'subscription' as const
       }
     }),
     assessMatchCandidates: vi.fn(async () => ({ assessments: [] })),
@@ -280,7 +336,6 @@ function createDependencies(options: {
     repository,
     actionOrchestrator,
     assertTrustedSender: vi.fn(),
-    conversationalMatchingEnabled: () => options.enabled ?? true,
     locale: () => 'ja-JP',
     currentOperator: () => ({ operatorId: 'operator-1', displayName: 'Test Operator' }),
     currentMatchRuntimeIdentity,
@@ -300,32 +355,31 @@ describe('agent IPC boundary', () => {
     vi.clearAllMocks()
   })
 
-  it('fails closed when the conversational matching feature flag is disabled', async () => {
-    const stop = registerAgentIpcHandlers(createDependencies({ enabled: false }))
-
-    await expect(invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？'))).rejects.toThrow('FEATURE_DISABLED')
-
-    stop()
-  })
-
   it('performs a real search-to-case-detail turn with a valid by-id date range and canonical reference', async () => {
     const dependencies = createDependencies()
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const searched = await invoke(ipcChannels.executeAgentTurn, input('最近の案件は？')) as {
+    const searched = (await invoke(ipcChannels.executeAgentTurn, input('最近の案件は？'))) as {
       status: string
       conversation: AiConversationSnapshot
     }
     expect(searched.status).toBe('completed')
-    const searchReference = searched.conversation.messages.at(-1)?.blocks?.find((block) => block.type === 'job-case-cards')?.cards[0]?.reference
+    const searchReference = searched.conversation.messages.at(-1)?.blocks?.find((block) => block.type === 'job-case-cards')
+      ?.cards[0]?.reference
     expect(searchReference).toBeDefined()
 
-    const detailed = await invoke(ipcChannels.executeAgentTurn, input('この案件の詳細', secondRequestId, {
-      expectedConversationRevision: searched.conversation.revision,
-      selectedJobCaseRef: {
-        ...searchReference!, ordinal: 99, label: 'Renderer 偽造案件', target: 'job-case:renderer-forged'
-      }
-    })) as { status: string; conversation: AiConversationSnapshot }
+    const detailed = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('この案件の詳細', secondRequestId, {
+        expectedConversationRevision: searched.conversation.revision,
+        selectedJobCaseRef: {
+          ...searchReference!,
+          ordinal: 99,
+          label: 'Renderer 偽造案件',
+          target: 'job-case:renderer-forged'
+        }
+      })
+    )) as { status: string; conversation: AiConversationSnapshot }
     expect(detailed.status).toBe('completed')
     const detailBlock = detailed.conversation.messages.at(-1)?.blocks?.find((block) => block.type === 'job-case-cards')
     expect(detailBlock).toMatchObject({
@@ -334,7 +388,10 @@ describe('agent IPC boundary', () => {
       cards: [{ reference: { objectId: jobCaseId, label: 'Java 案件', target: `job-case:${jobCaseId}`, ordinal: 1 } }]
     })
     expect(detailed.conversation.salesAgentState?.selectedJobCaseRef).toMatchObject({
-      objectId: jobCaseId, label: 'Java 案件', target: `job-case:${jobCaseId}`, ordinal: 1
+      objectId: jobCaseId,
+      label: 'Java 案件',
+      target: `job-case:${jobCaseId}`,
+      ordinal: 1
     })
     expect(dependencies.repository.linkActionRunToConversation).toHaveBeenCalledTimes(2)
 
@@ -347,22 +404,31 @@ describe('agent IPC boundary', () => {
     const review = jobCaseReviewFixture(workspaceReviewId, {
       status: 'completed',
       jobCase: {
-        id: secondCaseId, sourceReviewId: workspaceReviewId, version: 1, status: 'active',
-        confirmedAt: '2026-08-25T01:00:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false
+        id: secondCaseId,
+        sourceReviewId: workspaceReviewId,
+        version: 1,
+        status: 'active',
+        confirmedAt: '2026-08-25T01:00:00.000Z',
+        confirmedBy: 'HR',
+        containsDirectIdentifiers: false
       }
     })
     const dependencies = createDependencies({ jobCaseReviews: [review] })
     // Two active cases, so nothing resolves by being the only record.
     vi.mocked(dependencies.repository.listActiveJobCases).mockReturnValue([
       {
-        id: jobCaseId, version: 2, confirmedAt: '2026-08-18T00:00:00.000Z',
+        id: jobCaseId,
+        version: 2,
+        confirmedAt: '2026-08-18T00:00:00.000Z',
         fields: [
           { key: 'title' as const, label: 'title', value: 'Java 案件', sourceLabels: [] },
           { key: 'required_skills' as const, label: 'required_skills', value: 'Java', sourceLabels: [] }
         ]
       },
       {
-        id: secondCaseId, version: 1, confirmedAt: '2026-08-25T01:00:00.000Z',
+        id: secondCaseId,
+        version: 1,
+        confirmedAt: '2026-08-25T01:00:00.000Z',
         fields: [
           { key: 'title' as const, label: 'title', value: 'Python 案件', sourceLabels: [] },
           { key: 'required_skills' as const, label: 'required_skills', value: 'Python', sourceLabels: [] }
@@ -373,9 +439,12 @@ describe('agent IPC boundary', () => {
     const stop = registerAgentIpcHandlers(dependencies)
 
     // No conversation selection, case review open on the right: that case is 当前案件.
-    const fromWorkspace = await invoke(ipcChannels.executeAgentTurn, input('当前案件の詳細', requestId, {
-      activeSystemAccess: { type: 'system-access', destination: 'case-review', reviewId: workspaceReviewId }
-    })) as { status: string; conversation: AiConversationSnapshot }
+    const fromWorkspace = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('当前案件の詳細', requestId, {
+        activeSystemAccess: { type: 'system-access', destination: 'case-review', reviewId: workspaceReviewId }
+      })
+    )) as { status: string; conversation: AiConversationSnapshot }
     expect(fromWorkspace.status).toBe('completed')
     const workspaceCard = fromWorkspace.conversation.messages.at(-1)?.blocks?.find((block) => block.type === 'job-case-cards')
     expect(workspaceCard).toMatchObject({ cards: [{ reference: { objectId: secondCaseId, label: 'Python 案件' } }] })
@@ -383,29 +452,38 @@ describe('agent IPC boundary', () => {
     expect(fromWorkspace.conversation.salesAgentState?.selectedJobCaseRef).toMatchObject({ objectId: secondCaseId })
 
     // A conversation that already selected a case keeps it even when the side panel shows another.
-    const keptSelection = await invoke(ipcChannels.executeAgentTurn, input('この案件の詳細', secondRequestId, {
-      expectedConversationRevision: fromWorkspace.conversation.revision,
-      activeSystemAccess: { type: 'system-access', destination: 'matching', jobCaseId }
-    })) as { status: string; conversation: AiConversationSnapshot }
+    const keptSelection = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('この案件の詳細', secondRequestId, {
+        expectedConversationRevision: fromWorkspace.conversation.revision,
+        activeSystemAccess: { type: 'system-access', destination: 'matching', jobCaseId }
+      })
+    )) as { status: string; conversation: AiConversationSnapshot }
     expect(keptSelection.status).toBe('completed')
     const keptCard = keptSelection.conversation.messages.at(-1)?.blocks?.find((block) => block.type === 'job-case-cards')
     expect(keptCard).toMatchObject({ cards: [{ reference: { objectId: secondCaseId } }] })
 
     // A fresh conversation with the matching page open resolves through jobCaseId.
-    const fromMatching = await invoke(ipcChannels.executeAgentTurn, input('当前案件の詳細', '99999999-9999-4999-8999-999999999901', {
-      conversationId: '99999999-9999-4999-8999-999999999902',
-      activeSystemAccess: { type: 'system-access', destination: 'matching', jobCaseId }
-    })) as { status: string; conversation: AiConversationSnapshot }
+    const fromMatching = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('当前案件の詳細', '99999999-9999-4999-8999-999999999901', {
+        conversationId: '99999999-9999-4999-8999-999999999902',
+        activeSystemAccess: { type: 'system-access', destination: 'matching', jobCaseId }
+      })
+    )) as { status: string; conversation: AiConversationSnapshot }
     expect(fromMatching.status).toBe('completed')
     const matchingCard = fromMatching.conversation.messages.at(-1)?.blocks?.find((block) => block.type === 'job-case-cards')
     expect(matchingCard).toMatchObject({ cards: [{ reference: { objectId: jobCaseId, label: 'Java 案件' } }] })
 
     // The broadcast view focused on a case binds the same way, and the planner
     // projection carries that case instead of bare queue counts.
-    const fromBroadcast = await invoke(ipcChannels.executeAgentTurn, input('当前案件の詳細', '99999999-9999-4999-8999-999999999903', {
-      conversationId: '99999999-9999-4999-8999-999999999904',
-      activeSystemAccess: { type: 'system-access', destination: 'broadcast', reviewId: workspaceReviewId }
-    })) as { status: string; conversation: AiConversationSnapshot }
+    const fromBroadcast = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('当前案件の詳細', '99999999-9999-4999-8999-999999999903', {
+        conversationId: '99999999-9999-4999-8999-999999999904',
+        activeSystemAccess: { type: 'system-access', destination: 'broadcast', reviewId: workspaceReviewId }
+      })
+    )) as { status: string; conversation: AiConversationSnapshot }
     expect(fromBroadcast.status).toBe('completed')
     const broadcastCard = fromBroadcast.conversation.messages.at(-1)?.blocks?.find((block) => block.type === 'job-case-cards')
     expect(broadcastCard).toMatchObject({ cards: [{ reference: { objectId: secondCaseId } }] })
@@ -418,6 +496,69 @@ describe('agent IPC boundary', () => {
     stop()
   })
 
+  it('treats the case a conversation was opened on as "this case" when the turn names no case', async () => {
+    const dependencies = createDependencies()
+    const scopedReviewId = '77777777-7777-4777-8777-777777777777'
+    vi.mocked(dependencies.repository.listActiveJobCases).mockReturnValue([
+      {
+        id: jobCaseId,
+        sourceReviewId: scopedReviewId,
+        version: 2,
+        confirmedAt: new Date().toISOString(),
+        fields: [
+          { key: 'title', value: 'Java 案件' },
+          { key: 'required_skills', value: 'Java' }
+        ]
+      }
+    ] as never)
+    const stop = registerAgentIpcHandlers(dependencies)
+    await invoke(ipcChannels.executeAgentTurn, {
+      ...input('目前这个案件有哪些匹配的人员', '99999999-9999-4999-8999-999999999931', {
+        conversationId: '99999999-9999-4999-8999-999999999932'
+      }),
+      businessObject: { kind: 'case', id: scopedReviewId }
+    })
+    const planInput = vi.mocked(dependencies.narrativeStreamer!.plan).mock.calls.at(-1)?.[0]
+    expect(planInput?.selectedJobCaseRef).toMatchObject({ kind: 'job-case', objectId: jobCaseId, objectVersion: 2, label: 'Java 案件' })
+    stop()
+  })
+
+  it('keeps the scoped case when an edited message branches a case conversation', async () => {
+    const scopedReviewId = '77777777-7777-4777-8777-777777777777'
+    const sourceConversation: AiConversationSnapshot = {
+      id: conversationId,
+      context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+      title: '案件会话',
+      messages: [{ id: 'user-first', role: 'user', content: '这个案件怎么样', mode: 'cloud', createdAt: '2026-09-02T00:00:00.000Z' }],
+      salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
+      revision: 1,
+      createdAt: '2026-09-02T00:00:00.000Z',
+      updatedAt: '2026-09-02T00:00:00.000Z'
+    }
+    const dependencies = createDependencies({ initialConversation: sourceConversation })
+    vi.mocked(dependencies.repository.listActiveJobCases).mockReturnValue([
+      {
+        id: jobCaseId,
+        sourceReviewId: scopedReviewId,
+        version: 2,
+        confirmedAt: new Date().toISOString(),
+        fields: [{ key: 'title', value: 'Java 案件' }]
+      }
+    ] as never)
+    const stop = registerAgentIpcHandlers(dependencies)
+    await invoke(ipcChannels.executeAgentTurn, {
+      ...input('目前这个案件有哪些匹配的人员', '99999999-9999-4999-8999-999999999933', {
+        conversationId: '99999999-9999-4999-8999-999999999934',
+        expectedConversationRevision: null
+      }),
+      businessObject: { kind: 'case', id: scopedReviewId },
+      branchFrom: { conversationId, messageId: 'user-first', expectedRevision: 1 }
+    })
+    const planInput = vi.mocked(dependencies.narrativeStreamer!.plan).mock.calls.at(-1)?.[0]
+    expect(planInput?.selectedJobCaseRef).toMatchObject({ kind: 'job-case', objectId: jobCaseId })
+    stop()
+  })
+
   it('records earlier pasted text as a case through the intake pipeline, never through an answer', async () => {
     const pastedCase = '【案件】SAP FIコンサル募集。役割：SE、必須：SAP S/4 FI、日本語流暢、単価～70万円、東京、9月開始長期。'
     const initialConversation: AiConversationSnapshot = {
@@ -426,7 +567,13 @@ describe('agent IPC boundary', () => {
       title: '案件贴文',
       messages: [
         { id: 'user-paste', role: 'user', content: pastedCase, mode: 'cloud', createdAt: '2026-09-02T00:00:00.000Z' },
-        { id: 'assistant-summary', role: 'assistant', content: '这是一则 SAP FI 招聘需求，尚未作为案件记录确认。', mode: 'cloud', createdAt: '2026-09-02T00:00:01.000Z' }
+        {
+          id: 'assistant-summary',
+          role: 'assistant',
+          content: '这是一则 SAP FI 招聘需求，尚未作为案件记录确认。',
+          mode: 'cloud',
+          createdAt: '2026-09-02T00:00:01.000Z'
+        }
       ],
       salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
       revision: 1,
@@ -434,13 +581,17 @@ describe('agent IPC boundary', () => {
       updatedAt: '2026-09-02T00:00:01.000Z'
     }
     const executeBusinessTextIntake = vi.fn<NonNullable<AgentIpcDependencies['executeBusinessTextIntake']>>(async (useCase, turnInput) =>
-      useCase.saveDirectAnswer(turnInput, '已导入 1 条案件草稿。', undefined, 'completed'))
+      useCase.saveDirectAnswer(turnInput, '已导入 1 条案件草稿。', undefined, 'completed')
+    )
     const dependencies = createDependencies({ initialConversation, executeBusinessTextIntake })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('记录成案件啊', requestId, {
-      expectedConversationRevision: 1
-    })) as { status: string; conversation: AiConversationSnapshot }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('记录成案件啊', requestId, {
+        expectedConversationRevision: 1
+      })
+    )) as { status: string; conversation: AiConversationSnapshot }
     expect(result.status).toBe('completed')
     expect(executeBusinessTextIntake).toHaveBeenCalledTimes(1)
     const decision = executeBusinessTextIntake.mock.calls[0]![2] as { route: string; businessText: string }
@@ -469,9 +620,12 @@ describe('agent IPC boundary', () => {
     const dependencies = createDependencies({ initialConversation, executeBusinessTextIntake })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('记录成案件啊', requestId, {
-      expectedConversationRevision: 1
-    })) as { status: string; conversation: AiConversationSnapshot }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('记录成案件啊', requestId, {
+        expectedConversationRevision: 1
+      })
+    )) as { status: string; conversation: AiConversationSnapshot }
     expect(result.status).toBe('completed')
     expect(executeBusinessTextIntake).not.toHaveBeenCalled()
     expect(result.conversation.messages.at(-1)?.content).toContain('登録できる業務テキストが見つかりませんでした')
@@ -481,9 +635,12 @@ describe('agent IPC boundary', () => {
   it('projects the 今日新着 board to the planner when it is the open workspace', async () => {
     const dependencies = createDependencies()
     const stop = registerAgentIpcHandlers(dependencies)
-    const result = await invoke(ipcChannels.executeAgentTurn, input('最近の案件は？', requestId, {
-      activeSystemAccess: { type: 'system-access', destination: 'new-cases' }
-    })) as { status: string }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('最近の案件は？', requestId, {
+        activeSystemAccess: { type: 'system-access', destination: 'new-cases' }
+      })
+    )) as { status: string }
     expect(result.status).toBe('completed')
     const planCalls = vi.mocked(dependencies.narrativeStreamer!.plan).mock.calls
     expect(planCalls.at(-1)?.[0]?.activeWorkspaceEvidence).toMatchObject({
@@ -496,18 +653,36 @@ describe('agent IPC boundary', () => {
   it('rejects a non-sales conversation and a cross-conversation requestId reuse', async () => {
     const nonSalesConversation: AiConversationSnapshot = {
       id: conversationId,
-      context: { assistant: 'candidate-profile', candidateDocumentId: '77777777-7777-4777-8777-777777777777', interviewId: null, interviewKind: null, roundNumber: null },
-      title: '候補者会話', messages: [], revision: 1,
-      createdAt: '2026-08-18T00:00:00.000Z', updatedAt: '2026-08-18T00:00:00.000Z'
+      context: {
+        assistant: 'candidate-profile',
+        candidateDocumentId: '77777777-7777-4777-8777-777777777777',
+        interviewId: null,
+        interviewKind: null,
+        roundNumber: null
+      },
+      title: '候補者会話',
+      messages: [],
+      revision: 1,
+      createdAt: '2026-08-18T00:00:00.000Z',
+      updatedAt: '2026-08-18T00:00:00.000Z'
     }
     const stop = registerAgentIpcHandlers(createDependencies({ initialConversation: nonSalesConversation }))
-    await expect(invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？', requestId, { expectedConversationRevision: 1 }))).rejects.toThrow('CONVERSATION_CONTEXT_MISMATCH')
+    await expect(
+      invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？', requestId, { expectedConversationRevision: 1 }))
+    ).rejects.toThrow('CONVERSATION_CONTEXT_MISMATCH')
 
-    const first = await invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？', secondRequestId, { conversationId: secondConversationId })) as { status: string }
+    const first = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('最近有什么案件？', secondRequestId, { conversationId: secondConversationId })
+    )) as { status: string }
     expect(first.status).toBe('completed')
-    await expect(invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？', secondRequestId, { conversationId: conversationId }))).rejects.toThrow('REQUEST_ID_CONVERSATION_MISMATCH')
+    await expect(
+      invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？', secondRequestId, { conversationId: conversationId }))
+    ).rejects.toThrow('REQUEST_ID_CONVERSATION_MISMATCH')
     await expect(invoke(ipcChannels.cancelAgentTurn, { conversationId, requestId: secondRequestId })).resolves.toEqual({
-      status: 'not-running', conversationId, requestId: secondRequestId
+      status: 'not-running',
+      conversationId,
+      requestId: secondRequestId
     })
 
     stop()
@@ -524,9 +699,14 @@ describe('agent IPC boundary', () => {
     const dependencies = createDependencies()
     Object.assign(dependencies.repository, { getStagedFileRecords: vi.fn(() => []) })
     const stop = registerAgentIpcHandlers(dependencies)
-    await expect(invoke(ipcChannels.executeAgentTurn, input('总结附件', requestId, {
-      attachmentFileTokens: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']
-    }))).rejects.toThrow('AGENT_ATTACHMENT_NOT_FOUND')
+    await expect(
+      invoke(
+        ipcChannels.executeAgentTurn,
+        input('总结附件', requestId, {
+          attachmentFileTokens: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']
+        })
+      )
+    ).rejects.toThrow('AGENT_ATTACHMENT_NOT_FOUND')
     expect(dependencies.narrativeStreamer?.plan).not.toHaveBeenCalled()
     stop()
   })
@@ -544,12 +724,20 @@ describe('agent IPC boundary', () => {
     const dependencies = createDependencies({ runCandidateMatchTask })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人', secondRequestId, {
-      selectedJobCaseRef: {
-        kind: 'job-case', objectId: jobCaseId, objectVersion: 2, resultHash: null,
-        ordinal: 1, label: 'Java 案件', target: `job-case:${jobCaseId}`
-      }
-    })) as { status: string; assistantMessage: { turnId?: string | null } }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('给当前案件匹配候选人', secondRequestId, {
+        selectedJobCaseRef: {
+          kind: 'job-case',
+          objectId: jobCaseId,
+          objectVersion: 2,
+          resultHash: null,
+          ordinal: 1,
+          label: 'Java 案件',
+          target: `job-case:${jobCaseId}`
+        }
+      })
+    )) as { status: string; assistantMessage: { turnId?: string | null } }
 
     expect(result.status).toBe('completed')
     expect(dependencies.repository.linkActionRunToConversation).toHaveBeenCalledWith(
@@ -564,29 +752,58 @@ describe('agent IPC boundary', () => {
     task: {} as CandidateMatchTaskExecutionResult['task'],
     query: 'Java',
     run: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', resultSetHash: 'c'.repeat(64) } as CandidateMatchTaskExecutionResult['run'],
-    matches: [{
-      id: '77777777-7777-4777-8777-777777777777', sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-      matchResultId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', matchResultHash: 'e'.repeat(64),
-      anonymousLabel: '候補者 AAAAAAAA', matchScore: 80, matchedTerms: ['Java'], projectEvidence: null,
-      fields: [{ key: 'skills', label: 'スキル', value: 'Java 5年、Spring Boot', sourceLabels: [] }],
-      projectExperiences: [{ id: 'p1', title: '決済基盤刷新', period: '2023/04-2024/03', role: 'バックエンド', technologies: ['Java'], summary: 'Spring Boot で決済 API を開発', sourceLabels: [] }],
-      retrieval: { rank: 1, hardFilters: [{ type: 'japanese-level', requested: '日本語:N2', actual: null, outcome: 'unknown' }] }
-    }] as unknown as CandidateMatchTaskExecutionResult['matches'],
+    matches: [
+      {
+        id: '77777777-7777-4777-8777-777777777777',
+        sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        matchResultId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        matchResultHash: 'e'.repeat(64),
+        anonymousLabel: '候補者 AAAAAAAA',
+        matchScore: 80,
+        matchedTerms: ['Java'],
+        projectEvidence: null,
+        fields: [{ key: 'skills', label: 'スキル', value: 'Java 5年、Spring Boot', sourceLabels: [] }],
+        projectExperiences: [
+          {
+            id: 'p1',
+            title: '決済基盤刷新',
+            period: '2023/04-2024/03',
+            role: 'バックエンド',
+            technologies: ['Java'],
+            summary: 'Spring Boot で決済 API を開発',
+            sourceLabels: []
+          }
+        ],
+        retrieval: { rank: 1, hardFilters: [{ type: 'japanese-level', requested: '日本語:N2', actual: null, outcome: 'unknown' }] }
+      }
+    ] as unknown as CandidateMatchTaskExecutionResult['matches'],
     processingJob: {} as CandidateMatchTaskExecutionResult['processingJob'],
     actionRunId: null
   })
   const selectedJavaCase = {
     selectedJobCaseRef: {
-      kind: 'job-case' as const, objectId: jobCaseId, objectVersion: 2, resultHash: null,
-      ordinal: 1, label: 'Java 案件', target: `job-case:${jobCaseId}`
+      kind: 'job-case' as const,
+      objectId: jobCaseId,
+      objectVersion: 2,
+      resultHash: null,
+      ordinal: 1,
+      label: 'Java 案件',
+      target: `job-case:${jobCaseId}`
     }
   }
-  type MatchCardsResult = { status: string; timings?: { cloudCalls: number; cloudReviewMs: number | null; planningMs: number | null; totalMs: number }; assistantMessage: { blocks?: Array<{ type: string; cards?: Array<{ assessment?: unknown }>; cloudReview?: unknown }> } }
+  type MatchCardsResult = {
+    status: string
+    timings?: { cloudCalls: number; cloudReviewMs: number | null; planningMs: number | null; totalMs: number }
+    assistantMessage: { blocks?: Array<{ type: string; cards?: Array<{ assessment?: unknown }>; cloudReview?: unknown }> }
+  }
 
   it('clarifies a pronoun without a selected person instead of searching the pool', async () => {
     const dependencies = createDependencies()
     const stop = registerAgentIpcHandlers(dependencies)
-    const result = await invoke(ipcChannels.executeAgentTurn, input('这个案件适合他吗', requestId, selectedJavaCase)) as { toolName: string | null; assistantMessage: { content: string } }
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('这个案件适合他吗', requestId, selectedJavaCase))) as {
+      toolName: string | null
+      assistantMessage: { content: string }
+    }
     expect(result.toolName).toBeNull()
     expect(dependencies.createMatchTask).not.toHaveBeenCalled()
     expect(dependencies.narrativeStreamer!.plan).not.toHaveBeenCalled()
@@ -599,11 +816,17 @@ describe('agent IPC boundary', () => {
     const dependencies = createDependencies({ runCandidateMatchTask })
     const stop = registerAgentIpcHandlers(dependencies)
     const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-    const result = await invoke(ipcChannels.executeAgentTurn, input('这个案件适合他吗', requestId, { ...selectedJavaCase, selectedCandidateDocumentId: documentId })) as { toolName: string; conversation: AiConversationSnapshot }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('这个案件适合他吗', requestId, { ...selectedJavaCase, selectedCandidateDocumentId: documentId })
+    )) as { toolName: string; conversation: AiConversationSnapshot }
     expect(result.toolName).toBe('candidate.match.local')
     expect(dependencies.createMatchTask).toHaveBeenCalledWith(jobCaseId, 2, documentId)
     expect(result.conversation.salesAgentState?.selectedCandidateDocumentId).toBe(documentId)
-    const next = await invoke(ipcChannels.executeAgentTurn, input('这个案件适合他吗', secondRequestId, { expectedConversationRevision: result.conversation.revision })) as { toolName: string }
+    const next = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('这个案件适合他吗', secondRequestId, { expectedConversationRevision: result.conversation.revision })
+    )) as { toolName: string }
     expect(next.toolName).toBe('candidate.match.local')
     expect(dependencies.createMatchTask).toHaveBeenLastCalledWith(jobCaseId, 2, documentId)
     stop()
@@ -614,12 +837,33 @@ describe('agent IPC boundary', () => {
     const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
     const javaCase = dependencies.repository.listActiveJobCases()[0]!
     Object.assign(dependencies.repository, {
-      listEligibleTalentProfiles: vi.fn(() => [{ id: candidateProfileId, sourceDocumentId: documentId, profileVersion: 1,
-        confirmedAt: '2026-08-18T00:00:00.000Z', fields: [{ key: 'skills', label: 'Skills', value: 'Java' }], projectExperiences: [] }]),
-      listActiveJobCases: vi.fn(() => [javaCase, { ...javaCase, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', fields: [{ key: 'title', value: 'Rust project' }, { key: 'required_skills', value: 'Rust' }] }])
+      listEligibleTalentProfiles: vi.fn(() => [
+        {
+          id: candidateProfileId,
+          sourceDocumentId: documentId,
+          profileVersion: 1,
+          confirmedAt: '2026-08-18T00:00:00.000Z',
+          fields: [{ key: 'skills', label: 'Skills', value: 'Java' }],
+          projectExperiences: []
+        }
+      ]),
+      listActiveJobCases: vi.fn(() => [
+        javaCase,
+        {
+          ...javaCase,
+          id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+          fields: [
+            { key: 'title', value: 'Rust project' },
+            { key: 'required_skills', value: 'Rust' }
+          ]
+        }
+      ])
     })
     const stop = registerAgentIpcHandlers(dependencies)
-    const result = await invoke(ipcChannels.executeAgentTurn, input('该名候选人适合哪些案件', requestId, { selectedCandidateDocumentId: documentId })) as { assistantMessage: { blocks?: Array<{ type: string; cards?: Array<{ title: string }> }> } }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('该名候选人适合哪些案件', requestId, { selectedCandidateDocumentId: documentId })
+    )) as { assistantMessage: { blocks?: Array<{ type: string; cards?: Array<{ title: string }> }> } }
     const cards = result.assistantMessage.blocks?.find((block) => block.type === 'job-case-cards')?.cards
     expect(cards?.map((card) => card.title)).toEqual(['Java 案件'])
     stop()
@@ -630,9 +874,18 @@ describe('agent IPC boundary', () => {
     const stop = registerAgentIpcHandlers(dependencies)
     const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
     Object.assign(dependencies.repository, { listEligibleTalentProfiles: vi.fn(() => []) })
-    const result = await invoke(ipcChannels.executeAgentTurn, input('该名候选人适合哪些案件', requestId, { selectedCandidateDocumentId: documentId })) as { assistantMessage: { blocks?: Array<{ type: string }> } }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('该名候选人适合哪些案件', requestId, { selectedCandidateDocumentId: documentId })
+    )) as { assistantMessage: { blocks?: Array<{ type: string }> } }
     expect(result.assistantMessage.blocks?.some((block) => block.type === 'job-case-cards')).not.toBe(true)
-    expect(dependencies.actionOrchestrator.preflight).toHaveBeenCalledWith('job-case.search.local', expect.anything(), expect.objectContaining({ candidateDocumentId: documentId }), expect.anything(), expect.anything())
+    expect(dependencies.actionOrchestrator.preflight).toHaveBeenCalledWith(
+      'job-case.search.local',
+      expect.anything(),
+      expect.objectContaining({ candidateDocumentId: documentId }),
+      expect.anything(),
+      expect.anything()
+    )
     stop()
   })
 
@@ -640,37 +893,62 @@ describe('agent IPC boundary', () => {
     const runCandidateMatchTask = vi.fn(async () => reviewedShortlist())
     const dependencies = createDependencies({ runCandidateMatchTask })
     const assess = vi.fn(async (assessInput: AgentMatchAssessmentInput) => {
-      expect(assessInput.jobCase.requirements).toMatchObject([{ key: 'title', value: 'Java 案件' }, { key: 'required_skills', value: 'Java' }])
-      expect(assessInput.candidates).toEqual([{
-        label: 'CANDIDATE_1',
-        hardFilters: [{ requirement: '日本語:N2', actual: null, outcome: 'unknown' }],
-        facts: [{ label: 'スキル', value: 'Java 5年、Spring Boot' }],
-        projects: [{ title: '決済基盤刷新', period: '2023/04-2024/03', role: 'バックエンド', technologies: ['Java'], summary: 'Spring Boot で決済 API を開発' }]
-      }])
+      expect(assessInput.jobCase.requirements).toMatchObject([
+        { key: 'title', value: 'Java 案件' },
+        { key: 'required_skills', value: 'Java' }
+      ])
+      expect(assessInput.candidates).toEqual([
+        {
+          label: 'CANDIDATE_1',
+          hardFilters: [{ requirement: '日本語:N2', actual: null, outcome: 'unknown' }],
+          facts: [{ label: 'スキル', value: 'Java 5年、Spring Boot' }],
+          projects: [
+            {
+              title: '決済基盤刷新',
+              period: '2023/04-2024/03',
+              role: 'バックエンド',
+              technologies: ['Java'],
+              summary: 'Spring Boot で決済 API を開発'
+            }
+          ]
+        }
+      ])
       assessInput.onClientRequestId('match-assess-client-request')
       assessInput.onRemoteSettled()
       return {
-        assessments: [{
-          candidate: 'CANDIDATE_1', fit: 'possible' as const,
-          met: [{ requirement: 'Java', evidence: 'Java 5年、Spring Boot' }], gaps: [], confirm: ['日本語レベル'], reason: '主要スキルは一致。'
-        }]
+        assessments: [
+          {
+            candidate: 'CANDIDATE_1',
+            fit: 'possible' as const,
+            met: [{ requirement: 'Java', evidence: 'Java 5年、Spring Boot' }],
+            gaps: [],
+            confirm: ['日本語レベル'],
+            reason: '主要スキルは一致。'
+          }
+        ]
       }
     })
     dependencies.narrativeStreamer!.assessMatchCandidates = assess
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人', secondRequestId, selectedJavaCase)) as MatchCardsResult
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('给当前案件匹配候选人', secondRequestId, selectedJavaCase)
+    )) as MatchCardsResult
 
     expect(result.status).toBe('completed')
     expect(assess).toHaveBeenCalledTimes(1)
     const block = result.assistantMessage.blocks?.find((item) => item.type === 'candidate-match-cards')
     expect(block?.cards?.[0]?.assessment).toMatchObject({
-      version: 'match-assessment-v1', fit: 'possible', confirm: ['日本語レベル'], reason: '主要スキルは一致。', modelKey: expect.any(String)
+      version: 'match-assessment-v1',
+      fit: 'possible',
+      confirm: ['日本語レベル'],
+      reason: '主要スキルは一致。',
+      modelKey: expect.any(String)
     })
-    expect(dependencies.repository.saveCandidateMatchAssessments).toHaveBeenCalledWith(
-      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-      [expect.objectContaining({ matchResultId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' })]
-    )
+    expect(dependencies.repository.saveCandidateMatchAssessments).toHaveBeenCalledWith('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', [
+      expect.objectContaining({ matchResultId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' })
+    ])
     expect(block).toMatchObject({ cloudReview: { status: 'reviewed', reviewedCount: 1 } })
     // Plan, review, narrative: three cloud round trips, each timed.
     expect(result.timings).toMatchObject({ cloudCalls: 3 })
@@ -681,14 +959,25 @@ describe('agent IPC boundary', () => {
 
   it('does not send a row that matched nothing to the cloud reviewer', async () => {
     const shortlist = reviewedShortlist()
-    const unmatched = { ...(shortlist.matches[0] as unknown as Record<string, unknown>), matchScore: 0, matchedTerms: [], retrieval: { rank: 1, hardFilters: [{ type: 'japanese-level', requested: '日本語流暢', actual: null, outcome: 'unknown' }] } }
-    const runCandidateMatchTask = vi.fn(async () => ({ ...shortlist, matches: [unmatched] as unknown as CandidateMatchTaskExecutionResult['matches'] }))
+    const unmatched = {
+      ...(shortlist.matches[0] as unknown as Record<string, unknown>),
+      matchScore: 0,
+      matchedTerms: [],
+      retrieval: { rank: 1, hardFilters: [{ type: 'japanese-level', requested: '日本語流暢', actual: null, outcome: 'unknown' }] }
+    }
+    const runCandidateMatchTask = vi.fn(async () => ({
+      ...shortlist,
+      matches: [unmatched] as unknown as CandidateMatchTaskExecutionResult['matches']
+    }))
     const dependencies = createDependencies({ runCandidateMatchTask })
     const assess = vi.fn()
     dependencies.narrativeStreamer!.assessMatchCandidates = assess
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人', secondRequestId, selectedJavaCase)) as MatchCardsResult
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('给当前案件匹配候选人', secondRequestId, selectedJavaCase)
+    )) as MatchCardsResult
 
     expect(result.status).toBe('completed')
     expect(assess).not.toHaveBeenCalled()
@@ -706,14 +995,20 @@ describe('agent IPC boundary', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人', secondRequestId, selectedJavaCase)) as MatchCardsResult
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('给当前案件匹配候选人', secondRequestId, selectedJavaCase)
+    )) as MatchCardsResult
 
     expect(result.status).toBe('completed')
     const block = result.assistantMessage.blocks?.find((item) => item.type === 'candidate-match-cards')
     expect(block?.cards).toHaveLength(1)
     expect(block?.cards?.[0]).not.toHaveProperty('assessment')
     expect(dependencies.repository.saveCandidateMatchAssessments).not.toHaveBeenCalled()
-    expect(warn).toHaveBeenCalledWith('[candidate-match-assessment-skipped]', expect.objectContaining({ runId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', code: 'cloud-error' }))
+    expect(warn).toHaveBeenCalledWith(
+      '[candidate-match-assessment-skipped]',
+      expect.objectContaining({ runId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', code: 'cloud-error' })
+    )
     // The reason travels with the cards so the operator sees why there is no review.
     expect(block).toMatchObject({ cloudReview: { status: 'skipped', code: 'cloud-error', reason: 'Error: upstream unavailable' } })
     warn.mockRestore()
@@ -727,7 +1022,13 @@ describe('agent IPC boundary', () => {
       title: '候选人匹配',
       messages: [
         { id: 'user-previous', role: 'user', content: '给当前案件匹配候选人', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' },
-        { id: 'assistant-previous', role: 'assistant', content: 'CANDIDATE_1 匹配度 95。', mode: 'cloud', createdAt: '2026-08-18T00:00:01.000Z' }
+        {
+          id: 'assistant-previous',
+          role: 'assistant',
+          content: 'CANDIDATE_1 匹配度 95。',
+          mode: 'cloud',
+          createdAt: '2026-08-18T00:00:01.000Z'
+        }
       ],
       salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', lastSearchMessageId: null },
       revision: 1,
@@ -741,8 +1042,10 @@ describe('agent IPC boundary', () => {
       streamInput.onDelta('候选人的主要匹配点是 Java，当前证据未记录明显不足。')
       streamInput.onRemoteSettled()
       return {
-        clientRequestId: 'summary-answer-request', responseId: 'summary-answer-response',
-        content: '候选人的主要匹配点是 Java，当前证据未记录明显不足。', billingModeUsed: 'subscription' as const
+        clientRequestId: 'summary-answer-request',
+        responseId: 'summary-answer-response',
+        content: '候选人的主要匹配点是 Java，当前证据未记录明显不足。',
+        billingModeUsed: 'subscription' as const
       }
     })
     const plan = vi.fn(async (planInput: Parameters<AgentNarrativeStreamer['plan']>[0]) => {
@@ -763,12 +1066,15 @@ describe('agent IPC boundary', () => {
     const sender = { send: vi.fn(), isDestroyed: vi.fn(() => false) }
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(
-      '总结一下候选人的整体情况', secondRequestId, { expectedConversationRevision: 1 }
-    ), sender) as { status: string; toolName: string | null; assistantMessage: { content: string; blocks?: unknown[] } }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('总结一下候选人的整体情况', secondRequestId, { expectedConversationRevision: 1 }),
+      sender
+    )) as { status: string; toolName: string | null; assistantMessage: { content: string; blocks?: unknown[] } }
 
     expect(result).toMatchObject({
-      status: 'completed', toolName: null,
+      status: 'completed',
+      toolName: null,
       assistantMessage: { content: '候选人的主要匹配点是 Java，当前证据未记录明显不足。', blocks: [] }
     })
     expect(plan).toHaveBeenCalledTimes(1)
@@ -777,7 +1083,11 @@ describe('agent IPC boundary', () => {
     expect(runCandidateMatchTask).not.toHaveBeenCalled()
     expect(dependencies.actionOrchestrator.preflight).not.toHaveBeenCalled()
     expect(sender.send.mock.calls.map((call) => (call[1] as { type: string }).type)).toEqual([
-      'started', 'started', 'started', 'delta', 'completed'
+      'started',
+      'started',
+      'started',
+      'delta',
+      'completed'
     ])
     stop()
   })
@@ -789,8 +1099,10 @@ describe('agent IPC boundary', () => {
       streamInput.onDelta('右侧有一个待审核 Java 案件。')
       streamInput.onRemoteSettled()
       return {
-        clientRequestId: 'workspace-answer-request', responseId: 'workspace-answer-response',
-        content: '右侧有一个待审核 Java 案件。', billingModeUsed: 'subscription' as const
+        clientRequestId: 'workspace-answer-request',
+        responseId: 'workspace-answer-response',
+        content: '右侧有一个待审核 Java 案件。',
+        billingModeUsed: 'subscription' as const
       }
     })
     const dependencies = createDependencies({
@@ -801,29 +1113,63 @@ describe('agent IPC boundary', () => {
         cancel: vi.fn(async (clientRequestId) => ({ clientRequestId, status: 'cancel_requested' as const }))
       }
     })
-    vi.mocked(dependencies.repository.listJobCaseReviews).mockReturnValue([{
-      reviewId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      sourceId: 'source-1', sourceType: 'manual', providerMessageId: null, threadId: 'thread-1', fromDomain: null,
-      messageDate: '2026-08-24T00:00:00.000Z', redactedSubject: 'Java 案件', redactedPreview: 'Java、AWS',
-      reviewRevision: 1, status: 'awaiting-review', privacyReviewed: false,
-      fields: [{ key: 'required_skills', label: '必須スキル', originalValue: 'Java', value: 'Java', confidence: 1, status: 'needs_review', sourceLabels: [], changed: false, changeReason: null }],
-      warningCodes: [], completedAt: null, reviewerDisplayName: null, jobCase: null, lifecycle: 'active', cloudEligible: false
-    } as JobCaseReviewSnapshot])
+    vi.mocked(dependencies.repository.listJobCaseReviews).mockReturnValue([
+      {
+        reviewId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        sourceId: 'source-1',
+        sourceType: 'manual',
+        providerMessageId: null,
+        threadId: 'thread-1',
+        fromDomain: null,
+        messageDate: '2026-08-24T00:00:00.000Z',
+        redactedSubject: 'Java 案件',
+        redactedPreview: 'Java、AWS',
+        reviewRevision: 1,
+        status: 'awaiting-review',
+        privacyReviewed: false,
+        fields: [
+          {
+            key: 'required_skills',
+            label: '必須スキル',
+            originalValue: 'Java',
+            value: 'Java',
+            confidence: 1,
+            status: 'needs_review',
+            sourceLabels: [],
+            changed: false,
+            changeReason: null
+          }
+        ],
+        warningCodes: [],
+        completedAt: null,
+        reviewerDisplayName: null,
+        jobCase: null,
+        lifecycle: 'active',
+        cloudEligible: false
+      } as JobCaseReviewSnapshot
+    ])
     const stop = registerAgentIpcHandlers(dependencies)
 
-    await invoke(ipcChannels.executeAgentTurn, input('总结右侧案件', secondRequestId, {
-      activeSystemAccess: { type: 'system-access', destination: 'job-cases' }
-    }))
-
-    expect(plan).toHaveBeenCalledWith(expect.objectContaining({
-      activeWorkspaceEvidence: expect.objectContaining({
-        destination: 'job-cases',
-        data: expect.objectContaining({ pendingReviewCount: 1 })
+    await invoke(
+      ipcChannels.executeAgentTurn,
+      input('总结右侧案件', secondRequestId, {
+        activeSystemAccess: { type: 'system-access', destination: 'job-cases' }
       })
-    }))
-    expect(streamAnswer).toHaveBeenCalledWith(expect.objectContaining({
-      activeWorkspaceEvidence: expect.objectContaining({ destination: 'job-cases' })
-    }))
+    )
+
+    expect(plan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeWorkspaceEvidence: expect.objectContaining({
+          destination: 'job-cases',
+          data: expect.objectContaining({ pendingReviewCount: 1 })
+        })
+      })
+    )
+    expect(streamAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeWorkspaceEvidence: expect.objectContaining({ destination: 'job-cases' })
+      })
+    )
     const serialized = JSON.stringify(vi.mocked(plan).mock.calls[0]?.[0]?.activeWorkspaceEvidence)
     expect(serialized).toContain('Java')
     expect(serialized).not.toContain('reviewId')
@@ -837,24 +1183,51 @@ describe('agent IPC boundary', () => {
     const streamAnswer = vi.fn(async (streamInput: Parameters<AgentNarrativeStreamer['streamAnswer']>[0]) => {
       streamInput.onDelta(`共 ${count} 个项目。`)
       streamInput.onRemoteSettled()
-      return { clientRequestId: 'projects-request', responseId: 'projects-response', content: `共 ${count} 个项目。`, billingModeUsed: 'subscription' as const }
+      return {
+        clientRequestId: 'projects-request',
+        responseId: 'projects-response',
+        content: `共 ${count} 个项目。`,
+        billingModeUsed: 'subscription' as const
+      }
     })
     const dependencies = createDependencies({ narrativeStreamer: { plan, streamAnswer, stream: vi.fn(), cancel: vi.fn() } })
-    vi.mocked(dependencies.repository.listCandidateReviews).mockReturnValue([{
-      documentId, fileName: 'private-name.xlsx', reviewRevision: 1, status: 'completed', piiReviewed: true,
-      fields: [], profile: null, completedAt: null, reviewerDisplayName: null,
-      recruitingStatus: 'ready-for-recruiting', talentPoolStatus: 'eligible', recordStatus: 'active', isOwnCompany: null,
-      projectExperiences: Array.from({ length: count }, (_, index) => ({
-        draftId: `local-project-${index}`, title: `项目 ${index + 1}`, period: '2020/01–2021/01', role: 'SE',
-        confidence: 0.9, changed: false, changeReason: null,
-        technologies: ['Java'], summary: '系统设计与开发'.repeat(count === 20 ? 300 : 1), sourceLabels: ['private-name.xlsx!A1']
-      }))
-    }])
+    vi.mocked(dependencies.repository.listCandidateReviews).mockReturnValue([
+      {
+        documentId,
+        fileName: 'private-name.xlsx',
+        reviewRevision: 1,
+        status: 'completed',
+        piiReviewed: true,
+        fields: [],
+        profile: null,
+        completedAt: null,
+        reviewerDisplayName: null,
+        recruitingStatus: 'ready-for-recruiting',
+        talentPoolStatus: 'eligible',
+        recordStatus: 'active',
+        isOwnCompany: null,
+        projectExperiences: Array.from({ length: count }, (_, index) => ({
+          draftId: `local-project-${index}`,
+          title: `项目 ${index + 1}`,
+          period: '2020/01–2021/01',
+          role: 'SE',
+          confidence: 0.9,
+          changed: false,
+          changeReason: null,
+          technologies: ['Java'],
+          summary: '系统设计与开发'.repeat(count === 20 ? 300 : 1),
+          sourceLabels: ['private-name.xlsx!A1']
+        }))
+      }
+    ])
     const stop = registerAgentIpcHandlers(dependencies)
     try {
-      const result = await invoke(ipcChannels.executeAgentTurn, input('总结此人的技能和项目经历', requestId, {
-        selectedCandidateDocumentId: documentId
-      })) as { status: string }
+      const result = (await invoke(
+        ipcChannels.executeAgentTurn,
+        input('总结此人的技能和项目经历', requestId, {
+          selectedCandidateDocumentId: documentId
+        })
+      )) as { status: string }
       expect(result.status).toBe('completed')
       const planningInput = plan.mock.calls[0]![0]
       const answerInput = streamAnswer.mock.calls[0]![0]
@@ -880,7 +1253,9 @@ describe('agent IPC boundary', () => {
       id: conversationId,
       context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
       title: '面试安排',
-      messages: [{ id: 'assistant-match', role: 'assistant', content: '候选人匹配结果', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' }],
+      messages: [
+        { id: 'assistant-match', role: 'assistant', content: '候选人匹配结果', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' }
+      ],
       salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: matchRunId, lastSearchMessageId: null },
       revision: 1,
       createdAt: '2026-08-18T00:00:00.000Z',
@@ -894,8 +1269,13 @@ describe('agent IPC boundary', () => {
         action: {
           toolName: 'candidate.interview.schedule.local' as const,
           arguments: {
-            rank: 1, date: '2026-08-20', time: '14:00', method: 'zoom' as const,
-            durationMinutes: 30, kind: 'recruiting' as const, note: null
+            rank: 1,
+            date: '2026-08-20',
+            time: '14:00',
+            method: 'zoom' as const,
+            durationMinutes: 30,
+            kind: 'recruiting' as const,
+            note: null
           }
         }
       }
@@ -910,8 +1290,10 @@ describe('agent IPC boundary', () => {
           streamInput.onDelta('面谈已登记。')
           streamInput.onRemoteSettled()
           return {
-            clientRequestId: 'schedule-narrative-request', responseId: 'schedule-narrative-response',
-            content: '面谈已登记。', billingModeUsed: 'subscription' as const
+            clientRequestId: 'schedule-narrative-request',
+            responseId: 'schedule-narrative-response',
+            content: '面谈已登记。',
+            billingModeUsed: 'subscription' as const
           }
         }),
         cancel: vi.fn(async (clientRequestId) => ({ clientRequestId, status: 'cancel_requested' as const }))
@@ -919,16 +1301,19 @@ describe('agent IPC boundary', () => {
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(
-      `30分钟。Zoom 链接是 ${meetingUrl}`,
-      secondRequestId,
-      { expectedConversationRevision: 1 }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input(`30分钟。Zoom 链接是 ${meetingUrl}`, secondRequestId, { expectedConversationRevision: 1 })
     )) as { status: string; toolName: string | null }
 
     expect(result).toMatchObject({ status: 'completed', toolName: 'candidate.interview.schedule.local' })
-    expect(dependencies.scheduleCandidateInterview).toHaveBeenCalledWith(expect.objectContaining({
-      meetingMethod: 'zoom', meetingUrl, durationMinutes: 30
-    }))
+    expect(dependencies.scheduleCandidateInterview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meetingMethod: 'zoom',
+        meetingUrl,
+        durationMinutes: 30
+      })
+    )
     const preflightInput = vi.mocked(dependencies.actionOrchestrator.preflight).mock.calls[0]?.[2]
     expect(preflightInput).toMatchObject({ meetingUrlHash: expect.stringMatching(/^[a-f0-9]{64}$/u) })
     expect(JSON.stringify(preflightInput)).not.toContain(meetingUrl)
@@ -950,7 +1335,7 @@ describe('agent IPC boundary', () => {
     const sender = { send: vi.fn(), isDestroyed: vi.fn(() => false) }
     const stop = registerAgentIpcHandlers(createDependencies({ narrativeStreamer }))
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('工作经历列出来参考一下'), sender) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('工作经历列出来参考一下'), sender)) as {
       status: string
       assistantMessage: { content: string }
     }
@@ -978,7 +1363,9 @@ describe('agent IPC boundary', () => {
       id: conversationId,
       context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
       title: '已保存的案件匹配会话',
-      messages: [{ id: 'previous-agent-message', role: 'assistant', content: '候选人结果', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' }],
+      messages: [
+        { id: 'previous-agent-message', role: 'assistant', content: '候选人结果', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' }
+      ],
       salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', lastSearchMessageId: null },
       revision: 1,
       createdAt: '2026-08-18T00:00:00.000Z',
@@ -997,7 +1384,10 @@ describe('agent IPC boundary', () => {
     repository.getAgentMatchRunFacts.mockImplementation(() => undefined)
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('なぜ1位になったの？', secondRequestId, { expectedConversationRevision: 1 })) as {
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('なぜ1位になったの？', secondRequestId, { expectedConversationRevision: 1 })
+    )) as {
       status: string
       actionRunId: string | null
       assistantMessage: { turnId?: string | null }
@@ -1019,18 +1409,45 @@ describe('agent IPC boundary', () => {
       id: conversationId,
       context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
       title: '候选人匹配',
-      messages: [{
-        id: 'matched-candidates', role: 'assistant', content: '找到一位候选人。', mode: 'local',
-        createdAt: '2026-08-18T00:00:00.000Z',
-        blocks: [{
-          type: 'candidate-match-cards', runId: matchRunId, resultHash,
-          cards: [{
-            reference: { kind: 'match-result', objectId: matchResultId, objectVersion: null, resultHash, ordinal: 1, label: '候補者 AAAAAAAA', target: `match-result:${matchResultId}` },
-            candidateProfileId, runId: matchRunId, rank: 1, anonymousLabel: '候補者 AAAAAAAA', fitScore: 95,
-            matched: ['Java'], missing: [], hardFilterStatus: 'passed', projectEvidence: '支付平台', status: 'current'
-          }]
-        }]
-      }],
+      messages: [
+        {
+          id: 'matched-candidates',
+          role: 'assistant',
+          content: '找到一位候选人。',
+          mode: 'local',
+          createdAt: '2026-08-18T00:00:00.000Z',
+          blocks: [
+            {
+              type: 'candidate-match-cards',
+              runId: matchRunId,
+              resultHash,
+              cards: [
+                {
+                  reference: {
+                    kind: 'match-result',
+                    objectId: matchResultId,
+                    objectVersion: null,
+                    resultHash,
+                    ordinal: 1,
+                    label: '候補者 AAAAAAAA',
+                    target: `match-result:${matchResultId}`
+                  },
+                  candidateProfileId,
+                  runId: matchRunId,
+                  rank: 1,
+                  anonymousLabel: '候補者 AAAAAAAA',
+                  fitScore: 95,
+                  matched: ['Java'],
+                  missing: [],
+                  hardFilterStatus: 'passed',
+                  projectEvidence: '支付平台',
+                  status: 'current'
+                }
+              ]
+            }
+          ]
+        }
+      ],
       salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: matchRunId, lastSearchMessageId: null },
       revision: 1,
       createdAt: '2026-08-18T00:00:00.000Z',
@@ -1039,26 +1456,33 @@ describe('agent IPC boundary', () => {
     const stream = vi.fn(async (streamInput: Parameters<AgentNarrativeStreamer['stream']>[0]) => {
       expect(streamInput.userMessage).toBe('日语呢')
       expect(streamInput.assistantMessage.blocks?.[0]).toMatchObject({
-        type: 'candidate-profile-evidence', facts: { profile: { japaneseLevel: 'N1' } }
+        type: 'candidate-profile-evidence',
+        facts: { profile: { japaneseLevel: 'N1' } }
       })
       streamInput.onClientRequestId('candidate-profile-stream')
       streamInput.onDelta('该候选人的日语水平为 N1。')
       streamInput.onRemoteSettled()
       return {
-        clientRequestId: 'candidate-profile-stream', responseId: 'candidate-profile-response',
-        content: '该候选人的日语水平为 N1。', billingModeUsed: 'subscription' as const
+        clientRequestId: 'candidate-profile-stream',
+        responseId: 'candidate-profile-response',
+        content: '该候选人的日语水平为 N1。',
+        billingModeUsed: 'subscription' as const
       }
     })
     const dependencies = createDependencies({ initialConversation })
     if (dependencies.narrativeStreamer) dependencies.narrativeStreamer.stream = stream
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('日语呢', secondRequestId, {
-      expectedConversationRevision: initialConversation.revision
-    })) as { status: string; toolName: string | null; assistantMessage: { content: string } }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('日语呢', secondRequestId, {
+        expectedConversationRevision: initialConversation.revision
+      })
+    )) as { status: string; toolName: string | null; assistantMessage: { content: string } }
 
     expect(result).toMatchObject({
-      status: 'completed', toolName: 'candidate.profile.read.local',
+      status: 'completed',
+      toolName: 'candidate.profile.read.local',
       assistantMessage: { content: '该候选人的日语水平为 N1。' }
     })
     expect(dependencies.actionOrchestrator.preflight).toHaveBeenCalledWith(
@@ -1069,7 +1493,10 @@ describe('agent IPC boundary', () => {
       expect.any(String)
     )
     expect(dependencies.repository.getAgentCandidateProfileFacts).toHaveBeenCalledWith(
-      matchRunId, dependencies.currentMatchRuntimeIdentity, matchResultId, 1
+      matchRunId,
+      dependencies.currentMatchRuntimeIdentity,
+      matchResultId,
+      1
     )
     expect(stream).toHaveBeenCalledTimes(1)
     stop()
@@ -1077,22 +1504,29 @@ describe('agent IPC boundary', () => {
 
   it('deduplicates the same request and rejects a concurrent request for the conversation', async () => {
     let resolveMatch!: (result: CandidateMatchTaskExecutionResult) => void
-    const runCandidateMatchTask = vi.fn(() => new Promise<CandidateMatchTaskExecutionResult>((resolve) => {
-      resolveMatch = resolve
-    }))
+    const runCandidateMatchTask = vi.fn(
+      () =>
+        new Promise<CandidateMatchTaskExecutionResult>((resolve) => {
+          resolveMatch = resolve
+        })
+    )
     const cancelMatchTask = vi.fn()
     const dependencies = createDependencies({ runCandidateMatchTask, cancelMatchTask })
     const stop = registerAgentIpcHandlers(dependencies)
 
     const pending = invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人')) as Promise<unknown>
     await vi.waitFor(() => expect(runCandidateMatchTask).toHaveBeenCalledTimes(1))
-    await expect(invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人', secondRequestId))).rejects.toThrow('TURN_ALREADY_RUNNING')
+    await expect(invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人', secondRequestId))).rejects.toThrow(
+      'TURN_ALREADY_RUNNING'
+    )
     const duplicate = invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人'))
     expect(duplicate).toBeInstanceOf(Promise)
     expect(runCandidateMatchTask).toHaveBeenCalledTimes(1)
 
     await expect(invoke(ipcChannels.cancelAgentTurn, { conversationId, requestId })).resolves.toMatchObject({
-      status: 'cancelled', conversationId, requestId,
+      status: 'cancelled',
+      conversationId,
+      requestId,
       message: expect.stringContaining('尚未取得')
     })
     resolveMatch({} as CandidateMatchTaskExecutionResult)
@@ -1106,16 +1540,21 @@ describe('agent IPC boundary', () => {
 
   it('forwards cancellation to an active matching task and returns a cancelled turn', async () => {
     let resolveMatch!: (result: CandidateMatchTaskExecutionResult) => void
-    const runCandidateMatchTask = vi.fn(() => new Promise<CandidateMatchTaskExecutionResult>((resolve) => {
-      resolveMatch = resolve
-    }))
+    const runCandidateMatchTask = vi.fn(
+      () =>
+        new Promise<CandidateMatchTaskExecutionResult>((resolve) => {
+          resolveMatch = resolve
+        })
+    )
     const cancelMatchTask = vi.fn()
     const stop = registerAgentIpcHandlers(createDependencies({ runCandidateMatchTask, cancelMatchTask }))
 
     const pending = invoke(ipcChannels.executeAgentTurn, input('给当前案件匹配候选人')) as Promise<{ status: string }>
     await vi.waitFor(() => expect(runCandidateMatchTask).toHaveBeenCalledTimes(1))
     await expect(invoke(ipcChannels.cancelAgentTurn, { conversationId, requestId })).resolves.toMatchObject({
-      status: 'cancelled', conversationId, requestId
+      status: 'cancelled',
+      conversationId,
+      requestId
     })
     expect(cancelMatchTask).toHaveBeenCalledWith('task-1')
 
@@ -1130,23 +1569,32 @@ describe('agent IPC boundary', () => {
     const narrativeStreamer: AgentNarrativeStreamer = {
       plan: vi.fn(async () => searchPlanningResult),
       streamAnswer: vi.fn(),
-      stream: vi.fn((streamInput) => new Promise<AiCommerceResponsesStreamResult>((_resolve, reject) => {
-        streamInput.onClientRequestId('client-request-too-late')
-        streamInput.onDelta('partial')
-        streamInput.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
-      })),
+      stream: vi.fn(
+        (streamInput) =>
+          new Promise<AiCommerceResponsesStreamResult>((_resolve, reject) => {
+            streamInput.onClientRequestId('client-request-too-late')
+            streamInput.onDelta('partial')
+            streamInput.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+          })
+      ),
       cancel
     }
     const dependencies = createDependencies({ narrativeStreamer })
     const stop = registerAgentIpcHandlers(dependencies)
-    const pending = invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？')) as Promise<{ status: string; assistantMessage: { narrativeStatus?: string } }>
+    const pending = invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？')) as Promise<{
+      status: string
+      assistantMessage: { narrativeStatus?: string }
+    }>
     await vi.waitFor(() => expect(narrativeStreamer.stream).toHaveBeenCalledTimes(1))
 
     await expect(invoke(ipcChannels.cancelAgentTurn, { conversationId, requestId })).resolves.toMatchObject({
-      status: 'cancelled', remoteCancelStatus: 'too_late', message: expect.stringContaining('AICommerce 返回 too_late')
+      status: 'cancelled',
+      remoteCancelStatus: 'too_late',
+      message: expect.stringContaining('AICommerce 返回 too_late')
     })
     await expect(pending).resolves.toMatchObject({
-      status: 'cancelled', assistantMessage: { narrativeStatus: 'cancelled' }
+      status: 'cancelled',
+      assistantMessage: { narrativeStatus: 'cancelled' }
     })
     expect(cancel).toHaveBeenCalledWith('client-request-too-late')
     stop()
@@ -1169,7 +1617,7 @@ describe('agent IPC boundary', () => {
     const dependencies = createDependencies({ narrativeStreamer })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？')) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？'))) as {
       status: string
       assistantMessage: { mode?: string; narrativeStatus?: string }
     }
@@ -1185,14 +1633,19 @@ describe('agent IPC boundary', () => {
   })
 
   it('distinguishes a failed remote cancel attempt from a missing client request id', async () => {
-    const cancel = vi.fn(async () => { throw new Error('cancel network failed') })
+    const cancel = vi.fn(async () => {
+      throw new Error('cancel network failed')
+    })
     const narrativeStreamer: AgentNarrativeStreamer = {
       plan: vi.fn(async () => searchPlanningResult),
       streamAnswer: vi.fn(),
-      stream: vi.fn((streamInput) => new Promise<AiCommerceResponsesStreamResult>((_resolve, reject) => {
-        streamInput.onClientRequestId('client-request-cancel-failure')
-        streamInput.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
-      })),
+      stream: vi.fn(
+        (streamInput) =>
+          new Promise<AiCommerceResponsesStreamResult>((_resolve, reject) => {
+            streamInput.onClientRequestId('client-request-cancel-failure')
+            streamInput.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+          })
+      ),
       cancel
     }
     const stop = registerAgentIpcHandlers(createDependencies({ narrativeStreamer }))
@@ -1200,7 +1653,8 @@ describe('agent IPC boundary', () => {
     await vi.waitFor(() => expect(narrativeStreamer.stream).toHaveBeenCalledTimes(1))
 
     await expect(invoke(ipcChannels.cancelAgentTurn, { conversationId, requestId })).resolves.toMatchObject({
-      status: 'cancelled', remoteCancelStatus: null,
+      status: 'cancelled',
+      remoteCancelStatus: null,
       message: expect.stringContaining('独立取消请求失败')
     })
     await expect(pending).resolves.toMatchObject({ status: 'cancelled' })
@@ -1217,17 +1671,19 @@ describe('agent IPC boundary', () => {
         if (event.type === 'completed') throw new Error('webContents destroyed during send')
       })
     }
-    const result = await invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？'), sender) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？'), sender)) as {
       status: string
       assistantMessage: { mode?: string; narrativeStatus?: string }
     }
 
     expect(sender.send).toHaveBeenCalledWith(ipcChannels.agentTurnEvent, expect.objectContaining({ type: 'completed' }))
     expect(result).toMatchObject({
-      status: 'completed', assistantMessage: { mode: 'cloud', narrativeStatus: 'completed' }
+      status: 'completed',
+      assistantMessage: { mode: 'cloud', narrativeStatus: 'completed' }
     })
     expect(dependencies.repository.getAiConversation(conversationId)?.messages.at(-1)).toMatchObject({
-      mode: 'cloud', narrativeStatus: 'completed'
+      mode: 'cloud',
+      narrativeStatus: 'completed'
     })
     stop()
   })
@@ -1238,11 +1694,14 @@ describe('agent IPC boundary', () => {
     const narrativeStreamer: AgentNarrativeStreamer = {
       plan: vi.fn(async () => searchPlanningResult),
       streamAnswer: vi.fn(),
-      stream: vi.fn((streamInput) => new Promise<AiCommerceResponsesStreamResult>((_resolve, reject) => {
-        observedSignal.value = streamInput.signal
-        streamInput.onClientRequestId('client-request-dispose')
-        streamInput.signal.addEventListener('abort', () => reject(new Error('disposed')), { once: true })
-      })),
+      stream: vi.fn(
+        (streamInput) =>
+          new Promise<AiCommerceResponsesStreamResult>((_resolve, reject) => {
+            observedSignal.value = streamInput.signal
+            streamInput.onClientRequestId('client-request-dispose')
+            streamInput.signal.addEventListener('abort', () => reject(new Error('disposed')), { once: true })
+          })
+      ),
       cancel
     }
     const stop = registerAgentIpcHandlers(createDependencies({ narrativeStreamer }))
@@ -1261,18 +1720,28 @@ describe('agent IPC boundary', () => {
     const initiatingSender = { send: vi.fn(), isDestroyed: vi.fn(() => false) }
     const otherSender = { send: vi.fn(), isDestroyed: vi.fn(() => false) }
 
-    const result = await invoke(ipcChannels.executeAgentTurn, {
-      ...input('最近有什么案件？'), modelKey: 'deepseek-v4-flash'
-    }, initiatingSender) as { status: string; assistantMessage: { modelKey?: string; modelDisplayName?: string } }
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      {
+        ...input('最近有什么案件？'),
+        modelKey: 'deepseek-v4-flash'
+      },
+      initiatingSender
+    )) as { status: string; assistantMessage: { modelKey?: string; modelDisplayName?: string } }
 
     expect(result).toMatchObject({
-      status: 'completed', assistantMessage: { modelKey: 'deepseek-v4-flash', modelDisplayName: 'DeepSeek V4 Flash' }
+      status: 'completed',
+      assistantMessage: { modelKey: 'deepseek-v4-flash', modelDisplayName: 'DeepSeek V4 Flash' }
     })
-    expect(dependencies.narrativeStreamer?.stream).toHaveBeenCalledWith(expect.objectContaining({
-      model: expect.objectContaining({
-        key: 'deepseek-v4-flash', provider: 'deepseek', endpoint: 'chat-completions'
+    expect(dependencies.narrativeStreamer?.stream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({
+          key: 'deepseek-v4-flash',
+          provider: 'deepseek',
+          endpoint: 'chat-completions'
+        })
       })
-    }))
+    )
     expect(dependencies.narrativeStreamer?.plan).toHaveBeenCalledTimes(1)
     expect(dependencies.narrativeStreamer?.stream).toHaveBeenCalledTimes(1)
     const events = initiatingSender.send.mock.calls.map((call) => call[1] as { type: string; sequence: number })
@@ -1285,9 +1754,12 @@ describe('agent IPC boundary', () => {
   it('rejects an unlisted model before Tool execution', async () => {
     const dependencies = createDependencies()
     const stop = registerAgentIpcHandlers(dependencies)
-    await expect(invoke(ipcChannels.executeAgentTurn, {
-      ...input('最近有什么案件？'), modelKey: 'gpt-5.6-attacker'
-    })).rejects.toThrow(/允许列表/)
+    await expect(
+      invoke(ipcChannels.executeAgentTurn, {
+        ...input('最近有什么案件？'),
+        modelKey: 'gpt-5.6-attacker'
+      })
+    ).rejects.toThrow(/允许列表/)
     expect(dependencies.actionOrchestrator.preflight).not.toHaveBeenCalled()
     stop()
   })
@@ -1296,7 +1768,7 @@ describe('agent IPC boundary', () => {
     const dependencies = createDependencies({ narrativeStreamer: null })
     const stop = registerAgentIpcHandlers(dependencies)
     const sender = { send: vi.fn(), isDestroyed: vi.fn(() => false) }
-    const result = await invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？'), sender) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('最近有什么案件？'), sender)) as {
       status: string
       assistantMessage: { mode?: string; narrativeStatus?: string; blocks?: unknown[] }
     }
@@ -1327,26 +1799,28 @@ describe('business-text intake gate', () => {
     '単価：～65万円',
     '勤務地：東京'
   ].join('\n')
-  const pastedCandidateMessage = [
-    `氏名：A.B（${rawMarker}）`,
-    '年齢：30代',
-    '最寄駅：西船橋',
-    '単金：60万',
-    '日本語：N1'
-  ].join('\n')
+  const pastedCandidateMessage = [`氏名：A.B（${rawMarker}）`, '年齢：30代', '最寄駅：西船橋', '単金：60万', '日本語：N1'].join('\n')
 
   const caseReview = { reviewId: '12121212-1212-4212-8212-121212121212' } as unknown as JobCaseReviewSnapshot
   const candidateReview = {
     documentId: '13131313-1313-4313-8313-131313131313'
   } as unknown as CandidateReviewSnapshot
 
-  function intakeDependencies(dependencies: AgentIpcDependencies, overrides: Partial<BusinessTextIntakeTurnDependencies> = {}): BusinessTextIntakeTurnDependencies {
+  function intakeDependencies(
+    dependencies: AgentIpcDependencies,
+    overrides: Partial<BusinessTextIntakeTurnDependencies> = {}
+  ): BusinessTextIntakeTurnDependencies {
     return {
       repository: dependencies.repository,
       actionOrchestrator: dependencies.actionOrchestrator,
       locale: () => 'zh-CN',
       operatorId: () => 'operator-1',
-      importJobCaseText: vi.fn(async () => ({ review: caseReview, outcome: 'created' as const, validity: 'unknown' as const, attentionReason: null })),
+      importJobCaseText: vi.fn(async () => ({
+        review: caseReview,
+        outcome: 'created' as const,
+        validity: 'unknown' as const,
+        attentionReason: null
+      })),
       importCandidateText: vi.fn(async () => ({ review: candidateReview, outcome: 'created' as const, facts: null })),
       ...overrides
     }
@@ -1367,8 +1841,10 @@ describe('business-text intake gate', () => {
     const { dependencies } = withRealIntakeExecutor()
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
-      status: string; toolName: string | null; intake?: { route: string }
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
+      status: string
+      toolName: string | null
+      intake?: { route: string }
     }
     expect(result.status).toBe('completed')
     expect(result.toolName).toBe('business-text.import.local')
@@ -1387,16 +1863,22 @@ describe('business-text intake gate', () => {
       await invoke(ipcChannels.executeAgentTurn, { ...input('この情報を整理してください'), intakeOnly: true })
       expect(dependencies.narrativeStreamer?.plan).not.toHaveBeenCalled()
       expect(dependencies.narrativeStreamer?.streamAnswer).not.toHaveBeenCalled()
-    } finally { stop() }
+    } finally {
+      stop()
+    }
   })
 
   it('fails closed for bulk intake when its intake service is unavailable', async () => {
     const dependencies = createDependencies()
     const stop = registerAgentIpcHandlers(dependencies)
     try {
-      await expect(invoke(ipcChannels.executeAgentTurn, { ...input('raw business message'), intakeOnly: true })).rejects.toThrow('业务信息整理服务')
+      await expect(invoke(ipcChannels.executeAgentTurn, { ...input('raw business message'), intakeOnly: true })).rejects.toThrow(
+        '业务信息整理服务'
+      )
       expect(dependencies.narrativeStreamer?.plan).not.toHaveBeenCalled()
-    } finally { stop() }
+    } finally {
+      stop()
+    }
   })
 
   it('imports a pasted case locally even when the cloud streamer is unavailable', async () => {
@@ -1404,7 +1886,7 @@ describe('business-text intake gate', () => {
     dependencies.narrativeStreamer = null
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as { status: string }
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as { status: string }
     expect(result.status).toBe('completed')
 
     stop()
@@ -1439,7 +1921,7 @@ describe('business-text intake gate', () => {
     const { dependencies, intakeDeps } = withRealIntakeExecutor()
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
       status: string
       conversation: AiConversationSnapshot
     }
@@ -1461,7 +1943,9 @@ describe('business-text intake gate', () => {
     expect(preflightCall?.[1]).toMatchObject({ conversationId: null, turnId: null })
     expect(dependencies.repository.linkActionRunToConversation).toHaveBeenCalledTimes(1)
     expect(dependencies.repository.linkActionRunToConversation).toHaveBeenCalledWith(
-      'action-1', conversationId, result.conversation.messages.at(-1)?.turnId
+      'action-1',
+      conversationId,
+      result.conversation.messages.at(-1)?.turnId
     )
 
     stop()
@@ -1471,7 +1955,7 @@ describe('business-text intake gate', () => {
     const { dependencies, intakeDeps } = withRealIntakeExecutor()
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(`案件名：${rawMarker}`)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(`案件名：${rawMarker}`))) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { route: string; restoreComposerText: boolean }
@@ -1503,7 +1987,7 @@ describe('business-text intake gate', () => {
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(pastedCandidateMessage)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(pastedCandidateMessage))) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { route: string }
@@ -1528,7 +2012,7 @@ describe('business-text intake gate', () => {
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { restoreComposerText: boolean }
@@ -1536,9 +2020,9 @@ describe('business-text intake gate', () => {
     expect(result.status).toBe('failed')
     expect(result.intake?.restoreComposerText).toBe(true)
     expect(JSON.stringify(result.conversation)).not.toContain(rawMarker)
-    expect(dependencies.repository.updateActionRun).toHaveBeenCalledWith(
-      'action-1', 'failed', { errorCode: 'BUSINESS_TEXT_JOB_CASE_IMPORT_FAILED' }
-    )
+    expect(dependencies.repository.updateActionRun).toHaveBeenCalledWith('action-1', 'failed', {
+      errorCode: 'BUSINESS_TEXT_JOB_CASE_IMPORT_FAILED'
+    })
     expect(dependencies.narrativeStreamer?.plan).not.toHaveBeenCalled()
 
     stop()
@@ -1564,7 +2048,7 @@ describe('business-text intake gate', () => {
     const { dependencies, intakeDeps } = withRealIntakeExecutor({ extractRecordsViaCloud })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(digestMessage)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(digestMessage))) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { route: string; reason: string; restoreComposerText: boolean }
@@ -1589,16 +2073,29 @@ describe('business-text intake gate', () => {
     expect(cardsBlock).toMatchObject({
       type: 'job-case-draft-cards',
       cards: [
-        { label: 'DRAFT_1', ordinal: 1, outcome: 'created', reviewId: caseReview.reviewId, title: 'Java 案件', reviewStatus: 'awaiting-review', jobCase: null, status: 'current' },
+        {
+          label: 'DRAFT_1',
+          ordinal: 1,
+          outcome: 'created',
+          reviewId: caseReview.reviewId,
+          title: 'Java 案件',
+          reviewStatus: 'awaiting-review',
+          jobCase: null,
+          status: 'current'
+        },
         { label: 'DRAFT_2', ordinal: 2, outcome: 'created' }
       ]
     })
     const intakeBatchId = (cardsBlock as { intakeBatchId: string }).intakeBatchId
     expect(assistant?.blocks?.find((block) => block.type === 'system-access')).toMatchObject({
-      destination: 'review-center', intakeBatchId, reviewIds: [caseReview.reviewId, caseReview.reviewId]
+      destination: 'review-center',
+      intakeBatchId,
+      reviewIds: [caseReview.reviewId, caseReview.reviewId]
     })
     expect(result.conversation.salesAgentState?.lastIntakeBatch).toEqual({
-      intakeBatchId, messageId: assistant?.id, reviewIds: [caseReview.reviewId, caseReview.reviewId]
+      intakeBatchId,
+      messageId: assistant?.id,
+      reviewIds: [caseReview.reviewId, caseReview.reviewId]
     })
     expect(JSON.stringify(cardsBlock)).not.toContain('redactedSubject')
     expect(intakeDeps.importJobCaseText).toHaveBeenLastCalledWith(expect.any(String), expect.any(Object), intakeBatchId)
@@ -1620,7 +2117,7 @@ describe('business-text intake gate', () => {
     const { dependencies, intakeDeps } = withRealIntakeExecutor({ extractRecordsViaCloud })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(shorthand)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(shorthand))) as {
       status: string
       conversation: AiConversationSnapshot
     }
@@ -1629,7 +2126,8 @@ describe('business-text intake gate', () => {
     const assistant = result.conversation.messages.at(-1)
     expect(assistant?.content).toContain('已通过脱敏云端判定为案件')
     expect(assistant?.blocks?.find((block) => block.type === 'system-access')).toMatchObject({
-      destination: 'case-review', reviewId: caseReview.reviewId
+      destination: 'case-review',
+      reviewId: caseReview.reviewId
     })
 
     stop()
@@ -1643,7 +2141,7 @@ describe('business-text intake gate', () => {
     let stop = registerAgentIpcHandlers(first.dependencies)
     const digestMessage = ['案件1️⃣：Go｜設計', '案件2️⃣：PHP｜開発'].join('\n')
 
-    const fallback = await invoke(ipcChannels.executeAgentTurn, input(digestMessage)) as {
+    const fallback = (await invoke(ipcChannels.executeAgentTurn, input(digestMessage))) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { restoreComposerText: boolean }
@@ -1658,7 +2156,10 @@ describe('business-text intake gate', () => {
     const second = withRealIntakeExecutor({ extractRecordsViaCloud: unusable })
     stop = registerAgentIpcHandlers(second.dependencies)
     const ambiguousMessage = ['項目A：値1', '項目B：値2', '項目C：値3'].join('\n')
-    const guidance = await invoke(ipcChannels.executeAgentTurn, input(ambiguousMessage, secondRequestId, { conversationId: secondConversationId })) as {
+    const guidance = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input(ambiguousMessage, secondRequestId, { conversationId: secondConversationId })
+    )) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { restoreComposerText: boolean }
@@ -1684,7 +2185,7 @@ describe('business-text intake gate', () => {
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(digestMessage)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(digestMessage))) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { restoreComposerText: boolean }
@@ -1692,20 +2193,25 @@ describe('business-text intake gate', () => {
     expect(result.status).toBe('failed')
     expect(result.intake?.restoreComposerText).toBe(true)
     expect(JSON.stringify(result.conversation)).not.toContain(rawMarker)
-    expect(dependencies.repository.updateActionRun).toHaveBeenCalledWith(
-      'action-1', 'failed', { errorCode: 'BUSINESS_TEXT_JOB_CASE_IMPORT_FAILED' }
-    )
+    expect(dependencies.repository.updateActionRun).toHaveBeenCalledWith('action-1', 'failed', {
+      errorCode: 'BUSINESS_TEXT_JOB_CASE_IMPORT_FAILED'
+    })
 
     stop()
   })
 
   it('returns duplicate submissions to the existing review without a second draft', async () => {
     const { dependencies, intakeDeps } = withRealIntakeExecutor({
-      importJobCaseText: vi.fn(async () => ({ review: caseReview, outcome: 'existing-review' as const, validity: 'unknown' as const, attentionReason: null }))
+      importJobCaseText: vi.fn(async () => ({
+        review: caseReview,
+        outcome: 'existing-review' as const,
+        validity: 'unknown' as const,
+        attentionReason: null
+      }))
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
       status: string
       conversation: AiConversationSnapshot
     }
@@ -1720,7 +2226,7 @@ describe('business-text intake gate', () => {
     const { dependencies } = withRealIntakeExecutor()
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const first = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
+    const first = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
       status: string
       conversation: AiConversationSnapshot
     }
@@ -1729,8 +2235,9 @@ describe('business-text intake gate', () => {
     // The conversation exists now. The run must still start unbound and end
     // bound to the second turn - a run created with the conversation but no
     // turn can never be completed by the store.
-    const second = await invoke(ipcChannels.executeAgentTurn, input(
-      pastedCandidateMessage, secondRequestId, { expectedConversationRevision: first.conversation.revision }
+    const second = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input(pastedCandidateMessage, secondRequestId, { expectedConversationRevision: first.conversation.revision })
     )) as { status: string; actionRunId: string | null; conversation: AiConversationSnapshot }
     expect(second.status).toBe('completed')
     expect(second.actionRunId).toBe('action-2')
@@ -1751,12 +2258,13 @@ describe('business-text intake gate', () => {
     const { dependencies, intakeDeps } = withRealIntakeExecutor()
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const first = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
+    const first = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
       status: string
       conversation: AiConversationSnapshot
     }
-    const second = await invoke(ipcChannels.executeAgentTurn, input(
-      pastedCaseMessage, secondRequestId, { expectedConversationRevision: first.conversation.revision }
+    const second = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input(pastedCaseMessage, secondRequestId, { expectedConversationRevision: first.conversation.revision })
     )) as { status: string; actionRunId: string | null }
     expect(first.status).toBe('completed')
     expect(second.status).toBe('completed')
@@ -1780,7 +2288,7 @@ describe('business-text intake gate', () => {
     const { dependencies, intakeDeps } = withRealIntakeExecutor({ extractRecordsViaCloud })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
       status: string
       conversation: AiConversationSnapshot
       intake?: { route: string; reason: string; restoreComposerText: boolean }
@@ -1794,7 +2302,8 @@ describe('business-text intake gate', () => {
     // The type came from the local rules, not from the lane.
     expect(assistant?.content).not.toContain('已通过脱敏云端判定')
     expect(assistant?.blocks?.find((block) => block.type === 'system-access')).toMatchObject({
-      destination: 'case-review', reviewId: caseReview.reviewId
+      destination: 'case-review',
+      reviewId: caseReview.reviewId
     })
     expect(JSON.stringify(result.conversation)).not.toContain(rawMarker)
 
@@ -1809,7 +2318,7 @@ describe('business-text intake gate', () => {
       }))
     })
     let stop = registerAgentIpcHandlers(disagreeing.dependencies)
-    const first = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as {
+    const first = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as {
       status: string
       conversation: AiConversationSnapshot
     }
@@ -1825,7 +2334,7 @@ describe('business-text intake gate', () => {
       })
     })
     stop = registerAgentIpcHandlers(failing.dependencies)
-    const second = await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage)) as { status: string }
+    const second = (await invoke(ipcChannels.executeAgentTurn, input(pastedCaseMessage))) as { status: string }
     expect(second.status).toBe('completed')
     expect(failing.intakeDeps.importJobCaseText).toHaveBeenCalledTimes(1)
     stop()
@@ -1839,17 +2348,30 @@ describe('business-text intake gate', () => {
       id: conversationId,
       context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
       title: '案件取込',
-      messages: [{
-        id: 'intake-cards', role: 'assistant', content: '已导入 2 条案件草稿。', mode: 'local', createdAt: '2026-08-25T00:00:00.000Z',
-        blocks: [{
-          type: 'job-case-draft-cards', intakeBatchId,
-          cards: [firstReviewId, secondReviewId].map((reviewId, index) => ({
-            ...agentJobCaseDraftFacts(jobCaseReviewFixture(reviewId), `DRAFT_${index + 1}`), ordinal: index + 1, outcome: 'created' as const
-          }))
-        }]
-      }],
+      messages: [
+        {
+          id: 'intake-cards',
+          role: 'assistant',
+          content: '已导入 2 条案件草稿。',
+          mode: 'local',
+          createdAt: '2026-08-25T00:00:00.000Z',
+          blocks: [
+            {
+              type: 'job-case-draft-cards',
+              intakeBatchId,
+              cards: [firstReviewId, secondReviewId].map((reviewId, index) => ({
+                ...agentJobCaseDraftFacts(jobCaseReviewFixture(reviewId), `DRAFT_${index + 1}`),
+                ordinal: index + 1,
+                outcome: 'created' as const
+              }))
+            }
+          ]
+        }
+      ],
       salesAgentState: {
-        selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null,
+        selectedJobCaseRef: null,
+        lastMatchRunId: null,
+        lastSearchMessageId: null,
         lastIntakeBatch: { intakeBatchId, messageId: 'intake-cards', reviewIds: [firstReviewId, secondReviewId] }
       },
       revision: 1,
@@ -1858,19 +2380,38 @@ describe('business-text intake gate', () => {
     }
     const dependencies = createDependencies({ initialConversation })
     vi.mocked(dependencies.narrativeStreamer!.plan).mockResolvedValue({
-      kind: 'tool', action: { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: null } }
+      kind: 'tool',
+      action: { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: null } }
     })
     // The second draft was confirmed in the Review Center after the paste.
     vi.mocked(dependencies.repository.getAgentJobCaseDraftFacts).mockImplementation((reviewId: string, label: string) =>
-      agentJobCaseDraftFacts(jobCaseReviewFixture(reviewId, reviewId === secondReviewId
-        ? {
-            status: 'completed',
-            jobCase: { id: jobCaseId, sourceReviewId: secondReviewId, version: 1, status: 'active', confirmedAt: '2026-08-25T01:00:00.000Z', confirmedBy: 'SES', containsDirectIdentifiers: false }
-          }
-        : {}), label))
+      agentJobCaseDraftFacts(
+        jobCaseReviewFixture(
+          reviewId,
+          reviewId === secondReviewId
+            ? {
+                status: 'completed',
+                jobCase: {
+                  id: jobCaseId,
+                  sourceReviewId: secondReviewId,
+                  version: 1,
+                  status: 'active',
+                  confirmedAt: '2026-08-25T01:00:00.000Z',
+                  confirmedBy: 'SES',
+                  containsDirectIdentifiers: false
+                }
+              }
+            : {}
+        ),
+        label
+      )
+    )
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('这几条里哪些缺单价？', secondRequestId, { expectedConversationRevision: 1 })) as {
+    const result = (await invoke(
+      ipcChannels.executeAgentTurn,
+      input('这几条里哪些缺单价？', secondRequestId, { expectedConversationRevision: 1 })
+    )) as {
       status: string
       toolName: string | null
       conversation: AiConversationSnapshot
@@ -1928,11 +2469,12 @@ describe('agent case broadcast tools', () => {
     const reviews = Array.from({ length: 10 }, (_unused, index) => sendableReviewFixture(index + 1))
     const dependencies = createDependencies({ jobCaseReviews: reviews })
     vi.mocked(dependencies.narrativeStreamer!.plan).mockResolvedValue({
-      kind: 'tool', action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'new-cases', ordinal: null } }
+      kind: 'tool',
+      action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'new-cases', ordinal: null } }
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('把今天的新案件整理成群消息')) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('把今天的新案件整理成群消息'))) as {
       status: string
       toolName: string | null
       assistantMessage: { turnId?: string | null }
@@ -1961,7 +2503,9 @@ describe('agent case broadcast tools', () => {
       expect.any(String)
     )
     expect(dependencies.repository.linkActionRunToConversation).toHaveBeenCalledWith(
-      expect.any(String), conversationId, result.assistantMessage.turnId
+      expect.any(String),
+      conversationId,
+      result.assistantMessage.turnId
     )
     // The local text is authoritative; the cloud only retells the counts.
     const streamed = vi.mocked(dependencies.narrativeStreamer!.stream).mock.calls[0]![0]
@@ -1976,11 +2520,12 @@ describe('agent case broadcast tools', () => {
   it('says there is nothing to copy and still reports the queue when the queue is clear', async () => {
     const dependencies = createDependencies({ jobCaseReviews: [] })
     vi.mocked(dependencies.narrativeStreamer!.plan).mockResolvedValue({
-      kind: 'tool', action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'uncopied-cases', ordinal: null } }
+      kind: 'tool',
+      action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'uncopied-cases', ordinal: null } }
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('今天还有哪些没发')) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('今天还有哪些没发'))) as {
       status: string
       toolName: string | null
       conversation: AiConversationSnapshot
@@ -2004,19 +2549,19 @@ describe('agent case broadcast tools', () => {
       caseBroadcastCopies: [copyFixture(copied, 1), { ...copyFixture(revisedNow, 1), id: '15151515-1515-4515-8515-151515151502' }]
     })
     vi.mocked(dependencies.narrativeStreamer!.plan).mockResolvedValue({
-      kind: 'tool', action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'uncopied-cases', ordinal: null } }
+      kind: 'tool',
+      action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'uncopied-cases', ordinal: null } }
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('今天还有哪些没发')) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('今天还有哪些没发'))) as {
       conversation: AiConversationSnapshot
     }
 
     const block = broadcastCardsOf(result)
     expect(block.queue).toEqual({ new: 1, copied: 2, attention: 0 })
     // The already-copied, unchanged case is finished and is not drafted again.
-    expect(block.cards.map((card) => card.reviewId).toSorted())
-      .toEqual([fresh.reviewId, revisedNow.reviewId].toSorted())
+    expect(block.cards.map((card) => card.reviewId).toSorted()).toEqual([fresh.reviewId, revisedNow.reviewId].toSorted())
     stop()
   })
 
@@ -2024,11 +2569,12 @@ describe('agent case broadcast tools', () => {
     const pending = jobCaseReviewFixture('12121212-1212-4212-8212-121212121399')
     const dependencies = createDependencies({ jobCaseReviews: [pending] })
     vi.mocked(dependencies.narrativeStreamer!.plan).mockResolvedValue({
-      kind: 'tool', action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'case', ordinal: null } }
+      kind: 'tool',
+      action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'case', ordinal: null } }
     })
     const stop = registerAgentIpcHandlers(dependencies)
 
-    const result = await invoke(ipcChannels.executeAgentTurn, input('把这个案件整理成群消息')) as {
+    const result = (await invoke(ipcChannels.executeAgentTurn, input('把这个案件整理成群消息'))) as {
       status: string
       conversation: AiConversationSnapshot
     }

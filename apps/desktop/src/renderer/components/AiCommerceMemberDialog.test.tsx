@@ -22,26 +22,47 @@ const readyPrivacy = {
   cloudGateway: 'enforced' as const,
   localAi: 'vision-ocr-and-pii-active' as const,
   qualityGate: {
-    status: 'passed' as const, datasetVersion: 'ses-privacy-regression-v1' as const, syntheticOnly: true as const,
-    caseCount: 28, identifierRecall: 1, redactionPrecision: 1, residualLeakCount: 0,
-    safeCaseFalsePositiveCount: 0, appleNerVerified: true, reportHash: 'a'.repeat(64), failureCodes: []
+    status: 'passed' as const,
+    datasetVersion: 'ses-privacy-regression-v1' as const,
+    syntheticOnly: true as const,
+    caseCount: 28,
+    identifierRecall: 1,
+    redactionPrecision: 1,
+    residualLeakCount: 0,
+    safeCaseFalsePositiveCount: 0,
+    appleNerVerified: true,
+    reportHash: 'a'.repeat(64),
+    failureCodes: []
   },
   expertGate: {
-    status: 'passed' as const, datasetVersion: 'ses-privacy-expert-dataset-v1' as const, humanLabeledDataset: true as const,
-    sourceDocumentCount: 50, caseCount: 60, automaticPersonNameRecall: 0.93,
-    postReviewIdentifierRecall: 1, redactionPrecision: 0.98,
-    reviewedAt: '2026-08-17T00:00:00.000Z', evaluatedAt: '2026-08-17T01:00:00.000Z',
-    reportHash: 'b'.repeat(64), attestationHash: 'c'.repeat(64),
-    privacyImplementationSha256: 'd'.repeat(64), cloudEnforcementSha256: 'e'.repeat(64), failureCodes: []
+    status: 'passed' as const,
+    datasetVersion: 'ses-privacy-expert-dataset-v1' as const,
+    humanLabeledDataset: true as const,
+    sourceDocumentCount: 50,
+    caseCount: 60,
+    automaticPersonNameRecall: 0.93,
+    postReviewIdentifierRecall: 1,
+    redactionPrecision: 0.98,
+    reviewedAt: '2026-08-17T00:00:00.000Z',
+    evaluatedAt: '2026-08-17T01:00:00.000Z',
+    reportHash: 'b'.repeat(64),
+    attestationHash: 'c'.repeat(64),
+    privacyImplementationSha256: 'd'.repeat(64),
+    cloudEnforcementSha256: 'e'.repeat(64),
+    failureCodes: []
   }
 }
 
 describe('AiCommerceMemberDialog', () => {
   it('submits content for a Main-owned redacted preview and native confirmation', async () => {
     const onSendPrompt = vi.fn().mockResolvedValue({
-      requestId: 'sesai-12345678', aiRequestId: 'air-1', content: '脱敏済みの回答です。',
-      usageCredits: 12, wallet: { balanceCredits: 1188, reservedCredits: 0 },
-      removedIdentifierTypes: ['person_name'], billingModeUsed: 'subscription'
+      requestId: 'sesai-12345678',
+      aiRequestId: 'air-1',
+      content: '脱敏済みの回答です。',
+      usageCredits: 12,
+      wallet: { balanceCredits: 1188, reservedCredits: 0 },
+      removedIdentifierTypes: ['person_name'],
+      billingModeUsed: 'subscription'
     })
     render(
       <AiCommerceMemberDialog
@@ -65,16 +86,22 @@ describe('AiCommerceMemberDialog', () => {
     expect(submit).toBeEnabled()
     fireEvent.click(submit)
 
-    await waitFor(() => expect(onSendPrompt).toHaveBeenCalledWith({
-      content: '候補者の経験を短く要約してください。'
-    }))
+    await waitFor(() =>
+      expect(onSendPrompt).toHaveBeenCalledWith({
+        content: '候補者の経験を短く要約してください。'
+      })
+    )
     expect(await screen.findByText('脱敏済みの回答です。')).toBeInTheDocument()
   })
 
   it('removes Electron IPC details and localizes a blocking synthetic quality error', async () => {
-    const onSendPrompt = vi.fn().mockRejectedValue(new Error(
-      "Error invoking remote method 'aicommerce:execute-cloud-prompt': Error: ローカルのプライバシー品質ゲートを確認できないため、Cloud AI を停止しました。データ安全画面で状態を確認してください。"
-    ))
+    const onSendPrompt = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "Error invoking remote method 'aicommerce:execute-cloud-prompt': Error: ローカルのプライバシー品質ゲートを確認できないため、Cloud AI を停止しました。データ安全画面で状態を確認してください。"
+        )
+      )
     render(
       <UiLocaleProvider locale="zh-CN">
         <AiCommerceMemberDialog
@@ -92,8 +119,8 @@ describe('AiCommerceMemberDialog', () => {
       </UiLocaleProvider>
     )
 
-    fireEvent.change(screen.getByLabelText('依頼内容'), { target: { value: '匿名プロフィールを要約してください。' } })
-    fireEvent.click(screen.getByRole('button', { name: '脱敏プレビューを確認' }))
+    fireEvent.change(screen.getByLabelText('请求内容'), { target: { value: '匿名プロフィールを要約してください。' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认脱敏预览' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('本机隐私质量检查未通过，云端 AI 已停止。请在“数据安全”中检查状态。')
     expect(screen.getByRole('alert')).not.toHaveTextContent('Error invoking remote method')
@@ -114,7 +141,9 @@ describe('AiCommerceMemberDialog', () => {
           ...readyPrivacy,
           expertGate: {
             ...readyPrivacy.expertGate,
-            status: 'not-verified', datasetVersion: null, attestationHash: null,
+            status: 'not-verified',
+            datasetVersion: null,
+            attestationHash: null,
             failureCodes: ['expert:missing']
           }
         }}

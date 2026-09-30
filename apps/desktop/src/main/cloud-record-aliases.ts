@@ -9,7 +9,10 @@ export function createCloudRecordAliases() {
   const alias = (id: string) => {
     let value = forward.get(id)
     if (!value) {
-      const suffix = forward.size.toString(6).padStart(12, '0').replace(/[0-5]/g, digit => 'abcdef'[Number(digit)]!)
+      const suffix = forward.size
+        .toString(6)
+        .padStart(12, '0')
+        .replace(/[0-5]/g, (digit) => 'abcdef'[Number(digit)]!)
       value = `aaaaaaaa-aaaa-4aaa-aaaa-${suffix}`
       forward.set(id, value)
       reverse.set(value, id)

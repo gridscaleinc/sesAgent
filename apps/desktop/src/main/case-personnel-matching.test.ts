@@ -7,26 +7,72 @@ import type { AgentMatchAssessmentInput, AgentMatchAssessmentResult } from './ag
 import { createCasePersonnelMatcher } from './case-personnel-matching'
 vi.mock('./app-defaults', () => ({ effectiveApplicationPreferences: () => ({ locale: 'zh-CN' }) }))
 const jobId = '11111111-1111-4111-8111-111111111111'
-const job = { id: jobId, sourceReviewId: 'case-review', version: 1,
-  fields: [{ key: 'required_skills', label: '必須', value: 'Java', sourceLabels: [] }] } as unknown as ConfirmedJobCase
-const makePerson = (id: string, skill = 'Java') => ({ id, sourceDocumentId: id, profileVersion: 1,
-  fields: [{ key: 'skills', label: '技能', value: skill, sourceLabels: [] }], projectExperiences: [],
-  localPersonalDetails: { displayName: 'PRIVATE NAME', email: 'private@example.com' } }) as unknown as CandidateProfile
-const verdict = (candidate: string, fit: 'strong' | 'possible' = 'possible') => ({ candidate, fit, met: [{ requirement: 'Java', evidence: 'Java' }], gaps: [], confirm: [], reason: 'Java projects' })
+const job = {
+  id: jobId,
+  sourceReviewId: 'case-review',
+  version: 1,
+  fields: [{ key: 'required_skills', label: '必須', value: 'Java', sourceLabels: [] }]
+} as unknown as ConfirmedJobCase
+const makePerson = (id: string, skill = 'Java') =>
+  ({
+    id,
+    sourceDocumentId: id,
+    profileVersion: 1,
+    fields: [{ key: 'skills', label: '技能', value: skill, sourceLabels: [] }],
+    projectExperiences: [],
+    localPersonalDetails: { displayName: 'PRIVATE NAME', email: 'private@example.com' }
+  }) as unknown as CandidateProfile
+const verdict = (candidate: string, fit: 'strong' | 'possible' = 'possible') => ({
+  candidate,
+  fit,
+  met: [{ requirement: 'Java', evidence: 'Java' }],
+  gaps: [],
+  confirm: [],
+  reason: 'Java projects'
+})
 function setup(assess?: (input: AgentMatchAssessmentInput) => Promise<AgentMatchAssessmentResult>) {
   let profiles = [makePerson('a'), makePerson('b')]
   let cases = [job]
   const cloud = assess ? { assessMatchCandidates: vi.fn(assess), cancel: vi.fn(async () => ({})) } : null
-  const context = { repository: { listEligibleTalentProfiles: () => profiles, listActiveJobCases: () => cases }, agentNarrativeStreamer: cloud,
-    agentChatModelCatalog: loadAgentChatModelCatalog() } as unknown as MainIpcContext
-  return { context, cloud, setProfiles: (value: CandidateProfile[]) => { profiles = value }, setCases: (value: ConfirmedJobCase[]) => { cases = value } }
+  const context = {
+    repository: { listEligibleTalentProfiles: () => profiles, listActiveJobCases: () => cases },
+    agentNarrativeStreamer: cloud,
+    agentChatModelCatalog: loadAgentChatModelCatalog()
+  } as unknown as MainIpcContext
+  return {
+    context,
+    cloud,
+    setProfiles: (value: CandidateProfile[]) => {
+      profiles = value
+    },
+    setCases: (value: ConfirmedJobCase[]) => {
+      cases = value
+    }
+  }
 }
 afterEach(() => vi.useRealTimers())
 describe('case personnel matching', () => {
   it('returns no recommendations for the Scala/Spark case when only generic roles and languages overlap', async () => {
     const f = setup(async () => ({ assessments: [{ ...verdict('CANDIDATE_1', 'strong'), met: [{ requirement: 'SE', evidence: 'SE' }] }] }))
-    f.setCases([{ ...job, fields: [{ key: 'required_skills', label: '必須', value: '英語、Scala、Spark', sourceLabels: [] }, { key: 'role', label: '役割', value: 'SE', sourceLabels: [] }] }])
-    f.setProfiles([{ ...makePerson('a', 'Java'), fields: [...makePerson('a', 'Java').fields, { key: 'role', label: '角色', value: 'SE', sourceLabels: [] }, { key: 'japanese_level', label: '日本語', value: 'N1', sourceLabels: [] }] }])
+    f.setCases([
+      {
+        ...job,
+        fields: [
+          { key: 'required_skills', label: '必須', value: '英語、Scala、Spark', sourceLabels: [] },
+          { key: 'role', label: '役割', value: 'SE', sourceLabels: [] }
+        ]
+      }
+    ])
+    f.setProfiles([
+      {
+        ...makePerson('a', 'Java'),
+        fields: [
+          ...makePerson('a', 'Java').fields,
+          { key: 'role', label: '角色', value: 'SE', sourceLabels: [] },
+          { key: 'japanese_level', label: '日本語', value: 'N1', sourceLabels: [] }
+        ]
+      }
+    ])
     const onLocal = vi.fn()
     const result = await createCasePersonnelMatcher(f.context)(jobId, { onLocal })
     expect(result.items).toEqual([])
@@ -35,7 +81,9 @@ describe('case personnel matching', () => {
     expect(f.cloud!.assessMatchCandidates).not.toHaveBeenCalled()
   })
   it('does not publish incomplete core coverage, even when cloud calls it strong', async () => {
-    const f = setup(async () => ({ assessments: [{ ...verdict('CANDIDATE_1', 'strong'), met: [{ requirement: 'Scala', evidence: 'Scala' }] }] }))
+    const f = setup(async () => ({
+      assessments: [{ ...verdict('CANDIDATE_1', 'strong'), met: [{ requirement: 'Scala', evidence: 'Scala' }] }]
+    }))
     f.setCases([{ ...job, fields: [{ key: 'required_skills', label: '必須', value: 'Scala、Spark', sourceLabels: [] }] }])
     f.setProfiles([makePerson('a', 'Scala')])
     const result = await createCasePersonnelMatcher(f.context)(jobId)
@@ -45,7 +93,12 @@ describe('case personnel matching', () => {
   })
   it('publishes real local results before cloud and cancels without consuming a late reply', async () => {
     let finish!: (value: AgentMatchAssessmentResult) => void
-    const fixture = setup((input) => { input.onClientRequestId('cancel-test'); return new Promise((resolve) => { finish = resolve }) })
+    const fixture = setup((input) => {
+      input.onClientRequestId('cancel-test')
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    })
     const controller = new AbortController()
     const onLocal = vi.fn()
     const match = createCasePersonnelMatcher(fixture.context)
@@ -71,19 +124,63 @@ describe('case personnel matching', () => {
     expect(f.cloud!.assessMatchCandidates.mock.calls[0]![0].candidates).toHaveLength(3)
     expect(result.items[0]?.hardFilters).toContainEqual({ type: 'own-company', requested: '自社限定', actual: '自社', outcome: 'passed' })
   })
-  it('requires professional evidence and assesses only five people in one private batch', async () => {
+  it('requires professional evidence and assesses at most eight people in one private batch', async () => {
     const f = setup(async () => ({ assessments: [verdict('CANDIDATE_1'), verdict('CANDIDATE_2', 'strong')] }))
-    f.setProfiles([...Array.from({ length: 7 }, (_, i) => makePerson(String(i))), makePerson('irrelevant', 'Salesforce')])
+    f.setProfiles([...Array.from({ length: 10 }, (_, i) => makePerson(String(i))), makePerson('irrelevant', 'Salesforce')])
     const result = await createCasePersonnelMatcher(f.context)(jobId)
-    expect(result.localMatchCount).toBe(7)
-    expect(result.items).toHaveLength(5)
+    expect(result.localMatchCount).toBe(10)
+    expect(result.items).toHaveLength(8)
     expect(result.items[0]?.documentId).toBe('0')
     expect(result.cloud).toMatchObject({ status: 'partial', reviewedCount: 2 })
     expect(f.cloud!.assessMatchCandidates).toHaveBeenCalledTimes(1)
     const input = f.cloud!.assessMatchCandidates.mock.calls[0]![0]
-    expect(input.candidates).toHaveLength(5)
+    expect(input.candidates).toHaveLength(8)
     expect(JSON.stringify(input)).not.toMatch(/PRIVATE NAME|private@example.com|sourceDocumentId/)
     expect(input.jobCase.requirements).toEqual([{ key: 'required_skills', label: '必須', value: 'Java' }])
+  })
+  it('sends people found only by local semantic recall to the cloud, but never people with an explicit conflict', async () => {
+    const f = setup(async (input) => ({ assessments: input.candidates.map((candidate) => verdict(candidate.label)) }))
+    f.setCases([
+      {
+        ...job,
+        fields: [
+          { key: 'required_skills', label: '必須', value: '物流Forwarding業務知識、Cloud SaaS開発経験', sourceLabels: [] },
+          { key: 'japanese_level', label: '日本語', value: 'N1', sourceLabels: [] }
+        ]
+      }
+    ])
+    const conflicted = {
+      ...makePerson('conflict', '国際物流の業務システム'),
+      fields: [
+        ...makePerson('conflict', '国際物流の業務システム').fields,
+        { key: 'japanese_level', label: '日本語', value: 'N4', sourceLabels: [] }
+      ]
+    }
+    f.setProfiles([
+      makePerson('shipping', '海運輸出入の手配、NACCS'),
+      makePerson('saas', 'AWS上の自社サービス開発'),
+      conflicted as never,
+      makePerson('unrelated', 'Salesforce')
+    ])
+    const search = vi.fn(async () => [{ sourceDocumentId: 'conflict' }, { sourceDocumentId: 'shipping' }, { sourceDocumentId: 'saas' }])
+    const context = { ...f.context, candidateRetrieval: { search } } as unknown as MainIpcContext
+    const result = await createCasePersonnelMatcher(context)(jobId)
+    expect(search).toHaveBeenCalledWith(expect.any(Array), expect.stringContaining('物流Forwarding業務知識'), expect.any(Number))
+    expect(f.cloud!.assessMatchCandidates).toHaveBeenCalledOnce()
+    expect(f.cloud!.assessMatchCandidates.mock.calls[0]![0].candidates).toHaveLength(2)
+    expect(result.semanticRecallCount).toBe(2)
+    expect(result.items.map((item) => item.documentId)).not.toContain('conflict')
+  })
+  it('falls back to keyword screening when the local semantic models fail', async () => {
+    const f = setup(async (input) => ({ assessments: input.candidates.map((candidate) => verdict(candidate.label)) }))
+    const search = vi.fn(async () => {
+      throw new Error('embedding worker crashed')
+    })
+    const context = { ...f.context, candidateRetrieval: { search } } as unknown as MainIpcContext
+    const result = await createCasePersonnelMatcher(context)(jobId)
+    expect(result.items.map((item) => item.documentId).sort()).toEqual(['a', 'b'])
+    expect(result.semanticRecallCount).toBe(0)
+    expect(f.cloud!.assessMatchCandidates).toHaveBeenCalledOnce()
   })
   it('keeps evidenced technical matches strong with unknown commercial conditions', async () => {
     const f = setup(async () => ({ assessments: [verdict('CANDIDATE_1', 'strong'), { ...verdict('CANDIDATE_2', 'strong'), met: [] }] }))
@@ -94,8 +191,13 @@ describe('case personnel matching', () => {
   })
   it('honestly returns local results on failure or unavailable cloud, and skips empty shortlists', async () => {
     const absent = setup()
-    expect((await createCasePersonnelMatcher(absent.context)(jobId)).cloud).toMatchObject({ status: 'unavailable', reason: 'service-unavailable' })
-    const fail = setup(async () => { throw new Error('offline') })
+    expect((await createCasePersonnelMatcher(absent.context)(jobId)).cloud).toMatchObject({
+      status: 'unavailable',
+      reason: 'service-unavailable'
+    })
+    const fail = setup(async () => {
+      throw new Error('offline')
+    })
     expect((await createCasePersonnelMatcher(fail.context)(jobId)).cloud).toMatchObject({ status: 'failed', reason: 'request-failed' })
     const empty = setup(async () => ({ assessments: [] }))
     empty.setProfiles([makePerson('irrelevant', 'Salesforce')])
@@ -104,7 +206,12 @@ describe('case personnel matching', () => {
   })
   it('deduplicates pending calls and rejects a case changed during assessment', async () => {
     let finish!: (value: AgentMatchAssessmentResult) => void
-    const f = setup(() => new Promise((resolve) => { finish = resolve }))
+    const f = setup(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
     const match = createCasePersonnelMatcher(f.context)
     const first = match(jobId)
     expect(match(jobId)).toBe(first)
@@ -122,7 +229,10 @@ describe('case personnel matching', () => {
   })
   it('aborts and cancels timed-out remote work, then permits retry', async () => {
     vi.useFakeTimers()
-    const f = setup(async (input) => { input.onClientRequestId('remote-1'); return new Promise(() => {}) })
+    const f = setup(async (input) => {
+      input.onClientRequestId('remote-1')
+      return new Promise(() => {})
+    })
     const match = createCasePersonnelMatcher(f.context, 20)
     const first = match(jobId)
     await vi.advanceTimersByTimeAsync(21)
@@ -145,36 +255,59 @@ describe('case personnel matching', () => {
     expect(f.cloud!.assessMatchCandidates.mock.calls[1]![0]).not.toHaveProperty('operatorRequest')
   })
 })
-it('allows only explicit archived assessments and drops a deleted target before completion',async()=>{
-  let target:CandidateProfile|null=makePerson('archived')
-  let finish!:(value:AgentMatchAssessmentResult)=>void
-  const f=setup(()=>new Promise(resolve=>{finish=resolve}))
+it('allows only explicit archived assessments and drops a deleted target before completion', async () => {
+  let target: CandidateProfile | null = makePerson('archived')
+  let finish!: (value: AgentMatchAssessmentResult) => void
+  const f = setup(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+  )
   f.setProfiles([])
-  f.context.repository.getCandidateProfileForAssessment=()=>target
-  const match=createCasePersonnelMatcher(f.context)
+  f.context.repository.getCandidateProfileForAssessment = () => target
+  const match = createCasePersonnelMatcher(f.context)
   expect((await match(jobId)).items).toEqual([])
-  const pending=match(jobId,{documentId:'archived'})
+  const pending = match(jobId, { documentId: 'archived' })
   expect(f.cloud!.assessMatchCandidates).toHaveBeenCalledOnce()
-  target=null
-  finish({assessments:[verdict('CANDIDATE_1')]})
+  target = null
+  finish({ assessments: [verdict('CANDIDATE_1')] })
   expect((await pending).items).toEqual([])
-  await expect(match(jobId,{documentId:'archived'})).rejects.toThrow('人员资料不可用')
+  await expect(match(jobId, { documentId: 'archived' })).rejects.toThrow('人员资料不可用')
 })
 
 it('uses identical technical/language decisions and commercial follow-ups across all three entry points', async () => {
   const { createPersonnelCaseMatcher } = await import('./personnel-case-matching')
-  const person = { sourceDocumentId: jobId, profileVersion: 1, fields: [
-    { key: 'skills', label: '技能', value: 'Java' }, { key: 'japanese_level', label: '日语', value: 'N1 会話流暢' },
-    { key: 'work_style', label: '出勤', value: '在宅のみ' }, { key: 'rate', label: '单价', value: '100万円' }
-  ], projectExperiences: [] } as unknown as CandidateProfile
-  const target = { ...job, fields: [...job.fields.filter(field => field.key !== 'required_skills'),
-    { key: 'required_skills', label: '必須', value: 'Java', sourceLabels: [] },
-    { key: 'japanese_level', label: '日语', value: '日本語N1流暢', sourceLabels: [] },
-    { key: 'remote', label: '出勤', value: '週3出勤', sourceLabels: [] },
-    { key: 'start_date', label: '开始', value: '9月～長期', sourceLabels: [] },
-    { key: 'rate', label: '单价', value: '70万円以下', sourceLabels: [] }
-  ] }
-  const context = { repository: { listActiveJobCases: () => [target], getCandidateProfileForAssessment: () => person, listEligibleTalentProfiles: () => [person] }, agentNarrativeStreamer: null } as unknown as MainIpcContext
+  const person = {
+    sourceDocumentId: jobId,
+    profileVersion: 1,
+    fields: [
+      { key: 'skills', label: '技能', value: 'Java' },
+      { key: 'japanese_level', label: '日语', value: 'N1 会話流暢' },
+      { key: 'work_style', label: '出勤', value: '在宅のみ' },
+      { key: 'rate', label: '单价', value: '100万円' }
+    ],
+    projectExperiences: []
+  } as unknown as CandidateProfile
+  const target = {
+    ...job,
+    fields: [
+      ...job.fields.filter((field) => field.key !== 'required_skills'),
+      { key: 'required_skills', label: '必須', value: 'Java', sourceLabels: [] },
+      { key: 'japanese_level', label: '日语', value: '日本語N1流暢', sourceLabels: [] },
+      { key: 'remote', label: '出勤', value: '週3出勤', sourceLabels: [] },
+      { key: 'start_date', label: '开始', value: '9月～長期', sourceLabels: [] },
+      { key: 'rate', label: '单价', value: '70万円以下', sourceLabels: [] }
+    ]
+  }
+  const context = {
+    repository: {
+      listActiveJobCases: () => [target],
+      getCandidateProfileForAssessment: () => person,
+      listEligibleTalentProfiles: () => [person]
+    },
+    agentNarrativeStreamer: null
+  } as unknown as MainIpcContext
   const matcher = createCasePersonnelMatcher(context)
   const direct = (await matcher(jobId, { documentId: person.sourceDocumentId })).items[0]!
   const batch = (await matcher(jobId)).items[0]!
@@ -182,5 +315,5 @@ it('uses identical technical/language decisions and commercial follow-ups across
   expect(direct.qualification?.status).toBe('recommended')
   expect(batch.qualification).toEqual(direct.qualification)
   expect(reverse.qualification).toEqual(direct.qualification)
-  expect(direct.qualification?.requirements.find(item => item.requirement.key === 'remote')?.outcome).toBe('conflict')
+  expect(direct.qualification?.requirements.find((item) => item.requirement.key === 'remote')?.outcome).toBe('conflict')
 })

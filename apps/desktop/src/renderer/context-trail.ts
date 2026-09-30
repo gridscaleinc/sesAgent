@@ -12,7 +12,7 @@ const contextTrailLimit = 20
 export function contextScreenKey(access: AgentSystemAccessBlock): string {
   const record = access as unknown as Record<string, unknown>
   // The broadcast queue is one screen; the picked case inside it is focus, not navigation.
-  const id = access.destination === 'broadcast' ? '' : record.sourceDocumentId ?? record.reviewId ?? record.intakeBatchId ?? ''
+  const id = access.destination === 'broadcast' ? '' : (record.sourceDocumentId ?? record.reviewId ?? record.intakeBatchId ?? '')
   return `${access.destination}:${String(id)}`
 }
 

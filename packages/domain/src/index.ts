@@ -1,20 +1,8 @@
-export const workTaskTypes = [
-  'IMPORT_RESUME',
-  'CREATE_CASE',
-  'MATCH_CANDIDATES',
-  'GENERATE_PROPOSAL'
-] as const
+export const workTaskTypes = ['IMPORT_RESUME', 'CREATE_CASE', 'MATCH_CANDIDATES', 'GENERATE_PROPOSAL'] as const
 
 export type WorkTaskType = (typeof workTaskTypes)[number]
 
-export type WorkTaskStatus =
-  | 'awaiting_input'
-  | 'planned'
-  | 'running'
-  | 'awaiting_review'
-  | 'completed'
-  | 'cancelled'
-  | 'failed'
+export type WorkTaskStatus = 'awaiting_input' | 'planned' | 'running' | 'awaiting_review' | 'completed' | 'cancelled' | 'failed'
 
 export type TaskStepStatus = 'pending' | 'running' | 'completed' | 'blocked'
 

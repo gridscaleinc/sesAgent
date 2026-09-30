@@ -7,7 +7,11 @@ it('keeps UUID correlation local without weakening postal address detection', ()
   const options = { sourceVersion: 'fixture', personNameReviewCompleted: true as const }
   expect(redactTextForCloud(JSON.stringify({ id }), options).blockedReasons).toContain('residual:postal_address')
   const aliases = createCloudRecordAliases()
-  const projection = aliases.project({ id, runs: [{ id }], text: '郵便番号 123-4567' }) as { id: string; runs: { id: string }[]; text: string }
+  const projection = aliases.project({ id, runs: [{ id }], text: '郵便番号 123-4567' }) as {
+    id: string
+    runs: { id: string }[]
+    text: string
+  }
   expect(projection.id).toMatch(/^aaaaaaaa-aaaa-4aaa-aaaa-[a-f]{12}$/)
   expect(projection.runs[0]!.id).toBe(projection.id)
   expect(aliases.original(projection.id)).toBe(id)

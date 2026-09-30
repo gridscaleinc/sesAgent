@@ -24,24 +24,16 @@ export interface MatchRunValidityContext extends MatchRuntimeIdentity {
   explicitlyInvalidated: boolean
 }
 
-export function candidatePoolFingerprint(
-  profiles: ReadonlyArray<{ id: string; profileVersion: number }>
-): string {
+export function candidatePoolFingerprint(profiles: ReadonlyArray<{ id: string; profileVersion: number }>): string {
   const identity = profiles
     .map((profile) => ({ id: profile.id, version: profile.profileVersion }))
     .toSorted((left, right) => left.id.localeCompare(right.id) || left.version - right.version)
   return createHash('sha256').update(JSON.stringify(identity)).digest('hex')
 }
 
-export function evaluateMatchRunValidity(
-  run: CandidateMatchRunSummary,
-  context: MatchRunValidityContext
-): MatchRunValidity {
+export function evaluateMatchRunValidity(run: CandidateMatchRunSummary, context: MatchRunValidityContext): MatchRunValidity {
   if (context.explicitlyInvalidated || run.binding === null) return 'invalidated'
-  if (
-    run.binding.jobCaseId !== context.jobCaseId ||
-    run.binding.jobCaseVersion !== context.jobCaseVersion
-  ) return 'stale_job_case'
+  if (run.binding.jobCaseId !== context.jobCaseId || run.binding.jobCaseVersion !== context.jobCaseVersion) return 'stale_job_case'
   if (run.binding.candidatePoolFingerprint !== context.candidatePoolFingerprint) {
     return 'stale_candidate_pool'
   }
@@ -50,16 +42,17 @@ export function evaluateMatchRunValidity(
     run.binding.embeddingModelRevision !== context.embeddingModelRevision ||
     run.binding.rerankerModelId !== context.rerankerModelId ||
     run.binding.rerankerModelRevision !== context.rerankerModelRevision
-  ) return 'stale_model'
-  const algorithmCurrent = run.algorithmVersion === context.algorithmVersion || (
-    context.algorithmVersion === 'hard-filter-hybrid-local-rerank-v1' &&
-    run.algorithmVersion === 'hard-filter-hybrid-rrf-v1'
   )
+    return 'stale_model'
+  const algorithmCurrent =
+    run.algorithmVersion === context.algorithmVersion ||
+    (context.algorithmVersion === 'hard-filter-hybrid-local-rerank-v1' && run.algorithmVersion === 'hard-filter-hybrid-rrf-v1')
   if (
     run.binding.policyVersion !== 'match-run-validity-v1' ||
     !algorithmCurrent ||
     run.hardFilterPolicyVersion !== context.hardFilterPolicyVersion
-  ) return 'stale_policy'
+  )
+    return 'stale_policy'
   return 'current'
 }
 
@@ -117,9 +110,13 @@ export function projectBusinessPriority(inputs: BusinessPriorityInputs): Project
     level,
     reasons,
     inputs: normalizedInputs,
-    inputSnapshotHash: createHash('sha256').update(JSON.stringify({
-      ruleVersion: 'business-priority-v1',
-      inputs: normalizedInputs
-    })).digest('hex')
+    inputSnapshotHash: createHash('sha256')
+      .update(
+        JSON.stringify({
+          ruleVersion: 'business-priority-v1',
+          inputs: normalizedInputs
+        })
+      )
+      .digest('hex')
   }
 }

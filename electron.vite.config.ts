@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { loadGoogleProductBuildVariables, requireGoogleProductBuildConfiguration } from './scripts/google-product-configuration'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { productionContentSecurityPolicy } from './scripts/production-csp'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 const alias = {
@@ -90,7 +91,7 @@ export default defineConfig(({ command }) => {
   renderer: {
     root: resolve(rootDir, 'apps/desktop/src/renderer'),
     resolve: { alias },
-    plugins: [react()],
+    plugins: [react(), productionContentSecurityPolicy()],
     build: {
       rollupOptions: {
         input: resolve(rootDir, 'apps/desktop/src/renderer/index.html')

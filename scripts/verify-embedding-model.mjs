@@ -18,11 +18,13 @@ for (const file of manifest.files) {
   }
 }
 
-console.info(JSON.stringify({
-  modelId: manifest.modelId,
-  revision: manifest.revision,
-  dimension: manifest.embeddingDimension,
-  files: manifest.files.length,
-  networkAccess: false,
-  integrity: 'verified'
-}))
+console.info(
+  JSON.stringify({
+    modelId: manifest.modelId,
+    revision: manifest.revision,
+    dimension: manifest.embeddingDimension,
+    files: manifest.files.length,
+    networkAccess: false,
+    integrity: 'verified'
+  })
+)

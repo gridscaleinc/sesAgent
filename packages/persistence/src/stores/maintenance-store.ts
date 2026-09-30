@@ -4,12 +4,7 @@ import { dirname } from 'node:path'
 import { dataDeletionReportSchema } from '@shared'
 import { type DataDeletionReport, type RecoveryPackageSummary, type RecoveryState } from '@shared/contracts'
 import { type DataDeletionReportRow } from '../rows'
-import {
-  createIndexInAttachedSchema,
-  createTableInAttachedSchema,
-  createTriggerInAttachedSchema,
-  quoteSqlIdentifier
-} from '../schema/sql'
+import { createIndexInAttachedSchema, createTableInAttachedSchema, createTriggerInAttachedSchema, quoteSqlIdentifier } from '../schema/sql'
 import { DomainStore } from './base'
 
 export class MaintenanceStore extends DomainStore {
@@ -25,30 +20,19 @@ export class MaintenanceStore extends DomainStore {
            outcome = excluded.outcome,
            completed_at = excluded.completed_at`
       )
-      .run(
-        report.id,
-        report.entityType,
-        report.entityIdHash,
-        JSON.stringify(report),
-        report.outcome,
-        report.completedAt
-      )
+      .run(report.id, report.entityType, report.entityIdHash, JSON.stringify(report), report.outcome, report.completedAt)
     return report as T
   }
 
   listDataDeletionReports(): DataDeletionReport[] {
     return this.database
-      .prepare<[], DataDeletionReportRow>(
-        'SELECT report_json FROM data_deletion_reports ORDER BY completed_at DESC LIMIT 200'
-      )
+      .prepare<[], DataDeletionReportRow>('SELECT report_json FROM data_deletion_reports ORDER BY completed_at DESC LIMIT 200')
       .all()
       .map((row) => dataDeletionReportSchema.parse(JSON.parse(row.report_json)))
   }
 
   getSchemaVersion(): number {
-    const row = this.database
-      .prepare<[], { version: number }>('SELECT max(version) AS version FROM schema_migrations')
-      .get()
+    const row = this.database.prepare<[], { version: number }>('SELECT max(version) AS version FROM schema_migrations').get()
     return row?.version ?? 0
   }
 
@@ -62,9 +46,7 @@ export class MaintenanceStore extends DomainStore {
     let snapshotDataRevision: number | null = null
     this.database.pragma('foreign_keys=OFF')
     try {
-      this.database
-        .prepare(`ATTACH DATABASE ? AS ${quoteSqlIdentifier(snapshotSchema)} KEY ?`)
-        .run(destinationPath, this.databaseKey)
+      this.database.prepare(`ATTACH DATABASE ? AS ${quoteSqlIdentifier(snapshotSchema)} KEY ?`).run(destinationPath, this.databaseKey)
       attached = true
       this.database.exec('BEGIN IMMEDIATE')
       transactionOpen = true
@@ -85,7 +67,7 @@ export class MaintenanceStore extends DomainStore {
       for (const table of tables) {
         this.database.exec(
           `INSERT INTO ${quoteSqlIdentifier(snapshotSchema)}.${quoteSqlIdentifier(table.name)} ` +
-          `SELECT * FROM main.${quoteSqlIdentifier(table.name)}`
+            `SELECT * FROM main.${quoteSqlIdentifier(table.name)}`
         )
       }
       const indexes = this.database
@@ -120,10 +102,18 @@ export class MaintenanceStore extends DomainStore {
       chmodSync(destinationPath, 0o600)
     } catch (error) {
       if (transactionOpen) {
-        try { this.database.exec('ROLLBACK') } catch { /* The original error is more useful. */ }
+        try {
+          this.database.exec('ROLLBACK')
+        } catch {
+          /* The original error is more useful. */
+        }
       }
       if (attached) {
-        try { this.database.exec(`DETACH DATABASE ${quoteSqlIdentifier(snapshotSchema)}`) } catch { /* Best-effort cleanup. */ }
+        try {
+          this.database.exec(`DETACH DATABASE ${quoteSqlIdentifier(snapshotSchema)}`)
+        } catch {
+          /* Best-effort cleanup. */
+        }
       }
       rmSync(destinationPath, { force: true })
       throw error
@@ -160,10 +150,7 @@ export class MaintenanceStore extends DomainStore {
              id, event_type, backup_id, package_hash, summary_json, created_at, data_revision
            ) VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(
-          randomUUID(), eventType, summary.backupId, packageHash,
-          JSON.stringify(summary), now.toISOString(), dataRevision
-        )
+        .run(randomUUID(), eventType, summary.backupId, packageHash, JSON.stringify(summary), now.toISOString(), dataRevision)
       if (eventType === 'backup-created') {
         this.database
           .prepare(
@@ -199,11 +186,12 @@ export class MaintenanceStore extends DomainStore {
          ORDER BY created_at DESC LIMIT 1`
       )
       .get()
-    const lastRestoreAt = this.database
-      .prepare<[], { created_at: string }>(
-        "SELECT created_at FROM recovery_events WHERE event_type = 'restore-completed' ORDER BY created_at DESC LIMIT 1"
-      )
-      .get()?.created_at ?? null
+    const lastRestoreAt =
+      this.database
+        .prepare<[], { created_at: string }>(
+          "SELECT created_at FROM recovery_events WHERE event_type = 'restore-completed' ORDER BY created_at DESC LIMIT 1"
+        )
+        .get()?.created_at ?? null
     const current = this.getLocalDataRevision()
     const preference = this.database
       .prepare<[], { snoozed_until: string | null; snoozed_revision: number | null }>(

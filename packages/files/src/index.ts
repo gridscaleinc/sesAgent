@@ -115,12 +115,7 @@ export class EncryptedFileVault {
     return this.encryptAndPersist(name, 'txt', raw, now)
   }
 
-  private async encryptAndPersist(
-    name: string,
-    format: StagedLocalFile['format'],
-    raw: Buffer,
-    now: Date
-  ): Promise<StagedFileRecord> {
+  private async encryptAndPersist(name: string, format: StagedLocalFile['format'], raw: Buffer, now: Date): Promise<StagedFileRecord> {
     const metadata: StagedLocalFile = {
       token: randomUUID(),
       name,
@@ -258,9 +253,8 @@ export function buildOriginalDocumentPreview(
     if (!value) continue
     const normalized = normalizedPreviewValue(value)
     const exact = document.blocks.filter((block) => normalizedPreviewValue(block.text) === normalized)
-    const matchingBlocks = exact.length > 0
-      ? exact
-      : document.blocks.filter((block) => normalizedPreviewValue(block.text).includes(normalized))
+    const matchingBlocks =
+      exact.length > 0 ? exact : document.blocks.filter((block) => normalizedPreviewValue(block.text).includes(normalized))
     const sources = [...new Set(matchingBlocks.map(sourceLabel).filter((label): label is string => Boolean(label)))].slice(0, 12)
     if (sources.length > 0) personalFieldSources[key] = sources
   }
@@ -272,9 +266,8 @@ export function buildOriginalDocumentPreview(
     format: document.source.format,
     size: document.source.size,
     sha256: document.source.sha256,
-    viewMode: document.source.format === 'pdf'
-      ? 'pdf'
-      : ['xlsx', 'xls', 'xlsb'].includes(document.source.format) ? 'spreadsheet' : 'document',
+    viewMode:
+      document.source.format === 'pdf' ? 'pdf' : ['xlsx', 'xls', 'xlsb'].includes(document.source.format) ? 'spreadsheet' : 'document',
     previewUrl: document.source.format === 'pdf' ? pdfPreviewUrl : null,
     sheets: [...sheets.values()],
     pages: [...pages.values()].toSorted((left, right) => left.pageNumber - right.pageNumber),

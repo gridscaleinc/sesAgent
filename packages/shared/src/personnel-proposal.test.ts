@@ -3,13 +3,31 @@ import { generatePersonnelProposal, proposalJapaneseAbility, type ProposalPerson
 
 const person: ProposalPerson = {
   documentId: 'e9aef099-0000-4000-8000-000000000001',
-  fields: [{ key: 'role', value: 'SE' }, { key: 'experience_years', value: '19年' },
+  fields: [
+    { key: 'role', value: 'SE' },
+    { key: 'experience_years', value: '19年' },
     { key: 'skills', value: 'Windows (◎), Linux (◎), Java (◎), Spring Boot (○), MyBatis, Oracle, PostgreSQL, SQL, Git, Eclipse' },
-    { key: 'japanese_level', value: '読む C（ゆっくり対応可） / 書く B（スムーズ対応可） / 会話 C（ゆっくり対応可）' }],
-  projectExperiences: [{ title: '金融システム', technologies: ['Java', 'Spring Boot', 'SQL'], summary: 'Javaを用いた追加機能開発を担当。既存機能の障害原因調査と改修を担当。OracleのSQL作成およびデータ調査を担当。単体テストと結合テストを実施。' },
-    { title: '別案件', technologies: ['Python'], summary: 'Pythonによるデータ分析と研究を担当。' }]
+    { key: 'japanese_level', value: '読む C（ゆっくり対応可） / 書く B（スムーズ対応可） / 会話 C（ゆっくり対応可）' }
+  ],
+  projectExperiences: [
+    {
+      title: '金融システム',
+      technologies: ['Java', 'Spring Boot', 'SQL'],
+      summary:
+        'Javaを用いた追加機能開発を担当。既存機能の障害原因調査と改修を担当。OracleのSQL作成およびデータ調査を担当。単体テストと結合テストを実施。'
+    },
+    { title: '別案件', technologies: ['Python'], summary: 'Pythonによるデータ分析と研究を担当。' }
+  ]
 }
-const job = { fields: [{ key: 'title', value: 'Java追加機能開発・障害改修' }, { key: 'required_skills', value: 'Java、Spring Boot、SQL' }, { key: 'start_date', value: '2026-09-01' }, { key: 'rate', value: '90万円' }, { key: 'location', value: '勝どき' }] }
+const job = {
+  fields: [
+    { key: 'title', value: 'Java追加機能開発・障害改修' },
+    { key: 'required_skills', value: 'Java、Spring Boot、SQL' },
+    { key: 'start_date', value: '2026-09-01' },
+    { key: 'rate', value: '90万円' },
+    { key: 'location', value: '勝どき' }
+  ]
+}
 
 it('renders the SES mail structure and a separate subject without inventing commercial facts', () => {
   const result = generatePersonnelProposal(person, job)
@@ -27,7 +45,12 @@ it('renders the SES mail structure and a separate subject without inventing comm
 })
 
 it('changes project evidence with the case rather than reusing generic match points', () => {
-  const python = generatePersonnelProposal(person, { fields: [{ key: 'title', value: 'Python データ分析' }, { key: 'required_skills', value: 'Python' }] })
+  const python = generatePersonnelProposal(person, {
+    fields: [
+      { key: 'title', value: 'Python データ分析' },
+      { key: 'required_skills', value: 'Python' }
+    ]
+  })
   expect(python.matchPoints).toEqual([])
   expect(python.subject).toContain('Python')
   expect(python.matchPoints.join('')).not.toContain('金融システム')
@@ -41,7 +64,19 @@ it('does not infer fluency or technology tenure from grade letters and overall y
 })
 
 it('preserves explicit negotiable and pending states and generates Chinese with fill-in placeholders', () => {
-  const result = generatePersonnelProposal({ ...person, fields: [...person.fields, { key: 'rate', value: '応相談' }, { key: 'availability', value: '確認中' }, { key: 'work_style', value: '無' }] }, job, 'zh')
+  const result = generatePersonnelProposal(
+    {
+      ...person,
+      fields: [
+        ...person.fields,
+        { key: 'rate', value: '応相談' },
+        { key: 'availability', value: '確認中' },
+        { key: 'work_style', value: '無' }
+      ]
+    },
+    job,
+    'zh'
+  )
   expect(result.text).not.toContain('期望单价：')
   expect(result.text).not.toContain('可入场时间：')
   expect(result.text).not.toContain('工作方式：')

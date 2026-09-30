@@ -56,10 +56,12 @@ describe('external-adoption synthetic parser fixtures', () => {
     expect(result.statistics.sheets).toBe(2)
     expect(result.blocks.some((block) => block.source.sheet === 'Skills' && block.source.cell === 'A3')).toBe(true)
     expect(result.blocks.some((block) => block.source.sheet === 'Projects' && block.source.cell === 'A2')).toBe(true)
-    expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'FORMULA_IGNORED', source: { sheet: 'Skills', cell: 'C5' } }),
-      expect.objectContaining({ code: 'EXTERNAL_LINK_DISCARDED', source: { sheet: 'Skills', cell: 'D5' } })
-    ]))
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'FORMULA_IGNORED', source: { sheet: 'Skills', cell: 'C5' } }),
+        expect.objectContaining({ code: 'EXTERNAL_LINK_DISCARDED', source: { sheet: 'Skills', cell: 'D5' } })
+      ])
+    )
     expect(result.security).toEqual({ externalContentLoaded: false, macrosExecuted: false, rawFileCloudEligible: false })
   })
 

@@ -3,7 +3,8 @@ import { extractInterviewQuestions } from './interview-question-parser'
 
 describe('extractInterviewQuestions', () => {
   it('extracts numbered questions even when the model joins every item onto one line', () => {
-    const response = '以下是根据候选人档案、项目经历和面试目标生成的8个面试问题，每行一个：\n\n1.你在商取引应用后台系统中参与了微服务化改造，请具体说明拆分原则和通信方式？2.在财务报表系统中你负责技术方针制定，请说明选择PostgreSQL与Spring Boot的标准？3.你具备19年开发经验，请描述如何与日本客户确认需求？4.在勤怠管理系统中你负责测试，请说明缺陷管理流程？5.在SWIFT结算系统中你涉及监管对应，请说明如何确保消息转换准确性？6.你在多个项目中担任TL角色，请举例如何协调技术分歧？7.请结合实际案例说明如何优化复杂查询性能？8.你的简历中React标记为△，请说明你如何决定是否采用React？'
+    const response =
+      '以下是根据候选人档案、项目经历和面试目标生成的8个面试问题，每行一个：\n\n1.你在商取引应用后台系统中参与了微服务化改造，请具体说明拆分原则和通信方式？2.在财务报表系统中你负责技术方针制定，请说明选择PostgreSQL与Spring Boot的标准？3.你具备19年开发经验，请描述如何与日本客户确认需求？4.在勤怠管理系统中你负责测试，请说明缺陷管理流程？5.在SWIFT结算系统中你涉及监管对应，请说明如何确保消息转换准确性？6.你在多个项目中担任TL角色，请举例如何协调技术分歧？7.请结合实际案例说明如何优化复杂查询性能？8.你的简历中React标记为△，请说明你如何决定是否采用React？'
 
     const questions = extractInterviewQuestions(response)
 

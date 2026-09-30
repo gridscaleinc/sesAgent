@@ -18,13 +18,19 @@ export function validateWorkRuleAnalysis(raw: unknown, source: string): WorkRule
   const issues = [...value.issues]
   const clauses = value.clauses.filter((clause) => {
     let error: string | null = null
-    if (!source.includes(clause.sourceQuote) || clause.caseKeywords.some((word) => !clause.sourceQuote.includes(word))) error = '规则缺少原文依据，请重新描述。 / 原文の根拠がありません。'
-    if (clause.kind === 'required' && !/必须|必需|必須|必要|限定|must|required|不可欠/iu.test(clause.sourceQuote)) error = '优先或模糊条件不能自动成为必需条件。 / 優先条件を必須条件に変更できません。'
+    if (!source.includes(clause.sourceQuote) || clause.caseKeywords.some((word) => !clause.sourceQuote.includes(word)))
+      error = '规则缺少原文依据，请重新描述。 / 原文の根拠がありません。'
+    if (clause.kind === 'required' && !/必须|必需|必須|必要|限定|must|required|不可欠/iu.test(clause.sourceQuote))
+      error = '优先或模糊条件不能自动成为必需条件。 / 優先条件を必須条件に変更できません。'
     const numbers = clause.text.normalize('NFKC').match(/\d+(?:\.\d+)?/gu) ?? []
     const sourceNumbers = new Set(clause.sourceQuote.normalize('NFKC').match(/\d+(?:\.\d+)?/gu) ?? [])
     if (numbers.some((number) => !sourceNumbers.has(number))) error = '规则中的数值没有原文依据。 / 数値の根拠がありません。'
-    if (['required', 'preferred'].includes(clause.kind) !== (clause.field !== null)) error = '规则类型与字段不一致，请重试。 / ルールの種類と項目が一致しません。'
-    if (error) { issues.push(error); return false }
+    if (['required', 'preferred'].includes(clause.kind) !== (clause.field !== null))
+      error = '规则类型与字段不一致，请重试。 / ルールの種類と項目が一致しません。'
+    if (error) {
+      issues.push(error)
+      return false
+    }
     return true
   })
   return { clauses, issues: [...new Set(issues)].slice(0, 12) }

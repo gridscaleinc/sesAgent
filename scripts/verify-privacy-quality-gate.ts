@@ -20,21 +20,36 @@ const datasetSchema = z.object({
     residualLeakCount: z.literal(0),
     safeCaseFalsePositiveCount: z.literal(0)
   }),
-  cases: z.array(z.object({
-    id: z.string().regex(/^[a-z0-9-]+$/u),
-    text: z.string().min(1).max(2_000),
-    expected: z.array(expectedIdentifierSchema).min(1).max(20)
-  })).min(20).max(100),
-  safeCases: z.array(z.object({
-    id: z.string().regex(/^[a-z0-9-]+$/u),
-    text: z.string().min(1).max(2_000)
-  })).min(5).max(50),
-  blockedCases: z.array(z.object({
-    id: z.string().regex(/^[a-z0-9-]+$/u),
-    text: z.string().min(1).max(2_000),
-    reason: z.string().min(1).max(100),
-    mediaRisk: z.enum(['face_or_photo', 'signature', 'identifying_qr_code']).optional()
-  })).min(4).max(20)
+  cases: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9-]+$/u),
+        text: z.string().min(1).max(2_000),
+        expected: z.array(expectedIdentifierSchema).min(1).max(20)
+      })
+    )
+    .min(20)
+    .max(100),
+  safeCases: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9-]+$/u),
+        text: z.string().min(1).max(2_000)
+      })
+    )
+    .min(5)
+    .max(50),
+  blockedCases: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9-]+$/u),
+        text: z.string().min(1).max(2_000),
+        reason: z.string().min(1).max(100),
+        mediaRisk: z.enum(['face_or_photo', 'signature', 'identifying_qr_code']).optional()
+      })
+    )
+    .min(4)
+    .max(20)
 })
 
 const root = resolve(import.meta.dirname, '..')
@@ -135,7 +150,8 @@ if (process.platform === 'darwin') {
 
 const identifierRecall = expectedIdentifiers === 0 ? 0 : detectedIdentifiers / expectedIdentifiers
 const redactionPrecision = mappingCount === 0 ? 0 : expectedMappingCount / mappingCount
-const releaseEligible = failures.length === 0 &&
+const releaseEligible =
+  failures.length === 0 &&
   identifierRecall >= dataset.thresholds.identifierRecall &&
   redactionPrecision >= dataset.thresholds.redactionPrecision &&
   residualLeakCount <= dataset.thresholds.residualLeakCount &&
@@ -171,10 +187,9 @@ const report = {
 }
 
 await mkdir(resolve(root, 'build/privacy-verification'), { recursive: true })
-await writeFile(
-  resolve(root, 'build/privacy-verification/privacy-quality-report.json'),
-  `${JSON.stringify(report, null, 2)}\n`,
-  { encoding: 'utf8', mode: 0o600 }
-)
+await writeFile(resolve(root, 'build/privacy-verification/privacy-quality-report.json'), `${JSON.stringify(report, null, 2)}\n`, {
+  encoding: 'utf8',
+  mode: 0o600
+})
 process.stdout.write(`${JSON.stringify(report)}\n`)
 if (!releaseEligible) process.exit(1)

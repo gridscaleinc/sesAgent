@@ -36,7 +36,12 @@ export interface CandidateExtractionField {
 }
 
 export interface CandidateExtractionDraft {
-  version: 'candidate-extraction-v1' | 'candidate-extraction-v2' | 'candidate-extraction-v3' | 'candidate-extraction-v4' | 'candidate-extraction-v5'
+  version:
+    | 'candidate-extraction-v1'
+    | 'candidate-extraction-v2'
+    | 'candidate-extraction-v3'
+    | 'candidate-extraction-v4'
+    | 'candidate-extraction-v5'
   documentId: string
   extractor: 'deterministic-local-v1' | 'deterministic-local-v2' | 'deterministic-local-v3' | 'deterministic-local-v4'
   localPersonalDetails: LocalCandidatePersonalDetails
@@ -95,7 +100,13 @@ const candidateProjectExperienceDraftSchema = z.object({
 })
 
 export const candidateExtractionDraftSchema: z.ZodType<CandidateExtractionDraft> = z.object({
-  version: z.enum(['candidate-extraction-v1', 'candidate-extraction-v2', 'candidate-extraction-v3', 'candidate-extraction-v4', 'candidate-extraction-v5']),
+  version: z.enum([
+    'candidate-extraction-v1',
+    'candidate-extraction-v2',
+    'candidate-extraction-v3',
+    'candidate-extraction-v4',
+    'candidate-extraction-v5'
+  ]),
   documentId: z.string().uuid(),
   extractor: z.enum(['deterministic-local-v1', 'deterministic-local-v2', 'deterministic-local-v3', 'deterministic-local-v4']),
   localPersonalDetails: localCandidatePersonalDetailsSchema.default({
@@ -179,7 +190,9 @@ function queryTerms(query: string): string[] {
 
 /** The must-have terms: everything except the 尚可 tokens. */
 export function candidateSearchTerms(query: string): string[] {
-  const terms = queryTerms(query).filter((term) => !term.startsWith(preferredSearchTermPrefix) && !/(?:自社|貴社|御社|自己公司|本公司)/u.test(term))
+  const terms = queryTerms(query).filter(
+    (term) => !term.startsWith(preferredSearchTermPrefix) && !/(?:自社|貴社|御社|自己公司|本公司)/u.test(term)
+  )
   return requiresOwnCompany(query) ? [...terms, '自社限定'] : terms
 }
 
@@ -189,10 +202,14 @@ export function candidateSearchTerms(query: string): string[] {
  * matching only these terms is not ranked.
  */
 export function candidatePreferredSearchTerms(query: string): string[] {
-  return [...new Set(queryTerms(query)
-    .filter((term) => term.startsWith(preferredSearchTermPrefix))
-    .map((term) => term.slice(preferredSearchTermPrefix.length).trim())
-    .filter((term) => term.length >= 2 && !isHardFilterTerm(term)))]
+  return [
+    ...new Set(
+      queryTerms(query)
+        .filter((term) => term.startsWith(preferredSearchTermPrefix))
+        .map((term) => term.slice(preferredSearchTermPrefix.length).trim())
+        .filter((term) => term.length >= 2 && !isHardFilterTerm(term))
+    )
+  ]
 }
 
 /**
@@ -245,7 +262,11 @@ export function projectExperienceEmbeddingText(project: CandidateProjectExperien
     project.role ? `役割: ${project.role}` : null,
     project.technologies.length > 0 ? `技術: ${project.technologies.join(', ')}` : null,
     `内容: ${project.summary}`
-  ].filter(Boolean).join('\n').normalize('NFKC').slice(0, 6_000)
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .normalize('NFKC')
+    .slice(0, 6_000)
 }
 
 export function cosineSimilarity(left: number[], right: number[]): number {
@@ -260,9 +281,7 @@ export function cosineSimilarity(left: number[], right: number[]): number {
   return score
 }
 
-const lexicalStopWords = new Set([
-  '候補', '候補者', '人材', '探す', '検索', '経験', 'できる', 'したい', 'ください', '可能'
-])
+const lexicalStopWords = new Set(['候補', '候補者', '人材', '探す', '検索', '経験', 'できる', 'したい', 'ください', '可能'])
 
 export function tokenizeCandidateSearchText(text: string): string[] {
   const normalized = text.normalize('NFKC').toLocaleLowerCase('ja-JP')
@@ -335,14 +354,12 @@ function candidateBm25Scores(documents: CandidateBm25Document[], query: string):
   for (const token of queryTokens) {
     const documentFrequency = documents.filter((document) => document.termFrequency.has(token)).length
     if (documentFrequency === 0) continue
-    const inverseDocumentFrequency = Math.log(
-      1 + (documents.length - documentFrequency + 0.5) / (documentFrequency + 0.5)
-    )
+    const inverseDocumentFrequency = Math.log(1 + (documents.length - documentFrequency + 0.5) / (documentFrequency + 0.5))
     for (const document of documents) {
       const frequency = document.termFrequency.get(token) ?? 0
       if (frequency <= 0) continue
-      const normalization = frequency + k1 * (1 - b + b * document.length / averageLength)
-      const contribution = inverseDocumentFrequency * (frequency * (k1 + 1)) / normalization
+      const normalization = frequency + k1 * (1 - b + (b * document.length) / averageLength)
+      const contribution = (inverseDocumentFrequency * (frequency * (k1 + 1))) / normalization
       scores.set(document.profile.id, (scores.get(document.profile.id) ?? 0) + contribution)
     }
   }
@@ -352,13 +369,15 @@ function candidateBm25Scores(documents: CandidateBm25Document[], query: string):
 type CandidateHardFilter = CandidateProfileSearchResult['retrieval']['hardFilters'][number]
 
 function candidateFieldValue(profile: CandidateProfile, key: CandidateFieldKey): string | null {
-  return profile.fields.find((field) => field.key === key)?.value?.normalize('NFKC').trim() || null
+  return (
+    profile.fields
+      .find((field) => field.key === key)
+      ?.value?.normalize('NFKC')
+      .trim() || null
+  )
 }
 
-function hardFilterOutcome(
-  actual: string | null,
-  predicate: (value: string) => boolean | null
-): CandidateHardFilter['outcome'] {
+function hardFilterOutcome(actual: string | null, predicate: (value: string) => boolean | null): CandidateHardFilter['outcome'] {
   if (!actual) return 'unknown'
   const result = predicate(actual)
   return result === null ? 'unknown' : result ? 'passed' : 'failed'
@@ -369,9 +388,7 @@ function requestedMaximumRate(term: string): number | null {
   const range = normalized.match(/^(\d{2,3})(?:〜|~|-)(\d{2,3})万円$/u)
   if (range) return Number(range[2])
   const maximum = normalized.match(/^(?:上限)?(\d{2,3})万円(?:以下)?$/u)
-  return maximum && (normalized.startsWith('上限') || normalized.endsWith('以下'))
-    ? Number(maximum[1])
-    : null
+  return maximum && (normalized.startsWith('上限') || normalized.endsWith('以下')) ? Number(maximum[1]) : null
 }
 
 function candidateRateRange(value: string): { minimum: number; maximum: number } | null {
@@ -542,9 +559,9 @@ function coarseCandidateLocationDescriptors(value: string): CoarseLocationDescri
       { macro: 'kyushu', place: null, broad: true }
     ]
   }
-  return coarseLocationAliases.flatMap((alias) => alias.pattern.test(normalized)
-    ? [{ macro: alias.macro, place: alias.place, broad: alias.broad ?? false }]
-    : [])
+  return coarseLocationAliases.flatMap((alias) =>
+    alias.pattern.test(normalized) ? [{ macro: alias.macro, place: alias.place, broad: alias.broad ?? false }] : []
+  )
 }
 
 export function coarseCandidateLocationMeets(actual: string, requested: string): boolean | null {
@@ -555,10 +572,16 @@ export function coarseCandidateLocationMeets(actual: string, requested: string):
   const actualLocations = coarseCandidateLocationDescriptors(normalizedActual)
   const requestedLocations = coarseCandidateLocationDescriptors(normalizedRequested)
   if (actualLocations.length === 0 || requestedLocations.length === 0) return null
-  if (requestedLocations.some((requestedLocation) => actualLocations.some((actualLocation) =>
-    actualLocation.macro === requestedLocation.macro &&
-    (actualLocation.broad || (actualLocation.place !== null && actualLocation.place === requestedLocation.place))
-  ))) return true
+  if (
+    requestedLocations.some((requestedLocation) =>
+      actualLocations.some(
+        (actualLocation) =>
+          actualLocation.macro === requestedLocation.macro &&
+          (actualLocation.broad || (actualLocation.place !== null && actualLocation.place === requestedLocation.place))
+      )
+    )
+  )
+    return true
   const actualMacros = new Set(actualLocations.map((location) => location.macro))
   const requestedMacros = new Set(requestedLocations.map((location) => location.macro))
   if ([...actualMacros].every((macro) => !requestedMacros.has(macro))) return false
@@ -587,7 +610,7 @@ function workAuthorizationRequirement(term: string): string | null {
 
 function workAuthorizationMeets(actual: string, requested: string): boolean | null {
   const category = (candidateWorkAuthorizationValues as readonly string[]).includes(actual)
-    ? actual as CandidateWorkAuthorization
+    ? (actual as CandidateWorkAuthorization)
     : normalizeCandidateWorkAuthorization(actual)
   if (!category) return null
   if (category === '就労不可') return false
@@ -613,20 +636,27 @@ export function scorableCandidateSearchTerms(query: string): string[] {
 
 function isHardFilterTerm(term: string): boolean {
   const normalized = term.normalize('NFKC').trim()
-  return /^(?:\d+(?:\.\d+)?)年以上$/u.test(normalized) ||
+  return (
+    /^(?:\d+(?:\.\d+)?)年以上$/u.test(normalized) ||
     requestedMaximumRate(normalized) !== null ||
     /^(?:(?:20\d{2})年)?(?:1[0-2]|0?[1-9])月$/u.test(normalized) ||
     /^(?:週\d日(?:リモート|在宅)|フルリモート|リモート可|常駐)$/u.test(normalized) ||
     japaneseLevelRequirement(normalized) !== null ||
     locationRequirement(normalized) !== null ||
-    workAuthorizationRequirement(normalized) !== null || normalized === '自社限定'
+    workAuthorizationRequirement(normalized) !== null ||
+    normalized === '自社限定'
+  )
 }
 
 function hardFilterForTerm(profile: CandidateProfile, term: string): CandidateHardFilter | null {
   const normalized = term.normalize('NFKC').trim()
-  if (normalized === '自社限定') return { type: 'own-company', requested: term,
-    actual: profile.isOwnCompany === true ? '自社' : profile.isOwnCompany === false ? '非自社' : null,
-    outcome: profile.isOwnCompany === true ? 'passed' : 'failed' }
+  if (normalized === '自社限定')
+    return {
+      type: 'own-company',
+      requested: term,
+      actual: profile.isOwnCompany === true ? '自社' : profile.isOwnCompany === false ? '非自社' : null,
+      outcome: profile.isOwnCompany === true ? 'passed' : 'failed'
+    }
   const requestedYears = normalized.match(/^(\d+(?:\.\d+)?)年以上$/u)?.[1]
   if (requestedYears) {
     const actual = candidateFieldValue(profile, 'experience_years')
@@ -721,11 +751,7 @@ export function candidateHardFilterEvidence(
   return hardFilterEvidence(profile, candidateSearchTerms(query))
 }
 
-function fieldMatchesTermLexically(
-  document: CandidateBm25Document,
-  field: CandidateProfile['fields'][number],
-  term: string
-): boolean {
+function fieldMatchesTermLexically(document: CandidateBm25Document, field: CandidateProfile['fields'][number], term: string): boolean {
   if (!field.value) return false
   if (fieldMatchStrength(field.value, term, field.key) > 0) return true
   const termTokens = [...new Set(tokenizeCandidateSearchText(term))]
@@ -736,11 +762,7 @@ function fieldMatchesTermLexically(
   return overlap >= Math.max(1, requiredOverlap)
 }
 
-function projectMatchesTermLexically(
-  document: CandidateBm25Document,
-  project: CandidateProjectExperience,
-  term: string
-): boolean {
+function projectMatchesTermLexically(document: CandidateBm25Document, project: CandidateProjectExperience, term: string): boolean {
   const normalizedText = projectExperienceEmbeddingText(project)
   if (fieldMatchStrength(normalizedText, term) > 0) return true
   const termTokens = [...new Set(tokenizeCandidateSearchText(term))]
@@ -779,49 +801,53 @@ export function searchConfirmedCandidateProfiles(
   const documents = buildCandidateBm25Documents(profiles)
   const bm25Scores = candidateBm25Scores(documents, bm25QueryText(query))
   const preferredTerms = candidatePreferredSearchTerms(query)
-  const candidates = documents
-    .flatMap((document) => {
-      const hardFilters = hardFilterEvidence(document.profile, terms)
-      if (hardFilters.some((filter) => filter.type === 'own-company' && filter.outcome !== 'passed')) return []
-      if (!includeNonMatches && hardFilters.some((filter) => filter.outcome === 'failed')) return []
-      const evidence = document.profile.fields.filter((field) =>
-        field.value && terms.some((term) => fieldMatchesTermLexically(document, field, term))
-      )
-      const projectMatches = document.profile.projectExperiences.map((project) => ({
+  const candidates = documents.flatMap((document) => {
+    const hardFilters = hardFilterEvidence(document.profile, terms)
+    if (hardFilters.some((filter) => filter.type === 'own-company' && filter.outcome !== 'passed')) return []
+    if (!includeNonMatches && hardFilters.some((filter) => filter.outcome === 'failed')) return []
+    const evidence = document.profile.fields.filter(
+      (field) => field.value && terms.some((term) => fieldMatchesTermLexically(document, field, term))
+    )
+    const projectMatches = document.profile.projectExperiences
+      .map((project) => ({
         project,
         matchedTerms: terms.filter((term) => projectMatchesTermLexically(document, project, term))
-      })).filter((match) => match.matchedTerms.length > 0)
-      const lexicalProject = projectMatches.toSorted((a, b) =>
-        b.matchedTerms.length - a.matchedTerms.length || a.project.id.localeCompare(b.project.id)
-      )[0]
-      const matchedTerms = terms.filter((term) =>
+      }))
+      .filter((match) => match.matchedTerms.length > 0)
+    const lexicalProject = projectMatches.toSorted(
+      (a, b) => b.matchedTerms.length - a.matchedTerms.length || a.project.id.localeCompare(b.project.id)
+    )[0]
+    const matchedTerms = terms.filter(
+      (term) =>
         hardFilters.some((filter) => filter.requested === term && filter.outcome === 'passed') ||
         document.profile.fields.some((field) => fieldMatchesTermLexically(document, field, term)) ||
         document.profile.projectExperiences.some((project) => projectMatchesTermLexically(document, project, term))
-      )
-      const matchStrength = terms.length === 0
+    )
+    const matchStrength =
+      terms.length === 0
         ? null
         : terms.reduce((total, term) => {
             const best = Math.max(
               0,
-              ...document.profile.fields.map((field) => field.value ? fieldMatchStrength(field.value, term, field.key) : 0),
-              ...document.profile.projectExperiences.map((project) =>
-                projectMatchesTermLexically(document, project, term) ? 0.8 : 0
-              )
+              ...document.profile.fields.map((field) => (field.value ? fieldMatchStrength(field.value, term, field.key) : 0)),
+              ...document.profile.projectExperiences.map((project) => (projectMatchesTermLexically(document, project, term) ? 0.8 : 0))
             )
             return total + (best > 0 ? best : matchedTerms.includes(term) ? 0.6 : 0)
           }, 0) / terms.length
-      const bm25Score = bm25Scores.get(document.profile.id) ?? 0
-      const preferredMatched = preferredTerms.filter((term) =>
+    const bm25Score = bm25Scores.get(document.profile.id) ?? 0
+    const preferredMatched = preferredTerms.filter(
+      (term) =>
         document.profile.fields.some((field) => fieldMatchesTermLexically(document, field, term)) ||
         document.profile.projectExperiences.some((project) => projectMatchesTermLexically(document, project, term))
-      )
-      // Nice-to-have coverage is worth up to 15 points on top of the must-have
-      // strength; it can lift a candidate but never make one from nothing.
-      const scoredStrength = matchStrength === null || preferredTerms.length === 0
+    )
+    // Nice-to-have coverage is worth up to 15 points on top of the must-have
+    // strength; it can lift a candidate but never make one from nothing.
+    const scoredStrength =
+      matchStrength === null || preferredTerms.length === 0
         ? matchStrength
         : matchStrength * 0.85 + (preferredMatched.length / preferredTerms.length) * 0.15
-      return [{
+    return [
+      {
         id: document.profile.id,
         sourceDocumentId: document.profile.sourceDocumentId,
         version: document.profile.profileVersion,
@@ -836,12 +862,14 @@ export function searchConfirmedCandidateProfiles(
         matchScore: scoredStrength === null ? null : Math.round(scoredStrength * 100),
         matchedTerms: [...matchedTerms, ...preferredMatched.map((term) => `${preferredSearchTermPrefix}${term}`)],
         evidence,
-        projectEvidence: lexicalProject ? {
-          ...lexicalProject.project,
-          matchType: 'lexical' as const,
-          matchedTerms: lexicalProject.matchedTerms,
-          vectorScore: null
-        } : null,
+        projectEvidence: lexicalProject
+          ? {
+              ...lexicalProject.project,
+              matchType: 'lexical' as const,
+              matchedTerms: lexicalProject.matchedTerms,
+              vectorScore: null
+            }
+          : null,
         retrieval: {
           strategy: 'hard-filter-bm25-v1' as const,
           hardFilterPolicyVersion: 'tri-state-v3' as const,
@@ -854,26 +882,29 @@ export function searchConfirmedCandidateProfiles(
           preRerankRank: null,
           rerankerRank: null,
           rank: null,
-          termCoverage: terms.length === 0 ? null : Math.round(matchedTerms.length / terms.length * 100),
+          termCoverage: terms.length === 0 ? null : Math.round((matchedTerms.length / terms.length) * 100),
           indexedFieldCount: document.indexedFieldCount,
           hardFilters
         }
-      }]
-    })
+      }
+    ]
+  })
   if (terms.length === 0) {
-    return candidates
-      .toSorted((a, b) => b.confirmedAt.localeCompare(a.confirmedAt))
-      .slice(0, Math.max(1, Math.min(100, maxResults)))
+    return candidates.toSorted((a, b) => b.confirmedAt.localeCompare(a.confirmedAt)).slice(0, Math.max(1, Math.min(100, maxResults)))
   }
   const structuredOnlyQuery = terms.length > 0 && terms.every(isHardFilterTerm)
   const lexicalRanking = candidates
-    .filter((result) => includeNonMatches || result.matchedTerms.some((term) => !term.startsWith(preferredSearchTermPrefix)) || structuredOnlyQuery)
-    .toSorted((a, b) =>
-      a.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length -
-        b.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length ||
-      (b.retrieval.bm25Score ?? 0) - (a.retrieval.bm25Score ?? 0) ||
-      (b.matchScore ?? 0) - (a.matchScore ?? 0) ||
-      b.confirmedAt.localeCompare(a.confirmedAt)
+    .filter(
+      (result) =>
+        includeNonMatches || result.matchedTerms.some((term) => !term.startsWith(preferredSearchTermPrefix)) || structuredOnlyQuery
+    )
+    .toSorted(
+      (a, b) =>
+        a.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length -
+          b.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length ||
+        (b.retrieval.bm25Score ?? 0) - (a.retrieval.bm25Score ?? 0) ||
+        (b.matchScore ?? 0) - (a.matchScore ?? 0) ||
+        b.confirmedAt.localeCompare(a.confirmedAt)
     )
   if (!vectorScores) {
     return lexicalRanking
@@ -902,33 +933,36 @@ export function searchConfirmedCandidateProfiles(
       const combinedProjectEvidence = semanticProject
         ? {
             ...semanticProject,
-            matchType: result.projectEvidence?.id === semanticProject.id ? 'hybrid' as const : 'semantic' as const,
-            matchedTerms: result.projectEvidence?.id === semanticProject.id
-              ? [...new Set([...result.projectEvidence.matchedTerms, ...semanticProject.matchedTerms])]
-              : semanticProject.matchedTerms
+            matchType: result.projectEvidence?.id === semanticProject.id ? ('hybrid' as const) : ('semantic' as const),
+            matchedTerms:
+              result.projectEvidence?.id === semanticProject.id
+                ? [...new Set([...result.projectEvidence.matchedTerms, ...semanticProject.matchedTerms])]
+                : semanticProject.matchedTerms
           }
         : result.projectEvidence
-      const fusionScore = (bm25Rank === null ? 0 : 1 / (rrfK + bm25Rank)) +
-        (vectorRank === null ? 0 : 1 / (rrfK + vectorRank))
-      return [{
-        ...result,
-        projectEvidence: combinedProjectEvidence,
-        matchScore: result.matchScore ?? (vectorScore === null ? null : Math.round(vectorScore * 100)),
-        retrieval: {
-          ...result.retrieval,
-          strategy: 'hard-filter-hybrid-rrf-v1' as const,
-          vectorScore: vectorScore === null ? null : Math.round(vectorScore * 10_000) / 10_000,
-          fusionScore: Math.round(fusionScore * 1_000_000) / 1_000_000,
-          bm25Rank,
-          vectorRank
+      const fusionScore = (bm25Rank === null ? 0 : 1 / (rrfK + bm25Rank)) + (vectorRank === null ? 0 : 1 / (rrfK + vectorRank))
+      return [
+        {
+          ...result,
+          projectEvidence: combinedProjectEvidence,
+          matchScore: result.matchScore ?? (vectorScore === null ? null : Math.round(vectorScore * 100)),
+          retrieval: {
+            ...result.retrieval,
+            strategy: 'hard-filter-hybrid-rrf-v1' as const,
+            vectorScore: vectorScore === null ? null : Math.round(vectorScore * 10_000) / 10_000,
+            fusionScore: Math.round(fusionScore * 1_000_000) / 1_000_000,
+            bm25Rank,
+            vectorRank
+          }
         }
-      }]
+      ]
     })
-    .toSorted((a, b) =>
-      (b.retrieval.fusionScore ?? 0) - (a.retrieval.fusionScore ?? 0) ||
-      (b.retrieval.vectorScore ?? 0) - (a.retrieval.vectorScore ?? 0) ||
-      (b.retrieval.bm25Score ?? 0) - (a.retrieval.bm25Score ?? 0) ||
-      b.confirmedAt.localeCompare(a.confirmedAt)
+    .toSorted(
+      (a, b) =>
+        (b.retrieval.fusionScore ?? 0) - (a.retrieval.fusionScore ?? 0) ||
+        (b.retrieval.vectorScore ?? 0) - (a.retrieval.vectorScore ?? 0) ||
+        (b.retrieval.bm25Score ?? 0) - (a.retrieval.bm25Score ?? 0) ||
+        b.confirmedAt.localeCompare(a.confirmedAt)
     )
     .map((result, index) => ({
       ...result,
@@ -946,9 +980,7 @@ export function evaluateCandidateRetrieval(
   let retrievedRelevantCandidates = 0
   for (const testCase of cases) {
     const relevant = new Set(testCase.relevantSourceDocumentIds)
-    const retrieved = new Set(
-      searchConfirmedCandidateProfiles(profiles, testCase.query, k).map((result) => result.sourceDocumentId)
-    )
+    const retrieved = new Set(searchConfirmedCandidateProfiles(profiles, testCase.query, k).map((result) => result.sourceDocumentId))
     relevantCandidates += relevant.size
     retrievedRelevantCandidates += [...relevant].filter((id) => retrieved.has(id)).length
   }
@@ -965,11 +997,11 @@ function normalizedMetric(value: number): number {
 }
 
 function binaryNdcgAt20(results: CandidateProfileSearchResult[], relevantLabels: ReadonlySet<string>): number {
-  const dcg = results.slice(0, 20).reduce((score, result, index) =>
-    score + (relevantLabels.has(result.anonymousLabel) ? 1 / Math.log2(index + 2) : 0), 0)
+  const dcg = results
+    .slice(0, 20)
+    .reduce((score, result, index) => score + (relevantLabels.has(result.anonymousLabel) ? 1 / Math.log2(index + 2) : 0), 0)
   const idealCount = Math.min(20, relevantLabels.size)
-  const idcg = Array.from({ length: idealCount }, (_, index) => 1 / Math.log2(index + 2))
-    .reduce((score, gain) => score + gain, 0)
+  const idcg = Array.from({ length: idealCount }, (_, index) => 1 / Math.log2(index + 2)).reduce((score, gain) => score + gain, 0)
   return idcg === 0 ? 0 : dcg / idcg
 }
 
@@ -998,9 +1030,7 @@ export async function evaluateSesCandidateBenchmark(
     const relevant = new Set(testCase.relevantCandidateLabels)
     const expectedProject = new Set(testCase.expectedProjectEvidenceLabels)
     const retrievedRelevant = results.filter((result) => relevant.has(result.anonymousLabel))
-    const matchedProjects = results.filter((result) =>
-      expectedProject.has(result.anonymousLabel) && result.projectEvidence !== null
-    ).length
+    const matchedProjects = results.filter((result) => expectedProject.has(result.anonymousLabel) && result.projectEvidence !== null).length
     const missingCandidateLabels = testCase.relevantCandidateLabels.filter((label) => !availableCandidateLabels.has(label))
     const recall = retrievedRelevant.length / relevant.size
     const ndcg = binaryNdcgAt20(results, relevant)
@@ -1030,20 +1060,22 @@ export async function evaluateSesCandidateBenchmark(
     ndcgAt20: normalizedMetric(ndcgTotal / benchmark.cases.length),
     expectedProjectEvidence,
     matchedProjectEvidence,
-    projectEvidenceCoverageAt20: expectedProjectEvidence === 0
-      ? null
-      : normalizedMetric(matchedProjectEvidence / expectedProjectEvidence),
+    projectEvidenceCoverageAt20: expectedProjectEvidence === 0 ? null : normalizedMetric(matchedProjectEvidence / expectedProjectEvidence),
     missingCandidateReferences: cases.reduce((total, result) => total + result.missingCandidateLabels.length, 0)
   }
-  const metricThresholdsPassed = metrics.recallAt20 >= benchmark.thresholds.recallAt20 &&
+  const metricThresholdsPassed =
+    metrics.recallAt20 >= benchmark.thresholds.recallAt20 &&
     metrics.ndcgAt20 >= benchmark.thresholds.ndcgAt20 &&
     (metrics.projectEvidenceCoverageAt20 === null ||
       metrics.projectEvidenceCoverageAt20 >= benchmark.thresholds.projectEvidenceCoverageAt20)
-  const status: CandidateEvaluationReport['status'] = metrics.missingCandidateReferences > 0
-    ? 'invalid-references'
-    : metrics.caseCount < benchmark.thresholds.minimumCases
-      ? 'insufficient-cases'
-      : metricThresholdsPassed ? 'passed' : 'failed'
+  const status: CandidateEvaluationReport['status'] =
+    metrics.missingCandidateReferences > 0
+      ? 'invalid-references'
+      : metrics.caseCount < benchmark.thresholds.minimumCases
+        ? 'insufficient-cases'
+        : metricThresholdsPassed
+          ? 'passed'
+          : 'failed'
   return {
     version: 'candidate-evaluation-report-v1',
     id: randomUUID(),
@@ -1102,20 +1134,22 @@ export interface LocalHybridCandidateRetrievalOptions {
 }
 
 export function candidateProfileRerankerText(profile: CandidateProfile): string {
-  return [
-    candidateProfileEmbeddingText(profile),
-    ...profile.projectExperiences.map(projectExperienceEmbeddingText)
-  ].filter(Boolean).join('\n\n').slice(0, 6_000)
+  return [candidateProfileEmbeddingText(profile), ...profile.projectExperiences.map(projectExperienceEmbeddingText)]
+    .filter(Boolean)
+    .join('\n\n')
+    .slice(0, 6_000)
 }
 
 export function applyLocalRerankerScores(
   results: CandidateProfileSearchResult[],
   scores: ReadonlyMap<string, number>
 ): CandidateProfileSearchResult[] {
-  const scored = results.filter((result) => Number.isFinite(scores.get(result.id)))
-    .toSorted((left, right) =>
-      scores.get(right.id)! - scores.get(left.id)! ||
-      (left.retrieval.rank ?? Number.MAX_SAFE_INTEGER) - (right.retrieval.rank ?? Number.MAX_SAFE_INTEGER)
+  const scored = results
+    .filter((result) => Number.isFinite(scores.get(result.id)))
+    .toSorted(
+      (left, right) =>
+        scores.get(right.id)! - scores.get(left.id)! ||
+        (left.retrieval.rank ?? Number.MAX_SAFE_INTEGER) - (right.retrieval.rank ?? Number.MAX_SAFE_INTEGER)
     )
   const rerankerRanks = new Map(scored.map((result, index) => [result.id, index + 1]))
   const ordered = [...scored, ...results.filter((result) => !rerankerRanks.has(result.id))]
@@ -1148,11 +1182,7 @@ export class LocalHybridCandidateRetrieval {
     this.maximumRerankCandidates = options.maximumRerankCandidates ?? 20
   }
 
-  async search(
-    profiles: CandidateProfile[],
-    query: string,
-    maxResults = 30
-  ): Promise<CandidateProfileSearchResult[]> {
+  async search(profiles: CandidateProfile[], query: string, maxResults = 30): Promise<CandidateProfileSearchResult[]> {
     if (candidateSearchTerms(query).length === 0) {
       return searchConfirmedCandidateProfiles(profiles, query, maxResults)
     }
@@ -1164,23 +1194,29 @@ export class LocalHybridCandidateRetrieval {
     if (queryTerms.every(isHardFilterTerm)) {
       return searchConfirmedCandidateProfiles(eligibleProfiles, query, maxResults)
     }
-    const profileDocuments = eligibleProfiles.map((profile) => {
-      const text = candidateProfileEmbeddingText(profile)
-      return {
-        profile,
-        text,
-        contentHash: createHash('sha256').update(text, 'utf8').digest('hex')
-      }
-    }).filter((document) => document.text.length > 0)
-    const projectDocuments = eligibleProfiles.flatMap((profile) => profile.projectExperiences.map((project) => {
-      const text = projectExperienceEmbeddingText(project)
-      return {
-        profile,
-        project,
-        text,
-        contentHash: createHash('sha256').update(text, 'utf8').digest('hex')
-      }
-    }).filter((document) => document.text.length > 0))
+    const profileDocuments = eligibleProfiles
+      .map((profile) => {
+        const text = candidateProfileEmbeddingText(profile)
+        return {
+          profile,
+          text,
+          contentHash: createHash('sha256').update(text, 'utf8').digest('hex')
+        }
+      })
+      .filter((document) => document.text.length > 0)
+    const projectDocuments = eligibleProfiles.flatMap((profile) =>
+      profile.projectExperiences
+        .map((project) => {
+          const text = projectExperienceEmbeddingText(project)
+          return {
+            profile,
+            project,
+            text,
+            contentHash: createHash('sha256').update(text, 'utf8').digest('hex')
+          }
+        })
+        .filter((document) => document.text.length > 0)
+    )
     if (profileDocuments.length === 0 && projectDocuments.length === 0) {
       return searchConfirmedCandidateProfiles(eligibleProfiles, query, maxResults)
     }
@@ -1253,10 +1289,7 @@ export class LocalHybridCandidateRetrieval {
     }
     const bestProjectEvidence = new Map<string, CandidateProjectMatchEvidence>()
     for (const document of projectDocuments) {
-      const score = cosineSimilarity(
-        queryVector,
-        projectVectors.get(`${document.profile.id}\u0000${document.project.id}`)!
-      )
+      const score = cosineSimilarity(queryVector, projectVectors.get(`${document.profile.id}\u0000${document.project.id}`)!)
       if (score > (candidateScores.get(document.profile.id) ?? Number.NEGATIVE_INFINITY)) {
         candidateScores.set(document.profile.id, score)
       }
@@ -1271,17 +1304,15 @@ export class LocalHybridCandidateRetrieval {
       }
     }
     const rankedVectorScores = [...candidateScores.entries()]
-        .map(([profileId, score]) => ({ profileId, score }))
-        .filter((candidate) => candidate.score >= this.minimumVectorScore)
-        .toSorted((a, b) => b.score - a.score || a.profileId.localeCompare(b.profileId))
-        .slice(0, this.maximumVectorCandidates)
+      .map(([profileId, score]) => ({ profileId, score }))
+      .filter((candidate) => candidate.score >= this.minimumVectorScore)
+      .toSorted((a, b) => b.score - a.score || a.profileId.localeCompare(b.profileId))
+      .slice(0, this.maximumVectorCandidates)
     const vectorScores = new Map(rankedVectorScores.map((candidate) => [candidate.profileId, candidate.score]))
     const selectedProjects = new Map(
       rankedVectorScores.flatMap((candidate) => {
         const evidence = bestProjectEvidence.get(candidate.profileId)
-        return evidence && (evidence.vectorScore ?? 0) >= this.minimumVectorScore
-          ? [[candidate.profileId, evidence] as const]
-          : []
+        return evidence && (evidence.vectorScore ?? 0) >= this.minimumVectorScore ? [[candidate.profileId, evidence] as const] : []
       })
     )
     const fused = searchConfirmedCandidateProfiles(
@@ -1387,9 +1418,7 @@ function spreadsheetColumnNumber(label: string): number {
 
 function spreadsheetCellPosition(block: DocumentBlock): SpreadsheetCellPosition | null {
   const match = block.source.cell?.match(/^([A-Z]{1,3})([1-9]\d*)$/u)
-  return match?.[1] && match[2]
-    ? { row: Number(match[2]), column: spreadsheetColumnNumber(match[1]) }
-    : null
+  return match?.[1] && match[2] ? { row: Number(match[2]), column: spreadsheetColumnNumber(match[1]) } : null
 }
 
 function spreadsheetRangePosition(value: string | undefined): SpreadsheetRangePosition | null {
@@ -1408,9 +1437,7 @@ function blockRange(block: DocumentBlock): SpreadsheetRangePosition | null {
   const merged = spreadsheetRangePosition(block.source.mergedRange)
   if (merged) return merged
   const cell = spreadsheetCellPosition(block)
-  return cell
-    ? { startRow: cell.row, endRow: cell.row, startColumn: cell.column, endColumn: cell.column }
-    : null
+  return cell ? { startRow: cell.row, endRow: cell.row, startColumn: cell.column, endColumn: cell.column } : null
 }
 
 function primaryResumeBlocks(document: DocumentIR): DocumentBlock[] {
@@ -1442,9 +1469,10 @@ function spreadsheetRows(blocks: DocumentBlock[]): Map<string, DocumentBlock[]> 
     rows.set(key, row)
   }
   for (const [key, row] of rows) {
-    rows.set(key, row.toSorted((left, right) =>
-      (spreadsheetCellPosition(left)?.column ?? 0) - (spreadsheetCellPosition(right)?.column ?? 0)
-    ))
+    rows.set(
+      key,
+      row.toSorted((left, right) => (spreadsheetCellPosition(left)?.column ?? 0) - (spreadsheetCellPosition(right)?.column ?? 0))
+    )
   }
   return rows
 }
@@ -1522,7 +1550,8 @@ function firstMatchingBlock(blocks: DocumentBlock[], pattern: RegExp): { block: 
 }
 
 const projectKeywordPattern = /案件|プロジェクト|開発|構築|更改|刷新|移行|導入|設計|運用|保守|実装|検証/u
-const projectPeriodPattern = /(?:20\d{2}[年/.\-]\d{1,2}(?:月)?|令和\d{1,2}年\d{1,2}月)\s*(?:[〜～~\-]|から|より)\s*(?:(?:20\d{2}[年/.\-])?\d{1,2}(?:月)?|現在)|\d{1,2}か月/u
+const projectPeriodPattern =
+  /(?:20\d{2}[年/.\-]\d{1,2}(?:月)?|令和\d{1,2}年\d{1,2}月)\s*(?:[〜～~\-]|から|より)\s*(?:(?:20\d{2}[年/.\-])?\d{1,2}(?:月)?|現在)|\d{1,2}か月/u
 const projectRolePattern = /PMO|PM|PL|SE|PG|SRE|テックリード|アーキテクト|リーダー|メンバー|コンサルタント/iu
 
 const technologyAliases = new Map<string, string>([
@@ -1577,7 +1606,10 @@ const technologyAliases = new Map<string, string>([
 ])
 
 function normalizeTechnology(value: string): string | null {
-  const normalized = value.normalize('NFKC').trim().replace(/^[・\-]+|[・\-]+$/gu, '')
+  const normalized = value
+    .normalize('NFKC')
+    .trim()
+    .replace(/^[・\-]+|[・\-]+$/gu, '')
   if (!normalized || /^(?:なし|無し|その他|言語|DB|OS|FW|サーバー|フレームワーク)$/iu.test(normalized)) return null
   return technologyAliases.get(normalized.toLocaleLowerCase('en-US')) ?? normalized.slice(0, 80)
 }
@@ -1595,27 +1627,30 @@ function findSpreadsheetLabelValue(blocks: DocumentBlock[], labelPattern: RegExp
     const labelPosition = spreadsheetCellPosition(label)
     const labelBounds = blockRange(label)
     if (!label.source.sheet || !labelPosition || !labelBounds) continue
-    const candidates = blocks.flatMap((candidate) => {
-      if (candidate.source.sheet !== label.source.sheet || candidate.id === label.id) return []
-      const position = spreadsheetCellPosition(candidate)
-      const bounds = blockRange(candidate)
-      if (!position || !bounds) return []
-      const columnOverlap = bounds.endColumn >= labelBounds.startColumn && bounds.startColumn <= labelBounds.endColumn
-      if (columnOverlap && position.row > labelBounds.endRow && position.row <= labelBounds.endRow + 3) {
-        return [{ block: candidate, priority: 0, distance: position.row - labelBounds.endRow }]
-      }
-      const rowOverlap = bounds.endRow >= labelBounds.startRow && bounds.startRow <= labelBounds.endRow
-      if (rowOverlap && position.column > labelBounds.endColumn && position.column <= labelBounds.endColumn + 24) {
-        return [{ block: candidate, priority: 1, distance: position.column - labelBounds.endColumn }]
-      }
-      return []
-    }).toSorted((left, right) => left.priority - right.priority || left.distance - right.distance)
+    const candidates = blocks
+      .flatMap((candidate) => {
+        if (candidate.source.sheet !== label.source.sheet || candidate.id === label.id) return []
+        const position = spreadsheetCellPosition(candidate)
+        const bounds = blockRange(candidate)
+        if (!position || !bounds) return []
+        const columnOverlap = bounds.endColumn >= labelBounds.startColumn && bounds.startColumn <= labelBounds.endColumn
+        if (columnOverlap && position.row > labelBounds.endRow && position.row <= labelBounds.endRow + 3) {
+          return [{ block: candidate, priority: 0, distance: position.row - labelBounds.endRow }]
+        }
+        const rowOverlap = bounds.endRow >= labelBounds.startRow && bounds.startRow <= labelBounds.endRow
+        if (rowOverlap && position.column > labelBounds.endColumn && position.column <= labelBounds.endColumn + 24) {
+          return [{ block: candidate, priority: 1, distance: position.column - labelBounds.endColumn }]
+        }
+        return []
+      })
+      .toSorted((left, right) => left.priority - right.priority || left.distance - right.distance)
     if (candidates[0]) return candidates[0].block
   }
   return null
 }
 
-const personalDetailLabelPattern = /^(?:フリガナ|氏名|名前|性別|生年月(?:日)?(?:[（(]西暦[）)])?(?:\/年齢)?|国籍|住所|現住所|自宅・最寄り駅|学校名|最終学歴|学歴|専攻学科|専攻|専門|卒業年月|卒業年|学位|電話|電話番号|携帯|メール|メールアドレス|E-?mail)$/iu
+const personalDetailLabelPattern =
+  /^(?:フリガナ|氏名|名前|性別|生年月(?:日)?(?:[（(]西暦[）)])?(?:\/年齢)?|国籍|住所|現住所|自宅・最寄り駅|学校名|最終学歴|学歴|専攻学科|専攻|専門|卒業年月|卒業年|学位|電話|電話番号|携帯|メール|メールアドレス|E-?mail)$/iu
 
 function findSpreadsheetPersonalValue(
   blocks: DocumentBlock[],
@@ -1632,26 +1667,28 @@ function findSpreadsheetPersonalValue(
     if (!labelPattern.test(label.text.normalize('NFKC').trim())) continue
     const labelBounds = blockRange(label)
     if (!label.source.sheet || !labelBounds) continue
-    const candidates = blocks.flatMap<PersonalValueCandidate>((candidate) => {
-      if (candidate.source.sheet !== label.source.sheet || candidate.id === label.id) return []
-      const value = candidate.text.normalize('NFKC').trim()
-      if (!value || personalDetailLabelPattern.test(value) || !accepts(value)) return []
-      const position = spreadsheetCellPosition(candidate)
-      const bounds = blockRange(candidate)
-      if (!position || !bounds) return []
-      const rowOverlap = bounds.endRow >= labelBounds.startRow && bounds.startRow <= labelBounds.endRow
-      const columnOverlap = bounds.endColumn >= labelBounds.startColumn && bounds.startColumn <= labelBounds.endColumn
-      if (rowOverlap && position.column > labelBounds.endColumn && position.column <= labelBounds.endColumn + 24) {
-        return [{ block: candidate, direction: 'right' as const, distance: position.column - labelBounds.endColumn }]
-      }
-      if (columnOverlap && position.row > labelBounds.endRow && position.row <= labelBounds.endRow + 3) {
-        return [{ block: candidate, direction: 'below' as const, distance: position.row - labelBounds.endRow }]
-      }
-      return []
-    }).toSorted((left, right) =>
-      Number(left.direction !== preferredDirection) - Number(right.direction !== preferredDirection) ||
-      left.distance - right.distance
-    )
+    const candidates = blocks
+      .flatMap<PersonalValueCandidate>((candidate) => {
+        if (candidate.source.sheet !== label.source.sheet || candidate.id === label.id) return []
+        const value = candidate.text.normalize('NFKC').trim()
+        if (!value || personalDetailLabelPattern.test(value) || !accepts(value)) return []
+        const position = spreadsheetCellPosition(candidate)
+        const bounds = blockRange(candidate)
+        if (!position || !bounds) return []
+        const rowOverlap = bounds.endRow >= labelBounds.startRow && bounds.startRow <= labelBounds.endRow
+        const columnOverlap = bounds.endColumn >= labelBounds.startColumn && bounds.startColumn <= labelBounds.endColumn
+        if (rowOverlap && position.column > labelBounds.endColumn && position.column <= labelBounds.endColumn + 24) {
+          return [{ block: candidate, direction: 'right' as const, distance: position.column - labelBounds.endColumn }]
+        }
+        if (columnOverlap && position.row > labelBounds.endRow && position.row <= labelBounds.endRow + 3) {
+          return [{ block: candidate, direction: 'below' as const, distance: position.row - labelBounds.endRow }]
+        }
+        return []
+      })
+      .toSorted(
+        (left, right) =>
+          Number(left.direction !== preferredDirection) - Number(right.direction !== preferredDirection) || left.distance - right.distance
+      )
     if (candidates[0]) return candidates[0].block
   }
   return null
@@ -1689,18 +1726,80 @@ export function extractLocalCandidatePersonalDetails(document: DocumentIR): Loca
     /(?:イニシャル|イニシアル|首字母)\s*[:：]\s*([A-Za-z](?:[.・・]?\s?[A-Za-z]){0,3}\.?)/u
   )
   return localCandidatePersonalDetailsSchema.parse({
-    displayName: localPersonalValue(blocks, /^(?:氏名|名前)$/u, 'right', /(?:氏名|名前)\s*[:：]\s*([^\n|｜]{1,120})/u, (value) => value.length <= 120 && hasLetter(value) && !/@/u.test(value))
-      ?? initialsDisplayName,
-    gender: localPersonalValue(blocks, /^性別$/u, 'below', /性別\s*[:：]\s*([^\n|｜]{1,40})/u, (value) => /^(?:男|女|男性|女性|その他|非公開|未回答|M|F)$/iu.test(value)),
-    birthDate: localPersonalValue(blocks, /^生年月(?:日)?(?:[（(]西暦[）)])?(?:\/年齢)?$/u, 'below', /生年月(?:日)?(?:[（(]西暦[）)])?\s*[:：]\s*([^\n|｜]{1,80})/u, looksLikeYearOrDate),
-    nationality: localPersonalValue(blocks, /^国籍$/u, 'below', /国籍\s*[:：]\s*([^\n|｜]{1,80})/u, (value) => value.length <= 80 && hasLetter(value)),
-    phone: localPersonalValue(blocks, /^(?:電話|電話番号|携帯)$/u, 'right', /(?:電話|電話番号|携帯)\s*[:：]\s*([^\n|｜]{1,80})/u, (value) => value.replace(/\D/gu, '').length >= 7),
-    email: localPersonalValue(blocks, /^(?:メール|メールアドレス|E-?mail)$/iu, 'right', /(?:メール|メールアドレス|E-?mail)\s*[:：]\s*([^\s|｜]{3,200})/iu, (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value)),
-    address: localPersonalValue(blocks, /^(?:住所|現住所|自宅・最寄り駅)$/u, 'below', /(?:住所|現住所|自宅・最寄り駅)\s*[:：]\s*([^\n|｜]{1,500})/u, (value) => value.length >= 2),
-    education: localPersonalValue(blocks, /^(?:学校名|最終学歴)$/u, 'below', /(?:学校名|最終学歴|学歴)\s*[:：]\s*([^\n|｜]{1,300})/u, (value) => value.length >= 2 && hasLetter(value)),
-    major: localPersonalValue(blocks, /^(?:専攻学科|専攻|専門)$/u, 'below', /(?:専攻学科|専攻|専門)\s*[:：]\s*([^\n|｜]{1,200})/u, (value) => value.length >= 2 && hasLetter(value)),
-    graduationDate: localPersonalValue(blocks, /^(?:卒業年月|卒業年)$/u, 'below', /(?:卒業年月|卒業年)\s*[:：]\s*([^\n|｜]{1,80})/u, looksLikeYearOrDate),
-    degree: localPersonalValue(blocks, /^学位$/u, 'below', /学位\s*[:：]\s*([^\n|｜]{1,120})/u, (value) => value.length >= 1 && hasLetter(value))
+    displayName:
+      localPersonalValue(
+        blocks,
+        /^(?:氏名|名前)$/u,
+        'right',
+        /(?:氏名|名前)\s*[:：]\s*([^\n|｜]{1,120})/u,
+        (value) => value.length <= 120 && hasLetter(value) && !/@/u.test(value)
+      ) ?? initialsDisplayName,
+    gender: localPersonalValue(blocks, /^性別$/u, 'below', /性別\s*[:：]\s*([^\n|｜]{1,40})/u, (value) =>
+      /^(?:男|女|男性|女性|その他|非公開|未回答|M|F)$/iu.test(value)
+    ),
+    birthDate: localPersonalValue(
+      blocks,
+      /^生年月(?:日)?(?:[（(]西暦[）)])?(?:\/年齢)?$/u,
+      'below',
+      /生年月(?:日)?(?:[（(]西暦[）)])?\s*[:：]\s*([^\n|｜]{1,80})/u,
+      looksLikeYearOrDate
+    ),
+    nationality: localPersonalValue(
+      blocks,
+      /^国籍$/u,
+      'below',
+      /国籍\s*[:：]\s*([^\n|｜]{1,80})/u,
+      (value) => value.length <= 80 && hasLetter(value)
+    ),
+    phone: localPersonalValue(
+      blocks,
+      /^(?:電話|電話番号|携帯)$/u,
+      'right',
+      /(?:電話|電話番号|携帯)\s*[:：]\s*([^\n|｜]{1,80})/u,
+      (value) => value.replace(/\D/gu, '').length >= 7
+    ),
+    email: localPersonalValue(
+      blocks,
+      /^(?:メール|メールアドレス|E-?mail)$/iu,
+      'right',
+      /(?:メール|メールアドレス|E-?mail)\s*[:：]\s*([^\s|｜]{3,200})/iu,
+      (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value)
+    ),
+    address: localPersonalValue(
+      blocks,
+      /^(?:住所|現住所|自宅・最寄り駅)$/u,
+      'below',
+      /(?:住所|現住所|自宅・最寄り駅)\s*[:：]\s*([^\n|｜]{1,500})/u,
+      (value) => value.length >= 2
+    ),
+    education: localPersonalValue(
+      blocks,
+      /^(?:学校名|最終学歴)$/u,
+      'below',
+      /(?:学校名|最終学歴|学歴)\s*[:：]\s*([^\n|｜]{1,300})/u,
+      (value) => value.length >= 2 && hasLetter(value)
+    ),
+    major: localPersonalValue(
+      blocks,
+      /^(?:専攻学科|専攻|専門)$/u,
+      'below',
+      /(?:専攻学科|専攻|専門)\s*[:：]\s*([^\n|｜]{1,200})/u,
+      (value) => value.length >= 2 && hasLetter(value)
+    ),
+    graduationDate: localPersonalValue(
+      blocks,
+      /^(?:卒業年月|卒業年)$/u,
+      'below',
+      /(?:卒業年月|卒業年)\s*[:：]\s*([^\n|｜]{1,80})/u,
+      looksLikeYearOrDate
+    ),
+    degree: localPersonalValue(
+      blocks,
+      /^学位$/u,
+      'below',
+      /学位\s*[:：]\s*([^\n|｜]{1,120})/u,
+      (value) => value.length >= 1 && hasLetter(value)
+    )
   })
 }
 
@@ -1715,11 +1814,15 @@ function extractStructuredSkillMatrix(blocks: DocumentBlock[]): StructuredSkillE
   if (!heading?.source.sheet) return []
   const headingPosition = spreadsheetCellPosition(heading)
   if (!headingPosition) return []
-  const endingRow = blocks
-    .filter((block) => block.source.sheet === heading.source.sheet && /^(?:技術履歴|技術経歴|職務経歴)$/u.test(block.text.normalize('NFKC').trim()))
-    .map((block) => spreadsheetCellPosition(block)?.row ?? Number.POSITIVE_INFINITY)
-    .filter((row) => row > headingPosition.row)
-    .toSorted((left, right) => left - right)[0] ?? headingPosition.row + 12
+  const endingRow =
+    blocks
+      .filter(
+        (block) =>
+          block.source.sheet === heading.source.sheet && /^(?:技術履歴|技術経歴|職務経歴)$/u.test(block.text.normalize('NFKC').trim())
+      )
+      .map((block) => spreadsheetCellPosition(block)?.row ?? Number.POSITIVE_INFINITY)
+      .filter((row) => row > headingPosition.row)
+      .toSorted((left, right) => left - right)[0] ?? headingPosition.row + 12
   const rows = spreadsheetRows(blocks)
   const ignoredLabels = /^(?:OS|言語関連|言語|DB関連|DB|WEBサーバ|サーバー|Framework|FrameWork|FW|他|その他)$/iu
   const entries: StructuredSkillEntry[] = []
@@ -1742,7 +1845,7 @@ function extractStructuredSkillMatrix(blocks: DocumentBlock[]): StructuredSkillE
   for (const entry of entries) {
     const key = entry.value.toLocaleLowerCase('en-US')
     const current = unique.get(key)
-    const rank = (rating: StructuredSkillEntry['rating']) => rating === '◎' ? 3 : rating === '○' ? 2 : rating === '△' ? 1 : 0
+    const rank = (rating: StructuredSkillEntry['rating']) => (rating === '◎' ? 3 : rating === '○' ? 2 : rating === '△' ? 1 : 0)
     if (!current || rank(entry.rating) > rank(current.rating)) unique.set(key, entry)
   }
   return [...unique.values()]
@@ -1762,16 +1865,28 @@ export function extractStructuredJapaneseLevel(blocks: DocumentBlock[]): {
   ]
   const values: string[] = []
   const sources: DocumentBlock[] = [language]
-  const legend = blocks.find(block => block.source.sheet === language.source.sheet &&
-    (spreadsheetCellPosition(block)?.row ?? 0) >= languagePosition.row - 3 &&
-    (spreadsheetCellPosition(block)?.row ?? Infinity) < languagePosition.row &&
-    /A[.．:：]/u.test(block.text.normalize('NFKC')) && /C[.．:：]/u.test(block.text.normalize('NFKC')))
-  const ratings = new Map(legend ? [...legend.text.normalize('NFKC').matchAll(/([A-D])[.:：]\s*(.*?)(?=\s+[A-D][.:：]|$)/gu)].map(match => [match[1], match[2]!.trim()]) : [])
-  for (const dimension of dimensions) {
-    const header = blocks.find((block) =>
+  const legend = blocks.find(
+    (block) =>
       block.source.sheet === language.source.sheet &&
-      block.text.normalize('NFKC').trim() === dimension.label &&
-      (spreadsheetCellPosition(block)?.row ?? Number.POSITIVE_INFINITY) < languagePosition.row
+      (spreadsheetCellPosition(block)?.row ?? 0) >= languagePosition.row - 3 &&
+      (spreadsheetCellPosition(block)?.row ?? Infinity) < languagePosition.row &&
+      /A[.．:：]/u.test(block.text.normalize('NFKC')) &&
+      /C[.．:：]/u.test(block.text.normalize('NFKC'))
+  )
+  const ratings = new Map(
+    legend
+      ? [...legend.text.normalize('NFKC').matchAll(/([A-D])[.:：]\s*(.*?)(?=\s+[A-D][.:：]|$)/gu)].map((match) => [
+          match[1],
+          match[2]!.trim()
+        ])
+      : []
+  )
+  for (const dimension of dimensions) {
+    const header = blocks.find(
+      (block) =>
+        block.source.sheet === language.source.sheet &&
+        block.text.normalize('NFKC').trim() === dimension.label &&
+        (spreadsheetCellPosition(block)?.row ?? Number.POSITIVE_INFINITY) < languagePosition.row
     )
     const headerBounds = header ? blockRange(header) : null
     if (!header || !headerBounds) continue
@@ -1779,8 +1894,13 @@ export function extractStructuredJapaneseLevel(blocks: DocumentBlock[]): {
       if (block.source.sheet !== language.source.sheet) return false
       const bounds = blockRange(block)
       const position = spreadsheetCellPosition(block)
-      return Boolean(bounds && position && position.row === languagePosition.row &&
-        bounds.endColumn >= headerBounds.startColumn && bounds.startColumn <= headerBounds.endColumn)
+      return Boolean(
+        bounds &&
+        position &&
+        position.row === languagePosition.row &&
+        bounds.endColumn >= headerBounds.startColumn &&
+        bounds.startColumn <= headerBounds.endColumn
+      )
     })
     if (!value) continue
     const grade = value.text.normalize('NFKC').trim()
@@ -1792,30 +1912,47 @@ export function extractStructuredJapaneseLevel(blocks: DocumentBlock[]): {
   return values.length > 0 ? { value: values.join(' / '), sources: uniqueBlocks(sources) } : null
 }
 
-export function enrichCandidateJapaneseEvidence(profile: CandidateProfile, document: DocumentIR | null | (() => DocumentIR | null)): CandidateProfile {
-  const field = profile.fields.find(f => f.key === 'japanese_level')
+export function enrichCandidateJapaneseEvidence(
+  profile: CandidateProfile,
+  document: DocumentIR | null | (() => DocumentIR | null)
+): CandidateProfile {
+  const field = profile.fields.find((f) => f.key === 'japanese_level')
   if (!document || !field?.value || !/^(?:読む|書く|会話) [A-D](?: \/ (?:読む|書く|会話) [A-D])*$/u.test(field.value)) return profile
   const parsed = typeof document === 'function' ? document() : document
   if (!parsed) return profile
   const expanded = extractStructuredJapaneseLevel(parsed.blocks)
   if (!expanded || expanded.value.replace(/（[^）]*）/gu, '') !== field.value || expanded.value === field.value) return profile
-  return {...profile, fields: profile.fields.map(f => f.key === 'japanese_level' ? {...f,value:expanded.value,sourceLabels:[...new Set([...f.sourceLabels,...expanded.sources.map(b=>`${b.source.sheet}!${b.source.cell}`)])]} : f)}
+  return {
+    ...profile,
+    fields: profile.fields.map((f) =>
+      f.key === 'japanese_level'
+        ? {
+            ...f,
+            value: expanded.value,
+            sourceLabels: [...new Set([...f.sourceLabels, ...expanded.sources.map((b) => `${b.source.sheet}!${b.source.cell}`)])]
+          }
+        : f
+    )
+  }
 }
 
 function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): CandidateProjectExperienceDraft[] | null {
-  const sheetNames = [...new Set(blocks.flatMap((block) => block.source.sheet ? [block.source.sheet] : []))]
+  const sheetNames = [...new Set(blocks.flatMap((block) => (block.source.sheet ? [block.source.sheet] : [])))]
   const allRows = spreadsheetRows(blocks)
   for (const sheetName of sheetNames) {
     const rows = [...allRows.entries()]
-      .flatMap(([key, row]) => key.startsWith(`${sheetName}\u0000`)
-        ? [{ row: Number(key.slice(sheetName.length + 1)), blocks: row }]
-        : [])
+      .flatMap(([key, row]) =>
+        key.startsWith(`${sheetName}\u0000`) ? [{ row: Number(key.slice(sheetName.length + 1)), blocks: row }] : []
+      )
       .toSorted((left, right) => left.row - right.row)
     const header = rows.find((row) => {
       const values = row.blocks.map((block) => block.text.normalize('NFKC').trim())
-      return values.some((value) => /^(?:No|No\.|番号)$/iu.test(value)) && values.includes('期間') &&
+      return (
+        values.some((value) => /^(?:No|No\.|番号)$/iu.test(value)) &&
+        values.includes('期間') &&
         values.some((value) => /(?:システム|案件|業務)/u.test(value)) &&
         values.some((value) => /(?:技術|環境)/u.test(value))
+      )
     })
     if (!header) continue
     const headerBlock = (pattern: RegExp) => header.blocks.find((block) => pattern.test(block.text.normalize('NFKC').trim()))
@@ -1830,8 +1967,12 @@ function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): Candidat
       if (row.row <= header.row) return []
       const number = row.blocks.find((block) => {
         const position = spreadsheetCellPosition(block)
-        return Boolean(position && position.column >= numberRange.startColumn && position.column <= numberRange.endColumn &&
-          /^\d{1,2}$/u.test(block.text.normalize('NFKC').trim()))
+        return Boolean(
+          position &&
+          position.column >= numberRange.startColumn &&
+          position.column <= numberRange.endColumn &&
+          /^\d{1,2}$/u.test(block.text.normalize('NFKC').trim())
+        )
       })
       return number ? [{ row: row.row, number }] : []
     })
@@ -1849,43 +1990,62 @@ function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): Candidat
         return Boolean(position && position.column >= range.startColumn && position.column <= range.endColumn)
       }
       const systemBlocks = projectBlocks.filter((block) => withinColumns(block, systemRange))
-      const titleBlock = systemBlocks
-        .filter((block) => spreadsheetCellPosition(block)?.row === start.row)
-        .filter((block) => !/^(?:日本|中国|韓国|台湾|米国|国内|海外)$/u.test(block.text.normalize('NFKC').trim()))
-        .toSorted((left, right) => right.text.length - left.text.length)[0] ?? systemBlocks[0]
-      const titleLine = titleBlock?.text.normalize('NFKC').split(/\r?\n/u).map((line) => line.trim()).find(Boolean)
+      const titleBlock =
+        systemBlocks
+          .filter((block) => spreadsheetCellPosition(block)?.row === start.row)
+          .filter((block) => !/^(?:日本|中国|韓国|台湾|米国|国内|海外)$/u.test(block.text.normalize('NFKC').trim()))
+          .toSorted((left, right) => right.text.length - left.text.length)[0] ?? systemBlocks[0]
+      const titleLine = titleBlock?.text
+        .normalize('NFKC')
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .find(Boolean)
       const conciseSystemTitle = titleLine?.match(/^(.{2,80}?システム)(?=における|に関する|の(?:機能|開発|改修)|[、。]|$)/u)?.[1]
       const title = (conciseSystemTitle ?? titleLine)?.slice(0, 160)
       if (!title) continue
-      const systemSummaries = systemBlocks.flatMap((block) => {
-        const lines = block.text.normalize('NFKC').split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
-        if (block.id !== titleBlock?.id) return lines
-        const remainder = conciseSystemTitle && lines[0]
-          ? lines[0].slice(conciseSystemTitle.length).replace(/^(?:における|に関する|の)/u, '').trim()
-          : ''
-        return [...(remainder ? [remainder] : []), ...lines.slice(1)]
-      }).filter((line) => !/^(?:日本|中国|韓国|台湾|米国|国内|海外)$/u.test(line))
+      const systemSummaries = systemBlocks
+        .flatMap((block) => {
+          const lines = block.text
+            .normalize('NFKC')
+            .split(/\r?\n/u)
+            .map((line) => line.trim())
+            .filter(Boolean)
+          if (block.id !== titleBlock?.id) return lines
+          const remainder =
+            conciseSystemTitle && lines[0]
+              ? lines[0]
+                  .slice(conciseSystemTitle.length)
+                  .replace(/^(?:における|に関する|の)/u, '')
+                  .trim()
+              : ''
+          return [...(remainder ? [remainder] : []), ...lines.slice(1)]
+        })
+        .filter((line) => !/^(?:日本|中国|韓国|台湾|米国|国内|海外)$/u.test(line))
       const summary = [...new Set(systemSummaries)].join('\n').trim() || title
       const periodBlocks = projectBlocks.filter((block) => withinColumns(block, periodRange))
       const dateInMarkerRow = (marker: '自' | '至') => {
         const markerRow = periodBlocks.find((block) => block.text.normalize('NFKC').trim() === marker)
         const row = markerRow ? spreadsheetCellPosition(markerRow)?.row : null
         if (!row) return null
-        return periodBlocks
-          .filter((block) => spreadsheetCellPosition(block)?.row === row)
-          .map((block) => block.text.normalize('NFKC').trim())
-          .find((value) => /^(?:19|20)\d{2}年(?:1[0-2]|0?[1-9])月$/u.test(value)) ?? null
+        return (
+          periodBlocks
+            .filter((block) => spreadsheetCellPosition(block)?.row === row)
+            .map((block) => block.text.normalize('NFKC').trim())
+            .find((value) => /^(?:19|20)\d{2}年(?:1[0-2]|0?[1-9])月$/u.test(value)) ?? null
+        )
       }
       const startDate = dateInMarkerRow('自')
       const endDate = dateInMarkerRow('至')
-      const durationText = periodBlocks
-        .filter((block) => spreadsheetCellPosition(block)?.row === start.row)
-        .map((block) => block.text.normalize('NFKC').replaceAll(' ', ''))
-        .join('')
-        .match(/(\d{1,3})ヶ月/u)?.[0] ?? null
-      const period = startDate && endDate
-        ? `${startDate}〜${endDate}${durationText ? `（${durationText}）` : ''}`
-        : startDate ?? endDate ?? durationText
+      const durationText =
+        periodBlocks
+          .filter((block) => spreadsheetCellPosition(block)?.row === start.row)
+          .map((block) => block.text.normalize('NFKC').replaceAll(' ', ''))
+          .join('')
+          .match(/(\d{1,3})ヶ月/u)?.[0] ?? null
+      const period =
+        startDate && endDate
+          ? `${startDate}〜${endDate}${durationText ? `（${durationText}）` : ''}`
+          : (startDate ?? endDate ?? durationText)
       const roleValues = projectBlocks
         .filter((block) => (roleRange && withinColumns(block, roleRange)) || (assignmentRange && withinColumns(block, assignmentRange)))
         .map((block) => block.text.normalize('NFKC').trim().toUpperCase())
@@ -1894,8 +2054,11 @@ function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): Candidat
       const technologyBlocks: DocumentBlock[] = []
       const technologies: string[] = []
       for (const row of rows.filter((candidate) => candidate.row >= start.row && candidate.row <= endRow)) {
-        const label = row.blocks.find((block) => withinColumns(block, technologyRange) &&
-          /^(?:OS|言語|DB|サーバー|サーバ|FW|Framework|フレームワーク|その他)$/iu.test(block.text.normalize('NFKC').trim()))
+        const label = row.blocks.find(
+          (block) =>
+            withinColumns(block, technologyRange) &&
+            /^(?:OS|言語|DB|サーバー|サーバ|FW|Framework|フレームワーク|その他)$/iu.test(block.text.normalize('NFKC').trim())
+        )
         const labelPosition = label ? spreadsheetCellPosition(label) : null
         if (!label || !labelPosition) continue
         const values = row.blocks.filter((block) => {
@@ -1907,9 +2070,9 @@ function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): Candidat
           technologyBlocks.push(label, value)
         }
       }
-      const normalizedTechnologies = [...new Map(technologies.map((technology) => [
-        technology.toLocaleLowerCase('en-US'), technology
-      ])).values()]
+      const normalizedTechnologies = [
+        ...new Map(technologies.map((technology) => [technology.toLocaleLowerCase('en-US'), technology])).values()
+      ]
       const evidence = uniqueBlocks([
         ...(titleBlock ? [titleBlock] : []),
         ...systemBlocks,
@@ -1957,11 +2120,13 @@ function projectTitle(blocks: DocumentBlock[], text: string, index: number): str
   for (const block of blocks) {
     const value = block.text.normalize('NFKC').trim()
     if (
-      value.length >= 2 && value.length <= 120 &&
+      value.length >= 2 &&
+      value.length <= 120 &&
       !projectPeriodPattern.test(value) &&
       !/^(?:案件名|プロジェクト|期間|担当|役割|工程|技術|環境|概要|業務内容)$/u.test(value) &&
       !skillVocabulary.some((skill) => value === skill)
-    ) return value.slice(0, 160)
+    )
+      return value.slice(0, 160)
   }
   return `プロジェクト経験 ${index + 1}`
 }
@@ -1972,14 +2137,28 @@ function extractProjectExperiences(document: DocumentIR, blocks = primaryResumeB
   const projects: CandidateProjectExperienceDraft[] = []
   const seen = new Set<string>()
   for (const group of projectGroups(blocks)) {
-    const text = group.map((block) => block.text.trim()).filter(Boolean).join(' | ').normalize('NFKC')
-    if (text.length < 8 || /^(?:案件名|プロジェクト|期間|担当|役割|工程|技術|環境|概要|業務内容)(?:\s*[|／/]\s*(?:案件名|プロジェクト|期間|担当|役割|工程|技術|環境|概要|業務内容))*$/u.test(text)) continue
+    const text = group
+      .map((block) => block.text.trim())
+      .filter(Boolean)
+      .join(' | ')
+      .normalize('NFKC')
+    if (
+      text.length < 8 ||
+      /^(?:案件名|プロジェクト|期間|担当|役割|工程|技術|環境|概要|業務内容)(?:\s*[|／/]\s*(?:案件名|プロジェクト|期間|担当|役割|工程|技術|環境|概要|業務内容))*$/u.test(
+        text
+      )
+    )
+      continue
     const technologies = skillVocabulary.filter((skill) => containsSkill(text, skill))
     const period = text.match(projectPeriodPattern)?.[0] ?? null
     const role = text.match(projectRolePattern)?.[0] ?? null
     const hasKeyword = projectKeywordPattern.test(text)
     const explicitProject = /(?:案件名|プロジェクト名|project)\s*[:：]/iu.test(text)
-    if (!(explicitProject || (hasKeyword && (technologies.length > 0 || period || role || text.length >= 30)) || (period && technologies.length > 0))) {
+    if (!(
+      explicitProject ||
+      (hasKeyword && (technologies.length > 0 || period || role || text.length >= 30)) ||
+      (period && technologies.length > 0)
+    )) {
       continue
     }
     const sourceKey = group.map((block) => `${sourceLabel(block)}:${block.text}`).join('\u0000')
@@ -2006,45 +2185,49 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
   const localPersonalDetails = extractLocalCandidatePersonalDetails(document)
   const projectExperiences = extractProjectExperiences(document, blocks)
   const structuredSkills = extractStructuredSkillMatrix(blocks)
-  const fallbackSkills = skillVocabulary.filter((skill) =>
-    blocks.some((block) => containsSkill(block.text, skill))
-  )
-  const skillsValue = structuredSkills.length > 0
-    ? structuredSkills.map((entry) => `${entry.value}${entry.rating ? ` (${entry.rating})` : ''}`).join(', ')
-    : fallbackSkills.length > 0 ? fallbackSkills.join(', ') : null
-  const skillSources = structuredSkills.length > 0
-    ? uniqueBlocks(structuredSkills.flatMap((entry) => entry.sources))
-    : blocks.filter((block) => fallbackSkills.some((skill) => containsSkill(block.text, skill)))
+  const fallbackSkills = skillVocabulary.filter((skill) => blocks.some((block) => containsSkill(block.text, skill)))
+  const skillsValue =
+    structuredSkills.length > 0
+      ? structuredSkills.map((entry) => `${entry.value}${entry.rating ? ` (${entry.rating})` : ''}`).join(', ')
+      : fallbackSkills.length > 0
+        ? fallbackSkills.join(', ')
+        : null
+  const skillSources =
+    structuredSkills.length > 0
+      ? uniqueBlocks(structuredSkills.flatMap((entry) => entry.sources))
+      : blocks.filter((block) => fallbackSkills.some((skill) => containsSkill(block.text, skill)))
 
   const labeledExperienceBlock = findSpreadsheetLabelValue(blocks, /^(?:実務経験|経験年数)$/u)
-  const labeledExperience = labeledExperienceBlock?.text.normalize('NFKC').trim().match(/^(\d{1,2}(?:\.\d)?)\s*年(?:以上|程度)?$/u)
+  const labeledExperience = labeledExperienceBlock?.text
+    .normalize('NFKC')
+    .trim()
+    .match(/^(\d{1,2}(?:\.\d)?)\s*年(?:以上|程度)?$/u)
   const experience = labeledExperience
     ? { block: labeledExperienceBlock!, match: labeledExperience }
-    : firstMatchingBlock(
-        blocks,
-        /(?:経験|experience)?\s*[:：]?\s*(?<!\d)(\d{1,2}(?:\.\d)?)(?!\d)\s*(?:年(?:以上|程度)?|years?)/iu
-      )
+    : firstMatchingBlock(blocks, /(?:経験|experience)?\s*[:：]?\s*(?<!\d)(\d{1,2}(?:\.\d)?)(?!\d)\s*(?:年(?:以上|程度)?|years?)/iu)
   // A labeled start date - 開始日：9/1 - wins over a date pattern found in
   // running text somewhere else in the document.
   const labeledAvailability = firstMatchingBlock(
     blocks,
     /(?:開始日|稼働開始日?|稼働(?:可能時期)?|稼動(?:可能時期)?|開始可能日|参画可能日|开始日|可上岗(?:时间)?|可入场(?:时间)?)\s*[:：]\s*([^\n|｜]{1,40})/u
   )
-  const availability = labeledAvailability ?? firstMatchingBlock(
-    blocks,
-    /((?:20\d{2}[年/.\-])?\d{1,2}月(?:から|より)?(?:稼働|参画|開始)(?:可能|可)?|即日(?:稼働|参画)?(?:可能|可)?)/u
-  )
-  const rate = firstMatchingBlock(
-    blocks,
-    /((?:\d{2,3}\s*[〜～~-]\s*)?\d{2,3}\s*万円?(?:\/月|月)?)/u
-  )
+  const availability =
+    labeledAvailability ??
+    firstMatchingBlock(
+      blocks,
+      /((?:20\d{2}[年/.\-])?\d{1,2}月(?:から|より)?(?:稼働|参画|開始)(?:可能|可)?|即日(?:稼働|参画)?(?:可能|可)?)/u
+    )
+  const rate = firstMatchingBlock(blocks, /((?:\d{2,3}\s*[〜～~-]\s*)?\d{2,3}\s*万円?(?:\/月|月)?)/u)
   const structuredJapanese = extractStructuredJapaneseLevel(blocks)
   const japaneseLevel = structuredJapanese
     ? null
-    : firstMatchingBlock(blocks, /\b(N[1-5])\b|日本語\s*[:：]?\s*(ネイティブ|ビジネス|日常会話|流暢)|(流暢|ネイティブレベル|ビジネスレベル|日常会話レベル)/iu)
+    : (firstMatchingBlock(
+        blocks,
+        /\b(N[1-5])\b|日本語\s*[:：]?\s*(ネイティブ|ビジネス|日常会話|流暢)|(流暢|ネイティブレベル|ビジネスレベル|日常会話レベル)/iu
+      ) ??
       // No graded level anywhere: a labeled 日本語 line still describes the
       // ability - 顧客定例、設計レビューに対応可能 - and is worth reviewing.
-      ?? firstMatchingBlock(blocks, /(?:日本語|日語)(?:レベル|能力)?\s*[:：]\s*([^\n|｜]{2,80})/u)
+      firstMatchingBlock(blocks, /(?:日本語|日語)(?:レベル|能力)?\s*[:：]\s*([^\n|｜]{2,80})/u))
   // The explicit preference field decides the work style. 常駐 inside a project
   // history line describes a past assignment, not what the person wants now,
   // and must not override a stated remote preference.
@@ -2054,39 +2237,44 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
   )
   // Keep restriction/preference suffixes: 出社不可 must not become 出社,
   // and フルリモート希望 must not become an unconditional remote-only limit.
-  const restrictedWorkStyle = firstMatchingBlock(blocks,
-    /((?:フルリモート|完全在宅|在宅|リモート)(?:のみ|限定)|只(?:接受|能|要)[^\n|｜。]*(?:在宅|远程)|(?:出社|出勤|常駐)(?:不可|NG)|週\s*[0-5]\s*日?\s*(?:まで|以内)\s*(?:出社|出勤)|(?:出社|出勤)\s*(?:は)?週\s*[0-5]\s*日?\s*(?:まで|以内))/u)
-  const workStyle = (restrictedWorkStyle?.block === preferredWorkStyle?.block ? restrictedWorkStyle : preferredWorkStyle) ?? restrictedWorkStyle ?? firstMatchingBlock(
+  const restrictedWorkStyle = firstMatchingBlock(
     blocks,
-    /((?:フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート(?:可能|可)|常駐|出社)(?:のみ|限定|希望|不可|可能|可|NG)?)/u
+    /((?:フルリモート|完全在宅|在宅|リモート)(?:のみ|限定)|只(?:接受|能|要)[^\n|｜。]*(?:在宅|远程)|(?:出社|出勤|常駐)(?:不可|NG)|週\s*[0-5]\s*日?\s*(?:まで|以内)\s*(?:出社|出勤)|(?:出社|出勤)\s*(?:は)?週\s*[0-5]\s*日?\s*(?:まで|以内))/u
   )
+  const workStyle =
+    (restrictedWorkStyle?.block === preferredWorkStyle?.block ? restrictedWorkStyle : preferredWorkStyle) ??
+    restrictedWorkStyle ??
+    firstMatchingBlock(
+      blocks,
+      /((?:フルリモート|完全在宅|週\s*\d\s*日(?:まで)?リモート|リモート(?:可能|可)|常駐|出社)(?:のみ|限定|希望|不可|可能|可|NG)?)/u
+    )
   const structuredRole = projectExperiences[0]?.role ?? null
   const structuredRoleSources = structuredRole
-    ? blocks.filter((block) => projectExperiences[0]?.sources.some((source) => source.blockId === block.id) &&
-        structuredRole.split(' / ').includes(block.text.normalize('NFKC').trim().toUpperCase()))
-    : []
-  const role = structuredRole
-    ? null
-    : firstMatchingBlock(
-        blocks,
-        /(?:役割|role)\s*[:：]?\s*(PMO|PM|PL|SE|PG|TL|SL|BSE)|\b(PMO|PM|PL|SE|PG|TL|SL|BSE)\b/iu
+    ? blocks.filter(
+        (block) =>
+          projectExperiences[0]?.sources.some((source) => source.blockId === block.id) &&
+          structuredRole.split(' / ').includes(block.text.normalize('NFKC').trim().toUpperCase())
       )
-  const preferredLocation = firstMatchingBlock(
-    blocks,
-    /(?:希望勤務地|勤務希望地|勤務地希望|勤務地(?:条件|希望)?|通勤可能(?:エリア|範囲))\s*[:：]?\s*([^\n|｜]{2,80}?)(?=\s+(?:就労資格|在留資格|就労可否|ビザ)\s*[:：]|$)/u
-  ) ?? firstMatchingBlock(
-    // The nearest station is the commute anchor in pasted person texts; it
-    // fills the location field for review when no explicit preference exists.
-    blocks,
-    /(?:最寄り?駅|最近车站)\s*[:：]\s*([^\n|｜]{2,80})/u
-  )
-  const workAuthorization = firstMatchingBlock(
-    blocks,
-    /(?:就労資格|在留資格|就労可否|ビザ)\s*[:：]?\s*([^\n|｜]{2,80})/u
-  )
-  const normalizedWorkAuthorization = workAuthorization?.match[1]
-    ? normalizeCandidateWorkAuthorization(workAuthorization.match[1])
-    : null
+    : []
+  // A labelled job title (職種: Java バックエンドエンジニア) names the person's main skill; it outranks a bare SE/PG mention.
+  const jobTitle = structuredRole ? null : firstMatchingBlock(blocks, /(?:職種|職務|ポジション|希望職種)\s*[:：]\s*([^\n|｜]{2,60})/u)
+  const role =
+    structuredRole || jobTitle
+      ? jobTitle
+      : firstMatchingBlock(blocks, /(?:役割|role)\s*[:：]?\s*(PMO|PM|PL|SE|PG|TL|SL|BSE)|\b(PMO|PM|PL|SE|PG|TL|SL|BSE)\b/iu)
+  const preferredLocation =
+    firstMatchingBlock(
+      blocks,
+      /(?:希望勤務地|勤務希望地|勤務地希望|勤務地(?:条件|希望)?|通勤可能(?:エリア|範囲))\s*[:：]?\s*([^\n|｜]{2,80}?)(?=\s+(?:就労資格|在留資格|就労可否|ビザ)\s*[:：]|$)/u
+    ) ??
+    firstMatchingBlock(
+      // The nearest station is the commute anchor in pasted person texts; it
+      // fills the location field for review when no explicit preference exists.
+      blocks,
+      /(?:最寄り?駅|最近车站)\s*[:：]\s*([^\n|｜]{2,80})/u
+    )
+  const workAuthorization = firstMatchingBlock(blocks, /(?:就労資格|在留資格|就労可否|ビザ)\s*[:：]?\s*([^\n|｜]{2,80})/u)
+  const normalizedWorkAuthorization = workAuthorization?.match[1] ? normalizeCandidateWorkAuthorization(workAuthorization.match[1]) : null
 
   return candidateExtractionDraftSchema.parse({
     version: 'candidate-extraction-v5',
@@ -2110,7 +2298,8 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
       field(
         'japanese_level',
         '日本語レベル',
-        structuredJapanese?.value ?? (japaneseLevel ? japaneseLevel.match[1] ?? japaneseLevel.match[2] ?? japaneseLevel.match[3] ?? null : null),
+        structuredJapanese?.value ??
+          (japaneseLevel ? (japaneseLevel.match[1] ?? japaneseLevel.match[2] ?? japaneseLevel.match[3] ?? null) : null),
         structuredJapanese ? 0.9 : 0.8,
         structuredJapanese?.sources ?? (japaneseLevel ? [japaneseLevel.block] : [])
       ),
@@ -2118,12 +2307,21 @@ export function extractCandidateDraft(document: DocumentIR, now = new Date()): C
       field(
         'role',
         '役割',
-        structuredRole ?? (role ? role.match[1] ?? role.match[2] ?? null : null),
+        structuredRole ?? (role ? (role.match[1] ?? role.match[2] ?? null)?.trim() || null : null),
         structuredRole ? 0.9 : 0.72,
         structuredRole ? structuredRoleSources : role ? [role.block] : []
       ),
       // 大森常駐可 names a place and a work style; the place is the location.
-      field('location', '希望勤務地・通勤範囲', preferredLocation?.match[1]?.trim().replace(/(?:常駐|リモート|在宅|出社|出勤|勤務)(?:可能|可|希望)?$/u, '').trim() || null, 0.72, preferredLocation ? [preferredLocation.block] : []),
+      field(
+        'location',
+        '希望勤務地・通勤範囲',
+        preferredLocation?.match[1]
+          ?.trim()
+          .replace(/(?:常駐|リモート|在宅|出社|出勤|勤務)(?:可能|可|希望)?$/u, '')
+          .trim() || null,
+        0.72,
+        preferredLocation ? [preferredLocation.block] : []
+      ),
       field(
         'work_authorization',
         '就労資格（国籍は保存しない）',

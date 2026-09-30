@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { CandidateReviewSnapshot, JobCaseReviewSnapshot, MatchingHomeProjection } from '@shared'
+import type { CandidateReviewSnapshot, JobCaseReviewSnapshot } from '@shared'
 import { UiLocaleProvider } from '../i18n'
 import { AgentBusinessWorkspacePanel } from './AgentBusinessWorkspacePanel'
 
@@ -13,52 +13,145 @@ const candidate: CandidateReviewSnapshot = {
   status: 'completed',
   piiReviewed: true,
   localIdentity: {
-    displayName: '张伟', gender: null, birthDate: null, nationality: null, phone: null, email: null,
-    address: null, education: null, major: null, graduationDate: null, degree: null,
-    storage: 'encrypted-local-only', cloudEligible: false
+    displayName: '张伟',
+    gender: null,
+    birthDate: null,
+    nationality: null,
+    phone: null,
+    email: null,
+    address: null,
+    education: null,
+    major: null,
+    graduationDate: null,
+    degree: null,
+    storage: 'encrypted-local-only',
+    cloudEligible: false
   },
   fields: [
-    { key: 'skills', label: '技能', originalValue: 'Java', value: 'Java', confidence: 1, status: 'confirmed', sourceLabels: ['Sheet1!A1'], changed: false, changeReason: null },
-    { key: 'role', label: '角色', originalValue: 'SE', value: 'SE', confidence: 1, status: 'confirmed', sourceLabels: ['Sheet1!A2'], changed: false, changeReason: null }
+    {
+      key: 'skills',
+      label: '技能',
+      originalValue: 'Java',
+      value: 'Java',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: ['Sheet1!A1'],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'role',
+      label: '角色',
+      originalValue: 'SE',
+      value: 'SE',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: ['Sheet1!A2'],
+      changed: false,
+      changeReason: null
+    }
   ],
   projectExperiences: [],
   completedAt: '2026-08-20T00:00:00.000Z',
   reviewerDisplayName: 'SES',
-  profile: { id: '22222222-2222-4222-8222-222222222222', sourceDocumentId: documentId, version: 1, status: 'current', confirmedAt: '2026-08-20T00:00:00.000Z', confirmedBy: 'SES', containsDirectIdentifiers: true },
+  profile: {
+    id: '22222222-2222-4222-8222-222222222222',
+    sourceDocumentId: documentId,
+    version: 1,
+    status: 'current',
+    confirmedAt: '2026-08-20T00:00:00.000Z',
+    confirmedBy: 'SES',
+    containsDirectIdentifiers: true
+  },
   recruitingStatus: 'ready-for-recruiting',
   talentPoolStatus: 'none',
   recordStatus: 'active'
 }
 
 const jobCase: JobCaseReviewSnapshot = {
-  reviewId: '33333333-3333-4333-8333-333333333333', sourceId: 'manual-1', sourceType: 'manual',
-  providerMessageId: null, threadId: 'manual-1', fromDomain: null, messageDate: '2026-08-24T00:00:00.000Z',
-  redactedSubject: 'Java 案件', redactedPreview: 'Java / AWS', reviewRevision: 1, status: 'completed', privacyReviewed: true,
-  fields: [{ key: 'title', label: '案件名', originalValue: 'Java 案件', value: 'Java 案件', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null }],
-  warningCodes: [], completedAt: '2026-08-24T00:00:00.000Z', reviewerDisplayName: 'SES',
-  jobCase: { id: '44444444-4444-4444-8444-444444444444', sourceReviewId: '33333333-3333-4333-8333-333333333333', version: 1, status: 'active', confirmedAt: '2026-08-24T00:00:00.000Z', confirmedBy: 'SES', containsDirectIdentifiers: false },
-  lifecycle: 'active', cloudEligible: false
+  reviewId: '33333333-3333-4333-8333-333333333333',
+  sourceId: 'manual-1',
+  sourceType: 'manual',
+  providerMessageId: null,
+  threadId: 'manual-1',
+  fromDomain: null,
+  messageDate: '2026-08-24T00:00:00.000Z',
+  redactedSubject: 'Java 案件',
+  redactedPreview: 'Java / AWS',
+  reviewRevision: 1,
+  status: 'completed',
+  privacyReviewed: true,
+  fields: [
+    {
+      key: 'title',
+      label: '案件名',
+      originalValue: 'Java 案件',
+      value: 'Java 案件',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    }
+  ],
+  warningCodes: [],
+  completedAt: '2026-08-24T00:00:00.000Z',
+  reviewerDisplayName: 'SES',
+  jobCase: {
+    id: '44444444-4444-4444-8444-444444444444',
+    sourceReviewId: '33333333-3333-4333-8333-333333333333',
+    version: 1,
+    status: 'active',
+    confirmedAt: '2026-08-24T00:00:00.000Z',
+    confirmedBy: 'SES',
+    containsDirectIdentifiers: false
+  },
+  lifecycle: 'active',
+  cloudEligible: false
 }
 
-const matchingHome: MatchingHomeProjection = {
-  state: 'ready-to-run', eligibleCandidateCount: 0, selectedJobCaseId: jobCase.jobCase!.id,
-  jobCases: [{ id: jobCase.jobCase!.id, version: 1, title: 'Java 案件', validity: 'not_run', lastRunCreatedAt: null }],
-  currentRun: null
-}
-
+const managementActions = () => ({
+  onSubmit: vi.fn(),
+  onSetLifecycle: vi.fn(),
+  onReopen: vi.fn(),
+  onPreviewDeletion: vi.fn(),
+  onDelete: vi.fn(),
+  onDeleted: vi.fn(),
+  onLoadHistory: vi.fn(async () => [])
+})
 function renderPanel(
   access: Parameters<typeof AgentBusinessWorkspacePanel>[0]['access'],
   overrides: Partial<Parameters<typeof AgentBusinessWorkspacePanel>[0]> = {}
 ) {
   const props: Parameters<typeof AgentBusinessWorkspacePanel>[0] = {
     access,
-    candidateReviews: [candidate], interviews: [], jobCaseReviews: [jobCase], matchingHome,
-    reviewQueue: [], tasks: [], onClose: vi.fn(), onOpenAccess: vi.fn(),
-    onCreateManualCase: vi.fn(), onLoadOriginalDocument: vi.fn(), onResolveActionApproval: vi.fn(),
+    candidateReviews: [candidate],
+    interviews: [],
+    jobCaseReviews: [jobCase],
+    reviewQueue: [],
+    tasks: [],
+    onClose: vi.fn(),
+    onOpenAccess: vi.fn(),
+    onCreateManualCase: vi.fn(),
+    onLoadOriginalDocument: vi.fn(),
+    onResolveActionApproval: vi.fn(),
+    onFindPeople: vi.fn(),
     ...overrides
   }
-  const view = render(<UiLocaleProvider locale="zh-CN"><AgentBusinessWorkspacePanel {...props} /></UiLocaleProvider>)
-  return { ...props, rerenderPanel: (next: Partial<typeof props>) => view.rerender(<UiLocaleProvider locale="zh-CN"><AgentBusinessWorkspacePanel {...props} {...next} /></UiLocaleProvider>) }
+  const view = render(
+    <UiLocaleProvider locale="zh-CN">
+      <AgentBusinessWorkspacePanel {...props} />
+    </UiLocaleProvider>
+  )
+  return {
+    ...props,
+    rerenderPanel: (next: Partial<typeof props>) =>
+      view.rerender(
+        <UiLocaleProvider locale="zh-CN">
+          <AgentBusinessWorkspacePanel {...props} {...next} />
+        </UiLocaleProvider>
+      )
+  }
 }
 
 describe('AgentBusinessWorkspacePanel', () => {
@@ -74,17 +167,26 @@ describe('AgentBusinessWorkspacePanel', () => {
     expect(document.activeElement).toBe(body)
   })
 
-  it('opens the traditional case page for pending case changes', () => {
-    const onEditCase = vi.fn()
-    renderPanel({ type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId }, { jobCaseReviews: [{ ...jobCase, status: 'awaiting-review', jobCase: null }], onEditCase })
-    expect(screen.queryByRole('combobox', { name: '案件状态' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '在案件页面编辑' }))
-    expect(onEditCase).toHaveBeenCalledWith(jobCase.reviewId)
+  it('reviews a pending case in the panel instead of leaving for the case page', () => {
+    const caseManagement = managementActions()
+    renderPanel(
+      { type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId },
+      { jobCaseReviews: [{ ...jobCase, status: 'awaiting-review', jobCase: null }], caseManagement }
+    )
+    expect(screen.queryByRole('button', { name: '确认案件' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '逐项确认案件' }))
+    expect(screen.getByRole('button', { name: '确认案件' })).toBeInTheDocument()
+    // Only the review editor's own entry; the panel adds its button once the case is confirmed.
+    expect(screen.getAllByRole('button', { name: '历史与管理' })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: '收起逐项确认' }))
+    expect(screen.queryByRole('button', { name: '确认案件' })).not.toBeInTheDocument()
   })
   it('keeps exactly one case disclosure and resets it while repeatedly switching records', () => {
     const other = { ...jobCase, reviewId: '55555555-5555-4555-8555-555555555555', redactedSubject: 'Second case' }
-    const props = renderPanel({ type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId }, { jobCaseReviews: [jobCase, other], onLoadJobCaseSourceText: vi.fn() })
+    const props = renderPanel(
+      { type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId },
+      { jobCaseReviews: [jobCase, other], onLoadJobCaseSourceText: vi.fn() }
+    )
     for (const reviewId of [other.reviewId, jobCase.reviewId, other.reviewId, jobCase.reviewId]) {
       const editor = screen.getByText('查看全部字段').closest('details')!
       editor.open = true
@@ -95,18 +197,38 @@ describe('AgentBusinessWorkspacePanel', () => {
   })
   it('shows all resume skills together in the field that can be edited', () => {
     const skills = Array.from({ length: 12 }, (_, index) => `Skill ${index + 1}`)
-    renderPanel({ type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'resume' }, { candidateReviews: [{ ...candidate, fields: [{ ...candidate.fields[0]!, value: skills.join(', ') }, candidate.fields[1]!] }] })
+    renderPanel(
+      { type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'resume' },
+      { candidateReviews: [{ ...candidate, fields: [{ ...candidate.fields[0]!, value: skills.join(', ') }, candidate.fields[1]!] }] }
+    )
     expect(screen.getByText(skills.join(', '))).toBeVisible()
     expect(screen.getByText('Sheet1!A1')).not.toBeVisible()
   })
   it('renders original spreadsheets as cells with sheet selection and zoom', async () => {
-    renderPanel({ type: 'system-access', destination: 'original-document', sourceDocumentId: documentId }, { onLoadOriginalDocument: vi.fn().mockResolvedValue({
-      format: 'xlsx', fileName: 'resume.xlsx', size: 1200, viewMode: 'spreadsheet',
-      sheets: [
-        { name: 'Profile', printArea: 'A1:B2', cells: [{ address: 'A1', text: 'Name', mergedRange: null }, { address: 'B1', text: 'TEST Person', mergedRange: null }] },
-        { name: 'Projects', printArea: 'A1:B2', cells: [{ address: 'A1', text: 'Project A', mergedRange: 'A1:B1' }] }
-      ], pages: [], paragraphs: []
-    }) })
+    renderPanel(
+      { type: 'system-access', destination: 'original-document', sourceDocumentId: documentId },
+      {
+        onLoadOriginalDocument: vi.fn().mockResolvedValue({
+          format: 'xlsx',
+          fileName: 'resume.xlsx',
+          size: 1200,
+          viewMode: 'spreadsheet',
+          sheets: [
+            {
+              name: 'Profile',
+              printArea: 'A1:B2',
+              cells: [
+                { address: 'A1', text: 'Name', mergedRange: null },
+                { address: 'B1', text: 'TEST Person', mergedRange: null }
+              ]
+            },
+            { name: 'Projects', printArea: 'A1:B2', cells: [{ address: 'A1', text: 'Project A', mergedRange: 'A1:B1' }] }
+          ],
+          pages: [],
+          paragraphs: []
+        })
+      }
+    )
     expect(await screen.findByRole('table', { name: 'Profile' })).toBeVisible()
     expect(screen.getByRole('cell', { name: 'TEST Person' })).toBeVisible()
     fireEvent.change(screen.getByLabelText('工作表'), { target: { value: 'Projects' } })
@@ -119,21 +241,37 @@ describe('AgentBusinessWorkspacePanel', () => {
     const onOpenAccess = vi.fn()
     const onMarkSeen = vi.fn()
     const reviewId = '44444444-4444-4444-8444-444444444444'
-    renderPanel({ type: 'system-access', destination: 'new-cases' }, {
-      onOpenAccess,
-      onMarkSeen,
-      newCaseDigest: {
-        newCasesToday: 1, unseenCount: 1,
-        groups: [{
-          day: 'today', count: 1, unseenCount: 1,
-          entries: [{
-            reviewId, jobCaseId: null, title: 'Java 決済基盤', sourceType: 'gmail',
-            arrivedAt: '2026-09-02T01:00:00.000Z', unseen: true, status: 'ready',
-            missingFieldKeys: [], highlights: []
-          }]
-        }]
+    renderPanel(
+      { type: 'system-access', destination: 'new-cases' },
+      {
+        onOpenAccess,
+        onMarkSeen,
+        newCaseDigest: {
+          newCasesToday: 1,
+          unseenCount: 1,
+          groups: [
+            {
+              day: 'today',
+              count: 1,
+              unseenCount: 1,
+              entries: [
+                {
+                  reviewId,
+                  jobCaseId: null,
+                  title: 'Java 決済基盤',
+                  sourceType: 'gmail',
+                  arrivedAt: '2026-09-02T01:00:00.000Z',
+                  unseen: true,
+                  status: 'ready',
+                  missingFieldKeys: [],
+                  highlights: []
+                }
+              ]
+            }
+          ]
+        }
       }
-    })
+    )
     expect(screen.getByText('Java 決済基盤')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '详情' }))
     expect(onMarkSeen).toHaveBeenCalledWith(reviewId)
@@ -167,18 +305,20 @@ describe('AgentBusinessWorkspacePanel', () => {
     }
     renderPanel({ type: 'system-access', destination: 'broadcast' }, { broadcastActions: actions })
     await waitFor(() => expect(actions.loadWorkspace).toHaveBeenCalledTimes(1))
-    expect(screen.getByText('还没有可配信的案件')).toBeInTheDocument()
+    expect(screen.getByText('还没有可群发的案件')).toBeInTheDocument()
 
     cleanup()
     renderPanel({ type: 'system-access', destination: 'broadcast' })
-    expect(screen.getByText('案件配信在此环境中不可用')).toBeInTheDocument()
+    expect(screen.getByText('群发案件在此环境中不可用')).toBeInTheDocument()
   })
 
-  it('offers 配信 straight from a confirmed case in the case list', () => {
+  it('offers 群发案件 straight from a confirmed case in the case list', () => {
     const props = renderPanel({ type: 'system-access', destination: 'job-cases' })
-    fireEvent.click(screen.getByRole('button', { name: '配信' }))
+    fireEvent.click(screen.getByRole('button', { name: '群发案件' }))
     expect(props.onOpenAccess).toHaveBeenCalledWith({
-      type: 'system-access', destination: 'broadcast', reviewId: jobCase.reviewId
+      type: 'system-access',
+      destination: 'broadcast',
+      reviewId: jobCase.reviewId
     })
   })
 
@@ -190,16 +330,18 @@ describe('AgentBusinessWorkspacePanel', () => {
     expect(props.onClose).not.toHaveBeenCalled()
   })
 
-  it('shows valid case details read-only and delegates editing to the full page', () => {
-    const onEditCase = vi.fn()
+  it('edits a valid case inline and opens history and management in the panel', async () => {
+    const caseManagement = managementActions()
     const onSubmitJobCaseReview = vi.fn()
-    renderPanel({ type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId }, { onEditCase, onSubmitJobCaseReview })
-    expect(screen.getByText('有效')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('查看全部字段'))
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '保存修改' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '在案件页面编辑' }))
-    expect(onEditCase).toHaveBeenCalledWith(jobCase.reviewId)
+    renderPanel(
+      { type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId },
+      { caseManagement, onSubmitJobCaseReview }
+    )
+    expect(screen.getByText('进行中')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '逐项确认案件' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '历史与管理' }))
+    expect(screen.getByRole('dialog', { name: '案件历史与管理' })).toBeInTheDocument()
+    await waitFor(() => expect(caseManagement.onLoadHistory).toHaveBeenCalledWith(jobCase.reviewId))
     expect(onSubmitJobCaseReview).not.toHaveBeenCalled()
   })
 
@@ -216,7 +358,10 @@ describe('AgentBusinessWorkspacePanel', () => {
     expect(screen.getByText(/这里的资料可用于后续提问/u)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /张伟/u }))
     expect(props.onOpenAccess).toHaveBeenCalledWith({
-      type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'overview'
+      type: 'system-access',
+      destination: 'candidate',
+      sourceDocumentId: documentId,
+      view: 'overview'
     })
   })
 
@@ -225,26 +370,59 @@ describe('AgentBusinessWorkspacePanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '在右侧查看原始简历' }))
     expect(props.onOpenAccess).toHaveBeenCalledWith({
-      type: 'system-access', destination: 'original-document', sourceDocumentId: documentId
+      type: 'system-access',
+      destination: 'original-document',
+      sourceDocumentId: documentId
     })
   })
 
   it('narrows the review center to the drafts one paste produced and confirms a row as it stands', async () => {
     const awaiting: JobCaseReviewSnapshot = {
-      ...jobCase, reviewId: '55555555-5555-4555-8555-555555555555', status: 'awaiting-review', privacyReviewed: false,
-      completedAt: null, reviewerDisplayName: null, jobCase: null,
+      ...jobCase,
+      reviewId: '55555555-5555-4555-8555-555555555555',
+      status: 'awaiting-review',
+      privacyReviewed: false,
+      completedAt: null,
+      reviewerDisplayName: null,
+      jobCase: null,
       fields: [
-        { key: 'title', label: '案件名', originalValue: 'PHP 案件', value: 'PHP 案件', confidence: 0.8, status: 'needs_review', sourceLabels: [], changed: false, changeReason: null },
-        { key: 'rate', label: '単価', originalValue: '55万円', value: '55万円', confidence: 0.8, status: 'needs_review', sourceLabels: [], changed: false, changeReason: null }
+        {
+          key: 'title',
+          label: '案件名',
+          originalValue: 'PHP 案件',
+          value: 'PHP 案件',
+          confidence: 0.8,
+          status: 'needs_review',
+          sourceLabels: [],
+          changed: false,
+          changeReason: null
+        },
+        {
+          key: 'rate',
+          label: '単価',
+          originalValue: '55万円',
+          value: '55万円',
+          confidence: 0.8,
+          status: 'needs_review',
+          sourceLabels: [],
+          changed: false,
+          changeReason: null
+        }
       ]
     }
     const untitled: JobCaseReviewSnapshot = {
-      ...awaiting, reviewId: '66666666-6666-4666-8666-666666666666',
+      ...awaiting,
+      reviewId: '66666666-6666-4666-8666-666666666666',
       fields: [{ ...awaiting.fields[0]!, originalValue: null, value: null, status: 'missing' }]
     }
     const onSubmitJobCaseReview = vi.fn().mockResolvedValue({ review: { ...awaiting, status: 'completed' } })
     const props = renderPanel(
-      { type: 'system-access', destination: 'review-center', intakeBatchId: '77777777-7777-4777-8777-777777777777', reviewIds: [awaiting.reviewId, untitled.reviewId, jobCase.reviewId] },
+      {
+        type: 'system-access',
+        destination: 'review-center',
+        intakeBatchId: '77777777-7777-4777-8777-777777777777',
+        reviewIds: [awaiting.reviewId, untitled.reviewId, jobCase.reviewId]
+      },
       { jobCaseReviews: [jobCase, awaiting, untitled], onSubmitJobCaseReview }
     )
 
@@ -257,11 +435,16 @@ describe('AgentBusinessWorkspacePanel', () => {
     fireEvent.click(quickConfirmButtons[0]!)
     await waitFor(() => expect(onSubmitJobCaseReview).toHaveBeenCalledTimes(1))
     expect(onSubmitJobCaseReview).toHaveBeenCalledWith({
-      reviewId: awaiting.reviewId, reviewRevision: 1, privacyReviewed: true,
-      fields: [{ key: 'title', value: 'PHP 案件', confirmed: true }, { key: 'rate', value: '55万円', confirmed: true }]
+      reviewId: awaiting.reviewId,
+      reviewRevision: 1,
+      privacyReviewed: true,
+      fields: [
+        { key: 'title', value: 'PHP 案件', confirmed: true },
+        { key: 'rate', value: '55万円', confirmed: true }
+      ]
     })
-    fireEvent.click(screen.getByRole('button', { name: '打开匹配' }))
-    expect(props.onOpenAccess).toHaveBeenCalledWith({ type: 'system-access', destination: 'matching', jobCaseId: jobCase.jobCase!.id })
+    fireEvent.click(screen.getByRole('button', { name: '找人' }))
+    expect(props.onFindPeople).toHaveBeenCalledWith(jobCase)
   })
 
   it('creates a manual case in the panel and continues to its right-side review', async () => {
@@ -274,7 +457,9 @@ describe('AgentBusinessWorkspacePanel', () => {
 
     await waitFor(() => expect(onCreateManualCase).toHaveBeenCalledWith({ subject: 'Java 案件', body: '需要 Java 和 AWS' }))
     expect(props.onOpenAccess).toHaveBeenCalledWith({
-      type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId
+      type: 'system-access',
+      destination: 'case-review',
+      reviewId: jobCase.reviewId
     })
   })
 
@@ -290,7 +475,10 @@ describe('AgentBusinessWorkspacePanel', () => {
       sourceType: 'gmail' as const,
       redactedSubject: 'Java 案件のご紹介',
       redactedBody: '担当: <PERSON_NAME_001>\n連絡先: <PHONE_001>\n単価: 70万円\n<UNKNOWN_KIND_001>',
-      localDisplay: { subject: 'Java 案件のご紹介', body: '担当: TEST CONTACT\n連絡先: 090-0000-0000\n単価: 70万円\nBTP or Fiori or Cdsview' },
+      localDisplay: {
+        subject: 'Java 案件のご紹介',
+        body: '担当: TEST CONTACT\n連絡先: 090-0000-0000\n単価: 70万円\nBTP or Fiori or Cdsview'
+      },
       messageDate: '2026-08-24T00:00:00.000Z',
       fromDomain: 'partner.example.co.jp'
     })
@@ -312,11 +500,48 @@ describe('AgentBusinessWorkspacePanel', () => {
 
   it('loads the complete body for a manually entered case too', async () => {
     const onLoadJobCaseSourceText = vi.fn().mockResolvedValue({ redactedBody: '手动录入的完整案件', sourceType: 'manual' })
-    renderPanel(
-      { type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId },
-      { onLoadJobCaseSourceText }
-    )
+    renderPanel({ type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId }, { onLoadJobCaseSourceText })
     expect(await screen.findByText('手动录入的完整案件')).toBeVisible()
     expect(onLoadJobCaseSourceText).toHaveBeenCalledWith(jobCase.reviewId)
+  })
+
+  it('finds people for an active case without a confirmed job case, the same as the case list card', () => {
+    const draft = { ...jobCase, status: 'awaiting-review' as const, jobCase: null }
+    const onFindPeople = vi.fn()
+    const props = renderPanel(
+      { type: 'system-access', destination: 'case-review', reviewId: draft.reviewId },
+      { jobCaseReviews: [draft], onFindPeople }
+    )
+    fireEvent.click(screen.getByRole('button', { name: /为此案件找人/u }))
+    expect(onFindPeople).toHaveBeenCalledWith(draft)
+    expect(props.onOpenAccess).not.toHaveBeenCalled()
+
+    cleanup()
+    renderPanel(
+      { type: 'system-access', destination: 'case-review', reviewId: draft.reviewId },
+      { jobCaseReviews: [{ ...draft, lifecycle: 'archived' }], onFindPeople }
+    )
+    expect(screen.queryByRole('button', { name: /为此案件找人/u })).not.toBeInTheDocument()
+  })
+
+  it('names the source and lifecycle in words and puts finding people beside the title', () => {
+    const onFindPeople = vi.fn()
+    const props = renderPanel({ type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId }, { onFindPeople })
+    expect(screen.getByText(/手动输入 ·/u)).toBeInTheDocument()
+    expect(screen.getByText('进行中')).toBeInTheDocument()
+    expect(screen.queryByText(/MANUAL/u)).not.toBeInTheDocument()
+    const header = within(document.querySelector('.agent-case-title-row') as HTMLElement)
+    fireEvent.click(header.getByRole('button', { name: /为此案件找人/u }))
+    expect(onFindPeople).toHaveBeenCalledWith(jobCase)
+    fireEvent.click(header.getByRole('button', { name: '群发案件' }))
+    expect(props.onOpenAccess).toHaveBeenCalledWith({ type: 'system-access', destination: 'broadcast', reviewId: jobCase.reviewId })
+  })
+
+  it('shows person statuses as readable labels instead of raw values', () => {
+    renderPanel({ type: 'system-access', destination: 'candidate', sourceDocumentId: candidate.documentId, view: 'overview' })
+    expect(screen.getByText('待安排招聘面试')).toBeInTheDocument()
+    expect(screen.getByText('暂不参与匹配')).toBeInTheDocument()
+    expect(screen.getByText('有效')).toBeInTheDocument()
+    expect(screen.queryByText('ready-for-recruiting')).not.toBeInTheDocument()
   })
 })

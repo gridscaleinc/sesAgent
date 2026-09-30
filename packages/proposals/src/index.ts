@@ -22,34 +22,30 @@ function hashJson(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
-function fieldValue(
-  fields: Array<{ key: string; value: string | null }>,
-  key: string,
-  fallback = '未記載'
-): string {
+function fieldValue(fields: Array<{ key: string; value: string | null }>, key: string, fallback = '未記載'): string {
   return fields.find((field) => field.key === key)?.value?.trim() || fallback
 }
 
 function normalizedCc(values: string[], recipientTo: string): string[] {
   const recipient = recipientTo.toLocaleLowerCase('en-US')
-  return [...new Set(values.map((value) => value.trim().toLocaleLowerCase('en-US')))]
-    .filter((value) => value !== recipient)
-    .toSorted()
+  return [...new Set(values.map((value) => value.trim().toLocaleLowerCase('en-US')))].filter((value) => value !== recipient).toSorted()
 }
 
-export function proposalContentHash(draft: Pick<
-  ProposalDraftSnapshot,
-  | 'jobCaseId'
-  | 'jobCaseVersion'
-  | 'candidateProfileId'
-  | 'candidateProfileVersion'
-  | 'recipientTo'
-  | 'recipientCc'
-  | 'candidateDisplayName'
-  | 'subject'
-  | 'body'
-  | 'attachment'
->): string {
+export function proposalContentHash(
+  draft: Pick<
+    ProposalDraftSnapshot,
+    | 'jobCaseId'
+    | 'jobCaseVersion'
+    | 'candidateProfileId'
+    | 'candidateProfileVersion'
+    | 'recipientTo'
+    | 'recipientCc'
+    | 'candidateDisplayName'
+    | 'subject'
+    | 'body'
+    | 'attachment'
+  >
+): string {
   return hashJson({
     jobCase: { id: draft.jobCaseId, version: draft.jobCaseVersion },
     candidateProfile: { id: draft.candidateProfileId, version: draft.candidateProfileVersion },
@@ -70,11 +66,14 @@ export function proposalContentHash(draft: Pick<
   })
 }
 
-function attachmentFromCandidate(profile: CandidateProfile): ProposalAttachmentPreview {
+/**
+ * The redacted skill sheet model shared by the proposal package and the introduction composer's
+ * skill sheet export: confirmed fields and projects only, an anonymous label instead of the name,
+ * no work authorization, no source file, and a direct-identifier scan that blocks the whole sheet.
+ */
+export function attachmentFromCandidate(profile: CandidateProfile): ProposalAttachmentPreview {
   const fields = profile.fields
-    .filter((field): field is typeof field & { value: string } =>
-      field.key !== 'work_authorization' && Boolean(field.value?.trim())
-    )
+    .filter((field): field is typeof field & { value: string } => field.key !== 'work_authorization' && Boolean(field.value?.trim()))
     .map((field) => ({
       key: field.key,
       label: field.label,
@@ -88,16 +87,18 @@ function attachmentFromCandidate(profile: CandidateProfile): ProposalAttachmentP
     technologies: project.technologies.map((technology) => technology.trim()).filter(Boolean),
     summary: project.summary.trim()
   }))
-  const identifiers = detectDirectIdentifiers([
-    ...fields.map((field) => field.value),
-    ...projectExperiences.flatMap((project) => [
-      project.title,
-      project.period ?? '',
-      project.role ?? '',
-      ...project.technologies,
-      project.summary
-    ])
-  ].join('\n'))
+  const identifiers = detectDirectIdentifiers(
+    [
+      ...fields.map((field) => field.value),
+      ...projectExperiences.flatMap((project) => [
+        project.title,
+        project.period ?? '',
+        project.role ?? '',
+        ...project.technologies,
+        project.summary
+      ])
+    ].join('\n')
+  )
   if (identifiers.length > 0) {
     throw new Error(`Candidate profile is not eligible for proposal export: ${identifiers.join(', ')}`)
   }
@@ -137,15 +138,13 @@ function localJapaneseTemplate(
   const japanese = fieldValue(profile.fields, 'japanese_level')
   const workStyle = fieldValue(profile.fields, 'work_style')
   const candidateRole = fieldValue(profile.fields, 'role')
-  const greeting = input.tone === 'formal'
-    ? '平素より大変お世話になっております。'
-    : 'いつもお世話になっております。'
-  const introduction = input.tone === 'concise'
-    ? `下記人材をご提案いたします。`
-    : `${caseTitle}のご要件に関連し、下記人材をご提案申し上げます。`
-  const closing = input.tone === 'formal'
-    ? 'ご査収のうえ、ご面談の機会を賜れますと幸甚に存じます。何卒よろしくお願い申し上げます。'
-    : 'ご関心をお持ちいただけましたら、面談候補日時をご相談させてください。よろしくお願いいたします。'
+  const greeting = input.tone === 'formal' ? '平素より大変お世話になっております。' : 'いつもお世話になっております。'
+  const introduction =
+    input.tone === 'concise' ? `下記人材をご提案いたします。` : `${caseTitle}のご要件に関連し、下記人材をご提案申し上げます。`
+  const closing =
+    input.tone === 'formal'
+      ? 'ご査収のうえ、ご面談の機会を賜れますと幸甚に存じます。何卒よろしくお願い申し上げます。'
+      : 'ご関心をお持ちいただけましたら、面談候補日時をご相談させてください。よろしくお願いいたします。'
   return {
     subject: `【人材ご提案】${caseTitle} / ${input.candidateDisplayName}`.slice(0, 200),
     body: [
@@ -183,19 +182,19 @@ export function createLocalProposalDraft(
   const input = createProposalDraftInputSchema.parse(rawInput)
   if (jobCase.id !== input.jobCaseId) throw new Error('Proposal job case identity does not match.')
   if (profile.id !== input.candidateProfileId) throw new Error('Proposal candidate identity does not match.')
-  const sourceIdentifiers = detectDirectIdentifiers([
-    ...jobCase.fields.map((field) => field.value ?? ''),
-    ...profile.fields
-      .filter((field) => field.key !== 'work_authorization')
-      .map((field) => field.value ?? ''),
-    ...profile.projectExperiences.flatMap((project) => [
-      project.title,
-      project.period ?? '',
-      project.role ?? '',
-      ...project.technologies,
-      project.summary
-    ])
-  ].join('\n'))
+  const sourceIdentifiers = detectDirectIdentifiers(
+    [
+      ...jobCase.fields.map((field) => field.value ?? ''),
+      ...profile.fields.filter((field) => field.key !== 'work_authorization').map((field) => field.value ?? ''),
+      ...profile.projectExperiences.flatMap((project) => [
+        project.title,
+        project.period ?? '',
+        project.role ?? '',
+        ...project.technologies,
+        project.summary
+      ])
+    ].join('\n')
+  )
   if (sourceIdentifiers.length > 0) {
     throw new Error(`Confirmed proposal inputs contain direct identifiers: ${sourceIdentifiers.join(', ')}`)
   }
@@ -253,7 +252,8 @@ export function updateLocalProposalDraft(
   const input = updateProposalDraftInputSchema.parse(rawInput)
   if (current.id !== input.draftId) throw new Error('Proposal draft identity does not match.')
   if (current.revision !== input.revision) throw new Error('Proposal draft changed. Reload before editing.')
-  if (current.followUp.stage !== null) throw new Error('A proposal with recorded delivery or sales results cannot be edited. Create a new draft instead.')
+  if (current.followUp.stage !== null)
+    throw new Error('A proposal with recorded delivery or sales results cannot be edited. Create a new draft instead.')
   const updatedBase = {
     ...current,
     recipientTo: input.recipientTo.toLocaleLowerCase('en-US'),
@@ -297,11 +297,7 @@ export function approveLocalProposalDraft(
   })
 }
 
-export function markProposalExported(
-  current: ProposalDraftSnapshot,
-  packageHash: string,
-  now = new Date()
-): ProposalDraftSnapshot {
+export function markProposalExported(current: ProposalDraftSnapshot, packageHash: string, now = new Date()): ProposalDraftSnapshot {
   if (current.approvedContentHash !== current.contentHash || !['approved', 'exported'].includes(current.status)) {
     throw new Error('Only the currently approved proposal content can be exported.')
   }
@@ -327,8 +323,10 @@ export function recordLocalProposalFollowUp(
 ): { draft: ProposalDraftSnapshot; event: ProposalFollowUpEvent } {
   const input = recordProposalFollowUpInputSchema.parse(rawInput)
   if (current.id !== input.draftId) throw new Error('Proposal follow-up identity does not match.')
-  if (current.status !== 'exported') throw new Error('Proposal delivery or sales results can only be recorded after an approved package is exported.')
-  if (current.followUp.revision !== input.expectedRevision) throw new Error('Proposal follow-up changed. Reload before recording another result.')
+  if (current.status !== 'exported')
+    throw new Error('Proposal delivery or sales results can only be recorded after an approved package is exported.')
+  if (current.followUp.revision !== input.expectedRevision)
+    throw new Error('Proposal follow-up changed. Reload before recording another result.')
   if (current.followUp.events.length >= 100) throw new Error('Proposal follow-up history reached the supported limit.')
   if (current.followUp.stage === null && input.stage !== 'sent') {
     throw new Error('Record the confirmed external send before recording replies or sales outcomes.')
@@ -379,26 +377,37 @@ export function markProposalExportUnknown(current: ProposalDraftSnapshot, now = 
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
 }
 
 export function proposalAttachmentHtml(draft: ProposalDraftSnapshot): string {
-  const fields = draft.attachment.fields.map((field) => `
+  return skillSheetHtml(draft.attachment, { profileId: draft.candidateProfileId, profileVersion: draft.candidateProfileVersion })
+}
+
+/** Renders the redacted skill sheet; `caseTitle` names the case it is prepared for, when there is one. */
+export function skillSheetHtml(
+  attachment: ProposalAttachmentPreview,
+  meta: { profileId: string; profileVersion: number; caseTitle?: string | null }
+): string {
+  const fields = attachment.fields
+    .map(
+      (field) => `
     <section class="field">
       <span>${escapeHtml(field.label)}</span>
       <strong>${escapeHtml(field.value)}</strong>
-    </section>`).join('')
-  const projects = draft.attachment.projectExperiences.map((project) => `
+    </section>`
+    )
+    .join('')
+  const projects = attachment.projectExperiences
+    .map(
+      (project) => `
     <article class="project">
       <div class="project-heading"><strong>${escapeHtml(project.title)}</strong><span>${escapeHtml(project.period ?? '期間未記載')}</span></div>
       <p class="project-meta">${escapeHtml(project.role ?? '役割未記載')}${project.technologies.length > 0 ? ` · ${escapeHtml(project.technologies.join(' / '))}` : ''}</p>
       <p>${escapeHtml(project.summary)}</p>
-    </article>`).join('')
+    </article>`
+    )
+    .join('')
   return `<!doctype html>
   <html lang="ja"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
   <style>
@@ -408,6 +417,7 @@ export function proposalAttachmentHtml(draft: ProposalDraftSnapshot): string {
     header { padding-bottom: 14px; border-bottom: 2px solid #255da8; }
     .eyebrow { color: #255da8; font-size: 9px; font-weight: 700; letter-spacing: .14em; }
     h1 { margin: 6px 0 4px; font-size: 23px; }
+    .case { margin: 0; color: #4a5568; font-size: 11px; }
     .privacy { margin-top: 8px; padding: 9px 11px; color: #28624d; font-size: 9px; background: #eff8f4; border: 1px solid #cce7dc; border-radius: 6px; }
     main { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 16px; }
     .field { display: grid; min-height: 62px; padding: 10px; background: #f8fafc; border: 1px solid #dce3eb; border-radius: 6px; }
@@ -422,11 +432,11 @@ export function proposalAttachmentHtml(draft: ProposalDraftSnapshot): string {
     .project p { margin: 6px 0 0; font-size: 9px; line-height: 1.55; white-space: pre-wrap; }
     footer { margin-top: 18px; color: #8a94a3; font-size: 7px; border-top: 1px solid #e5e9ef; padding-top: 8px; }
   </style></head><body>
-    <header><span class="eyebrow">REDACTED CANDIDATE PROFILE</span><h1>${escapeHtml(draft.attachment.anonymousCandidateLabel)}</h1>
+    <header><span class="eyebrow">REDACTED CANDIDATE PROFILE</span><h1>${escapeHtml(attachment.anonymousCandidateLabel)}</h1>${meta.caseTitle ? `<p class="case">ご提案案件：${escapeHtml(meta.caseTitle)}</p>` : ''}
       <div class="privacy">個人識別情報を含まない、HR確認済みの構造化プロフィールです。原本ファイル・氏名・連絡先は含まれません。</div>
     </header><main>${fields}</main>
     ${projects ? `<section class="projects"><h2>確認済みプロジェクト経験</h2>${projects}</section>` : ''}
-    <footer>Profile ${escapeHtml(draft.candidateProfileId.slice(0, 8))} · Version ${draft.candidateProfileVersion} · Attachment model hash ${escapeHtml(draft.attachment.contentHash)}</footer>
+    <footer>Profile ${escapeHtml(meta.profileId.slice(0, 8))} · Version ${meta.profileVersion} · Attachment model hash ${escapeHtml(attachment.contentHash)}</footer>
   </body></html>`
 }
 
@@ -459,7 +469,11 @@ export async function buildProposalPackageZip(
     },
     files: [
       { name: 'message.txt', sha256: createHash('sha256').update(messageBytes).digest('hex') },
-      { name: draft.attachment.fileName, sha256: createHash('sha256').update(attachmentPdf).digest('hex'), attachmentModelHash: draft.attachment.contentHash }
+      {
+        name: draft.attachment.fileName,
+        sha256: createHash('sha256').update(attachmentPdf).digest('hex'),
+        attachmentModelHash: draft.attachment.contentHash
+      }
     ]
   }
   const zip = new JSZip()

@@ -1,0 +1,16 @@
+# Code only: documents, generated output and fixtures keep their own layout.
+node_modules
+out
+output
+build
+dist
+apps/desktop/src/renderer/output
+apps/oauth-public-site/.next
+models
+native
+evidence
+packaging
+docs
+*.md
+*.json
+*.html

@@ -34,11 +34,13 @@ describe('LocalOperatorProfileDialog', () => {
     fireEvent.change(screen.getByLabelText('役割'), { target: { value: 'SES営業担当' } })
     fireEvent.click(screen.getByRole('button', { name: '暗号化して保存' }))
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
-      displayName: '佐藤 美咲',
-      roleLabel: 'SES営業担当',
-      expectedRevision: null
-    }))
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        displayName: '佐藤 美咲',
+        roleLabel: 'SES営業担当',
+        expectedRevision: null
+      })
+    )
     expect(onClose).toHaveBeenCalled()
   })
 
@@ -54,10 +56,12 @@ describe('LocalOperatorProfileDialog', () => {
     const onSave = vi.fn().mockResolvedValue({ ...configured, revision: 4 })
     render(<LocalOperatorProfileDialog onClose={vi.fn()} onSave={onSave} profile={configured} />)
     fireEvent.click(screen.getByRole('button', { name: '暗号化して保存' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
-      displayName: '田中 翔',
-      roleLabel: '採用担当',
-      expectedRevision: 3
-    }))
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        displayName: '田中 翔',
+        roleLabel: '採用担当',
+        expectedRevision: 3
+      })
+    )
   })
 })

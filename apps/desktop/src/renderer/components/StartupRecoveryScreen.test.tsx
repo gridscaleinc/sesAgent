@@ -51,9 +51,11 @@ describe('StartupRecoveryScreen', () => {
     expect(verify).toBeDisabled()
     fireEvent.change(screen.getByLabelText('復元パスワード'), { target: { value: 'correct horse battery staple' } })
     fireEvent.click(verify)
-    await waitFor(() => expect(callbacks.onPreviewRecovery).toHaveBeenCalledWith({
-      password: 'correct horse battery staple'
-    }))
+    await waitFor(() =>
+      expect(callbacks.onPreviewRecovery).toHaveBeenCalledWith({
+        password: 'correct horse battery staple'
+      })
+    )
     expect(await screen.findByText('パッケージの認証と内容検証が完了しました')).toBeInTheDocument()
     expect(screen.getByText('v20')).toBeInTheDocument()
     expect(screen.getByText('2件')).toBeInTheDocument()
@@ -68,11 +70,13 @@ describe('StartupRecoveryScreen', () => {
     expect(confirm).toBeDisabled()
     fireEvent.change(screen.getByLabelText('確認のため「復元」と入力'), { target: { value: '復元' } })
     fireEvent.click(confirm)
-    await waitFor(() => expect(callbacks.onConfirmRecovery).toHaveBeenCalledWith({
-      restoreToken: 'b2a56ae6-da51-4cb5-a82c-0fd350558e72',
-      confirmationHash: 'b'.repeat(64),
-      confirmationText: '復元'
-    }))
+    await waitFor(() =>
+      expect(callbacks.onConfirmRecovery).toHaveBeenCalledWith({
+        restoreToken: 'b2a56ae6-da51-4cb5-a82c-0fd350558e72',
+        confirmationHash: 'b'.repeat(64),
+        confirmationText: '復元'
+      })
+    )
     expect(await screen.findByRole('button', { name: '安全に再起動しています…' })).toBeDisabled()
   })
 })

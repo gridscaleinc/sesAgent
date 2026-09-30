@@ -41,8 +41,9 @@ async function runGmailSync(
     throw new Error('Google Workspace を読取専用で接続してください。')
   }
   const accountEmail = googleState.accountEmail
-  const gmail = new GmailReadClient((forceRefresh) => googleWorkspace.getAccessToken(forceRefresh), (input, init) =>
-    net.fetch(input instanceof URL ? input.toString() : input, init)
+  const gmail = new GmailReadClient(
+    (forceRefresh) => googleWorkspace.getAccessToken(forceRefresh),
+    (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
   )
   const coordinator = new GmailSyncCoordinator(gmail, repository, async (message) => {
     const localText = `[SUBJECT]\n${message.subject}\n[FROM]\n${message.from}\n[BODY]\n${message.body}`
@@ -55,8 +56,14 @@ async function runGmailSync(
     const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
     const processed = redactGmailMessageForLocalStorage(message, accountEmail, knownPersonNames)
     repository.saveRedactionSession(processed.redaction.session, processed.redaction.mappings)
-    const progressMessage = repository.captureBusinessProgressMail({ accountEmail, messageId: message.id, threadId: message.threadId,
-      subject: message.subject, body: message.body, receivedAt: new Date(message.internalDate).toISOString() })
+    const progressMessage = repository.captureBusinessProgressMail({
+      accountEmail,
+      messageId: message.id,
+      threadId: message.threadId,
+      subject: message.subject,
+      body: message.body,
+      receivedAt: new Date(message.internalDate).toISOString()
+    })
     return progressMessage ? { ...processed.message, classification: 'unclassified' as const } : processed.message
   })
   await coordinator.synchronize(accountEmail, config)
@@ -72,16 +79,29 @@ async function runGmailSync(
   )
   const intake = await importPendingGmailPersonnel(context, gmail, accountEmail)
   repository.saveGmailIntakeResult(accountEmail, {
-    casesCreated: cases.created, casesConfirmed: cases.confirmed,
-    casesNeedAttention: cases.needsAttention, casesFailed: cases.failed,
-    personnelCreated: intake.personnel, personnelFailed: intake.failed
+    casesCreated: cases.created,
+    casesConfirmed: cases.confirmed,
+    casesNeedAttention: cases.needsAttention,
+    casesFailed: cases.failed,
+    personnelCreated: intake.personnel,
+    personnelFailed: intake.failed
   })
   return { ...gmailSyncState(repository, googleState, config), personnelImported: intake.personnel }
 }
 
 /** Google Workspace OAuth connection, readiness diagnosis and Gmail read-only sync. */
 export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
-  const { repository, localNer, googleWorkspace, googleWorkspaceDomain, googleWorkspaceConfiguration, gmailSyncConfig, userDataPath, currentOperator, preflightAction } = context
+  const {
+    repository,
+    localNer,
+    googleWorkspace,
+    googleWorkspaceDomain,
+    googleWorkspaceConfiguration,
+    gmailSyncConfig,
+    userDataPath,
+    currentOperator,
+    preflightAction
+  } = context
   let gmailSyncInFlight: Promise<GmailSyncState> | null = null
   let onSyncResult: ((state: GmailSyncState) => void) | null = null
 
@@ -102,34 +122,31 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
     })
   })
 
-  ipcMain.handle(
-    ipcChannels.runGoogleWorkspaceOnlineAcceptance,
-    async (event): Promise<GoogleWorkspaceOnlineAcceptanceReport> => {
-      assertTrustedSender(event)
-      if (!googleWorkspace || !googleWorkspaceConfiguration || !gmailSyncConfig) {
-        throw new Error('製品の Google 接続設定と読取専用接続が必要です。')
-      }
-      const state = await googleWorkspace.getState()
-      if (state.status !== 'readonly' || !state.accountEmail) {
-        throw new Error('Google Workspace を読取専用で接続してください。')
-      }
-      const live = await googleWorkspace.verifyReadonlyProfile()
-      const checkpoint = repository.getGmailSyncCheckpoint(state.accountEmail)
-      const report = createGoogleWorkspaceOnlineAcceptanceReport({
-        configuration: googleWorkspaceConfiguration,
-        live,
-        credentialProtection: getPlatformKeyProtection(process.platform),
-        sync: {
-          configHash: checkpoint?.configHash ?? null,
-          status: checkpoint?.status ?? 'never',
-          lastSyncedAt: checkpoint?.lastSyncedAt ?? null,
-          lastRun: checkpoint?.lastRun ?? null
-        },
-        redaction: repository.summarizeGmailRedactionEvidence(state.accountEmail)
-      })
-      return repository.saveGoogleWorkspaceAcceptanceReport(report)
+  ipcMain.handle(ipcChannels.runGoogleWorkspaceOnlineAcceptance, async (event): Promise<GoogleWorkspaceOnlineAcceptanceReport> => {
+    assertTrustedSender(event)
+    if (!googleWorkspace || !googleWorkspaceConfiguration || !gmailSyncConfig) {
+      throw new Error('製品の Google 接続設定と読取専用接続が必要です。')
     }
-  )
+    const state = await googleWorkspace.getState()
+    if (state.status !== 'readonly' || !state.accountEmail) {
+      throw new Error('Google Workspace を読取専用で接続してください。')
+    }
+    const live = await googleWorkspace.verifyReadonlyProfile()
+    const checkpoint = repository.getGmailSyncCheckpoint(state.accountEmail)
+    const report = createGoogleWorkspaceOnlineAcceptanceReport({
+      configuration: googleWorkspaceConfiguration,
+      live,
+      credentialProtection: getPlatformKeyProtection(process.platform),
+      sync: {
+        configHash: checkpoint?.configHash ?? null,
+        status: checkpoint?.status ?? 'never',
+        lastSyncedAt: checkpoint?.lastSyncedAt ?? null,
+        lastRun: checkpoint?.lastRun ?? null
+      },
+      redaction: repository.summarizeGmailRedactionEvidence(state.accountEmail)
+    })
+    return repository.saveGoogleWorkspaceAcceptanceReport(report)
+  })
 
   ipcMain.handle(
     ipcChannels.saveGoogleWorkspaceAdminConfiguration,
@@ -159,9 +176,7 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
 
   ipcMain.handle(ipcChannels.disconnectGoogleWorkspace, async (event): Promise<GoogleWorkspaceState> => {
     assertTrustedSender(event)
-    return googleWorkspace
-      ? googleWorkspace.disconnect()
-      : unconfiguredGoogleWorkspaceState(googleWorkspaceDomain)
+    return googleWorkspace ? googleWorkspace.disconnect() : unconfiguredGoogleWorkspaceState(googleWorkspaceDomain)
   })
 
   /**
@@ -174,18 +189,30 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
     if (!gmailSyncConfig) throw new Error('このビルドには Gmail 同期範囲が組み込まれていません。')
     if (gmailSyncInFlight) return gmailSyncInFlight
     const configurationFingerprint = createHash('sha256').update(JSON.stringify(gmailSyncConfig)).digest('hex')
-    const actionRunId = preflightAction('gmail.sync.read', {
-      origin: 'managed-connector', workTaskId: null, scopeId: 'selected-gmail-message',
-      scopeFingerprint: configurationFingerprint, actorId: currentOperator().operatorId, contentRevision: null
-    }, { configurationFingerprint }, '管理者が固定した Gmail 読取範囲を端末内へ同期します。', `gmail-sync:${randomUUID()}`)
+    const actionRunId = preflightAction(
+      'gmail.sync.read',
+      {
+        origin: 'managed-connector',
+        workTaskId: null,
+        scopeId: 'selected-gmail-message',
+        scopeFingerprint: configurationFingerprint,
+        actorId: currentOperator().operatorId,
+        contentRevision: null
+      },
+      { configurationFingerprint },
+      '管理者が固定した Gmail 読取範囲を端末内へ同期します。',
+      `gmail-sync:${randomUUID()}`
+    )
     repository.updateActionRun(actionRunId, 'running')
     gmailSyncInFlight = runGmailSync(repository, googleWorkspace, localNer, gmailSyncConfig, currentOperator(), context)
       .then((state) => {
         const intake = state.lastRun?.intake
         const failed = state.status === 'error' || (intake?.casesFailed ?? 0) > 0 || (intake?.personnelFailed ?? 0) > 0
-        repository.updateActionRun(actionRunId, failed ? 'failed' : 'succeeded', failed
-          ? { errorCode: state.lastError ?? 'GMAIL_INTAKE_FAILED' }
-          : { resultHash: configurationFingerprint })
+        repository.updateActionRun(
+          actionRunId,
+          failed ? 'failed' : 'succeeded',
+          failed ? { errorCode: state.lastError ?? 'GMAIL_INTAKE_FAILED' } : { resultHash: configurationFingerprint }
+        )
         onSyncResult?.(state)
         return state
       })
@@ -193,7 +220,9 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
         repository.updateActionRun(actionRunId, 'failed', { errorCode: 'GMAIL_SYNC_FAILED' })
         throw cause
       })
-      .finally(() => { gmailSyncInFlight = null })
+      .finally(() => {
+        gmailSyncInFlight = null
+      })
     return gmailSyncInFlight
   }
 
@@ -204,7 +233,9 @@ export function registerGoogleWorkspaceHandlers(context: MainIpcContext) {
 
   return {
     startGmailSync,
-    setSyncResultListener(listener: (state: GmailSyncState) => void) { onSyncResult = listener },
+    setSyncResultListener(listener: (state: GmailSyncState) => void) {
+      onSyncResult = listener
+    },
     isGmailSyncRunning: () => gmailSyncInFlight !== null
   }
 }

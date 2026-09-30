@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { LocalOperatorProfile, SaveLocalOperatorProfileInput } from '@shared'
 import { Icon } from './Icon'
-import { useRendererUiRefresh } from '../i18n'
+import { localizedIpcError, useLocaleText } from '../i18n'
 
 interface LocalOperatorProfileDialogProps {
   profile: LocalOperatorProfile
@@ -10,10 +10,11 @@ interface LocalOperatorProfileDialogProps {
 }
 
 export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOperatorProfileDialogProps) {
-  useRendererUiRefresh()
+  const { locale, t } = useLocaleText()
   const dialogRef = useRef<HTMLElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null)
   const [displayName, setDisplayName] = useState(profile.configured ? profile.displayName : '')
+  // i18n-ignore: default role value saved to the operator profile
   const [roleLabel, setRoleLabel] = useState(profile.configured ? profile.roleLabel : '営業担当')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,9 +37,11 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
       return
     }
     if (event.key !== 'Tab') return
-    const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    ) ?? [])].filter((element) => element.offsetParent !== null)
+    const focusable = [
+      ...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])'
+      ) ?? [])
+    ].filter((element) => element.offsetParent !== null)
     if (focusable.length === 0) return
     const first = focusable[0]
     const last = focusable.at(-1)!
@@ -63,13 +66,17 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
       })
       onClose()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '操作員プロフィールを保存できませんでした。')
+      setError(localizedIpcError(locale, cause, t('无法保存操作员档案。', '操作員プロフィールを保存できませんでした。')))
       setBusy(false)
     }
   }
 
-  const canSave = !busy && displayName.trim().length >= 2 && displayName.trim().length <= 80 &&
-    roleLabel.trim().length >= 2 && roleLabel.trim().length <= 40
+  const canSave =
+    !busy &&
+    displayName.trim().length >= 2 &&
+    displayName.trim().length <= 80 &&
+    roleLabel.trim().length >= 2 &&
+    roleLabel.trim().length <= 40
 
   return (
     <div className="operator-profile-backdrop" role="presentation">
@@ -84,33 +91,98 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
         <header>
           <div>
             <span>LOCAL OPERATOR IDENTITY</span>
-            <h2 id="operator-profile-title">操作員プロフィール</h2>
-            <p>レビュー・承認・削除・提案の監査記録に使う本機内の表示情報です。</p>
+            <h2 id="operator-profile-title">{t('操作员档案', '操作員プロフィール')}</h2>
+            <p>
+              {t(
+                '这是用于审核、审批、删除和提案审计记录的本机显示信息。',
+                'レビュー・承認・削除・提案の監査記録に使う本機内の表示情報です。'
+              )}
+            </p>
           </div>
-          <button aria-label="操作員プロフィールを閉じる" disabled={busy} onClick={onClose} type="button">×</button>
+          <button aria-label={t('关闭操作员档案', '操作員プロフィールを閉じる')} disabled={busy} onClick={onClose} type="button">
+            ×
+          </button>
         </header>
 
         <div className="operator-profile-body">
           {!profile.configured ? (
-            <div className="operator-profile-callout"><Icon name="alert" size={17} /><span><strong>プロフィール未設定</strong>現在の新規操作は中立名「本機ユーザー」で記録されます。</span></div>
+            <div className="operator-profile-callout">
+              <Icon name="alert" size={17} />
+              <span>
+                <strong>{t('档案未设置', 'プロフィール未設定')}</strong>
+                {t('当前新操作将以中性名称“本机用户”记录。', '現在の新規操作は中立名「本機ユーザー」で記録されます。')}
+              </span>
+            </div>
           ) : null}
           <div className="operator-profile-fields">
-            <label>表示名<input autoComplete="name" data-initial-focus="true" maxLength={80} onChange={(event) => setDisplayName(event.target.value)} placeholder="例：佐藤 美咲" value={displayName} /></label>
-            <label>役割<input autoComplete="organization-title" maxLength={40} onChange={(event) => setRoleLabel(event.target.value)} placeholder="例：SES営業担当" value={roleLabel} /></label>
+            <label>
+              {t('显示名称', '表示名')}
+              <input
+                autoComplete="name"
+                data-initial-focus="true"
+                maxLength={80}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder={t('例如：张晓琳', '例：佐藤 美咲')}
+                value={displayName}
+              />
+            </label>
+            <label>
+              {t('角色', '役割')}
+              <input
+                autoComplete="organization-title"
+                maxLength={40}
+                onChange={(event) => setRoleLabel(event.target.value)}
+                placeholder={t('例如：SES 销售负责人', '例：SES営業担当')}
+                value={roleLabel}
+              />
+            </label>
           </div>
           <div className="operator-profile-policy">
-            <div><Icon name="lock" size={15} /><span><strong>保存先</strong> SQLCipher 暗号化ローカルDB</span></div>
-            <div><Icon name="shield" size={15} /><span><strong>Cloud</strong> プロフィールは送信対象外</span></div>
-            <div><Icon name="check" size={15} /><span><strong>用途</strong> 新しく作成する監査記録の操作員表示</span></div>
+            <div>
+              <Icon name="lock" size={15} />
+              <span>
+                <strong>{t('保存位置', '保存先')}</strong> {t('SQLCipher 加密本地数据库', 'SQLCipher 暗号化ローカルDB')}
+              </span>
+            </div>
+            <div>
+              <Icon name="shield" size={15} />
+              <span>
+                <strong>Cloud</strong> {t('档案不属于发送对象', 'プロフィールは送信対象外')}
+              </span>
+            </div>
+            <div>
+              <Icon name="check" size={15} />
+              <span>
+                <strong>{t('用途', '用途')}</strong> {t('新建审计记录中的操作员显示信息', '新しく作成する監査記録の操作員表示')}
+              </span>
+            </div>
           </div>
-          <p className="operator-profile-history-note">既存の監査記録は改変しません。表示名を変更しても、過去の承認者名は当時の記録として保持されます。</p>
-          {profile.configured ? <p className="operator-profile-id">Operator ID <code>{profile.operatorId}</code> · Revision {profile.revision}</p> : null}
-          {error ? <p className="operator-profile-error" role="alert"><Icon name="alert" size={15} />{error}</p> : null}
+          <p className="operator-profile-history-note">
+            {t(
+              '不会修改现有审计记录；即使更改显示名称，历史审批人名称仍按当时记录保留。',
+              '既存の監査記録は改変しません。表示名を変更しても、過去の承認者名は当時の記録として保持されます。'
+            )}
+          </p>
+          {profile.configured ? (
+            <p className="operator-profile-id">
+              Operator ID <code>{profile.operatorId}</code> · Revision {profile.revision}
+            </p>
+          ) : null}
+          {error ? (
+            <p className="operator-profile-error" role="alert">
+              <Icon name="alert" size={15} />
+              {error}
+            </p>
+          ) : null}
         </div>
 
         <footer>
-          <button disabled={busy} onClick={onClose} type="button">キャンセル</button>
-          <button disabled={!canSave} onClick={() => void save()} type="button">{busy ? '保存中…' : '暗号化して保存'}</button>
+          <button disabled={busy} onClick={onClose} type="button">
+            {t('取消', 'キャンセル')}
+          </button>
+          <button disabled={!canSave} onClick={() => void save()} type="button">
+            {busy ? t('正在保存…', '保存中…') : t('加密保存', '暗号化して保存')}
+          </button>
         </footer>
       </section>
     </div>

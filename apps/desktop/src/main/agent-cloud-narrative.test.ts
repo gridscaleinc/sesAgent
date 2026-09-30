@@ -36,21 +36,51 @@ const assistantMessage: AiConversationMessage = {
   content: '机密客户 A 的 Java 案件，报价 90 万。',
   mode: 'local',
   createdAt: '2026-08-18T00:00:00.000Z',
-  blocks: [{
-    type: 'job-case-cards', query: '机密客户 A', dataAsOf: '2026-08-18T00:00:00.000Z',
-    normalizedFilters: { updatedAfter: '2026-07-19T15:00:00.000Z', updatedBefore: '2026-08-18T15:00:00.000Z', lifecycle: 'active', query: null, limit: 20 },
-    totalMatched: 1,
-    cards: [{
-      reference: { kind: 'job-case', objectId: caseId, objectVersion: 2, resultHash: null, ordinal: 1, label: '机密客户 A', target: `job-case:${caseId}` },
-      title: '机密客户 A 的支付系统', version: 2, updatedAt: '2026-08-18T00:00:00.000Z',
-      requiredSkills: 'Java / AWS', rate: '90 万', workStyle: 'remote', startDate: '2026-09-01', status: 'current'
-    }]
-  }]
+  blocks: [
+    {
+      type: 'job-case-cards',
+      query: '机密客户 A',
+      dataAsOf: '2026-08-18T00:00:00.000Z',
+      normalizedFilters: {
+        updatedAfter: '2026-07-19T15:00:00.000Z',
+        updatedBefore: '2026-08-18T15:00:00.000Z',
+        lifecycle: 'active',
+        query: null,
+        limit: 20
+      },
+      totalMatched: 1,
+      cards: [
+        {
+          reference: {
+            kind: 'job-case',
+            objectId: caseId,
+            objectVersion: 2,
+            resultHash: null,
+            ordinal: 1,
+            label: '机密客户 A',
+            target: `job-case:${caseId}`
+          },
+          title: '机密客户 A 的支付系统',
+          version: 2,
+          updatedAt: '2026-08-18T00:00:00.000Z',
+          requiredSkills: 'Java / AWS',
+          rate: '90 万',
+          workStyle: 'remote',
+          startDate: '2026-09-01',
+          status: 'current'
+        }
+      ]
+    }
+  ]
 }
 
 const model: AgentChatModelDefinition = {
-  key: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna', upstreamModel: 'gpt-5.6-luna', maxOutputTokens: 1_200,
-  provider: 'openai', endpoint: 'responses'
+  key: 'gpt-5.6-luna',
+  displayName: 'GPT-5.6 Luna',
+  upstreamModel: 'gpt-5.6-luna',
+  maxOutputTokens: 1_200,
+  provider: 'openai',
+  endpoint: 'responses'
 }
 
 function passedGates() {
@@ -73,28 +103,38 @@ describe('Agent Cloud narrative boundary', () => {
     })
     expect(parseAgentPlanningResponse('{"decision":"answer"}')).toEqual({ kind: 'answer' })
     expect(parseAgentPlanningResponse('{"decision":"tool","call":{"name":"read_candidate_profile","arguments":{"rank":1}}}')).toEqual({
-      kind: 'tool', action: { toolName: 'candidate.profile.read.local', arguments: { rank: 1 } }
+      kind: 'tool',
+      action: { toolName: 'candidate.profile.read.local', arguments: { rank: 1 } }
     })
     expect(parseAgentPlanningResponse('TOOL\n{"name":"match_candidates","arguments":{"ordinal":2}}')).toEqual({
-      kind: 'tool', action: { toolName: 'candidate.match.local', arguments: { ordinal: 2 } }
+      kind: 'tool',
+      action: { toolName: 'candidate.match.local', arguments: { ordinal: 2 } }
     })
     expect(parseAgentPlanningResponse('TOOL\n{"name":"read_candidate_profile","arguments":{"rank":null}}')).toEqual({
-      kind: 'tool', action: { toolName: 'candidate.profile.read.local', arguments: { rank: null } }
+      kind: 'tool',
+      action: { toolName: 'candidate.profile.read.local', arguments: { rank: null } }
     })
-    expect(parseAgentPlanningResponse('```text\nTOOL\n```json\n{"name":"read_candidate_profile","arguments":{"rank":1}}\n```\n```')).toEqual({
-      kind: 'tool', action: { toolName: 'candidate.profile.read.local', arguments: { rank: 1 } }
+    expect(
+      parseAgentPlanningResponse('```text\nTOOL\n```json\n{"name":"read_candidate_profile","arguments":{"rank":1}}\n```\n```')
+    ).toEqual({
+      kind: 'tool',
+      action: { toolName: 'candidate.profile.read.local', arguments: { rank: 1 } }
     })
     expect(parseAgentPlanningResponse('{"name":"read_candidate_interviews","arguments":{"rank":1}}')).toEqual({
-      kind: 'tool', action: { toolName: 'candidate.interview.read.local', arguments: { rank: 1 } }
+      kind: 'tool',
+      action: { toolName: 'candidate.interview.read.local', arguments: { rank: 1 } }
     })
     expect(parseAgentPlanningResponse('TOOL\n{"name":"draft_case_broadcasts","arguments":{"target":"uncopied-cases"}}')).toEqual({
-      kind: 'tool', action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'uncopied-cases', ordinal: null } }
+      kind: 'tool',
+      action: { toolName: 'job-case.broadcast.draft.local', arguments: { target: 'uncopied-cases', ordinal: null } }
     })
     // Sending is not a fact this device has, so there is no tool to plan it.
     expect(() => parseAgentPlanningResponse('TOOL\n{"name":"record_case_broadcast","arguments":{"ordinal":2}}')).toThrow(/未知 Tool/)
     expect(() => parseAgentPlanningResponse('TOOL\n{"name":"proposal_export","arguments":{}}')).toThrow(/未知 Tool/)
     expect(() => parseAgentPlanningResponse('调用 candidate.match.local')).toThrow(/规划 JSON 协议/)
-    expect(() => parseAgentPlanningResponse('ANSWER\n先回答\nTOOL\n{"name":"match_candidates","arguments":{"ordinal":1}}')).toThrow(/同时返回/)
+    expect(() => parseAgentPlanningResponse('ANSWER\n先回答\nTOOL\n{"name":"match_candidates","arguments":{"ordinal":1}}')).toThrow(
+      /同时返回/
+    )
   })
 
   it('projects an unconfirmed draft as business fields only, without its document id or file name', () => {
@@ -103,29 +143,39 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '总结一下这个人的整体情况',
       selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
+      attachmentCount: 0,
+      attachmentDrafts: [],
+      schedulableCandidateCount: 0,
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
         title: '匹配会话',
-        messages: [{
-          id: 'assistant-draft', role: 'assistant', content: '已读取未确认草稿。', mode: 'cloud',
-          turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:01.000Z',
-          blocks: [{
-            type: 'candidate-draft-facts',
-            facts: {
-              documentId,
-              label: 'RESUME_1',
-              confirmed: false,
-              reviewStatus: 'awaiting-review',
-              fields: [
-                { label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: ['技術者履歴書_楊凱.xlsx!B4'] },
-                { label: '単価', value: null, confidence: 0, status: 'missing', sources: [] }
-              ],
-              projects: []
-            }
-          }]
-        }],
+        messages: [
+          {
+            id: 'assistant-draft',
+            role: 'assistant',
+            content: '已读取未确认草稿。',
+            mode: 'cloud',
+            turnId: '33333333-3333-4333-8333-333333333333',
+            createdAt: '2026-08-18T00:00:01.000Z',
+            blocks: [
+              {
+                type: 'candidate-draft-facts',
+                facts: {
+                  documentId,
+                  label: 'RESUME_1',
+                  confirmed: false,
+                  reviewStatus: 'awaiting-review',
+                  fields: [
+                    { label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: ['技術者履歴書_楊凱.xlsx!B4'] },
+                    { label: '単価', value: null, confidence: 0, status: 'missing', sources: [] }
+                  ],
+                  projects: []
+                }
+              }
+            ]
+          }
+        ],
         salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
         revision: 1,
         createdAt: '2026-08-18T00:00:00.000Z',
@@ -148,33 +198,45 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '今天还有哪些没发',
       selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
+      attachmentCount: 0,
+      attachmentDrafts: [],
+      schedulableCandidateCount: 0,
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
         title: '案件配信',
-        messages: [{
-          id: 'assistant-broadcast', role: 'assistant', content: '群メッセージを1件作成しました。', mode: 'local',
-          turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-25T00:00:01.000Z',
-          blocks: [{
-            type: 'job-case-broadcast-cards',
-            queue: { new: 1, copied: 2, attention: 0 },
-            cards: [{
-              reviewId,
-              jobCaseId: caseId,
-              jobCaseVersion: 2,
-              ordinal: 1,
-              title: 'Java 業務システム改修',
-              status: 'new',
-              templateId: '88888888-8888-4888-8888-888888888888',
-              templateRevision: 1,
-              textJa: messageText,
-              textZh: messageText,
-              forbiddenJa: ['email'],
-              forbiddenZh: []
-            }]
-          }]
-        }],
+        messages: [
+          {
+            id: 'assistant-broadcast',
+            role: 'assistant',
+            content: '群メッセージを1件作成しました。',
+            mode: 'local',
+            turnId: '33333333-3333-4333-8333-333333333333',
+            createdAt: '2026-08-25T00:00:01.000Z',
+            blocks: [
+              {
+                type: 'job-case-broadcast-cards',
+                queue: { new: 1, copied: 2, attention: 0 },
+                cards: [
+                  {
+                    reviewId,
+                    jobCaseId: caseId,
+                    jobCaseVersion: 2,
+                    ordinal: 1,
+                    title: 'Java 業務システム改修',
+                    status: 'new',
+                    templateId: '88888888-8888-4888-8888-888888888888',
+                    templateRevision: 1,
+                    textJa: messageText,
+                    textZh: messageText,
+                    forbiddenJa: ['email'],
+                    forbiddenZh: []
+                  }
+                ]
+              }
+            ]
+          }
+        ],
         salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
         revision: 1,
         createdAt: '2026-08-25T00:00:00.000Z',
@@ -211,35 +273,41 @@ describe('Agent Cloud narrative boundary', () => {
     expect(planningInstructions).toMatch(/never ask for the details yourself/iu)
     expect(planningInstructions).toContain('schedulableCandidateCount')
 
-    const projection = JSON.parse(buildAgentPlanningProjection({
-      locale: 'zh-CN',
-      userMessage: '安排一个20号的面试',
-      selectedJobCaseRef: null,
-      attachmentCount: 0,
-      attachmentDrafts: [],
-      schedulableCandidateCount: 1,
-      conversation: null
-    }))
+    const projection = JSON.parse(
+      buildAgentPlanningProjection({
+        locale: 'zh-CN',
+        userMessage: '安排一个20号的面试',
+        selectedJobCaseRef: null,
+        attachmentCount: 0,
+        attachmentDrafts: [],
+        schedulableCandidateCount: 1,
+        conversation: null
+      })
+    )
     expect(projection.state.schedulableCandidateCount).toBe(1)
   })
 
   it('keeps a supplied meeting link local while preserving its scheduling meaning', () => {
     const meetingUrl = 'https://app.zoom.us/wc/12345678901/join?pwd=local-secret-test&_x_zm_rtaid=opaque'
-    const planning = JSON.parse(buildAgentPlanningProjection({
-      locale: 'zh-CN',
-      userMessage: `30分钟。Zoom 链接是 ${meetingUrl}`,
-      selectedJobCaseRef: null,
-      attachmentCount: 0,
-      attachmentDrafts: [],
-      schedulableCandidateCount: 1,
-      conversation: null
-    }))
+    const planning = JSON.parse(
+      buildAgentPlanningProjection({
+        locale: 'zh-CN',
+        userMessage: `30分钟。Zoom 链接是 ${meetingUrl}`,
+        selectedJobCaseRef: null,
+        attachmentCount: 0,
+        attachmentDrafts: [],
+        schedulableCandidateCount: 1,
+        conversation: null
+      })
+    )
     expect(planning.state).toMatchObject({ currentMeetingLinkMethod: 'zoom', currentMeetingLinkCount: 1 })
     expect(planning.userRequest).toContain('[ZOOM_MEETING_LINK_PROVIDED_LOCALLY]')
 
     const direct = buildAgentDirectAnswerProjection({
-      locale: 'zh-CN', userMessage: `链接 ${meetingUrl}`,
-      conversation: null, selectedJobCaseRef: null
+      locale: 'zh-CN',
+      userMessage: `链接 ${meetingUrl}`,
+      conversation: null,
+      selectedJobCaseRef: null
     })
     const narrative = buildAgentCloudProjection('zh-CN', 'job-case.search.local', assistantMessage, `链接 ${meetingUrl}`)
     for (const projection of [JSON.stringify(planning), direct, narrative]) {
@@ -250,20 +318,34 @@ describe('Agent Cloud narrative boundary', () => {
   })
 
   it('projects the 今日新着案件 counts and tells both steps to answer from them', () => {
-    const planning = JSON.parse(buildAgentPlanningProjection({
-      locale: 'zh-CN', userMessage: '今天有什么新案件？', selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
-      newCasesToday: 3, unseenCaseCount: 2, conversation: null
-    }))
+    const planning = JSON.parse(
+      buildAgentPlanningProjection({
+        locale: 'zh-CN',
+        userMessage: '今天有什么新案件？',
+        selectedJobCaseRef: null,
+        attachmentCount: 0,
+        attachmentDrafts: [],
+        schedulableCandidateCount: 0,
+        newCasesToday: 3,
+        unseenCaseCount: 2,
+        conversation: null
+      })
+    )
     expect(planning.state).toMatchObject({ newCasesToday: 3, unseenCaseCount: 2 })
-    const direct = JSON.parse(buildAgentDirectAnswerProjection({
-      locale: 'zh-CN', userMessage: '今日の新規案件は？', conversation: null, selectedJobCaseRef: null,
-      newCasesToday: 3, unseenCaseCount: 2
-    }))
+    const direct = JSON.parse(
+      buildAgentDirectAnswerProjection({
+        locale: 'zh-CN',
+        userMessage: '今日の新規案件は？',
+        conversation: null,
+        selectedJobCaseRef: null,
+        newCasesToday: 3,
+        unseenCaseCount: 2
+      })
+    )
     expect(direct.state).toMatchObject({ newCasesToday: 3, unseenCaseCount: 2 })
     // Without the rule the planner answered "which case do you mean" or listed the whole history.
     expect(planningInstructions).toContain('state.newCasesToday and state.unseenCaseCount are 今日新着案件')
-    expect(planningInstructions).toContain('updatedAfter set to the ISO instant of today\'s Asia/Tokyo day boundary')
+    expect(planningInstructions).toContain("updatedAfter set to the ISO instant of today's Asia/Tokyo day boundary")
     expect(planningInstructions).toContain('Never plan a broad search that enumerates the whole case history')
     expect(directAnswerInstructions).toContain('今天有什么新案件 or 今日の新規案件')
     expect(directAnswerInstructions).toContain('never pad the answer by listing older cases')
@@ -273,8 +355,7 @@ describe('Agent Cloud narrative boundary', () => {
     // read_candidate_interviews used to be introduced with "status, schedules,
     // notes", so a booking request matched it and the turn ended in "specify the
     // candidate rank to query" - a read tool's clarification, not the scheduler's.
-    const readRule = planningInstructions.slice(planningInstructions.indexOf('read_candidate_interviews') - 200)
-      .split('.')[0]!
+    const readRule = planningInstructions.slice(planningInstructions.indexOf('read_candidate_interviews') - 200).split('.')[0]!
     expect(readRule).not.toMatch(/\bschedules\b/u)
     expect(planningInstructions).toContain('It only reads and can never create or change a booking')
     expect(planningInstructions).toContain('you must use schedule_interview, never read_candidate_interviews')
@@ -282,16 +363,41 @@ describe('Agent Cloud narrative boundary', () => {
 
   it('marks an unexcluded-but-unmatched candidate as insufficient evidence in the cloud projection', () => {
     const message: AiConversationMessage = {
-      id: 'assistant-match', role: 'assistant', content: '匹配结果。', mode: 'local', createdAt: '2026-08-26T00:00:00.000Z',
-      blocks: [{
-        type: 'candidate-match-cards', runId: '88888888-8888-4888-8888-888888888888', resultHash: 'a'.repeat(64),
-        cards: [{
-          reference: { kind: 'match-result', objectId: '99999999-9999-4999-8999-999999999999', objectVersion: null, resultHash: 'a'.repeat(64), ordinal: 1, label: 'CANDIDATE_1', target: 'match-result:99999999-9999-4999-8999-999999999999' },
-          candidateProfileId: '77777777-7777-4777-8777-777777777777', runId: '88888888-8888-4888-8888-888888888888', rank: 1,
-          anonymousLabel: '候補者 DA67E874', fitScore: 0, matched: [], missing: ['勤務地:常駐'], hardFilterStatus: 'unknown',
-          projectEvidence: null, status: 'current'
-        }]
-      }]
+      id: 'assistant-match',
+      role: 'assistant',
+      content: '匹配结果。',
+      mode: 'local',
+      createdAt: '2026-08-26T00:00:00.000Z',
+      blocks: [
+        {
+          type: 'candidate-match-cards',
+          runId: '88888888-8888-4888-8888-888888888888',
+          resultHash: 'a'.repeat(64),
+          cards: [
+            {
+              reference: {
+                kind: 'match-result',
+                objectId: '99999999-9999-4999-8999-999999999999',
+                objectVersion: null,
+                resultHash: 'a'.repeat(64),
+                ordinal: 1,
+                label: 'CANDIDATE_1',
+                target: 'match-result:99999999-9999-4999-8999-999999999999'
+              },
+              candidateProfileId: '77777777-7777-4777-8777-777777777777',
+              runId: '88888888-8888-4888-8888-888888888888',
+              rank: 1,
+              anonymousLabel: '候補者 DA67E874',
+              fitScore: 0,
+              matched: [],
+              missing: ['勤務地:常駐'],
+              hardFilterStatus: 'unknown',
+              projectEvidence: null,
+              status: 'current'
+            }
+          ]
+        }
+      ]
     }
     const projection = buildAgentCloudProjection('zh-CN', 'candidate.match.local', message, '给当前案件匹配候选人')
     expect(projection).toContain('"assessment":"insufficient-evidence"')
@@ -306,44 +412,76 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '这几条里哪些缺单价？',
       selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
+      attachmentCount: 0,
+      attachmentDrafts: [],
+      schedulableCandidateCount: 0,
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
         title: '案件取込',
-        messages: [{
-          id: 'intake-cards', role: 'assistant', content: '已导入 1 条案件草稿。', mode: 'local',
-          turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-25T00:00:01.000Z',
-          blocks: [{
-            type: 'job-case-draft-cards', intakeBatchId,
-            cards: [{
-              reviewId, label: 'DRAFT_1', ordinal: 1, outcome: 'created', title: 'VC++ 開発',
-              reviewStatus: 'completed', lifecycle: 'active', jobCase: { id: caseId, version: 1 }, status: 'current',
-              warningCodes: ['DETERMINISTIC_EXTRACTION_REQUIRES_REVIEW'],
-              fields: [
-                { key: 'title', label: '案件名', value: 'VC++ 開発', status: 'confirmed' },
-                { key: 'rate', label: '単価', value: null, status: 'missing' },
-                { key: 'location', label: '勤務地', value: '都内出勤', status: 'confirmed' }
-              ]
-            }]
-          }]
-        }],
+        messages: [
+          {
+            id: 'intake-cards',
+            role: 'assistant',
+            content: '已导入 1 条案件草稿。',
+            mode: 'local',
+            turnId: '33333333-3333-4333-8333-333333333333',
+            createdAt: '2026-08-25T00:00:01.000Z',
+            blocks: [
+              {
+                type: 'job-case-draft-cards',
+                intakeBatchId,
+                cards: [
+                  {
+                    reviewId,
+                    label: 'DRAFT_1',
+                    ordinal: 1,
+                    outcome: 'created',
+                    title: 'VC++ 開発',
+                    reviewStatus: 'completed',
+                    lifecycle: 'active',
+                    jobCase: { id: caseId, version: 1 },
+                    status: 'current',
+                    warningCodes: ['DETERMINISTIC_EXTRACTION_REQUIRES_REVIEW'],
+                    fields: [
+                      { key: 'title', label: '案件名', value: 'VC++ 開発', status: 'confirmed' },
+                      { key: 'rate', label: '単価', value: null, status: 'missing' },
+                      { key: 'location', label: '勤務地', value: '都内出勤', status: 'confirmed' }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
         salesAgentState: {
-          selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null,
+          selectedJobCaseRef: null,
+          lastMatchRunId: null,
+          lastSearchMessageId: null,
           lastIntakeBatch: { intakeBatchId, messageId: 'intake-cards', reviewIds: [reviewId] }
         },
-        revision: 1, createdAt: '2026-08-25T00:00:00.000Z', updatedAt: '2026-08-25T00:00:01.000Z'
+        revision: 1,
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:01.000Z'
       }
     })
     const decoded = JSON.parse(projection) as { state: { intakeDraftCount: number }; evidence: Array<Record<string, unknown>> }
     expect(decoded.state.intakeDraftCount).toBe(1)
     expect(decoded.evidence[0]).toMatchObject({
       type: 'job-case-draft-cards',
-      drafts: [{
-        draft: 'DRAFT_1', ordinal: 1, confirmed: true, title: 'VC++ 開発',
-        fields: [{ label: '案件名', value: 'VC++ 開発' }, { label: '勤務地', value: '都内出勤' }],
-        missing: ['単価']
-      }]
+      drafts: [
+        {
+          draft: 'DRAFT_1',
+          ordinal: 1,
+          confirmed: true,
+          title: 'VC++ 開発',
+          fields: [
+            { label: '案件名', value: 'VC++ 開発' },
+            { label: '勤務地', value: '都内出勤' }
+          ],
+          missing: ['単価']
+        }
+      ]
     })
     expect(projection).not.toContain(reviewId)
     expect(projection).not.toContain(caseId)
@@ -381,23 +519,32 @@ describe('Agent Cloud narrative boundary', () => {
       label: '技術者履歴書_楊凱',
       confirmed: false as const,
       reviewStatus: 'awaiting-review' as const,
-      fields: [{ label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review' as const, sources: ['技術者履歴書_楊凱.xlsx!B4'] }],
+      fields: [
+        { label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review' as const, sources: ['技術者履歴書_楊凱.xlsx!B4'] }
+      ],
       projects: []
     }
-    const answer = JSON.parse(buildAgentDirectAnswerProjection({
-      locale: 'zh-CN',
-      userMessage: '总结一下这个人的整体情况',
-      selectedJobCaseRef: null,
-      attachmentDrafts: [draft],
-      conversation: null
-    }))
-    expect(answer.attachmentDrafts).toEqual([{
-      resume: 'RESUME_1',
-      confirmed: false,
-      fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
-      projectCount: 0, includedProjectCount: 0, omittedProjectCount: 0, projectDetailsTruncated: false,
-      projects: []
-    }])
+    const answer = JSON.parse(
+      buildAgentDirectAnswerProjection({
+        locale: 'zh-CN',
+        userMessage: '总结一下这个人的整体情况',
+        selectedJobCaseRef: null,
+        attachmentDrafts: [draft],
+        conversation: null
+      })
+    )
+    expect(answer.attachmentDrafts).toEqual([
+      {
+        resume: 'RESUME_1',
+        confirmed: false,
+        fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
+        projectCount: 0,
+        includedProjectCount: 0,
+        omittedProjectCount: 0,
+        projectDetailsTruncated: false,
+        projects: []
+      }
+    ])
     expect(JSON.stringify(answer)).not.toContain('楊凱')
   })
 
@@ -408,27 +555,44 @@ describe('Agent Cloud narrative boundary', () => {
       selectedJobCaseRef: null,
       attachmentCount: 1,
       schedulableCandidateCount: 0,
-      attachmentDrafts: [{
-        documentId: '66666666-6666-4666-8666-666666666666',
-        label: '技術者履歴書_楊凱',
-        confirmed: false,
-        reviewStatus: 'awaiting-review',
-        fields: [
-          { label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: ['技術者履歴書_楊凱.xlsx!B4'] },
-          { label: '単価', value: null, confidence: 0, status: 'missing', sources: [] }
-        ],
-        projects: [{ title: '決済基盤', period: null, role: 'SE', technologies: ['Java'], summary: '設計', confidence: 0.8, sources: ['Sheet1!A12'] }]
-      }],
+      attachmentDrafts: [
+        {
+          documentId: '66666666-6666-4666-8666-666666666666',
+          label: '技術者履歴書_楊凱',
+          confirmed: false,
+          reviewStatus: 'awaiting-review',
+          fields: [
+            { label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: ['技術者履歴書_楊凱.xlsx!B4'] },
+            { label: '単価', value: null, confidence: 0, status: 'missing', sources: [] }
+          ],
+          projects: [
+            {
+              title: '決済基盤',
+              period: null,
+              role: 'SE',
+              technologies: ['Java'],
+              summary: '設計',
+              confidence: 0.8,
+              sources: ['Sheet1!A12']
+            }
+          ]
+        }
+      ],
       conversation: null
     })
     const parsed = JSON.parse(projection)
-    expect(parsed.attachmentDrafts).toEqual([{
-      resume: 'RESUME_1',
-      confirmed: false,
-      fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
-      projectCount: 1, includedProjectCount: 1, omittedProjectCount: 0, projectDetailsTruncated: false,
-      projects: [{ title: '決済基盤', period: null, role: 'SE', technologies: ['Java'], summary: '設計' }]
-    }])
+    expect(parsed.attachmentDrafts).toEqual([
+      {
+        resume: 'RESUME_1',
+        confirmed: false,
+        fields: [{ label: 'スキル', value: 'Java', confidence: 0.9 }],
+        projectCount: 1,
+        includedProjectCount: 1,
+        omittedProjectCount: 0,
+        projectDetailsTruncated: false,
+        projects: [{ title: '決済基盤', period: null, role: 'SE', technologies: ['Java'], summary: '設計' }]
+      }
+    ])
     expect(projection).not.toContain('楊凱')
     expect(projection).not.toContain('66666666-6666-4666-8666-666666666666')
   })
@@ -438,7 +602,9 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '导入这份简历',
       selectedJobCaseRef: null,
-      attachmentCount: 2, attachmentDrafts: [], schedulableCandidateCount: 0,
+      attachmentCount: 2,
+      attachmentDrafts: [],
+      schedulableCandidateCount: 0,
       conversation: null
     })
     expect(JSON.parse(projection).state.attachmentCount).toBe(2)
@@ -452,7 +618,9 @@ describe('Agent Cloud narrative boundary', () => {
       locale: 'zh-CN',
       userMessage: '总结一下候选人的整体情况',
       selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
+      attachmentCount: 0,
+      attachmentDrafts: [],
+      schedulableCandidateCount: 0,
       conversation: {
         id: conversationId,
         context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
@@ -470,21 +638,23 @@ describe('Agent Cloud narrative boundary', () => {
   })
 
   it('adds the current right workspace as a separate de-identified authoritative projection', () => {
-    const projection = JSON.parse(buildAgentDirectAnswerProjection({
-      locale: 'zh-CN',
-      userMessage: '总结一下右侧页面',
-      selectedJobCaseRef: null,
-      attachmentDrafts: [],
-      conversation: null,
-      activeWorkspaceEvidence: {
-        destination: 'candidate',
-        data: {
-          candidate: 'WORKSPACE_CANDIDATE_1',
-          fields: [{ key: 'skills', value: 'Java / AWS' }],
-          interviews: [{ stage: 'scheduled', meetingMethod: 'zoom', meetingLinkStoredLocally: true }]
+    const projection = JSON.parse(
+      buildAgentDirectAnswerProjection({
+        locale: 'zh-CN',
+        userMessage: '总结一下右侧页面',
+        selectedJobCaseRef: null,
+        attachmentDrafts: [],
+        conversation: null,
+        activeWorkspaceEvidence: {
+          destination: 'candidate',
+          data: {
+            candidate: 'WORKSPACE_CANDIDATE_1',
+            fields: [{ key: 'skills', value: 'Java / AWS' }],
+            interviews: [{ stage: 'scheduled', meetingMethod: 'zoom', meetingLinkStoredLocally: true }]
+          }
         }
-      }
-    }))
+      })
+    )
 
     expect(projection.activeWorkspace).toMatchObject({
       destination: 'candidate',
@@ -499,25 +669,58 @@ describe('Agent Cloud narrative boundary', () => {
     const messages: AiConversationMessage[] = Array.from({ length: 8 }, (_, index) => {
       const turnId = `${String(index + 1).padStart(8, '0')}-1111-4111-8111-111111111111`
       return [
-        { id: `user-${index}`, role: 'user' as const, content: `问题 ${index + 1}`, turnId, createdAt: `2026-08-18T00:00:${String(index * 2).padStart(2, '0')}.000Z` },
-        { id: `assistant-${index}`, role: 'assistant' as const, content: `回答 ${index + 1}`, turnId, createdAt: `2026-08-18T00:00:${String(index * 2 + 1).padStart(2, '0')}.000Z` }
+        {
+          id: `user-${index}`,
+          role: 'user' as const,
+          content: `问题 ${index + 1}`,
+          turnId,
+          createdAt: `2026-08-18T00:00:${String(index * 2).padStart(2, '0')}.000Z`
+        },
+        {
+          id: `assistant-${index}`,
+          role: 'assistant' as const,
+          content: `回答 ${index + 1}`,
+          turnId,
+          createdAt: `2026-08-18T00:00:${String(index * 2 + 1).padStart(2, '0')}.000Z`
+        }
       ]
     }).flat()
-    const projection = JSON.parse(buildAgentPlanningProjection({
-      locale: 'zh-CN', userMessage: '继续', selectedJobCaseRef: null,
-      attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0,
-      conversation: {
-        id: conversationId,
-        context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
-        title: '长会话', messages,
-        salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
-        revision: 1, createdAt: '2026-08-18T00:00:00.000Z', updatedAt: '2026-08-18T00:01:00.000Z'
-      }
-    }))
+    const projection = JSON.parse(
+      buildAgentPlanningProjection({
+        locale: 'zh-CN',
+        userMessage: '继续',
+        selectedJobCaseRef: null,
+        attachmentCount: 0,
+        attachmentDrafts: [],
+        schedulableCandidateCount: 0,
+        conversation: {
+          id: conversationId,
+          context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+          title: '长会话',
+          messages,
+          salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
+          revision: 1,
+          createdAt: '2026-08-18T00:00:00.000Z',
+          updatedAt: '2026-08-18T00:01:00.000Z'
+        }
+      })
+    )
 
     expect(projection.recentConversation).toHaveLength(12)
-    expect(projection.recentConversation.map((message: { role: string }) => message.role))
-      .toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant'])
+    expect(projection.recentConversation.map((message: { role: string }) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'user',
+      'assistant'
+    ])
     expect(projection.recentConversation.at(-2)?.content).toBe('问题 8')
     expect(projection.recentConversation.at(-1)?.content).toBe('回答 8')
     expect(projection.contextWindow).toMatchObject({ includedMessageCount: 12, omittedMessageCount: 4 })
@@ -525,19 +728,39 @@ describe('Agent Cloud narrative boundary', () => {
 
   it.each([9, 30])('keeps all %i attachment projects in both planning and answer contexts', (count) => {
     const projects = Array.from({ length: count }, (_, index) => ({
-      title: `项目 ${index + 1}`, period: '2020/01–2021/01', role: 'SE', technologies: ['Java'],
-      summary: '系统设计与开发'.repeat(count === 30 ? 300 : 1), confidence: 0.9, sources: ['private.xlsx!B2']
+      title: `项目 ${index + 1}`,
+      period: '2020/01–2021/01',
+      role: 'SE',
+      technologies: ['Java'],
+      summary: '系统设计与开发'.repeat(count === 30 ? 300 : 1),
+      confidence: 0.9,
+      sources: ['private.xlsx!B2']
     }))
-    const attachmentDrafts = [{
-      documentId: '66666666-6666-4666-8666-666666666666', label: 'private.xlsx',
-      confirmed: false as const, reviewStatus: 'awaiting-review' as const, fields: [], projects
-    }]
-    const base = { locale: 'zh-CN' as const, userMessage: '总结全部项目经历', selectedJobCaseRef: null, attachmentDrafts, conversation: null }
+    const attachmentDrafts = [
+      {
+        documentId: '66666666-6666-4666-8666-666666666666',
+        label: 'private.xlsx',
+        confirmed: false as const,
+        reviewStatus: 'awaiting-review' as const,
+        fields: [],
+        projects
+      }
+    ]
+    const base = {
+      locale: 'zh-CN' as const,
+      userMessage: '总结全部项目经历',
+      selectedJobCaseRef: null,
+      attachmentDrafts,
+      conversation: null
+    }
     for (const serialized of [
       buildAgentPlanningProjection({ ...base, attachmentCount: 1, schedulableCandidateCount: 0 }),
       buildAgentDirectAnswerProjection(base),
       buildAgentCloudProjection('zh-CN', 'resume.analyze.local', {
-        id: 'draft', role: 'assistant', content: '', createdAt: '2026-08-18T00:00:00.000Z',
+        id: 'draft',
+        role: 'assistant',
+        content: '',
+        createdAt: '2026-08-18T00:00:00.000Z',
         blocks: [{ type: 'candidate-draft-facts', facts: attachmentDrafts[0]! }]
       })
     ]) {
@@ -554,8 +777,11 @@ describe('Agent Cloud narrative boundary', () => {
 
   it('shortens long project details while retaining every project and explicit coverage', () => {
     const projects = Array.from({ length: 20 }, (_, index) => ({
-      title: `项目 ${index + 1} ${'标题'.repeat(100)}`, period: '期间'.repeat(100), role: '角色'.repeat(100),
-      technologies: Array(20).fill('技术'.repeat(80)), summary: '项目描述'.repeat(500)
+      title: `项目 ${index + 1} ${'标题'.repeat(100)}`,
+      period: '期间'.repeat(100),
+      role: '角色'.repeat(100),
+      technologies: Array(20).fill('技术'.repeat(80)),
+      summary: '项目描述'.repeat(500)
     }))
     const history = projectCandidateProjectHistory(projects)
     expect(history).toMatchObject({ projectCount: 20, includedProjectCount: 20, omittedProjectCount: 0, projectDetailsTruncated: true })
@@ -568,19 +794,34 @@ describe('Agent Cloud narrative boundary', () => {
   it('keeps a many-attachment planning projection under the enforced local limit', () => {
     const attachmentDrafts = Array.from({ length: 10 }, (_, draftIndex) => ({
       documentId: `${String(draftIndex + 1).padStart(8, '0')}-2222-4222-8222-222222222222`,
-      label: `private-file-${draftIndex}.pdf`, confirmed: false as const, reviewStatus: 'awaiting-review' as const,
+      label: `private-file-${draftIndex}.pdf`,
+      confirmed: false as const,
+      reviewStatus: 'awaiting-review' as const,
       fields: Array.from({ length: 20 }, (_, fieldIndex) => ({
-        label: `字段 ${fieldIndex}`, value: 'x'.repeat(600), confidence: 0.8,
-        status: 'needs_review' as const, sources: ['private.xlsx!A1']
+        label: `字段 ${fieldIndex}`,
+        value: 'x'.repeat(600),
+        confidence: 0.8,
+        status: 'needs_review' as const,
+        sources: ['private.xlsx!A1']
       })),
       projects: Array.from({ length: 8 }, (_, projectIndex) => ({
-        title: `项目 ${projectIndex}`, period: null, role: 'SE', technologies: Array(20).fill('TypeScript'),
-        summary: 'y'.repeat(2_000), confidence: 0.8, sources: ['private.xlsx!B2']
+        title: `项目 ${projectIndex}`,
+        period: null,
+        role: 'SE',
+        technologies: Array(20).fill('TypeScript'),
+        summary: 'y'.repeat(2_000),
+        confidence: 0.8,
+        sources: ['private.xlsx!B2']
       }))
     }))
     const projection = buildAgentPlanningProjection({
-      locale: 'zh-CN', userMessage: '请比较这些附件', selectedJobCaseRef: null,
-      attachmentCount: 10, attachmentDrafts, schedulableCandidateCount: 0, conversation: null
+      locale: 'zh-CN',
+      userMessage: '请比较这些附件',
+      selectedJobCaseRef: null,
+      attachmentCount: 10,
+      attachmentDrafts,
+      schedulableCandidateCount: 0,
+      conversation: null
     })
     const parsed = JSON.parse(projection)
     expect(projection.length).toBeLessThanOrEqual(20_000)
@@ -614,8 +855,10 @@ describe('Agent Cloud narrative boundary', () => {
       input.onDelta('{"decision":')
       input.onDelta('"answer"}')
       return {
-        clientRequestId: 'planning-client-request', responseId: 'planning-response',
-        content: '{"decision":"answer"}', billingModeUsed: 'subscription' as const
+        clientRequestId: 'planning-client-request',
+        responseId: 'planning-response',
+        content: '{"decision":"answer"}',
+        billingModeUsed: 'subscription' as const
       }
     })
     const service = new AgentCloudNarrativeService({
@@ -638,18 +881,32 @@ describe('Agent Cloud narrative boundary', () => {
       allowLoopbackHttp: false
     })
     const onRemoteSettled = vi.fn()
-    await expect(service.plan({
-      conversationId, requestId, locale: 'zh-CN', userMessage: '总结一下候选人的整体情况',
-      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0, model,
-      signal: new AbortController().signal,
-      onClientRequestId: vi.fn(), onRemoteSettled
-    })).resolves.toEqual({ kind: 'answer' })
+    await expect(
+      service.plan({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        userMessage: '总结一下候选人的整体情况',
+        conversation: null,
+        selectedJobCaseRef: null,
+        attachmentCount: 0,
+        attachmentDrafts: [],
+        schedulableCandidateCount: 0,
+        model,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled
+      })
+    ).resolves.toEqual({ kind: 'answer' })
     expect(onRemoteSettled).toHaveBeenCalledTimes(1)
     // Planning uses the protocol maximum because reasoning tokens share the
     // output budget; 2,048 truncated a real scheduling follow-up.
-    expect(streamResponses).toHaveBeenCalledWith(expect.objectContaining({
-      operationId: `${requestId}-plan`, maxOutputTokens: 8_192
-    }))
+    expect(streamResponses).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationId: `${requestId}-plan`,
+        maxOutputTokens: 8_192
+      })
+    )
     const planningInput = streamResponses.mock.calls[0]![0]
     expect(planningInput.instructions).toContain('machine-only planning step')
     expect(planningInput.instructions).toContain('must not rerun matching')
@@ -658,9 +915,13 @@ describe('Agent Cloud narrative boundary', () => {
     expect(planningInput.instructions).toContain('import_case_from_conversation')
     expect(planningInput.instructions).toContain('Japanese level')
     expect(planningInput.input).toContain('总结一下候选人的整体情况')
-    expect(audits).toMatchObject([{
-      outcome: 'succeeded', provider: 'aicommerce-agent-planning-responses', taskType: 'cloud-assist'
-    }])
+    expect(audits).toMatchObject([
+      {
+        outcome: 'succeeded',
+        provider: 'aicommerce-agent-planning-responses',
+        taskType: 'cloud-assist'
+      }
+    ])
   })
 
   it('rejects a mixed legacy ANSWER and TOOL only after the remote planning stream has settled', async () => {
@@ -670,7 +931,8 @@ describe('Agent Cloud narrative boundary', () => {
       input.onDelta('ANSWER\n候选人的工作经历包括')
       input.onDelta('支付系统。\nTOOL\n{"name":"read_candidate_profile","arguments":{"rank":1}}')
       return {
-        clientRequestId: 'mixed-planning-request', responseId: 'mixed-planning-response',
+        clientRequestId: 'mixed-planning-request',
+        responseId: 'mixed-planning-response',
         content: 'ANSWER\n候选人的工作经历包括支付系统。\nTOOL\n{"name":"read_candidate_profile","arguments":{"rank":1}}',
         billingModeUsed: 'subscription' as const
       }
@@ -696,12 +958,23 @@ describe('Agent Cloud narrative boundary', () => {
     })
     const onRemoteSettled = vi.fn()
 
-    await expect(service.plan({
-      conversationId, requestId, locale: 'zh-CN', userMessage: '工作经历列出来参考一下',
-      conversation: null, selectedJobCaseRef: null, attachmentCount: 0, attachmentDrafts: [], schedulableCandidateCount: 0, model,
-      signal: new AbortController().signal,
-      onClientRequestId: vi.fn(), onRemoteSettled
-    })).rejects.toThrow(/同时返回 ANSWER 和 TOOL/)
+    await expect(
+      service.plan({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        userMessage: '工作经历列出来参考一下',
+        conversation: null,
+        selectedJobCaseRef: null,
+        attachmentCount: 0,
+        attachmentDrafts: [],
+        schedulableCandidateCount: 0,
+        model,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled
+      })
+    ).rejects.toThrow(/同时返回 ANSWER 和 TOOL/)
     expect(onRemoteSettled).toHaveBeenCalledTimes(1)
   })
 
@@ -711,8 +984,10 @@ describe('Agent Cloud narrative boundary', () => {
       input.onClientRequestId?.('direct-answer-request')
       input.onDelta('候选人的 Java 匹配较强。')
       return {
-        clientRequestId: 'direct-answer-request', responseId: 'direct-answer-response',
-        content: '候选人的 Java 匹配较强。', billingModeUsed: 'subscription' as const
+        clientRequestId: 'direct-answer-request',
+        responseId: 'direct-answer-response',
+        content: '候选人的 Java 匹配较强。',
+        billingModeUsed: 'subscription' as const
       }
     })
     const service = new AgentCloudNarrativeService({
@@ -737,48 +1012,82 @@ describe('Agent Cloud narrative boundary', () => {
     const conversation = {
       id: conversationId,
       context: { assistant: 'sales-agent' as const, candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
-      title: '匹配会话', messages: [assistantMessage],
+      title: '匹配会话',
+      messages: [assistantMessage],
       salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
-      revision: 1, createdAt: '2026-08-18T00:00:00.000Z', updatedAt: '2026-08-18T00:00:00.000Z'
+      revision: 1,
+      createdAt: '2026-08-18T00:00:00.000Z',
+      updatedAt: '2026-08-18T00:00:00.000Z'
     }
     const deltas: string[] = []
     const onRemoteSettled = vi.fn()
 
-    await expect(service.streamAnswer({
-      conversationId, requestId, locale: 'zh-CN', userMessage: '总结一下', conversation,
-      selectedJobCaseRef: null, model, signal: new AbortController().signal,
-      onClientRequestId: vi.fn(), onRemoteSettled, onDelta: (delta) => deltas.push(delta)
-    })).resolves.toMatchObject({ content: '候选人的 Java 匹配较强。' })
+    await expect(
+      service.streamAnswer({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        userMessage: '总结一下',
+        conversation,
+        selectedJobCaseRef: null,
+        model,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled,
+        onDelta: (delta) => deltas.push(delta)
+      })
+    ).resolves.toMatchObject({ content: '候选人的 Java 匹配较强。' })
     expect(deltas).toEqual(['候选人的 Java 匹配较强。'])
     expect(onRemoteSettled).toHaveBeenCalledTimes(1)
-    expect(streamResponses).toHaveBeenCalledWith(expect.objectContaining({
-      operationId: `${requestId}-answer`,
-      input: expect.stringContaining('CASE_1')
-    }))
-    expect(buildAgentDirectAnswerProjection({ locale: 'zh-CN', userMessage: '总结一下', conversation, selectedJobCaseRef: null }))
-      .not.toContain(caseId)
+    expect(streamResponses).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationId: `${requestId}-answer`,
+        input: expect.stringContaining('CASE_1')
+      })
+    )
+    expect(
+      buildAgentDirectAnswerProjection({ locale: 'zh-CN', userMessage: '总结一下', conversation, selectedJobCaseRef: null })
+    ).not.toContain(caseId)
   })
 
   it('projects confirmed candidate profile fields for a short follow-up without exposing the local profile id', () => {
     const candidateProfileId = '99999999-9999-4999-8999-999999999999'
     const sourceDocumentId = '77777777-7777-4777-8777-777777777777'
     const message: AiConversationMessage = {
-      id: 'assistant-profile', role: 'assistant', content: '已读取候选人档案。', mode: 'local',
+      id: 'assistant-profile',
+      role: 'assistant',
+      content: '已读取候选人档案。',
+      mode: 'local',
       createdAt: '2026-08-18T00:00:00.000Z',
-      blocks: [{
-        type: 'candidate-profile-evidence',
-        facts: {
-          runId: '88888888-8888-4888-8888-888888888888', validity: 'current',
-          candidate: { candidateProfileId, sourceDocumentId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
-          profile: {
-            profileVersion: 3, skills: 'Java', experienceYears: '8年', availability: '即日', rate: '90万円',
-            japaneseLevel: 'N1', workStyle: 'リモート', role: 'バックエンド', location: '東京',
-            workAuthorization: '就労制限なし', projectExperiences: Array.from({ length: 9 }, (_, index) => ({
-              title: `项目 ${index + 1}`, period: null, role: 'SE', technologies: ['Java'], summary: '設計'
-            }))
+      blocks: [
+        {
+          type: 'candidate-profile-evidence',
+          facts: {
+            runId: '88888888-8888-4888-8888-888888888888',
+            validity: 'current',
+            candidate: { candidateProfileId, sourceDocumentId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
+            profile: {
+              profileVersion: 3,
+              skills: 'Java',
+              experienceYears: '8年',
+              availability: '即日',
+              rate: '90万円',
+              japaneseLevel: 'N1',
+              workStyle: 'リモート',
+              role: 'バックエンド',
+              location: '東京',
+              workAuthorization: '就労制限なし',
+              projectExperiences: Array.from({ length: 9 }, (_, index) => ({
+                title: `项目 ${index + 1}`,
+                period: null,
+                role: 'SE',
+                technologies: ['Java'],
+                summary: '設計'
+              }))
+            }
           }
         }
-      }]
+      ]
     }
 
     const projection = buildAgentCloudProjection('zh-CN', 'candidate.profile.read.local', message, '日语呢')
@@ -787,7 +1096,10 @@ describe('Agent Cloud narrative boundary', () => {
     expect(projection).not.toContain(candidateProfileId)
     expect(projection).not.toContain(sourceDocumentId)
     expect(JSON.parse(projection).evidence[0].profile).toMatchObject({
-      projectCount: 9, includedProjectCount: 9, omittedProjectCount: 0, projectDetailsTruncated: false
+      projectCount: 9,
+      includedProjectCount: 9,
+      omittedProjectCount: 0,
+      projectDetailsTruncated: false
     })
     expect(JSON.parse(projection).evidence[0].profile.projects).toHaveLength(9)
     expect(projection).toContain('项目 9')
@@ -804,7 +1116,9 @@ describe('Agent Cloud narrative boundary', () => {
       input.onClientRequestId?.(`client-${streamResponses.mock.calls.length}`)
       const segmentationOnly = input.instructions.includes('machine-only segmentation step')
       return {
-        clientRequestId: `client-${streamResponses.mock.calls.length}`, responseId: 'response', billingModeUsed: 'subscription' as const,
+        clientRequestId: `client-${streamResponses.mock.calls.length}`,
+        responseId: 'response',
+        billingModeUsed: 'subscription' as const,
         // The first, field-rich answer is cut off mid-JSON; the segmentation retry is complete.
         content: segmentationOnly
           ? '{"decision":"records","records":[{"kind":"job-case","startLine":1,"endLine":1},{"kind":"job-case","startLine":2,"endLine":2}]}'
@@ -829,8 +1143,13 @@ describe('Agent Cloud narrative boundary', () => {
     const onRemoteSettled = vi.fn()
 
     const result = await service.extractBusinessText({
-      conversationId, requestId, text: '案件1️⃣：Java｜基本設計\n案件2️⃣：PHP｜開発', model,
-      signal: new AbortController().signal, onClientRequestId: vi.fn(), onRemoteSettled
+      conversationId,
+      requestId,
+      text: '案件1️⃣：Java｜基本設計\n案件2️⃣：PHP｜開発',
+      model,
+      signal: new AbortController().signal,
+      onClientRequestId: vi.fn(),
+      onRemoteSettled
     })
 
     expect(result).toEqual({
@@ -858,7 +1177,12 @@ describe('Agent Cloud narrative boundary', () => {
     const streamResponses = vi.fn(async (input: Parameters<AiCommerceNativeClient['streamResponses']>[0]) => {
       input.onClientRequestId?.('client-request-123')
       input.onDelta('整理结果')
-      return { clientRequestId: 'client-request-123', responseId: 'response-123', content: '整理结果', billingModeUsed: 'subscription' as const }
+      return {
+        clientRequestId: 'client-request-123',
+        responseId: 'response-123',
+        content: '整理结果',
+        billingModeUsed: 'subscription' as const
+      }
     })
     const aiCommerce = {
       responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses',
@@ -880,7 +1204,13 @@ describe('Agent Cloud narrative boundary', () => {
     const deltas: string[] = []
     const clientRequestIds: string[] = []
     const result = await service.stream({
-      conversationId, requestId, locale: 'zh-CN', toolName: 'job-case.search.local', userMessage: '最近有什么案件？', assistantMessage, model,
+      conversationId,
+      requestId,
+      locale: 'zh-CN',
+      toolName: 'job-case.search.local',
+      userMessage: '最近有什么案件？',
+      assistantMessage,
+      model,
       signal: new AbortController().signal,
       onClientRequestId: (id) => clientRequestIds.push(id),
       onRemoteSettled: vi.fn(),
@@ -898,10 +1228,14 @@ describe('Agent Cloud narrative boundary', () => {
     expect(cloudInput.input).not.toContain(caseId)
     expect(cloudInput.input).not.toContain('机密客户 A')
     expect(repository.saveRedactionSession).toHaveBeenCalledTimes(1)
-    expect(audits).toMatchObject([{
-      outcome: 'succeeded', provider: 'aicommerce-agent-narrative-responses', taskType: 'cloud-assist',
-      expertAttestationHash: null
-    }])
+    expect(audits).toMatchObject([
+      {
+        outcome: 'succeeded',
+        provider: 'aicommerce-agent-narrative-responses',
+        taskType: 'cloud-assist',
+        expertAttestationHash: null
+      }
+    ])
   })
 
   it('routes DeepSeek through the AICommerce account-token native chat SSE path', async () => {
@@ -912,13 +1246,13 @@ describe('Agent Cloud narrative boundary', () => {
       input.onClientRequestId?.('deepseek-client-request')
       input.onDelta('DeepSeek 整理结果')
       return {
-        clientRequestId: 'deepseek-client-request', responseId: 'deepseek-response',
-        content: 'DeepSeek 整理结果', billingModeUsed: 'subscription' as const
+        clientRequestId: 'deepseek-client-request',
+        responseId: 'deepseek-response',
+        content: 'DeepSeek 整理结果',
+        billingModeUsed: 'subscription' as const
       }
     })
-    const chatCompletionsEndpoint = vi.fn(() =>
-      'https://aicommerce.gridscale.com/v1/ai/native/deepseek/v1/chat/completions'
-    )
+    const chatCompletionsEndpoint = vi.fn(() => 'https://aicommerce.gridscale.com/v1/ai/native/deepseek/v1/chat/completions')
     const aiCommerce = {
       responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses',
       chatCompletionsEndpoint,
@@ -942,24 +1276,46 @@ describe('Agent Cloud narrative boundary', () => {
       allowLoopbackHttp: false
     })
     const deepSeekModel: AgentChatModelDefinition = {
-      key: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash', upstreamModel: 'deepseek-v4-flash',
-      maxOutputTokens: 4_096, provider: 'deepseek', endpoint: 'chat-completions'
+      key: 'deepseek-v4-flash',
+      displayName: 'DeepSeek V4 Flash',
+      upstreamModel: 'deepseek-v4-flash',
+      maxOutputTokens: 4_096,
+      provider: 'deepseek',
+      endpoint: 'chat-completions'
     }
 
-    await expect(service.stream({
-      conversationId, requestId, locale: 'zh-CN', toolName: 'job-case.search.local', userMessage: '最近有什么案件？', assistantMessage,
-      model: deepSeekModel, signal: new AbortController().signal,
-      onClientRequestId: vi.fn(), onRemoteSettled: vi.fn(), onDelta: vi.fn()
-    })).resolves.toMatchObject({ content: 'DeepSeek 整理结果' })
+    await expect(
+      service.stream({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        toolName: 'job-case.search.local',
+        userMessage: '最近有什么案件？',
+        assistantMessage,
+        model: deepSeekModel,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled: vi.fn(),
+        onDelta: vi.fn()
+      })
+    ).resolves.toMatchObject({ content: 'DeepSeek 整理结果' })
 
     expect(chatCompletionsEndpoint).toHaveBeenCalledWith('deepseek')
     expect(streamResponses).not.toHaveBeenCalled()
-    expect(streamChatCompletions).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'deepseek', model: 'deepseek-v4-flash', maxOutputTokens: 4_096
-    }))
-    expect(audits).toMatchObject([{
-      outcome: 'succeeded', provider: 'aicommerce-agent-narrative-deepseek-chat-completions', taskType: 'cloud-assist'
-    }])
+    expect(streamChatCompletions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        maxOutputTokens: 4_096
+      })
+    )
+    expect(audits).toMatchObject([
+      {
+        outcome: 'succeeded',
+        provider: 'aicommerce-agent-narrative-deepseek-chat-completions',
+        taskType: 'cloud-assist'
+      }
+    ])
   })
 
   it('fails closed before egress when a privacy gate is not verified', async () => {
@@ -971,7 +1327,9 @@ describe('Agent Cloud narrative boundary', () => {
     } as unknown as AiCommerceNativeClient
     const service = new AgentCloudNarrativeService({
       repository: {
-        saveRedactionSession: vi.fn(), getRedactionSession: vi.fn(), appendCloudCallAudit: vi.fn()
+        saveRedactionSession: vi.fn(),
+        getRedactionSession: vi.fn(),
+        appendCloudCallAudit: vi.fn()
       },
       localNer: {
         engine: 'apple-natural-language',
@@ -980,14 +1338,27 @@ describe('Agent Cloud narrative boundary', () => {
       aiCommerce,
       policyVersion: 'cloud-redaction-v2',
       loadGates: vi.fn().mockResolvedValue({
-        qualityGate: { status: 'not-verified' }, expertGate: { status: 'passed' }, binding: null
+        qualityGate: { status: 'not-verified' },
+        expertGate: { status: 'passed' },
+        binding: null
       }),
       allowLoopbackHttp: false
     })
-    await expect(service.stream({
-      conversationId, requestId, locale: 'zh-CN', toolName: 'job-case.search.local', userMessage: '最近有什么案件？', assistantMessage, model,
-      signal: new AbortController().signal, onClientRequestId: vi.fn(), onRemoteSettled: vi.fn(), onDelta: vi.fn()
-    })).rejects.toThrow(/プライバシー品質ゲート/)
+    await expect(
+      service.stream({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        toolName: 'job-case.search.local',
+        userMessage: '最近有什么案件？',
+        assistantMessage,
+        model,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled: vi.fn(),
+        onDelta: vi.fn()
+      })
+    ).rejects.toThrow(/プライバシー品質ゲート/)
     expect(streamResponses).not.toHaveBeenCalled()
   })
 
@@ -1018,9 +1389,7 @@ describe('Agent Cloud narrative boundary', () => {
       streamResponses,
       cancelClientRequest: vi.fn()
     } as unknown as AiCommerceNativeClient
-    const loadGates = vi.fn()
-      .mockResolvedValueOnce(passedGates())
-      .mockResolvedValueOnce(second)
+    const loadGates = vi.fn().mockResolvedValueOnce(passedGates()).mockResolvedValueOnce(second)
     const service = new AgentCloudNarrativeService({
       repository: {
         saveRedactionSession: vi.fn((session: RedactionSessionEvidence) => sessions.set(session.id, session)),
@@ -1037,10 +1406,21 @@ describe('Agent Cloud narrative boundary', () => {
       allowLoopbackHttp: false
     })
 
-    await expect(service.stream({
-      conversationId, requestId, locale: 'zh-CN', toolName: 'job-case.search.local', userMessage: '最近有什么案件？', assistantMessage, model,
-      signal: new AbortController().signal, onClientRequestId: vi.fn(), onRemoteSettled: vi.fn(), onDelta: vi.fn()
-    })).rejects.toThrow(expected)
+    await expect(
+      service.stream({
+        conversationId,
+        requestId,
+        locale: 'zh-CN',
+        toolName: 'job-case.search.local',
+        userMessage: '最近有什么案件？',
+        assistantMessage,
+        model,
+        signal: new AbortController().signal,
+        onClientRequestId: vi.fn(),
+        onRemoteSettled: vi.fn(),
+        onDelta: vi.fn()
+      })
+    ).rejects.toThrow(expected)
     expect(loadGates).toHaveBeenCalledTimes(2)
     expect(streamResponses).not.toHaveBeenCalled()
   })
@@ -1094,11 +1474,13 @@ describe('business-text extraction protocol', () => {
     expect(businessTextExtractionInstructions).toContain('a month there is the start_date (10月～), anything else')
     expect(businessTextExtractionInstructions).toContain('required_skills is "Experience clould経験", remote is "常驻"')
     // The verbatim-copy rules are untouched.
-    expect(businessTextExtractionInstructions).toContain('copied verbatim from that record\'s own lines')
-    expect(businessTextSegmentationInstructions).toContain('Never output prose, markdown, field values, or anything beyond the single JSON object')
+    expect(businessTextExtractionInstructions).toContain("copied verbatim from that record's own lines")
+    expect(businessTextSegmentationInstructions).toContain(
+      'Never output prose, markdown, field values, or anything beyond the single JSON object'
+    )
   })
 
-  it('keeps only field values copied verbatim from the record\'s own redacted lines and restores placeholders', () => {
+  it("keeps only field values copied verbatim from the record's own redacted lines and restores placeholders", () => {
     const lines = [
       '📢 9月案件',
       '案件1️⃣：Java｜基本設計～テスト、単価60万円、担当 <PERSON_NAME_001>',
@@ -1109,12 +1491,22 @@ describe('business-text extraction protocol', () => {
       decision: 'records',
       records: [
         {
-          kind: 'job-case', startLine: 2, endLine: 2,
+          kind: 'job-case',
+          startLine: 2,
+          endLine: 2,
           fields: { title: 'Java｜基本設計～テスト', rate: '単価60万円', contract_chain: '担当 <PERSON_NAME_001>', location: '都内出勤' }
         },
         {
-          kind: 'job-case', startLine: 3, endLine: 3,
-          fields: { required_skills: 'VC++3年以上', japanese_level: 'N3', interview: '面談1回、5名', start_date: '8月～長期', remote: 'フルリモート' }
+          kind: 'job-case',
+          startLine: 3,
+          endLine: 3,
+          fields: {
+            required_skills: 'VC++3年以上',
+            japanese_level: 'N3',
+            interview: '面談1回、5名',
+            start_date: '8月～長期',
+            remote: 'フルリモート'
+          }
         }
       ]
     })
@@ -1123,20 +1515,32 @@ describe('business-text extraction protocol', () => {
       records: [
         // location was copied from the other record's line: dropped. The
         // placeholder is restored locally, never by the model.
-        { kind: 'job-case', startLine: 2, endLine: 2, fields: { title: 'Java｜基本設計～テスト', rate: '単価60万円', contract_chain: '担当 山田太郎' } },
+        {
+          kind: 'job-case',
+          startLine: 2,
+          endLine: 2,
+          fields: { title: 'Java｜基本設計～テスト', rate: '単価60万円', contract_chain: '担当 山田太郎' }
+        },
         // 'N3' is a substring; '面談1回、5名' joins two verbatim fragments;
         // 'フルリモート' appears nowhere in the record and is dropped.
-        { kind: 'job-case', startLine: 3, endLine: 3, fields: { required_skills: 'VC++3年以上', japanese_level: 'N3', interview: '面談1回、5名', start_date: '8月～長期' } }
+        {
+          kind: 'job-case',
+          startLine: 3,
+          endLine: 3,
+          fields: { required_skills: 'VC++3年以上', japanese_level: 'N3', interview: '面談1回、5名', start_date: '8月～長期' }
+        }
       ]
     })
   })
 
   it('ignores extra record-level keys the model adds instead of rejecting the segmentation', () => {
     const lines = ['案件1️⃣：Java｜基本設計', '案件2️⃣：PHP｜開発']
-    expect(parseAgentBusinessTextExtractionResponse(
-      '{"decision":"records","lineCount":2,"records":[{"kind":"job-case","startLine":1,"endLine":1,"label":"DRAFT_1","confidence":0.9,"fields":{"title":"Java｜基本設計"}},{"kind":"job-case","startLine":2,"endLine":2}]}',
-      lines
-    )).toEqual({
+    expect(
+      parseAgentBusinessTextExtractionResponse(
+        '{"decision":"records","lineCount":2,"records":[{"kind":"job-case","startLine":1,"endLine":1,"label":"DRAFT_1","confidence":0.9,"fields":{"title":"Java｜基本設計"}},{"kind":"job-case","startLine":2,"endLine":2}]}',
+        lines
+      )
+    ).toEqual({
       kind: 'records',
       records: [
         { kind: 'job-case', startLine: 1, endLine: 1, fields: { title: 'Java｜基本設計' } },
@@ -1148,29 +1552,81 @@ describe('business-text extraction protocol', () => {
   it('drops unknown keys, null values and partial placeholders without rejecting the segmentation', () => {
     const lines = ['氏名：<PERSON_NAME_001>', '希望：フルリモート']
     // A job case has no "skills" key and "rate" is null: both are dropped, the record stays.
-    expect(parseAgentBusinessTextExtractionResponse(
-      '{"decision":"records","records":[{"kind":"job-case","startLine":1,"endLine":2,"fields":{"skills":"x","rate":null,"remote":"フルリモート"}}]}',
-      lines
-    )).toEqual({ kind: 'records', records: [{ kind: 'job-case', startLine: 1, endLine: 2, fields: { remote: 'フルリモート' } }] })
-    expect(parseAgentBusinessTextExtractionResponse(
-      '{"decision":"records","records":[{"kind":"candidate","startLine":1,"endLine":2,"fields":{"role":"<PERSON_NAME_0","work_style":"フルリモート"}}]}',
+    expect(
+      parseAgentBusinessTextExtractionResponse(
+        '{"decision":"records","records":[{"kind":"job-case","startLine":1,"endLine":2,"fields":{"skills":"x","rate":null,"remote":"フルリモート"}}]}',
+        lines
+      )
+    ).toEqual({ kind: 'records', records: [{ kind: 'job-case', startLine: 1, endLine: 2, fields: { remote: 'フルリモート' } }] })
+    expect(
+      parseAgentBusinessTextExtractionResponse(
+        '{"decision":"records","records":[{"kind":"candidate","startLine":1,"endLine":2,"fields":{"role":"<PERSON_NAME_0","work_style":"フルリモート"}}]}',
+        lines,
+        [{ placeholder: '<PERSON_NAME_001>', originalValue: '山田太郎', identifierType: 'person_name' }] as never
+      )
+    ).toEqual({ kind: 'records', records: [{ kind: 'candidate', startLine: 1, endLine: 2, fields: { work_style: 'フルリモート' } }] })
+  })
+
+  it('lets case intake set aside personnel introductions instead of forcing them into cases', () => {
+    const lines = ['💎要員営業 即日～', '💎要件定義～ Leader経験豊富 全出勤可', 'Java開発、', '東京。']
+    const mixed = parseAgentBusinessTextExtractionResponse(
+      JSON.stringify({
+        decision: 'records',
+        records: [{ kind: 'job-case', startLine: 3, endLine: 4, fields: { location: '東京' } }],
+        ignored: [{ startLine: 1, endLine: 2, reason: 'personnel' }]
+      }),
       lines,
-      [{ placeholder: '<PERSON_NAME_001>', originalValue: '山田太郎', identifierType: 'person_name' }] as never
-    )).toEqual({ kind: 'records', records: [{ kind: 'candidate', startLine: 1, endLine: 2, fields: { work_style: 'フルリモート' } }] })
+      [],
+      true
+    )
+    expect(mixed).toEqual({
+      kind: 'records',
+      records: [{ kind: 'job-case', startLine: 3, endLine: 4, fields: { location: '東京' } }],
+      personnel: [{ startLine: 1, endLine: 2 }]
+    })
+    const onlyPersonnel = parseAgentBusinessTextExtractionResponse(
+      JSON.stringify({ decision: 'records', records: [], ignored: [{ startLine: 1, endLine: 2, reason: 'personnel' }] }),
+      lines.slice(0, 2),
+      [],
+      true
+    )
+    expect(onlyPersonnel).toEqual({ kind: 'records', records: [], personnel: [{ startLine: 1, endLine: 2 }] })
+    // Nothing at all, or an empty answer outside case intake, is still a protocol failure.
+    expect(() =>
+      parseAgentBusinessTextExtractionResponse(
+        JSON.stringify({ decision: 'records', records: [], ignored: [{ startLine: 1, endLine: 2, reason: 'banner' }] }),
+        lines.slice(0, 2),
+        [],
+        true
+      )
+    ).toThrow(/受控プロトコル/u)
+    expect(() => parseAgentBusinessTextExtractionResponse(JSON.stringify({ decision: 'records', records: [] }), lines)).toThrow(
+      /受控プロトコル/u
+    )
   })
 
   it('requires complete non-overlapping case coverage and rejects fields copied from the neighbouring case', () => {
     const lines = ['募集情報', 'Java開発、', '東京。', 'AWS運用、', '在宅。']
-    const records = [{ kind: 'job-case', startLine: 2, endLine: 3, fields: { required_skills: 'AWS', location: '東京' } },
-      { kind: 'job-case', startLine: 4, endLine: 5, fields: { required_skills: 'AWS', remote: '在宅' } }]
-    expect(() => parseAgentBusinessTextExtractionResponse(JSON.stringify({ decision: 'records', records }), lines, [], true)).toThrow(/一部未処理/u)
-    const result = parseAgentBusinessTextExtractionResponse(JSON.stringify({ decision: 'records', records, ignored: [{ startLine: 1, endLine: 1, reason: 'banner' }] }), lines, [], true)
+    const records = [
+      { kind: 'job-case', startLine: 2, endLine: 3, fields: { required_skills: 'AWS', location: '東京' } },
+      { kind: 'job-case', startLine: 4, endLine: 5, fields: { required_skills: 'AWS', remote: '在宅' } }
+    ]
+    expect(() => parseAgentBusinessTextExtractionResponse(JSON.stringify({ decision: 'records', records }), lines, [], true)).toThrow(
+      /一部未処理/u
+    )
+    const result = parseAgentBusinessTextExtractionResponse(
+      JSON.stringify({ decision: 'records', records, ignored: [{ startLine: 1, endLine: 1, reason: 'banner' }] }),
+      lines,
+      [],
+      true
+    )
     expect(result.kind === 'records' && result.records[0]!.fields).toEqual({ location: '東京' })
     expect(result.kind === 'records' && result.records[1]!.fields).toEqual({ required_skills: 'AWS', remote: '在宅' })
   })
 
   it('accepts a valid records response, plain or fenced', () => {
-    const payload = '{"decision":"records","records":[{"kind":"job-case","startLine":2,"endLine":4},{"kind":"candidate","startLine":6,"endLine":9}]}'
+    const payload =
+      '{"decision":"records","records":[{"kind":"job-case","startLine":2,"endLine":4},{"kind":"candidate","startLine":6,"endLine":9}]}'
     const expected = {
       kind: 'records',
       records: [
@@ -1189,8 +1645,12 @@ describe('business-text extraction protocol', () => {
     expect(() => parseAgentBusinessTextExtractionResponse('以下の案件が含まれます', tenLines)).toThrow(/JSON/u)
     expect(() => parseAgentBusinessTextExtractionResponse(range(5, 3), tenLines)).toThrow(/行範囲/u)
     expect(() => parseAgentBusinessTextExtractionResponse(range(1, 11), tenLines)).toThrow(/行範囲/u)
-    expect(() => parseAgentBusinessTextExtractionResponse(
-      '{"decision":"records","records":[{"kind":"job-case","startLine":1,"endLine":5},{"kind":"candidate","startLine":4,"endLine":6}]}', tenLines)).toThrow(/重複または逆順/u)
+    expect(() =>
+      parseAgentBusinessTextExtractionResponse(
+        '{"decision":"records","records":[{"kind":"job-case","startLine":1,"endLine":5},{"kind":"candidate","startLine":4,"endLine":6}]}',
+        tenLines
+      )
+    ).toThrow(/重複または逆順/u)
     expect(() => parseAgentBusinessTextExtractionResponse(range(1, 2, 'note'), tenLines)).toThrow(/プロトコル/u)
     expect(() => parseAgentBusinessTextExtractionResponse('{"decision":"records","records":[]}', tenLines)).toThrow(/プロトコル/u)
     const eleven = JSON.stringify({
@@ -1203,17 +1663,36 @@ describe('business-text extraction protocol', () => {
 
 describe('match assessment protocol', () => {
   it('binds reverse-match evidence to the correct case and never accepts invented or cross-case support', () => {
-    const built = buildPersonnelCasesAssessmentProjection({ locale: 'zh-CN', person: {
-      facts: [{ label: 'skills', value: 'Java, SQL' }], projects: []
-    }, cases: [
-      { label: 'CASE_1', title: 'Java', requirements: [{ key: 'required_skills', label: '必須', value: 'Java' }], hardFilters: [] },
-      { label: 'CASE_2', title: 'SQL', requirements: [{ key: 'required_skills', label: '必須', value: 'SQL' }], hardFilters: [] }
-    ] })
-    const result = parsePersonnelCasesAssessmentResponse(JSON.stringify({ assessments: [
-      { case: 'CASE_1', fit: 'strong', met: [{ requirement: 'SQL', evidence: 'SQL' }], reason: 'Wrong case' },
-      { case: 'CASE_2', fit: 'possible', met: [{ requirement: 'SQL', evidence: 'SQL' }, { requirement: 'SQL', evidence: 'invented project' }] },
-      { case: 'CASE_999', fit: 'strong' }, { case: 'CASE_2', fit: 'strong' }
-    ] }), built.personText, built.cases)
+    const built = buildPersonnelCasesAssessmentProjection({
+      locale: 'zh-CN',
+      person: {
+        facts: [{ label: 'skills', value: 'Java, SQL' }],
+        projects: []
+      },
+      cases: [
+        { label: 'CASE_1', title: 'Java', requirements: [{ key: 'required_skills', label: '必須', value: 'Java' }], hardFilters: [] },
+        { label: 'CASE_2', title: 'SQL', requirements: [{ key: 'required_skills', label: '必須', value: 'SQL' }], hardFilters: [] }
+      ]
+    })
+    const result = parsePersonnelCasesAssessmentResponse(
+      JSON.stringify({
+        assessments: [
+          { case: 'CASE_1', fit: 'strong', met: [{ requirement: 'SQL', evidence: 'SQL' }], reason: 'Wrong case' },
+          {
+            case: 'CASE_2',
+            fit: 'possible',
+            met: [
+              { requirement: 'SQL', evidence: 'SQL' },
+              { requirement: 'SQL', evidence: 'invented project' }
+            ]
+          },
+          { case: 'CASE_999', fit: 'strong' },
+          { case: 'CASE_2', fit: 'strong' }
+        ]
+      }),
+      built.personText,
+      built.cases
+    )
     expect(result.assessments).toHaveLength(2)
     expect(result.assessments[0]).toMatchObject({ candidate: 'CASE_1', fit: 'insufficient-info', met: [], reason: '' })
     expect(result.assessments[1]).toMatchObject({ candidate: 'CASE_2', fit: 'possible', met: [{ requirement: 'SQL', evidence: 'SQL' }] })
@@ -1227,20 +1706,62 @@ describe('match assessment protocol', () => {
     const appendCloudCallAudit = vi.fn()
     const streamResponses = vi.fn(async (input: Parameters<AiCommerceNativeClient['streamResponses']>[0]) => {
       input.onClientRequestId?.('personnel-remote-request')
-      return { clientRequestId: 'personnel-remote-request', responseId: 'personnel-response', billingModeUsed: 'subscription' as const,
-        content: JSON.stringify({ assessments: [{ case: 'CASE_1', fit: 'possible', met: [{ requirement: 'Java', evidence: 'Java' }], confirm: ['入场时间'], reason: 'Java project experience' }] }) }
+      return {
+        clientRequestId: 'personnel-remote-request',
+        responseId: 'personnel-response',
+        billingModeUsed: 'subscription' as const,
+        content: JSON.stringify({
+          assessments: [
+            {
+              case: 'CASE_1',
+              fit: 'possible',
+              met: [{ requirement: 'Java', evidence: 'Java' }],
+              confirm: ['入场时间'],
+              reason: 'Java project experience'
+            }
+          ]
+        })
+      }
     })
     const service = new AgentCloudNarrativeService({
-      repository: { saveRedactionSession: (session) => { sessions.set(session.id, session) }, getRedactionSession: (id) => sessions.get(id) ?? null, appendCloudCallAudit },
-      localNer: { engine: 'apple-natural-language', detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] }) },
-      aiCommerce: { responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses', streamResponses, cancelClientRequest: vi.fn() } as unknown as AiCommerceNativeClient,
-      policyVersion: 'cloud-redaction-v2', loadGates: vi.fn().mockResolvedValue(passedGates()), allowLoopbackHttp: false
+      repository: {
+        saveRedactionSession: (session) => {
+          sessions.set(session.id, session)
+        },
+        getRedactionSession: (id) => sessions.get(id) ?? null,
+        appendCloudCallAudit
+      },
+      localNer: {
+        engine: 'apple-natural-language',
+        detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] })
+      },
+      aiCommerce: {
+        responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses',
+        streamResponses,
+        cancelClientRequest: vi.fn()
+      } as unknown as AiCommerceNativeClient,
+      policyVersion: 'cloud-redaction-v2',
+      loadGates: vi.fn().mockResolvedValue(passedGates()),
+      allowLoopbackHttp: false
     })
     const onRemoteSettled = vi.fn()
-    const result = await service.assessPersonnelCases({ conversationId, requestId, locale: 'zh-CN', model,
-      signal: new AbortController().signal, onClientRequestId: vi.fn(), onRemoteSettled,
+    const result = await service.assessPersonnelCases({
+      conversationId,
+      requestId,
+      locale: 'zh-CN',
+      model,
+      signal: new AbortController().signal,
+      onClientRequestId: vi.fn(),
+      onRemoteSettled,
       person: { facts: [{ label: 'skills', value: 'Java, SQL; private@example.com' }], projects: [] },
-      cases: [{ label: 'CASE_1', title: 'Java project', requirements: [{ key: 'required_skills', label: '必須', value: 'Java' }], hardFilters: [] }]
+      cases: [
+        {
+          label: 'CASE_1',
+          title: 'Java project',
+          requirements: [{ key: 'required_skills', label: '必須', value: 'Java' }],
+          hardFilters: []
+        }
+      ]
     })
     expect(result.assessments[0]).toMatchObject({ candidate: 'CASE_1', fit: 'possible' })
     expect(streamResponses).toHaveBeenCalledTimes(1)
@@ -1256,7 +1777,15 @@ describe('match assessment protocol', () => {
       label: 'CANDIDATE_1',
       hardFilters: [{ requirement: '日本語:N2', actual: null, outcome: 'unknown' as const }],
       facts: [{ label: 'スキル', value: 'Java 5年、Spring Boot' }],
-      projects: [{ title: '決済基盤刷新', period: '2023/04-2024/03', role: 'バックエンド', technologies: ['Java'], summary: 'Spring Boot で決済 API を開発' }]
+      projects: [
+        {
+          title: '決済基盤刷新',
+          period: '2023/04-2024/03',
+          role: 'バックエンド',
+          technologies: ['Java'],
+          summary: 'Spring Boot で決済 API を開発'
+        }
+      ]
     },
     { label: 'CANDIDATE_2', hardFilters: [], facts: [{ label: 'スキル', value: 'PHP 3年' }], projects: [] }
   ]
@@ -1287,41 +1816,82 @@ describe('match assessment protocol', () => {
   })
 
   it('carries the operator request as guidance only when one is given', () => {
-    expect(JSON.parse(buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates }).projection)).not.toHaveProperty('operatorRequest')
-    const steered = JSON.parse(buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates, operatorRequest: '  重点看 日语沟通 ' }).projection)
+    expect(JSON.parse(buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates }).projection)).not.toHaveProperty(
+      'operatorRequest'
+    )
+    const steered = JSON.parse(
+      buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates, operatorRequest: '  重点看 日语沟通 ' }).projection
+    )
     expect(steered.operatorRequest).toBe('重点看 日语沟通')
     expect(matchAssessmentInstructions).toContain('operatorRequest')
     expect(matchAssessmentInstructions).toMatch(/never add or waive a mandatory condition/)
   })
 
   it('selects relevant evidence from the ninth project in both matching directions', () => {
-    const projects = Array.from({ length: 9 }, (_, index) => ({ title: `Project ${index + 1}`, period: '2020/01〜2023/12', role: 'SE',
-      technologies: index === 8 ? ['Scala', 'Spark'] : ['Java'], summary: index === 8 ? 'Scala と Spark でバッチ処理を開発' : 'Java API 開発' }))
+    const projects = Array.from({ length: 9 }, (_, index) => ({
+      title: `Project ${index + 1}`,
+      period: '2020/01〜2023/12',
+      role: 'SE',
+      technologies: index === 8 ? ['Scala', 'Spark'] : ['Java'],
+      summary: index === 8 ? 'Scala と Spark でバッチ処理を開発' : 'Java API 開発'
+    }))
     const requirements = [{ key: 'required_skills', label: '必須', value: 'Scala、Spark' }]
-    const forward = buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase: { title: 'Data', requirements }, candidates: [{ label: 'CANDIDATE_1', facts: [], hardFilters: [], projects }] })
+    const forward = buildAgentMatchAssessmentProjection({
+      locale: 'zh-CN',
+      jobCase: { title: 'Data', requirements },
+      candidates: [{ label: 'CANDIDATE_1', facts: [], hardFilters: [], projects }]
+    })
     const candidate = JSON.parse(forward.projection).candidates[0]
     expect(candidate.projectCount).toBe(9)
     expect(candidate.projects).toHaveLength(9)
     expect(candidate.projects[0]).toMatchObject({ projectNumber: 9, title: 'Project 9', technologies: ['Scala', 'Spark'] })
     expect(forward.candidateTexts[0]!.text).toContain('Scala と Spark でバッチ処理を開発')
-    const reverse = buildPersonnelCasesAssessmentProjection({ locale: 'zh-CN', person: { facts: [], projects }, cases: [{ label: 'CASE_1', title: 'Data', requirements, hardFilters: [] }] })
+    const reverse = buildPersonnelCasesAssessmentProjection({
+      locale: 'zh-CN',
+      person: { facts: [], projects },
+      cases: [{ label: 'CASE_1', title: 'Data', requirements, hardFilters: [] }]
+    })
     expect(JSON.parse(reverse.projection).person.projects).toHaveLength(9)
     expect(reverse.personText).toContain('Scala と Spark でバッチ処理を開発')
   })
 
   it('never lets the requested hard-filter text masquerade as personnel evidence', () => {
-    const built = buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates: [{ label: 'CANDIDATE_1', facts: [], projects: [],
-      hardFilters: [{ requirement: 'N2以上', actual: null, outcome: 'unknown' }] }] })
+    const built = buildAgentMatchAssessmentProjection({
+      locale: 'zh-CN',
+      jobCase,
+      candidates: [
+        { label: 'CANDIDATE_1', facts: [], projects: [], hardFilters: [{ requirement: 'N2以上', actual: null, outcome: 'unknown' }] }
+      ]
+    })
     expect(built.candidateTexts[0]!.text).not.toContain('N2以上')
-    const parsed = parseAgentMatchAssessmentResponse(JSON.stringify({ assessments: [{ candidate: 'CANDIDATE_1', fit: 'strong',
-      requirements: [{ requirement: 'N2以上', outcome: 'met', evidence: 'N2以上' }] }] }), [{ label: 'CANDIDATE_1', redactedText: built.candidateTexts[0]!.text }], built.requirementsText)
+    const parsed = parseAgentMatchAssessmentResponse(
+      JSON.stringify({
+        assessments: [
+          { candidate: 'CANDIDATE_1', fit: 'strong', requirements: [{ requirement: 'N2以上', outcome: 'met', evidence: 'N2以上' }] }
+        ]
+      }),
+      [{ label: 'CANDIDATE_1', redactedText: built.candidateTexts[0]!.text }],
+      built.requirementsText
+    )
     expect(parsed.assessments[0]!.requirements).toBeUndefined()
   })
 
   it('bounds large batches without discarding career coverage for included people', () => {
-    const many = Array.from({ length: 5 }, (_, index) => ({ label: `CANDIDATE_${index + 1}`, hardFilters: [],
-      facts: Array.from({ length: 12 }, (_, index) => ({ label: `Fact ${index}`, value: 'Java, Scala, Spark project evidence '.repeat(20) })),
-      projects: Array.from({ length: 20 }, (_, index) => ({ title: `Project ${index}`, period: '2020/01〜2023/12', role: 'SE', technologies: ['Scala', 'Spark'], summary: 'Scala and Spark '.repeat(100) })) }))
+    const many = Array.from({ length: 5 }, (_, index) => ({
+      label: `CANDIDATE_${index + 1}`,
+      hardFilters: [],
+      facts: Array.from({ length: 12 }, (_, index) => ({
+        label: `Fact ${index}`,
+        value: 'Java, Scala, Spark project evidence '.repeat(20)
+      })),
+      projects: Array.from({ length: 20 }, (_, index) => ({
+        title: `Project ${index}`,
+        period: '2020/01〜2023/12',
+        role: 'SE',
+        technologies: ['Scala', 'Spark'],
+        summary: 'Scala and Spark '.repeat(100)
+      }))
+    }))
     const built = buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates: many })
     expect(built.projection.length).toBeLessThanOrEqual(20_000)
     const shown = JSON.parse(built.projection)
@@ -1335,7 +1905,8 @@ describe('match assessment protocol', () => {
     const payload = JSON.stringify({
       assessments: [
         {
-          candidate: 'CANDIDATE_1', fit: 'possible',
+          candidate: 'CANDIDATE_1',
+          fit: 'possible',
           met: [
             { requirement: 'Spring Boot', evidence: 'Spring Boot で決済 API を開発' },
             // Evidence the model invented: not in the candidate's facts.
@@ -1343,18 +1914,27 @@ describe('match assessment protocol', () => {
             // A requirement the job case never stated.
             { requirement: 'Kubernetes', evidence: 'Java 5年' }
           ],
-          gaps: ['AWS 経験なし', 'AWS 経験なし'], confirm: ['日本語レベル'], reason: '主要スキルは一致。'
+          gaps: ['AWS 経験なし', 'AWS 経験なし'],
+          confirm: ['日本語レベル'],
+          reason: '主要スキルは一致。'
         },
         { candidate: 'CANDIDATE_2', fit: 'excellent', met: [], gaps: [], confirm: [], reason: 'x' },
         { candidate: 'CANDIDATE_9', fit: 'strong', met: [], gaps: [], confirm: [], reason: 'x' }
       ]
     })
     expect(parseAgentMatchAssessmentResponse(payload, shown.candidates, shown.requirements)).toEqual({
-      assessments: [{
-        candidate: 'CANDIDATE_1', fit: 'insufficient-info',
-        met: [{ requirement: 'Spring Boot', evidence: 'Spring Boot で決済 API を開発' }],
-        gaps: [], confirm: ['日本語レベル', 'AWS 経験なし'], reason: ''
-      }]
+      assessments: [
+        {
+          candidate: 'CANDIDATE_1',
+          fit: 'insufficient-info',
+          met: [{ requirement: 'Spring Boot', evidence: 'Spring Boot で決済 API を開発' }],
+          gaps: [],
+          confirm: ['日本語レベル', 'AWS 経験なし'],
+          reason: '',
+          // The model's own words survive, untouched by the review, for the unverified AI opinion panel.
+          opinion: { fit: 'possible', reason: '主要スキルは一致。', gaps: ['AWS 経験なし'], confirm: ['日本語レベル'] }
+        }
+      ]
     })
   })
 
@@ -1365,32 +1945,62 @@ describe('match assessment protocol', () => {
       { candidate: 'CANDIDATE_2', fit: { level: 'weak' }, met: [], gaps: [], confirm: [], reason: 'x' },
       { candidate: 42, fit: 'weak' }
     ]
-    const expected = { assessments: [{ candidate: 'CANDIDATE_1', fit: 'insufficient-info', met: [], gaps: [], confirm: ['AWS'], reason: '' }] }
+    const expected = {
+      assessments: [
+        {
+          candidate: 'CANDIDATE_1',
+          fit: 'insufficient-info',
+          met: [],
+          gaps: [],
+          confirm: ['AWS'],
+          reason: '',
+          opinion: { fit: 'possible', reason: 'ok', gaps: ['AWS'], confirm: [] }
+        }
+      ]
+    }
     expect(parseAgentMatchAssessmentResponse(JSON.stringify(loose), shown.candidates, shown.requirements)).toEqual(expected)
     expect(parseAgentMatchAssessmentResponse(JSON.stringify({ results: loose }), shown.candidates, shown.requirements)).toEqual(expected)
-    expect(parseAgentMatchAssessmentResponse('```json\n' + JSON.stringify({ review: loose }) + '\n```', shown.candidates, shown.requirements)).toEqual(expected)
+    expect(
+      parseAgentMatchAssessmentResponse('```json\n' + JSON.stringify({ review: loose }) + '\n```', shown.candidates, shown.requirements)
+    ).toEqual(expected)
   })
 
   it('preserves ungrounded model evidence for the shared policy to decide case eligibility', () => {
     const shown = texts()
     const payload = JSON.stringify({
-      assessments: [{
-        candidate: 'CANDIDATE_2', fit: 'weak', met: [],
-        gaps: [],
-        // PHP 3年 is all CANDIDATE_2 has: Java and Spring Boot are required and absent, the level question is open.
-        confirm: ['Java と Spring Boot の実務経験の有無', '日本語レベル（N2以上か）'],
-        reason: '主要スキル未確認。'
-      }]
+      assessments: [
+        {
+          candidate: 'CANDIDATE_2',
+          fit: 'weak',
+          met: [],
+          gaps: [],
+          // PHP 3年 is all CANDIDATE_2 has: Java and Spring Boot are required and absent, the level question is open.
+          confirm: ['Java と Spring Boot の実務経験の有無', '日本語レベル（N2以上か）'],
+          reason: '主要スキル未確認。'
+        }
+      ]
     })
     expect(parseAgentMatchAssessmentResponse(payload, shown.candidates, shown.requirements)).toEqual({
-      assessments: [{
-        candidate: 'CANDIDATE_2', fit: 'insufficient-info', met: [],
-        gaps: [],
-        confirm: ['Java と Spring Boot の実務経験の有無', '日本語レベル（N2以上か）'],
-        reason: '主要スキル未確認。'
-      }]
+      assessments: [
+        {
+          candidate: 'CANDIDATE_2',
+          fit: 'insufficient-info',
+          met: [],
+          gaps: [],
+          confirm: ['Java と Spring Boot の実務経験の有無', '日本語レベル（N2以上か）'],
+          reason: '主要スキル未確認。',
+          opinion: {
+            fit: 'weak',
+            reason: '主要スキル未確認。',
+            gaps: [],
+            confirm: ['Java と Spring Boot の実務経験の有無', '日本語レベル（N2以上か）']
+          }
+        }
+      ]
     })
-    expect(matchAssessmentInstructions).toContain('A mandatory skill or experience not evidenced in this resume makes the person unsuitable for this case')
+    expect(matchAssessmentInstructions).toContain(
+      'A mandatory skill or experience not evidenced in this resume makes the person unsuitable for this case'
+    )
     expect(matchAssessmentInstructions).toContain('Do not turn missing mandatory skills into confirmation tasks')
     expect(fixedInstructions).toContain('Missing evidence is unknown')
     expect(fixedInstructions).toContain('no suitable candidate was found')
@@ -1398,25 +2008,39 @@ describe('match assessment protocol', () => {
 
   it('rejects a review that is not the single JSON object of the protocol', () => {
     expect(() => parseAgentMatchAssessmentResponse('候補者1は適合です。', [], '')).toThrow('マッチ評価の応答が有効な JSON ではありません。')
-    expect(() => parseAgentMatchAssessmentResponse('{"note":"no review"}', [], '')).toThrow('マッチ評価の応答が受控プロトコルに従っていません。')
+    expect(() => parseAgentMatchAssessmentResponse('{"note":"no review"}', [], '')).toThrow(
+      'マッチ評価の応答が受控プロトコルに従っていません。'
+    )
   })
 
   it('restores placeholders locally and never lets a partial one through', () => {
     const mappings = [{ placeholder: '<PERSON_NAME_001>', originalValue: '山田太郎', identifierType: 'person_name' }] as never
     const shown = [{ label: 'CANDIDATE_1', redactedText: '<PERSON_NAME_001> と Java 決済 API を開発' }]
     const payload = JSON.stringify({
-      assessments: [{
-        candidate: 'CANDIDATE_1', fit: 'strong',
-        met: [{ requirement: 'Java', evidence: '<PERSON_NAME_001> と Java 決済 API を開発' }],
-        gaps: ['<PERSON_NAME_0'], confirm: [], reason: '<PERSON_NAME_001> の経験'
-      }]
+      assessments: [
+        {
+          candidate: 'CANDIDATE_1',
+          fit: 'strong',
+          met: [{ requirement: 'Java', evidence: '<PERSON_NAME_001> と Java 決済 API を開発' }],
+          gaps: ['<PERSON_NAME_0'],
+          confirm: [],
+          reason: '<PERSON_NAME_001> の経験'
+        }
+      ]
     })
     expect(parseAgentMatchAssessmentResponse(payload, shown, 'Java', mappings)).toEqual({
-      assessments: [{
-        candidate: 'CANDIDATE_1', fit: 'strong',
-        met: [{ requirement: 'Java', evidence: '山田太郎 と Java 決済 API を開発' }],
-        gaps: [], confirm: [], reason: '山田太郎 の経験'
-      }]
+      assessments: [
+        {
+          candidate: 'CANDIDATE_1',
+          fit: 'strong',
+          met: [{ requirement: 'Java', evidence: '山田太郎 と Java 決済 API を開発' }],
+          gaps: [],
+          confirm: [],
+          reason: '山田太郎 の経験',
+          // The opinion gets the same placeholder handling: the partial placeholder never survives.
+          opinion: { fit: 'strong', reason: '山田太郎 の経験', gaps: [], confirm: [] }
+        }
+      ]
     })
   })
 
@@ -1431,25 +2055,60 @@ describe('match assessment protocol', () => {
 
 describe('learning provenance through the real privacy gateway', () => {
   const opaqueId = 'aaaaaaaa-a123-4567-8abc-aaaaaaaaaaaa'
-  const input = { task: 'matching', requirements: [{ key: 'skills', label: '技術', value: 'Java' }], facts: [], projects: [], hardFilters: [], hrRules: [], previousQuestions: [], notes: '', locale: 'ja-JP' } as const
+  const input = {
+    task: 'matching',
+    requirements: [{ key: 'skills', label: '技術', value: 'Java' }],
+    facts: [],
+    projects: [],
+    hardFilters: [],
+    hrRules: [],
+    previousQuestions: [],
+    notes: '',
+    locale: 'ja-JP'
+  } as const
   function fixture(reply: (projection: any) => unknown) {
     const sessions = new Map<string, RedactionSessionEvidence>()
     const streamResponses = vi.fn(async (request: Parameters<AiCommerceNativeClient['streamResponses']>[0]) => ({
-      clientRequestId: 'fixture', responseId: 'fixture', billingModeUsed: 'subscription' as const,
+      clientRequestId: 'fixture',
+      responseId: 'fixture',
+      billingModeUsed: 'subscription' as const,
       content: JSON.stringify(reply(JSON.parse(request.input)))
     }))
     const service = new AgentCloudNarrativeService({
-      repository: { saveRedactionSession: s => { sessions.set(s.id, s) }, getRedactionSession: id => sessions.get(id) ?? null, appendCloudCallAudit: vi.fn() },
-      localNer: { engine: 'apple-natural-language', detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] }) },
-      aiCommerce: { responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses', streamResponses, cancelClientRequest: vi.fn() } as unknown as AiCommerceNativeClient,
-      policyVersion: 'cloud-redaction-v2', loadGates: vi.fn().mockResolvedValue(passedGates()), allowLoopbackHttp: false
+      repository: {
+        saveRedactionSession: (s) => {
+          sessions.set(s.id, s)
+        },
+        getRedactionSession: (id) => sessions.get(id) ?? null,
+        appendCloudCallAudit: vi.fn()
+      },
+      localNer: {
+        engine: 'apple-natural-language',
+        detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] })
+      },
+      aiCommerce: {
+        responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses',
+        streamResponses,
+        cancelClientRequest: vi.fn()
+      } as unknown as AiCommerceNativeClient,
+      policyVersion: 'cloud-redaction-v2',
+      loadGates: vi.fn().mockResolvedValue(passedGates()),
+      allowLoopbackHttp: false
     })
     return { service, streamResponses }
   }
-  const events = [{ id: opaqueId, kind: 'assessment-feedback', text: 'Java 项目应确认本人独立负责的范围。', data: {}, runs: [{ id: opaqueId, input: input as unknown as import('@shared').ExperienceInput, output: '' }] }]
+  const events = [
+    {
+      id: opaqueId,
+      kind: 'assessment-feedback',
+      text: 'Java 项目应确认本人独立负责的范围。',
+      data: {},
+      runs: [{ id: opaqueId, input: input as unknown as import('@shared').ExperienceInput, output: '' }]
+    }
+  ]
   it('restores only a supplied event reference and rejects a fabricated source', async () => {
     const observation = { task: 'matching', method: 'ownership', keyword: 'Java', quote: events[0]!.text, polarity: 'support' }
-    const good = fixture(p => ({ observations: [{ ...observation, eventId: p.events[0].id }] }))
+    const good = fixture((p) => ({ observations: [{ ...observation, eventId: p.events[0].id }] }))
     const result = await good.service.extractExperience({ events, model, signal: AbortSignal.timeout(5000) })
     expect(result.observations[0]!.eventId).toBe(opaqueId)
     expect(good.streamResponses.mock.calls[0]![0].input).not.toContain(opaqueId)
@@ -1457,26 +2116,98 @@ describe('learning provenance through the real privacy gateway', () => {
     await expect(bad.service.extractExperience({ events, model, signal: AbortSignal.timeout(5000) })).rejects.toThrow('来源无法验证')
   })
   it('binds generated questions to the supplied bank version and rejects forged IDs', async () => {
-    const bank = { id: opaqueId, version: 7, category: 'responsibility', keyword: 'Java', text: '请说明 Java 项目中本人独立负责的范围。', scoringGuide: '本人职责与具体成果' } as import('@shared').BankQuestion
-    const question = { dimension: 'ownership-collaboration', ask: 'coordination', text: '请说明 Java 项目中本人负责的范围。', requirementIds: ['R1'], evidenceIds: [], scoringGuide: '本人职责与成果' }
+    const bank = {
+      id: opaqueId,
+      version: 7,
+      category: 'responsibility',
+      keyword: 'Java',
+      text: '请说明 Java 项目中本人独立负责的范围。',
+      scoringGuide: '本人职责与具体成果'
+    } as import('@shared').BankQuestion
+    const question = {
+      dimension: 'ownership-collaboration',
+      ask: 'coordination',
+      text: '请说明 Java 项目中本人负责的范围。',
+      requirementIds: ['R1'],
+      evidenceIds: [],
+      scoringGuide: '本人职责与成果'
+    }
     const classification = { dimension: 'ownership-collaboration', focus: '本人负责范围', requirementIds: ['R1'], evidenceIds: [] }
-    const args = { bankQuestions: [bank], profile: { fields: [], projectExperiences: [] } as unknown as import('@resume').CandidateProfile, requirements: ['Java'], rules: [], previousQuestions: [], notes: '', locale: 'zh-CN', model, signal: AbortSignal.timeout(5000) }
-    const good = fixture(p => ({ capabilities: [classification], questions: [{ ...question, bankQuestionId: p.bankQuestions[0].id }] }))
+    const args = {
+      bankQuestions: [bank],
+      profile: { fields: [], projectExperiences: [] } as unknown as import('@resume').CandidateProfile,
+      requirements: ['Java'],
+      rules: [],
+      previousQuestions: [],
+      notes: '',
+      locale: 'zh-CN',
+      model,
+      signal: AbortSignal.timeout(5000)
+    }
+    const good = fixture((p) => ({ capabilities: [classification], questions: [{ ...question, bankQuestionId: p.bankQuestions[0].id }] }))
     expect((await good.service.generateRuleQuestions(args))[0]).toMatchObject({ bankQuestionId: opaqueId, bankVersion: 7 })
     expect(good.streamResponses.mock.calls[0]![0].input).not.toContain(opaqueId)
     const bad = fixture(() => ({ capabilities: [classification], questions: [{ ...question, bankQuestionId: opaqueId }] }))
     await expect(bad.service.generateRuleQuestions(args)).rejects.toThrow('题库来源无法验证')
   })
   it('resolves combined interview sources through real redaction without returning private source text', async () => {
-    const good = fixture(p => ({ capabilities: [{ dimension: 'core-capability', focus: 'Java/SQL 交付', requirementIds: p.requirements.map((r: { id: string }) => r.id), evidenceIds: [p.facts[0].id, p.projects[0].summary.id] }, { dimension: 'case-readiness', focus: '案件適応', requirementIds: p.requirements.map((r: { id: string }) => r.id), evidenceIds: [p.projects[0].summary.id] }], questions: [{
-      dimension: 'core-capability', ask: 'deliverable-quality', text: '请结合 Java 和 SQL 的项目说明交付物、本人贡献及验证结果。',
-      requirementIds: p.requirements.map((r: { id: string }) => r.id),
-      evidenceIds: [p.facts[0].id, p.projects[0].summary.id], scoringGuide: '具体职责、技术判断和结果'
-    }, { dimension: 'case-readiness', ask: 'onboarding', text: '进入本案件后最先可以独立承担哪些任务？', requirementIds: p.requirements.map((r: { id: string }) => r.id), evidenceIds: [p.projects[0].summary.id], scoringGuide: '具体任务' }] }))
+    const good = fixture((p) => ({
+      capabilities: [
+        {
+          dimension: 'core-capability',
+          focus: 'Java/SQL 交付',
+          requirementIds: p.requirements.map((r: { id: string }) => r.id),
+          evidenceIds: [p.facts[0].id, p.projects[0].summary.id]
+        },
+        {
+          dimension: 'case-readiness',
+          focus: '案件適応',
+          requirementIds: p.requirements.map((r: { id: string }) => r.id),
+          evidenceIds: [p.projects[0].summary.id]
+        }
+      ],
+      questions: [
+        {
+          dimension: 'core-capability',
+          ask: 'deliverable-quality',
+          text: '请结合 Java 和 SQL 的项目说明交付物、本人贡献及验证结果。',
+          requirementIds: p.requirements.map((r: { id: string }) => r.id),
+          evidenceIds: [p.facts[0].id, p.projects[0].summary.id],
+          scoringGuide: '具体职责、技术判断和结果'
+        },
+        {
+          dimension: 'case-readiness',
+          ask: 'onboarding',
+          text: '进入本案件后最先可以独立承担哪些任务？',
+          requirementIds: p.requirements.map((r: { id: string }) => r.id),
+          evidenceIds: [p.projects[0].summary.id],
+          scoringGuide: '具体任务'
+        }
+      ]
+    }))
     const result = await good.service.generateRuleQuestions({
       caseSupplied: true,
-      profile: { fields: [{ key: 'skills', value: 'Java、SQL private@example.com' }], projectExperiences: [{ id: opaqueId, title: '業務API', period: null, role: 'SE', technologies: ['Java', 'SQL'], summary: 'API開発とSQL作成を担当。', sourceLabels: ['private-file.xlsx'] }] } as any,
-      requirements: ['Java', 'SQL'], rules: [], previousQuestions: [], notes: '', locale: 'zh-CN', model, signal: AbortSignal.timeout(5000)
+      profile: {
+        fields: [{ key: 'skills', value: 'Java、SQL private@example.com' }],
+        projectExperiences: [
+          {
+            id: opaqueId,
+            title: '業務API',
+            period: null,
+            role: 'SE',
+            technologies: ['Java', 'SQL'],
+            summary: 'API開発とSQL作成を担当。',
+            sourceLabels: ['private-file.xlsx']
+          }
+        ]
+      } as any,
+      requirements: ['Java', 'SQL'],
+      rules: [],
+      previousQuestions: [],
+      notes: '',
+      locale: 'zh-CN',
+      model,
+      signal: AbortSignal.timeout(5000)
     })
     expect(result[0]!.requirement).toBe('Java / SQL')
     expect(result[0]!.evidence).toContain('API開発とSQL作成を担当。')

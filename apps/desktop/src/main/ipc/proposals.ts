@@ -19,11 +19,13 @@ import {
   approveProposalDraftInputSchema,
   createProposalDraftInputSchema,
   exportProposalPackageInputSchema,
+  exportSkillSheetInputSchema,
   ipcChannels,
   proposalTaskIdSchema,
   recordProposalFollowUpInputSchema,
   updateProposalDraftInputSchema
 } from '@shared'
+import { exportSkillSheet } from '../skill-sheet-export'
 import { assertWorkTaskAllowsExecution } from '../work-task-helpers'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
@@ -42,7 +44,10 @@ async function renderProposalAttachmentPdf(draft: ProposalDraftSnapshot): Promis
   }
 }
 
-async function buildProposalPackage(draft: ProposalDraftSnapshot, now = new Date()): Promise<{
+async function buildProposalPackage(
+  draft: ProposalDraftSnapshot,
+  now = new Date()
+): Promise<{
   bytes: Buffer
   packageHash: string
 }> {
@@ -64,6 +69,15 @@ export function registerProposalHandlers(context: MainIpcContext) {
     }
   }
 
+  // The introduction composer's redacted skill sheet; one export at a time per person.
+  ipcMain.handle(ipcChannels.exportSkillSheet, async (event, rawInput) => {
+    assertTrustedSender(event)
+    const input = exportSkillSheetInputSchema.parse(rawInput)
+    return withProposalMutation(`skill-sheet:${input.documentId}`, () =>
+      exportSkillSheet(context, BrowserWindow.fromWebContents(event.sender), input)
+    )
+  })
+
   ipcMain.handle(ipcChannels.getProposalWorkspace, (event, rawTaskId): ProposalWorkspaceSnapshot => {
     assertTrustedSender(event)
     return repository.getProposalWorkspace(proposalTaskIdSchema.parse(rawTaskId))
@@ -72,18 +86,20 @@ export function registerProposalHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.createProposalDraft, async (event, rawInput): Promise<ProposalMutationResult> => {
     assertTrustedSender(event)
     const input = createProposalDraftInputSchema.parse(rawInput)
-    return withTaskOperation(input.taskId, () => withProposalMutation(`task:${input.taskId}`, () => {
-      const task = repository.getWorkTask(input.taskId)
-      if (!task) throw new Error('提案タスクが見つかりません。')
-      assertWorkTaskAllowsExecution(task)
-      const draft = repository.createProposalDraft(input, randomUUID(), currentOperator().displayName)
-      const updatedTask = recordProposalDraftCreated(task, draft.attachment.fields.length + 2, new Date(), {
-        objectId: draft.id,
-        contentHash: draft.contentHash
+    return withTaskOperation(input.taskId, () =>
+      withProposalMutation(`task:${input.taskId}`, () => {
+        const task = repository.getWorkTask(input.taskId)
+        if (!task) throw new Error('提案タスクが見つかりません。')
+        assertWorkTaskAllowsExecution(task)
+        const draft = repository.createProposalDraft(input, randomUUID(), currentOperator().displayName)
+        const updatedTask = recordProposalDraftCreated(task, draft.attachment.fields.length + 2, new Date(), {
+          objectId: draft.id,
+          contentHash: draft.contentHash
+        })
+        repository.saveWorkTask(updatedTask)
+        return { draft, task: updatedTask }
       })
-      repository.saveWorkTask(updatedTask)
-      return { draft, task: updatedTask }
-    }))
+    )
   })
 
   ipcMain.handle(ipcChannels.updateProposalDraft, async (event, rawInput): Promise<ProposalMutationResult> => {
@@ -91,18 +107,20 @@ export function registerProposalHandlers(context: MainIpcContext) {
     const input = updateProposalDraftInputSchema.parse(rawInput)
     const currentDraft = repository.getProposalDraft(input.draftId)
     if (!currentDraft) throw new Error('提案草稿が見つかりません。')
-    return withTaskOperation(currentDraft.taskId, () => withProposalMutation(input.draftId, () => {
-      const task = repository.getWorkTask(currentDraft.taskId)
-      if (!task) throw new Error('提案タスクが見つかりません。')
-      assertWorkTaskAllowsExecution(task)
-      const draft = repository.updateProposalDraft(input, currentOperator().displayName)
-      const updatedTask = recordProposalDraftCreated(task, draft.attachment.fields.length + 2, new Date(), {
-        objectId: draft.id,
-        contentHash: draft.contentHash
+    return withTaskOperation(currentDraft.taskId, () =>
+      withProposalMutation(input.draftId, () => {
+        const task = repository.getWorkTask(currentDraft.taskId)
+        if (!task) throw new Error('提案タスクが見つかりません。')
+        assertWorkTaskAllowsExecution(task)
+        const draft = repository.updateProposalDraft(input, currentOperator().displayName)
+        const updatedTask = recordProposalDraftCreated(task, draft.attachment.fields.length + 2, new Date(), {
+          objectId: draft.id,
+          contentHash: draft.contentHash
+        })
+        repository.saveWorkTask(updatedTask)
+        return { draft, task: updatedTask }
       })
-      repository.saveWorkTask(updatedTask)
-      return { draft, task: updatedTask }
-    }))
+    )
   })
 
   ipcMain.handle(ipcChannels.approveProposalDraft, async (event, rawInput): Promise<ProposalMutationResult> => {
@@ -110,16 +128,18 @@ export function registerProposalHandlers(context: MainIpcContext) {
     const input = approveProposalDraftInputSchema.parse(rawInput)
     const currentDraft = repository.getProposalDraft(input.draftId)
     if (!currentDraft) throw new Error('提案草稿が見つかりません。')
-    return withTaskOperation(currentDraft.taskId, () => withProposalMutation(input.draftId, () => {
-      const task = repository.getWorkTask(currentDraft.taskId)
-      if (!task) throw new Error('提案タスクが見つかりません。')
-      assertWorkTaskAllowsExecution(task)
-      const operator = currentOperator()
-      const draft = repository.approveProposalDraft(input, operator.displayName)
-      const updatedTask = recordProposalApproved(task, new Date(), operator.displayName)
-      repository.saveWorkTask(updatedTask)
-      return { draft, task: updatedTask }
-    }))
+    return withTaskOperation(currentDraft.taskId, () =>
+      withProposalMutation(input.draftId, () => {
+        const task = repository.getWorkTask(currentDraft.taskId)
+        if (!task) throw new Error('提案タスクが見つかりません。')
+        assertWorkTaskAllowsExecution(task)
+        const operator = currentOperator()
+        const draft = repository.approveProposalDraft(input, operator.displayName)
+        const updatedTask = recordProposalApproved(task, new Date(), operator.displayName)
+        repository.saveWorkTask(updatedTask)
+        return { draft, task: updatedTask }
+      })
+    )
   })
 
   ipcMain.handle(ipcChannels.exportProposalPackage, async (event, rawInput): Promise<ExportProposalPackageResult> => {
@@ -127,167 +147,175 @@ export function registerProposalHandlers(context: MainIpcContext) {
     const input = exportProposalPackageInputSchema.parse(rawInput)
     const currentDraft = repository.getProposalDraft(input.draftId)
     if (!currentDraft) throw new Error('提案草稿が見つかりません。')
-    return withTaskOperation(currentDraft.taskId, () => withProposalMutation(input.draftId, async () => {
-      const draft = repository.getProposalDraft(input.draftId)
-      if (!draft) throw new Error('提案草稿が見つかりません。')
-      if (
-        draft.revision !== input.revision ||
-        draft.contentHash !== input.contentHash ||
-        draft.approvedContentHash !== draft.contentHash ||
-        !['approved', 'exported'].includes(draft.status)
-      ) {
-        throw new Error('現在の提案内容を承認してからエクスポートしてください。')
-      }
-      const task = repository.getWorkTask(draft.taskId)
-      if (!task) throw new Error('提案タスクが見つかりません。')
-      assertWorkTaskAllowsExecution(task)
-      const actionRunId = preflightAction('proposal.export', {
-        origin: 'work-task', workTaskId: task.id, scopeId: task.scope.id,
-        scopeFingerprint: draft.contentHash, actorId: currentOperator().operatorId,
-        contentRevision: `${draft.revision}:${draft.contentHash}`
-      }, { taskId: task.id, draftId: draft.id, revision: draft.revision, contentHash: draft.contentHash },
-      '承認済み提案パッケージを、保存先の選択後に端末へ書き出します。', `proposal-export:${randomUUID()}`)
-      const owner = BrowserWindow.fromWebContents(event.sender)
-      const defaultName = `proposal-${draft.id.slice(0, 8)}.zip`
-      const saveOptions = {
-        title: '承認済み提案パッケージを保存',
-        defaultPath: defaultName,
-        buttonLabel: '提案パッケージを書き出す',
-        filters: [{ name: '提案パッケージ', extensions: ['zip'] }]
-      }
-      const selection = owner
-        ? await dialog.showSaveDialog(owner, saveOptions)
-        : await dialog.showSaveDialog(saveOptions)
-      if (selection.canceled || !selection.filePath) {
-        repository.updateActionRun(actionRunId, 'cancelled', { errorCode: 'NATIVE_SAVE_CANCELLED' })
-        return { draft, task, cancelled: true, processingJob: null, export: null }
-      }
-
-      const exportId = randomUUID()
-      const targetPathHash = createHash('sha256').update(normalize(selection.filePath)).digest('hex')
-      const requestFingerprint = createHash('sha256').update(JSON.stringify({
-        version: 'proposal-export-job-v1',
-        taskId: task.id,
-        draftId: draft.id,
-        revision: draft.revision,
-        contentHash: draft.contentHash,
-        targetPathHash
-      })).digest('hex')
-      const idempotencyKey = createHash('sha256')
-        .update(`proposal-export:${exportId}:${requestFingerprint}`)
-        .digest('hex')
-      let processingJob = repository.enqueueProcessingJob({
-        type: 'proposal-export',
-        workTaskId: task.id,
-        taskStepId: task.steps[3]?.id ?? 'step-4',
-        idempotencyKey,
-        requestFingerprint,
-        payloadRef: `proposal-draft:${draft.id}:export:${exportId}`,
-        replayPolicy: 'manual-review',
-        maxAttempts: 1
-      })
-      repository.updateActionRun(actionRunId, 'running', { processingJobId: processingJob.id })
-      return processingResources.run('file-export', async () => {
-        processingJob = repository.getProcessingJob(processingJob.id) ?? processingJob
-        const lease = repository.acquireProcessingJob(processingJob.id, 10 * 60_000)
-        if (!lease) throw new Error('提案書き出しジョブを開始できませんでした。内容を再確認してください。')
-        const latestTaskBeforeStart = repository.getWorkTask(task.id)
-        if (!latestTaskBeforeStart) throw new Error('提案タスクが見つかりません。')
-        assertWorkTaskAllowsExecution(latestTaskBeforeStart)
-        const startedTask = recordProposalExportStarted(latestTaskBeforeStart, lease.job.attemptCount)
-        repository.saveWorkTask(startedTask)
-        processingJob = repository.updateProcessingJobProgress(processingJob.id, lease.leaseToken, 15)
-        const temporaryPath = `${selection.filePath}.${randomUUID()}.tmp`
-        let exportPrepared = false
-        let filesystemCommitted = false
-        let domainCommitted = false
-        try {
-          const packageData = await buildProposalPackage(draft)
-          processingJob = repository.updateProcessingJobProgress(processingJob.id, lease.leaseToken, 55)
-          if (repository.isProcessingJobCancellationRequested(processingJob.id, lease.leaseToken)) {
-            repository.completeProcessingJob(processingJob.id, lease.leaseToken, { cancelled: true })
-            throw new Error('提案書き出しジョブをキャンセルしました。')
-          }
-          repository.beginProposalExport(
-            draft.id,
-            draft.revision,
-            draft.contentHash,
-            exportId,
-            targetPathHash,
-            currentOperator().displayName
-          )
-          exportPrepared = true
-          await writeFile(temporaryPath, packageData.bytes, { mode: 0o600 })
-          await rename(temporaryPath, selection.filePath)
-          filesystemCommitted = true
-          const exported = repository.completeProposalExport(
-            exportId,
-            draft.id,
-            draft.contentHash,
-            packageData.packageHash,
-            currentOperator().displayName
-          )
-          domainCommitted = true
-          const completion = repository.completeProcessingJob(processingJob.id, lease.leaseToken, {
-            version: 'proposal-export-job-result-v1',
-            exportId,
-            packageHash: packageData.packageHash,
-            deliveryState: 'exported-not-sent'
-          })
-          if (!completion.accepted) {
-            throw new Error('提案書き出しの完了前にキャンセル要求を検出しました。保存先を確認してください。')
-          }
-          processingJob = completion.job
-          const updatedTask = recordProposalExported(startedTask, new Date(), {
-            objectId: exportId,
-            contentHash: packageData.packageHash
-          })
-          repository.saveWorkTask(updatedTask)
-          repository.updateActionRun(actionRunId, 'succeeded', { processingJobId: processingJob.id, resultHash: packageData.packageHash })
-          return {
-            draft: exported,
-            task: updatedTask,
-            cancelled: false,
-            processingJob,
-            export: {
-              fileName: basename(selection.filePath),
-              packageHash: packageData.packageHash,
-              exportedAt: exported.exportedAt ?? exported.updatedAt,
-              deliveryState: 'exported-not-sent'
-            }
-          }
-        } catch (cause) {
-          await unlink(temporaryPath).catch(() => undefined)
-          const errorCode = filesystemCommitted ? 'PROPOSAL_EXPORT_OUTCOME_UNKNOWN' : 'LOCAL_EXPORT_FAILED'
-          const activeJob = repository.getProcessingJob(processingJob.id)
-          if (activeJob?.status === 'running') {
-            processingJob = repository.failProcessingJob(
-              processingJob.id,
-              lease.leaseToken,
-              errorCode,
-              false
-            )
-          }
-          const latestTask = repository.getWorkTask(task.id)
-          if (latestTask && latestTask.status !== 'completed' && latestTask.status !== 'cancelled') {
-            repository.saveWorkTask(recordProposalExportFailure(latestTask, errorCode))
-          }
-          if (filesystemCommitted && !domainCommitted) {
-            repository.markProposalExportOutcomeUnknown(exportId, draft.id, currentOperator().displayName)
-            throw new Error('ファイルは書き出された可能性がありますが、記録を確定できませんでした。内容を再確認してください。', { cause })
-          }
-          if (filesystemCommitted) {
-            throw new Error('ファイルは書き出され、記録も保存されましたが、作業ジョブを確定できませんでした。保存先を確認してください。', { cause })
-          }
-          if (exportPrepared) repository.failProposalExport(exportId, draft.id, 'LOCAL_EXPORT_FAILED', currentOperator().displayName)
-          repository.updateActionRun(actionRunId, processingJob.status === 'cancelled' ? 'cancelled' : 'failed', {
-            processingJobId: processingJob.id,
-            errorCode
-          })
-          throw new Error('提案パッケージを書き出せませんでした。', { cause })
+    return withTaskOperation(currentDraft.taskId, () =>
+      withProposalMutation(input.draftId, async () => {
+        const draft = repository.getProposalDraft(input.draftId)
+        if (!draft) throw new Error('提案草稿が見つかりません。')
+        if (
+          draft.revision !== input.revision ||
+          draft.contentHash !== input.contentHash ||
+          draft.approvedContentHash !== draft.contentHash ||
+          !['approved', 'exported'].includes(draft.status)
+        ) {
+          throw new Error('現在の提案内容を承認してからエクスポートしてください。')
         }
+        const task = repository.getWorkTask(draft.taskId)
+        if (!task) throw new Error('提案タスクが見つかりません。')
+        assertWorkTaskAllowsExecution(task)
+        const actionRunId = preflightAction(
+          'proposal.export',
+          {
+            origin: 'work-task',
+            workTaskId: task.id,
+            scopeId: task.scope.id,
+            scopeFingerprint: draft.contentHash,
+            actorId: currentOperator().operatorId,
+            contentRevision: `${draft.revision}:${draft.contentHash}`
+          },
+          { taskId: task.id, draftId: draft.id, revision: draft.revision, contentHash: draft.contentHash },
+          '承認済み提案パッケージを、保存先の選択後に端末へ書き出します。',
+          `proposal-export:${randomUUID()}`
+        )
+        const owner = BrowserWindow.fromWebContents(event.sender)
+        const defaultName = `proposal-${draft.id.slice(0, 8)}.zip`
+        const saveOptions = {
+          title: '承認済み提案パッケージを保存',
+          defaultPath: defaultName,
+          buttonLabel: '提案パッケージを書き出す',
+          filters: [{ name: '提案パッケージ', extensions: ['zip'] }]
+        }
+        const selection = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)
+        if (selection.canceled || !selection.filePath) {
+          repository.updateActionRun(actionRunId, 'cancelled', { errorCode: 'NATIVE_SAVE_CANCELLED' })
+          return { draft, task, cancelled: true, processingJob: null, export: null }
+        }
+
+        const exportId = randomUUID()
+        const targetPathHash = createHash('sha256').update(normalize(selection.filePath)).digest('hex')
+        const requestFingerprint = createHash('sha256')
+          .update(
+            JSON.stringify({
+              version: 'proposal-export-job-v1',
+              taskId: task.id,
+              draftId: draft.id,
+              revision: draft.revision,
+              contentHash: draft.contentHash,
+              targetPathHash
+            })
+          )
+          .digest('hex')
+        const idempotencyKey = createHash('sha256').update(`proposal-export:${exportId}:${requestFingerprint}`).digest('hex')
+        let processingJob = repository.enqueueProcessingJob({
+          type: 'proposal-export',
+          workTaskId: task.id,
+          taskStepId: task.steps[3]?.id ?? 'step-4',
+          idempotencyKey,
+          requestFingerprint,
+          payloadRef: `proposal-draft:${draft.id}:export:${exportId}`,
+          replayPolicy: 'manual-review',
+          maxAttempts: 1
+        })
+        repository.updateActionRun(actionRunId, 'running', { processingJobId: processingJob.id })
+        return processingResources.run('file-export', async () => {
+          processingJob = repository.getProcessingJob(processingJob.id) ?? processingJob
+          const lease = repository.acquireProcessingJob(processingJob.id, 10 * 60_000)
+          if (!lease) throw new Error('提案書き出しジョブを開始できませんでした。内容を再確認してください。')
+          const latestTaskBeforeStart = repository.getWorkTask(task.id)
+          if (!latestTaskBeforeStart) throw new Error('提案タスクが見つかりません。')
+          assertWorkTaskAllowsExecution(latestTaskBeforeStart)
+          const startedTask = recordProposalExportStarted(latestTaskBeforeStart, lease.job.attemptCount)
+          repository.saveWorkTask(startedTask)
+          processingJob = repository.updateProcessingJobProgress(processingJob.id, lease.leaseToken, 15)
+          const temporaryPath = `${selection.filePath}.${randomUUID()}.tmp`
+          let exportPrepared = false
+          let filesystemCommitted = false
+          let domainCommitted = false
+          try {
+            const packageData = await buildProposalPackage(draft)
+            processingJob = repository.updateProcessingJobProgress(processingJob.id, lease.leaseToken, 55)
+            if (repository.isProcessingJobCancellationRequested(processingJob.id, lease.leaseToken)) {
+              repository.completeProcessingJob(processingJob.id, lease.leaseToken, { cancelled: true })
+              throw new Error('提案書き出しジョブをキャンセルしました。')
+            }
+            repository.beginProposalExport(
+              draft.id,
+              draft.revision,
+              draft.contentHash,
+              exportId,
+              targetPathHash,
+              currentOperator().displayName
+            )
+            exportPrepared = true
+            await writeFile(temporaryPath, packageData.bytes, { mode: 0o600 })
+            await rename(temporaryPath, selection.filePath)
+            filesystemCommitted = true
+            const exported = repository.completeProposalExport(
+              exportId,
+              draft.id,
+              draft.contentHash,
+              packageData.packageHash,
+              currentOperator().displayName
+            )
+            domainCommitted = true
+            const completion = repository.completeProcessingJob(processingJob.id, lease.leaseToken, {
+              version: 'proposal-export-job-result-v1',
+              exportId,
+              packageHash: packageData.packageHash,
+              deliveryState: 'exported-not-sent'
+            })
+            if (!completion.accepted) {
+              throw new Error('提案書き出しの完了前にキャンセル要求を検出しました。保存先を確認してください。')
+            }
+            processingJob = completion.job
+            const updatedTask = recordProposalExported(startedTask, new Date(), {
+              objectId: exportId,
+              contentHash: packageData.packageHash
+            })
+            repository.saveWorkTask(updatedTask)
+            repository.updateActionRun(actionRunId, 'succeeded', { processingJobId: processingJob.id, resultHash: packageData.packageHash })
+            return {
+              draft: exported,
+              task: updatedTask,
+              cancelled: false,
+              processingJob,
+              export: {
+                fileName: basename(selection.filePath),
+                packageHash: packageData.packageHash,
+                exportedAt: exported.exportedAt ?? exported.updatedAt,
+                deliveryState: 'exported-not-sent'
+              }
+            }
+          } catch (cause) {
+            await unlink(temporaryPath).catch(() => undefined)
+            const errorCode = filesystemCommitted ? 'PROPOSAL_EXPORT_OUTCOME_UNKNOWN' : 'LOCAL_EXPORT_FAILED'
+            const activeJob = repository.getProcessingJob(processingJob.id)
+            if (activeJob?.status === 'running') {
+              processingJob = repository.failProcessingJob(processingJob.id, lease.leaseToken, errorCode, false)
+            }
+            const latestTask = repository.getWorkTask(task.id)
+            if (latestTask && latestTask.status !== 'completed' && latestTask.status !== 'cancelled') {
+              repository.saveWorkTask(recordProposalExportFailure(latestTask, errorCode))
+            }
+            if (filesystemCommitted && !domainCommitted) {
+              repository.markProposalExportOutcomeUnknown(exportId, draft.id, currentOperator().displayName)
+              throw new Error('ファイルは書き出された可能性がありますが、記録を確定できませんでした。内容を再確認してください。', { cause })
+            }
+            if (filesystemCommitted) {
+              throw new Error(
+                'ファイルは書き出され、記録も保存されましたが、作業ジョブを確定できませんでした。保存先を確認してください。',
+                { cause }
+              )
+            }
+            if (exportPrepared) repository.failProposalExport(exportId, draft.id, 'LOCAL_EXPORT_FAILED', currentOperator().displayName)
+            repository.updateActionRun(actionRunId, processingJob.status === 'cancelled' ? 'cancelled' : 'failed', {
+              processingJobId: processingJob.id,
+              errorCode
+            })
+            throw new Error('提案パッケージを書き出せませんでした。', { cause })
+          }
+        })
       })
-    }))
+    )
   })
 
   ipcMain.handle(ipcChannels.recordProposalFollowUp, async (event, rawInput): Promise<ProposalMutationResult> => {
@@ -295,18 +323,20 @@ export function registerProposalHandlers(context: MainIpcContext) {
     const input = recordProposalFollowUpInputSchema.parse(rawInput)
     const currentDraft = repository.getProposalDraft(input.draftId)
     if (!currentDraft) throw new Error('提案草稿が見つかりません。')
-    return withTaskOperation(currentDraft.taskId, () => withProposalMutation(input.draftId, () => {
-      const draftBeforeMutation = repository.getProposalDraft(input.draftId)
-      if (!draftBeforeMutation) throw new Error('提案草稿が見つかりません。')
-      const task = repository.getWorkTask(draftBeforeMutation.taskId)
-      if (!task) throw new Error('提案タスクが見つかりません。')
-      assertWorkTaskAllowsExecution(task)
-      const operator = currentOperator()
-      const now = new Date()
-      const draft = repository.recordProposalFollowUp(input, randomUUID(), operator.displayName, now)
-      const updatedTask = recordProposalFollowUp(task, input.stage, now, operator.displayName)
-      repository.saveWorkTask(updatedTask)
-      return { draft, task: updatedTask }
-    }))
+    return withTaskOperation(currentDraft.taskId, () =>
+      withProposalMutation(input.draftId, () => {
+        const draftBeforeMutation = repository.getProposalDraft(input.draftId)
+        if (!draftBeforeMutation) throw new Error('提案草稿が見つかりません。')
+        const task = repository.getWorkTask(draftBeforeMutation.taskId)
+        if (!task) throw new Error('提案タスクが見つかりません。')
+        assertWorkTaskAllowsExecution(task)
+        const operator = currentOperator()
+        const now = new Date()
+        const draft = repository.recordProposalFollowUp(input, randomUUID(), operator.displayName, now)
+        const updatedTask = recordProposalFollowUp(task, input.stage, now, operator.displayName)
+        repository.saveWorkTask(updatedTask)
+        return { draft, task: updatedTask }
+      })
+    )
   })
 }

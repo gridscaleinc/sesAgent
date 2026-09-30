@@ -1,0 +1,59 @@
+/* The full-page profile, embedded in the right panel (~450px): one column, the AI drawer below the content. */
+.candidate-profile-panel .resume-profile-header {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.candidate-profile-panel .resume-profile-identity {
+  flex: 1 1 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.candidate-profile-panel .resume-profile-identity > button:first-child {
+  display: none;
+}
+.candidate-profile-panel .resume-profile-identity h1 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.candidate-profile-panel .resume-profile-actions {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.candidate-profile-panel .candidate-detail-summary-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.candidate-profile-panel .resume-profile-tabs {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.candidate-profile-panel .resume-profile-tabs > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.candidate-profile-panel .resume-profile-workspace .resume-profile-body,
+.candidate-profile-panel .resume-profile-workspace.has-ai .resume-profile-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.candidate-profile-panel .candidate-ai-drawer {
+  border-left: 0;
+  border-top: 1px solid #e3e8ef;
+}
+.candidate-profile-status {
+  padding: 16px;
+}
+.candidate-profile-panel .resume-profile-body {
+  overflow: visible;
+}
+.candidate-profile-panel .resume-profile-scroll {
+  overflow: visible;
+}
+.candidate-profile-panel .profile-overview-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  row-gap: 12px;
+}
+/* Skill and project tables keep their column widths and scroll sideways instead of crushing their text. */
+.candidate-profile-panel .resume-profile-scroll section:has(> .profile-table-header, > .profile-project-header),
+.candidate-profile-panel .resume-profile-scroll div:has(> .profile-table-header, > .profile-project-header) {
+  overflow-x: auto;
+}

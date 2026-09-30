@@ -40,12 +40,12 @@ export class ParserWorkerClient {
   constructor(private readonly options: ParserWorkerClientOptions) {
     if (
       !isAbsoluteWorkerPath(options.workerPath) ||
-      (options.windowsSandbox && (
-        !isAbsoluteWorkerPath(options.windowsSandbox.launcherPath) ||
-        options.windowsSandbox.grantReadRoots.length === 0 ||
-        options.windowsSandbox.grantReadRoots.some((root) => !isAbsoluteWorkerPath(root))
-      ))
-    ) throw new Error('Parser worker and sandbox paths must be absolute.')
+      (options.windowsSandbox &&
+        (!isAbsoluteWorkerPath(options.windowsSandbox.launcherPath) ||
+          options.windowsSandbox.grantReadRoots.length === 0 ||
+          options.windowsSandbox.grantReadRoots.some((root) => !isAbsoluteWorkerPath(root))))
+    )
+      throw new Error('Parser worker and sandbox paths must be absolute.')
     this.timeoutMs = options.timeoutMs ?? 20_000
     this.maxResponseBytes = options.maxResponseBytes ?? 5 * 1024 * 1024
   }
@@ -58,11 +58,15 @@ export class ParserWorkerClient {
       bytes
     }
 
-    return this.sendRequest(request, (response) => {
-      if (!response.ok || response.kind !== 'parse-document') return null
-      const parsedDocument = documentIrSchema.safeParse(response.document)
-      return parsedDocument.success ? parsedDocument.data : null
-    }, 'document')
+    return this.sendRequest(
+      request,
+      (response) => {
+        if (!response.ok || response.kind !== 'parse-document') return null
+        const parsedDocument = documentIrSchema.safeParse(response.document)
+        return parsedDocument.success ? parsedDocument.data : null
+      },
+      'document'
+    )
   }
 
   parseEml(file: EmlFileManifest, bytes: Buffer): Promise<ParsedEmlMessage> {
@@ -72,11 +76,15 @@ export class ParserWorkerClient {
       file,
       bytes
     }
-    return this.sendRequest(request, (response) => {
-      if (!response.ok || response.kind !== 'parse-eml') return null
-      const parsedMessage = parsedEmlMessageSchema.safeParse(response.message)
-      return parsedMessage.success ? parsedMessage.data : null
-    }, 'EML message')
+    return this.sendRequest(
+      request,
+      (response) => {
+        if (!response.ok || response.kind !== 'parse-eml') return null
+        const parsedMessage = parsedEmlMessageSchema.safeParse(response.message)
+        return parsedMessage.success ? parsedMessage.data : null
+      },
+      'EML message'
+    )
   }
 
   private sendRequest<T>(
@@ -153,17 +161,25 @@ export class ParserWorkerClient {
     const sandbox = this.options.windowsSandbox
     if (!sandbox) return Promise.reject(new Error('Windows parser sandbox configuration is missing.'))
     return new Promise<T>((resolve, reject) => {
-      const child = spawn(sandbox.launcherPath, [
-        '--profile', 'jp.sesai.agentdesktop.localworkers',
-        ...sandbox.grantReadRoots.flatMap((root) => ['--grant-read', root]),
-        '--', process.execPath, this.options.workerPath, '--stdio'
-      ], {
-        cwd: sandbox.grantReadRoots[0] ?? process.cwd(),
-        env: sanitizedWorkerEnvironment(),
-        shell: false,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true
-      })
+      const child = spawn(
+        sandbox.launcherPath,
+        [
+          '--profile',
+          'jp.sesai.agentdesktop.localworkers',
+          ...sandbox.grantReadRoots.flatMap((root) => ['--grant-read', root]),
+          '--',
+          process.execPath,
+          this.options.workerPath,
+          '--stdio'
+        ],
+        {
+          cwd: sandbox.grantReadRoots[0] ?? process.cwd(),
+          env: sanitizedWorkerEnvironment(),
+          shell: false,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true
+        }
+      )
       const chunks: Buffer[] = []
       const errors: Buffer[] = []
       let responseBytes = 0
@@ -194,9 +210,13 @@ export class ParserWorkerClient {
       child.once('close', (code, signal) => {
         if (settled) return
         if (code !== 0) {
-          finish(() => reject(new Error(
-            `The AppContainer parser exited (${code ?? signal ?? 'unknown'}): ${Buffer.concat(errors).toString('utf8').slice(0, 1_000)}`
-          )))
+          finish(() =>
+            reject(
+              new Error(
+                `The AppContainer parser exited (${code ?? signal ?? 'unknown'}): ${Buffer.concat(errors).toString('utf8').slice(0, 1_000)}`
+              )
+            )
+          )
           return
         }
         let response: unknown
@@ -246,7 +266,8 @@ function isParserWorkerResponse(value: unknown): value is ParserWorkerResponse {
     typeof candidate.id !== 'string' ||
     typeof candidate.ok !== 'boolean' ||
     !['parse-document', 'parse-eml', 'invalid'].includes(String(candidate.kind))
-  ) return false
+  )
+    return false
   if (candidate.ok && candidate.kind === 'parse-document') return Boolean(candidate.document && typeof candidate.document === 'object')
   if (candidate.ok && candidate.kind === 'parse-eml') return Boolean(candidate.message && typeof candidate.message === 'object')
   return !candidate.ok && typeof candidate.errorCode === 'string' && typeof candidate.message === 'string'

@@ -47,11 +47,25 @@ const extractionDraftJson = JSON.stringify({
   documentId,
   extractor: 'deterministic-local-v4',
   localPersonalDetails: {
-    displayName: null, gender: null, birthDate: null, nationality: null, phone: null, email: null,
-    address: null, education: null, major: null, graduationDate: null, degree: null
+    displayName: null,
+    gender: null,
+    birthDate: null,
+    nationality: null,
+    phone: null,
+    email: null,
+    address: null,
+    education: null,
+    major: null,
+    graduationDate: null,
+    degree: null
   },
   fields: ['skills', 'experience_years', 'availability', 'rate', 'japanese_level', 'work_style', 'role', 'location'].map((key) => ({
-    key, label: key, value: null, confidence: 0, status: 'missing', sources: []
+    key,
+    label: key,
+    value: null,
+    confidence: 0,
+    status: 'missing',
+    sources: []
   })),
   projectExperiences: [],
   requiresReview: true,
@@ -92,22 +106,38 @@ try {
   parents.close()
 
   const legacySource = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  legacySource.saveAiConversation({
-    conversationId: candidateConversationId,
-    context: candidateContext,
-    messages: [{ id: 'legacy-candidate-message', role: 'user', content: '旧候选人会话', mode: 'local', createdAt: '2026-08-18T00:01:00.000Z' }],
-    expectedRevision: null
-  }, new Date('2026-08-18T00:01:00.000Z'))
-  legacySource.saveAiConversation({
-    conversationId: interviewConversationId,
-    context: interviewContext,
-    messages: [{ id: 'legacy-interview-message', role: 'assistant', content: '旧面谈会话', mode: 'local', createdAt: '2026-08-18T00:01:01.000Z' }],
-    expectedRevision: null
-  }, new Date('2026-08-18T00:01:01.000Z'))
+  legacySource.saveAiConversation(
+    {
+      conversationId: candidateConversationId,
+      context: candidateContext,
+      messages: [
+        { id: 'legacy-candidate-message', role: 'user', content: '旧候选人会话', mode: 'local', createdAt: '2026-08-18T00:01:00.000Z' }
+      ],
+      expectedRevision: null
+    },
+    new Date('2026-08-18T00:01:00.000Z')
+  )
+  legacySource.saveAiConversation(
+    {
+      conversationId: interviewConversationId,
+      context: interviewContext,
+      messages: [
+        { id: 'legacy-interview-message', role: 'assistant', content: '旧面谈会话', mode: 'local', createdAt: '2026-08-18T00:01:01.000Z' }
+      ],
+      expectedRevision: null
+    },
+    new Date('2026-08-18T00:01:01.000Z')
+  )
   const oldAction = legacySource.createActionRun({
-    toolName: 'resume.analyze.local', workTaskId: null, origin: 'user-command', scopeId: 'selected-files',
-    scopeFingerprint: '1'.repeat(64), inputHash: '2'.repeat(64), contentRevision: null,
-    status: 'queued', idempotencyKey: 'legacy-v37-action'
+    toolName: 'resume.analyze.local',
+    workTaskId: null,
+    origin: 'user-command',
+    scopeId: 'selected-files',
+    scopeFingerprint: '1'.repeat(64),
+    inputHash: '2'.repeat(64),
+    contentRevision: null,
+    status: 'queued',
+    idempotencyKey: 'legacy-v37-action'
   })
   oldActionRunId = oldAction.id
   legacySource.close()
@@ -200,21 +230,37 @@ try {
   assert.equal(upgraded.getAiConversation(interviewConversationId)?.context.assistant, 'interview')
   assert.equal(upgraded.getActionRunStatus(oldActionRunId), 'queued')
   const newTool = upgraded.createActionRun({
-    toolName: 'job-case.search.local', workTaskId: null, origin: 'user-command', scopeId: 'active-job-cases',
-    scopeFingerprint: '3'.repeat(64), inputHash: '4'.repeat(64), contentRevision: null,
-    status: 'queued', idempotencyKey: 'v38-new-tool'
+    toolName: 'job-case.search.local',
+    workTaskId: null,
+    origin: 'user-command',
+    scopeId: 'active-job-cases',
+    scopeFingerprint: '3'.repeat(64),
+    inputHash: '4'.repeat(64),
+    contentRevision: null,
+    status: 'queued',
+    idempotencyKey: 'v38-new-tool'
   })
   assert.match(newTool.id, /^[0-9a-f-]{36}$/u)
   const salesConversation = upgraded.saveAiConversation({
     conversationId: salesConversationId,
     context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
-    messages: [{ id: 'sales-message', role: 'assistant', content: 'Sales Agent 会話', mode: 'local', createdAt: '2026-08-18T00:02:00.000Z' }],
+    messages: [
+      { id: 'sales-message', role: 'assistant', content: 'Sales Agent 会話', mode: 'local', createdAt: '2026-08-18T00:02:00.000Z' }
+    ],
     expectedRevision: null
   })
   const linked = upgraded.createActionRun({
-    toolName: 'job-case.search.local', workTaskId: null, origin: 'user-command', scopeId: 'active-job-cases',
-    scopeFingerprint: '5'.repeat(64), inputHash: '6'.repeat(64), contentRevision: null,
-    conversationId: salesConversation.id, turnId, status: 'queued', idempotencyKey: 'v38-linked-action'
+    toolName: 'job-case.search.local',
+    workTaskId: null,
+    origin: 'user-command',
+    scopeId: 'active-job-cases',
+    scopeFingerprint: '5'.repeat(64),
+    inputHash: '6'.repeat(64),
+    contentRevision: null,
+    conversationId: salesConversation.id,
+    turnId,
+    status: 'queued',
+    idempotencyKey: 'v38-linked-action'
   })
   linkedActionRunId = linked.id
   assert.deepEqual(upgraded.deleteAiConversations([salesConversationId]), [salesConversationId])
@@ -222,25 +268,32 @@ try {
   upgraded.close()
 
   const inspected = openRawDatabase()
-  const actionEventCount = inspected.prepare<[string], { count: number }>('SELECT count(*) AS count FROM action_events WHERE action_run_id = ?').get(oldActionRunId)?.count ?? 0
-  const linkedConversation = inspected.prepare<[string], { conversation_id: string | null }>('SELECT conversation_id FROM action_runs WHERE id = ?').get(linkedActionRunId)
+  const actionEventCount =
+    inspected
+      .prepare<[string], { count: number }>('SELECT count(*) AS count FROM action_events WHERE action_run_id = ?')
+      .get(oldActionRunId)?.count ?? 0
+  const linkedConversation = inspected
+    .prepare<[string], { conversation_id: string | null }>('SELECT conversation_id FROM action_runs WHERE id = ?')
+    .get(linkedActionRunId)
   const violations = inspected.pragma('foreign_key_check') as unknown[]
   inspected.close()
   assert.ok(actionEventCount >= 1, 'legacy ActionEvent was not preserved')
   assert.equal(linkedConversation?.conversation_id, null, 'conversation deletion did not SET NULL on ActionRun')
   assert.equal(violations.length, 0)
 
-  process.stdout.write(JSON.stringify({
-    fromSchema: 37,
-    toSchema: currentSchemaVersion,
-    legacyCandidateConversationPreserved: true,
-    legacyInterviewConversationPreserved: true,
-    legacyActionRunPreserved: true,
-    legacyActionEventPreserved: true,
-    newToolActionRunAccepted: true,
-    salesConversationActionRunSetNull: true,
-    foreignKeyViolations: violations.length
-  }) + '\n')
+  process.stdout.write(
+    JSON.stringify({
+      fromSchema: 37,
+      toSchema: currentSchemaVersion,
+      legacyCandidateConversationPreserved: true,
+      legacyInterviewConversationPreserved: true,
+      legacyActionRunPreserved: true,
+      legacyActionEventPreserved: true,
+      newToolActionRunAccepted: true,
+      salesConversationActionRunSetNull: true,
+      foreignKeyViolations: violations.length
+    }) + '\n'
+  )
 } finally {
   databaseKey.fill(0)
   mappingKey.fill(0)

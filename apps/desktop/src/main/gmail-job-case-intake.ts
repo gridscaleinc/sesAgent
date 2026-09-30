@@ -14,11 +14,7 @@ export interface GmailJobCaseIntakeCounts {
 
 export type GmailJobCaseIntakeRepository = Pick<
   EncryptedApplicationRepository,
-  | 'listGmailMessagesPendingJobCaseDrafts'
-  | 'ensureGmailJobCaseSource'
-  | 'saveJobCaseDraft'
-  | 'getJobCaseReview'
-  | 'confirmJobCaseReview'
+  'listGmailMessagesPendingJobCaseDrafts' | 'ensureGmailJobCaseSource' | 'saveJobCaseDraft' | 'getJobCaseReview' | 'confirmJobCaseReview'
 >
 
 /**
@@ -40,18 +36,23 @@ export function createJobCaseDraftsForPendingGmailMessages(
   const counts: GmailJobCaseIntakeCounts = { created: 0, confirmed: 0, needsAttention: 0, failed: 0 }
   for (const message of repository.listGmailMessagesPendingJobCaseDrafts(accountEmail)) {
     try {
-      const source = repository.ensureGmailJobCaseSource(createGmailJobCaseSource({
-        accountEmail: message.accountEmail,
-        gmailMessageId: message.gmailMessageId,
-        threadId: message.threadId,
-        fromDomain: message.fromDomain,
-        messageDate: message.internalDate,
-        redactedSubject: message.redactedSubject,
-        redactedBody: message.redactedBody,
-        redactionSessionId: message.redactionSessionId,
-        warningCodes: message.warningCodes,
-        createdAt: message.importedAt
-      }, randomUUID()))
+      const source = repository.ensureGmailJobCaseSource(
+        createGmailJobCaseSource(
+          {
+            accountEmail: message.accountEmail,
+            gmailMessageId: message.gmailMessageId,
+            threadId: message.threadId,
+            fromDomain: message.fromDomain,
+            messageDate: message.internalDate,
+            redactedSubject: message.redactedSubject,
+            redactedBody: message.redactedBody,
+            redactionSessionId: message.redactionSessionId,
+            warningCodes: message.warningCodes,
+            createdAt: message.importedAt
+          },
+          randomUUID()
+        )
+      )
       const draft = extractJobCaseDraft(source, randomUUID(), now(), {}, null, aliases)
       if (!repository.saveJobCaseDraft(draft)) continue
       counts.created += 1

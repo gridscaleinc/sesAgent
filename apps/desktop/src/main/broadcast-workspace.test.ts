@@ -27,14 +27,28 @@ function review(overrides: Partial<JobCaseReviewSnapshot> = {}, values: Record<s
     status: 'completed',
     privacyReviewed: true,
     fields: jobCaseFieldKeys.map((key) => ({
-      key, label: key, originalValue: values[key] ?? null, value: values[key] ?? null,
-      confidence: 1, status: values[key] ? 'confirmed' as const : 'missing' as const,
-      sourceLabels: [], changed: false, changeReason: null
+      key,
+      label: key,
+      originalValue: values[key] ?? null,
+      value: values[key] ?? null,
+      confidence: 1,
+      status: values[key] ? ('confirmed' as const) : ('missing' as const),
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
     })),
     warningCodes: [],
     completedAt: '2026-08-25T01:00:00.000Z',
     reviewerDisplayName: 'HR',
-    jobCase: { id: jobCaseId, sourceReviewId: reviewId, version: 1, status: 'active', confirmedAt: '2026-08-25T01:00:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false },
+    jobCase: {
+      id: jobCaseId,
+      sourceReviewId: reviewId,
+      version: 1,
+      status: 'active',
+      confirmedAt: '2026-08-25T01:00:00.000Z',
+      confirmedBy: 'HR',
+      containsDirectIdentifiers: false
+    },
     lifecycle: 'active',
     cloudEligible: false,
     ...overrides
@@ -102,7 +116,8 @@ describe('deriveBroadcastQueue', () => {
 
   it('counts a pre-v43 ledger row as a copy, whichever action it claimed', () => {
     expect(queueOf({ ledger: [legacyRow()] })[0]).toMatchObject({
-      status: 'copied', lastCopy: { at: '2026-08-24T02:00:00.000Z', lang: 'ja', jobCaseVersion: 1 }
+      status: 'copied',
+      lastCopy: { at: '2026-08-24T02:00:00.000Z', lang: 'ja', jobCaseVersion: 1 }
     })
     expect(queueOf({ ledger: [legacyRow({ action: 'copied' })] })[0]).toMatchObject({ status: 'copied' })
   })
@@ -116,14 +131,27 @@ describe('deriveBroadcastQueue', () => {
   })
 
   it('flags a case revised after it was copied', () => {
-    const revised = review({
-      jobCase: { id: jobCaseId, sourceReviewId: reviewId, version: 2, status: 'active', confirmedAt: '2026-08-26T00:00:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false }
-    }, cases)
-    expect(queueOf({ reviews: [revised], copies: [copyRow({ jobCaseVersion: 1 })] })[0])
-      .toMatchObject({ status: 'copied', hasUpdateSinceLastCopy: true, jobCaseVersion: 2 })
+    const revised = review(
+      {
+        jobCase: {
+          id: jobCaseId,
+          sourceReviewId: reviewId,
+          version: 2,
+          status: 'active',
+          confirmedAt: '2026-08-26T00:00:00.000Z',
+          confirmedBy: 'HR',
+          containsDirectIdentifiers: false
+        }
+      },
+      cases
+    )
+    expect(queueOf({ reviews: [revised], copies: [copyRow({ jobCaseVersion: 1 })] })[0]).toMatchObject({
+      status: 'copied',
+      hasUpdateSinceLastCopy: true,
+      jobCaseVersion: 2
+    })
     // A legacy row is a baseline too, so an old device does not lose the badge.
-    expect(queueOf({ reviews: [revised], ledger: [legacyRow({ jobCaseVersion: 1 })] })[0])
-      .toMatchObject({ hasUpdateSinceLastCopy: true })
+    expect(queueOf({ reviews: [revised], ledger: [legacyRow({ jobCaseVersion: 1 })] })[0]).toMatchObject({ hasUpdateSinceLastCopy: true })
   })
 
   it('lists an unconfirmed case as needing attention', () => {
@@ -167,10 +195,7 @@ describe('update notice diff', () => {
   it('reads the newest version ever copied, from either source', () => {
     expect(lastCopiedJobCaseVersion([], [])).toBeNull()
     expect(lastCopiedJobCaseVersion([], [copyRow({ jobCaseVersion: 2 })])).toBe(2)
-    expect(lastCopiedJobCaseVersion(
-      [legacyRow({ jobCaseVersion: 3 })],
-      [copyRow({ jobCaseVersion: 1 })]
-    )).toBe(3)
+    expect(lastCopiedJobCaseVersion([legacyRow({ jobCaseVersion: 3 })], [copyRow({ jobCaseVersion: 1 })])).toBe(3)
   })
 
   it('lists only changed lines, in both label languages', () => {

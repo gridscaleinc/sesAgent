@@ -48,19 +48,22 @@ async function verifyModel(modelDirectory: string): Promise<string> {
   loadedDirectory = directory
   const manifest = JSON.parse(await readFile(join(directory, 'model-manifest.json'), 'utf8')) as Record<string, unknown>
   if (
-    manifest.schemaVersion !== 'local-reranker-model-v1' || manifest.modelId !== localRerankerModel.id ||
-    manifest.revision !== localRerankerModel.revision || manifest.license !== 'MIT' ||
+    manifest.schemaVersion !== 'local-reranker-model-v1' ||
+    manifest.modelId !== localRerankerModel.id ||
+    manifest.revision !== localRerankerModel.revision ||
+    manifest.license !== 'MIT' ||
     manifest.maximumSequenceLength !== localRerankerModel.maximumSequenceLength ||
     manifest.maximumCandidates !== localRerankerModel.maximumCandidates ||
     JSON.stringify(manifest.files) !== JSON.stringify(localRerankerModel.files)
-  ) throw new Error('MODEL_MANIFEST_INVALID')
+  )
+    throw new Error('MODEL_MANIFEST_INVALID')
   const modelPath = platformModelPath()
   const requiredFiles = localRerankerModel.files.filter((file) => file.platform === 'all' || file.path === modelPath)
   for (const file of requiredFiles) {
     const path = resolve(directory, file.path)
     if (relative(directory, path).startsWith('..')) throw new Error('MODEL_PATH_INVALID')
     const metadata = await stat(path)
-    if (!metadata.isFile() || metadata.size !== file.bytes || await sha256(path) !== file.sha256) {
+    if (!metadata.isFile() || metadata.size !== file.bytes || (await sha256(path)) !== file.sha256) {
       throw new Error(`MODEL_INTEGRITY_FAILED:${file.path}`)
     }
   }
@@ -99,8 +102,13 @@ async function rerank(request: LocalRerankerWorkerRequest): Promise<LocalReranke
   }
   const output = await session.run(feeds)
   const logits = output.logits
-  if (!logits || logits.type !== 'float32' || logits.dims.length !== 2 ||
-    logits.dims[0] !== request.candidates.length || logits.dims[1] !== 1) {
+  if (
+    !logits ||
+    logits.type !== 'float32' ||
+    logits.dims.length !== 2 ||
+    logits.dims[0] !== request.candidates.length ||
+    logits.dims[1] !== 1
+  ) {
     throw new Error('MODEL_OUTPUT_INVALID')
   }
   const values = Array.from(logits.data as Float32Array)
@@ -131,7 +139,7 @@ function queueRequest(rawRequest: unknown, respond: (response: LocalRerankerWork
         id: rawRequest.id,
         kind: 'rerank',
         ok: false,
-        errorCode: error instanceof Error ? error.message.split(':')[0] ?? 'RERANK_FAILED' : 'RERANK_FAILED',
+        errorCode: error instanceof Error ? (error.message.split(':')[0] ?? 'RERANK_FAILED') : 'RERANK_FAILED',
         message: 'Local reranking failed closed.'
       })
     }
@@ -143,7 +151,9 @@ if (process.argv.includes('--stdio')) {
   process.stdin.on('data', (chunk: Buffer) => {
     input = Buffer.concat([input, chunk])
     if (input.length > 256 * 1024) {
-      process.stdout.write(`${JSON.stringify({ id: 'invalid', kind: 'invalid', ok: false, errorCode: 'INPUT_LIMIT', message: 'Reranker request exceeded its IPC limit.' })}\n`)
+      process.stdout.write(
+        `${JSON.stringify({ id: 'invalid', kind: 'invalid', ok: false, errorCode: 'INPUT_LIMIT', message: 'Reranker request exceeded its IPC limit.' })}\n`
+      )
       process.exitCode = 64
       process.stdin.destroy()
       return
@@ -155,7 +165,11 @@ if (process.argv.includes('--stdio')) {
       input = Buffer.from(input.subarray(newline + 1))
       if (!line) continue
       let request: unknown
-      try { request = JSON.parse(line) } catch { request = null }
+      try {
+        request = JSON.parse(line)
+      } catch {
+        request = null
+      }
       queueRequest(request, (response) => process.stdout.write(`${JSON.stringify(response)}\n`))
     }
   })

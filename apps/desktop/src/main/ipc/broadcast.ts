@@ -10,6 +10,9 @@ import {
   openCaseBroadcastEmailInputSchema,
   prepareCaseIntroductionInputSchema,
   recordCaseBroadcastCopyInputSchema,
+  saveCaseIntroductionDraftsInputSchema,
+  introductionIdentifierCheckText,
+  type CaseIntroductionDraft,
   updateBroadcastTemplateInputSchema,
   type BroadcastWorkspace,
   type CaseBroadcastHistoryEntry,
@@ -28,6 +31,7 @@ import {
   recordCaseBroadcastCopy
 } from '../broadcast-service'
 import { autoConfirmJobCaseDraft } from '../business-text-intake'
+import { detectDirectIdentifiers } from '@privacy'
 
 /**
  * Only what 案件配信 needs. The trust check arrives as a dependency rather than
@@ -73,6 +77,28 @@ export function registerBroadcastHandlers(dependencies: BroadcastIpcDependencies
     return prepared.review
   })
 
+  // The latest AI introduction per case, language and style, kept in the encrypted database.
+  ipcMain.handle(ipcChannels.saveCaseIntroductionDrafts, (event, rawInput): CaseIntroductionDraft[] => {
+    assertTrustedSender(event)
+    const input = saveCaseIntroductionDraftsInputSchema.parse(rawInput)
+    const review = repository.getJobCaseReview(input.reviewId)
+    if (!review || review.lifecycle !== 'active' || review.jobCase?.version !== input.jobCaseVersion)
+      throw new Error(
+        '案件资料已更新，本次介绍未保存，请重新生成。 / 案件情報が更新されたため紹介文を保存できませんでした。再生成してください。'
+      )
+    if (input.drafts.some((draft) => detectDirectIdentifiers(introductionIdentifierCheckText(draft.text)).length))
+      throw new Error('介绍文案含有联系信息等个人信息，未保存。 / 紹介文に連絡先などの個人情報が含まれるため保存できません。')
+    return repository.saveCaseIntroductionDrafts(input)
+  })
+
+  // Drafts for an older case version are not offered: the case text they describe has changed.
+  ipcMain.handle(ipcChannels.listCaseIntroductionDrafts, (event, rawReviewId): CaseIntroductionDraft[] => {
+    assertTrustedSender(event)
+    const reviewId = jobCaseReviewIdSchema.parse(rawReviewId)
+    const version = repository.getJobCaseReview(reviewId)?.jobCase?.version
+    return version ? repository.listCaseIntroductionDrafts(reviewId).filter((draft) => draft.jobCaseVersion === version) : []
+  })
+
   ipcMain.handle(ipcChannels.draftCaseUpdateNotice, (event, rawInput): DraftCaseUpdateNoticeResult => {
     assertTrustedSender(event)
     return draftCaseUpdateNotice(repository, draftCaseUpdateNoticeInputSchema.parse(rawInput))
@@ -82,26 +108,34 @@ export function registerBroadcastHandlers(dependencies: BroadcastIpcDependencies
     assertTrustedSender(event)
     const input = recordCaseBroadcastCopyInputSchema.parse(rawInput)
     prepareCaseBroadcastEmail(repository, input)
-    if(input.experienceRunId)repository.validateExperienceAdoption(input.experienceRunId,{documentId:null,reviewId:input.reviewId})
+    if (input.experienceRunId) repository.validateExperienceAdoption(input.experienceRunId, { documentId: null, reviewId: input.reviewId })
     return input
   })
 
   ipcMain.handle(ipcChannels.recordCaseBroadcastCopy, (event, rawInput): RecordCaseBroadcastCopyResult => {
     assertTrustedSender(event)
-    const input=recordCaseBroadcastCopyInputSchema.parse(rawInput)
-    if(input.experienceRunId)repository.validateExperienceAdoption(input.experienceRunId,{documentId:null,reviewId:input.reviewId})
-    const result=recordCaseBroadcastCopy(repository,currentOperator(),input)
-    if(input.experienceRunId)repository.recordExperienceAdoption(input.experienceRunId,input.text,currentOperator().operatorId,{documentId:null,reviewId:input.reviewId})
+    const input = recordCaseBroadcastCopyInputSchema.parse(rawInput)
+    if (input.experienceRunId) repository.validateExperienceAdoption(input.experienceRunId, { documentId: null, reviewId: input.reviewId })
+    const result = recordCaseBroadcastCopy(repository, currentOperator(), input)
+    if (input.experienceRunId)
+      repository.recordExperienceAdoption(input.experienceRunId, input.text, currentOperator().operatorId, {
+        documentId: null,
+        reviewId: input.reviewId
+      })
     return result
   })
 
   ipcMain.handle(ipcChannels.openCaseBroadcastEmail, async (event, rawInput): Promise<OpenCaseBroadcastEmailResult> => {
     assertTrustedSender(event)
-    const input=openCaseBroadcastEmailInputSchema.parse(rawInput)
+    const input = openCaseBroadcastEmailInputSchema.parse(rawInput)
     const prepared = prepareCaseBroadcastEmail(repository, input)
-    if(input.experienceRunId)repository.validateExperienceAdoption(input.experienceRunId,{documentId:null,reviewId:input.reviewId})
+    if (input.experienceRunId) repository.validateExperienceAdoption(input.experienceRunId, { documentId: null, reviewId: input.reviewId })
     await dependencies.openExternal(prepared.mailtoUrl)
-    if(input.experienceRunId)repository.recordExperienceAdoption(input.experienceRunId,input.text,currentOperator().operatorId,{documentId:null,reviewId:input.reviewId})
+    if (input.experienceRunId)
+      repository.recordExperienceAdoption(input.experienceRunId, input.text, currentOperator().operatorId, {
+        documentId: null,
+        reviewId: input.reviewId
+      })
     return { opened: true }
   })
 

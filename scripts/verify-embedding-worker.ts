@@ -34,7 +34,10 @@ async function verifyStdioProtocol(): Promise<LocalEmbeddingWorkerResponse> {
     }, 120_000)
     child.stdout.on('data', (chunk: Buffer) => {
       output.push(chunk)
-      const line = Buffer.concat(output).toString('utf8').split('\n').find((item) => item.trim())
+      const line = Buffer.concat(output)
+        .toString('utf8')
+        .split('\n')
+        .find((item) => item.trim())
       if (!line) return
       let response: unknown
       try {
@@ -60,13 +63,15 @@ async function verifyStdioProtocol(): Promise<LocalEmbeddingWorkerResponse> {
         reject(new Error(`Embedding stdio worker failed (${code ?? signal}): ${Buffer.concat(errors).toString('utf8')}`))
       }
     })
-    child.stdin.write(`${JSON.stringify({
-      id: randomUUID(),
-      kind: 'embed',
-      role: 'query',
-      texts: ['ローカルで候補者を検索する'],
-      modelDirectory: resolve(root, 'models', 'Xenova', 'multilingual-e5-small')
-    })}\n`)
+    child.stdin.write(
+      `${JSON.stringify({
+        id: randomUUID(),
+        kind: 'embed',
+        role: 'query',
+        texts: ['ローカルで候補者を検索する'],
+        modelDirectory: resolve(root, 'models', 'Xenova', 'multilingual-e5-small')
+      })}\n`
+    )
   })
 }
 
@@ -78,8 +83,7 @@ try {
   ])
   assert.equal(query?.length, localEmbeddingModel.dimension)
   assert.equal(passages.length, 2)
-  const cosine = (left: number[], right: number[]): number =>
-    left.reduce((sum, value, index) => sum + value * (right[index] ?? 0), 0)
+  const cosine = (left: number[], right: number[]): number => left.reduce((sum, value, index) => sum + value * (right[index] ?? 0), 0)
   const relevant = cosine(query!, passages[0]!)
   const irrelevant = cosine(query!, passages[1]!)
   assert.ok(relevant > irrelevant, 'isolated worker did not rank the relevant Japanese passage first')
@@ -87,15 +91,17 @@ try {
   assert.equal(stdioResponse.ok, true)
   if (!stdioResponse.ok) throw new Error(stdioResponse.message)
   assert.equal(stdioResponse.vectors[0]?.length, localEmbeddingModel.dimension)
-  console.info(JSON.stringify({
-    modelId: localEmbeddingModel.id,
-    dimension: localEmbeddingModel.dimension,
-    relevantCosine: Math.round(relevant * 10_000) / 10_000,
-    irrelevantCosine: Math.round(irrelevant * 10_000) / 10_000,
-    processIsolation: true,
-    kernelNetworkSandbox: process.platform === 'darwin',
-    stdioProtocolVerified: true
-  }))
+  console.info(
+    JSON.stringify({
+      modelId: localEmbeddingModel.id,
+      dimension: localEmbeddingModel.dimension,
+      relevantCosine: Math.round(relevant * 10_000) / 10_000,
+      irrelevantCosine: Math.round(irrelevant * 10_000) / 10_000,
+      processIsolation: true,
+      kernelNetworkSandbox: process.platform === 'darwin',
+      stdioProtocolVerified: true
+    })
+  )
 } finally {
   client.dispose()
 }

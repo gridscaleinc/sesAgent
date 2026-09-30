@@ -95,11 +95,17 @@ describe('processing resource scheduler', () => {
     let releaseFirst!: () => void
     const first = scheduler.run('local-ai', async () => {
       events.push('local-1-start')
-      await new Promise<void>((resolve) => { releaseFirst = resolve })
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve
+      })
       events.push('local-1-end')
     })
-    const second = scheduler.run('local-ai', () => { events.push('local-2') })
-    const fileExport = scheduler.run('file-export', () => { events.push('file-export') })
+    const second = scheduler.run('local-ai', () => {
+      events.push('local-2')
+    })
+    const fileExport = scheduler.run('file-export', () => {
+      events.push('file-export')
+    })
     await fileExport
     expect(scheduler.snapshot()).toEqual({
       'local-ai': { active: 1, queued: 1, limit: 1 },
@@ -113,7 +119,11 @@ describe('processing resource scheduler', () => {
 
   it('releases a lane after an operation fails', async () => {
     const scheduler = new ProcessingResourceScheduler()
-    await expect(scheduler.run('local-ai', () => { throw new Error('local failure') })).rejects.toThrow('local failure')
+    await expect(
+      scheduler.run('local-ai', () => {
+        throw new Error('local failure')
+      })
+    ).rejects.toThrow('local failure')
     await expect(scheduler.run('local-ai', () => 'recovered')).resolves.toBe('recovered')
     expect(scheduler.snapshot()['local-ai']).toEqual({ active: 0, queued: 0, limit: 1 })
   })
@@ -128,8 +138,20 @@ describe('safe-local processing dispatcher', () => {
       now: () => new Date('2026-07-20T00:00:10.000Z'),
       listJobs: () => [
         { id: 'queued', type: 'candidate-match', status: 'queued' as const, replayPolicy: 'safe-local' as const, nextRetryAt: null },
-        { id: 'due', type: 'resume-analysis', status: 'retry_wait' as const, replayPolicy: 'safe-local' as const, nextRetryAt: '2026-07-20T00:00:09.000Z' },
-        { id: 'future', type: 'resume-analysis', status: 'retry_wait' as const, replayPolicy: 'safe-local' as const, nextRetryAt: '2026-07-20T00:00:11.000Z' },
+        {
+          id: 'due',
+          type: 'resume-analysis',
+          status: 'retry_wait' as const,
+          replayPolicy: 'safe-local' as const,
+          nextRetryAt: '2026-07-20T00:00:09.000Z'
+        },
+        {
+          id: 'future',
+          type: 'resume-analysis',
+          status: 'retry_wait' as const,
+          replayPolicy: 'safe-local' as const,
+          nextRetryAt: '2026-07-20T00:00:11.000Z'
+        },
         { id: 'manual', type: 'proposal-export', status: 'queued' as const, replayPolicy: 'manual-review' as const, nextRetryAt: null },
         { id: 'done', type: 'candidate-match', status: 'succeeded' as const, replayPolicy: 'safe-local' as const, nextRetryAt: null }
       ],
@@ -148,13 +170,20 @@ describe('safe-local processing dispatcher', () => {
     let executions = 0
     let release!: () => void
     const dispatcher = new SafeLocalProcessingDispatcher({
-      listJobs: () => [{
-        id: 'job-1', type: 'candidate-match', status: 'queued' as const,
-        replayPolicy: 'safe-local' as const, nextRetryAt: null
-      }],
+      listJobs: () => [
+        {
+          id: 'job-1',
+          type: 'candidate-match',
+          status: 'queued' as const,
+          replayPolicy: 'safe-local' as const,
+          nextRetryAt: null
+        }
+      ],
       execute: async () => {
         executions += 1
-        await new Promise<void>((resolve) => { release = resolve })
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
       }
     })
     const first = dispatcher.dispatchNow()
@@ -180,9 +209,9 @@ describe('candidateSearchQueryFromInstruction', () => {
   })
 
   it('structures only explicit coarse work-location and legal work-authorization requirements', () => {
-    expect(candidateSearchQueryFromInstruction(
-      'Java案件。勤務地は品川、就労制限なし、週3日リモートの候補者を探したい'
-    )).toBe('Java 週3日リモート 勤務地:品川 就労資格:就労制限なし')
+    expect(candidateSearchQueryFromInstruction('Java案件。勤務地は品川、就労制限なし、週3日リモートの候補者を探したい')).toBe(
+      'Java 週3日リモート 勤務地:品川 就労資格:就労制限なし'
+    )
     expect(candidateSearchQueryFromInstruction('日本国籍のみの候補者')).toBe('')
   })
 
@@ -205,13 +234,10 @@ describe('candidateSearchQueryFromInstruction', () => {
       'task-1',
       '2026-07-17T00:00:00.000Z'
     )
-    const completed = recordCandidateMatchExecution(
-      task,
-      true,
-      4,
-      new Date('2026-07-17T01:00:00.000Z'),
-      { objectId: 'match-run-1', contentHash: 'a'.repeat(64) }
-    )
+    const completed = recordCandidateMatchExecution(task, true, 4, new Date('2026-07-17T01:00:00.000Z'), {
+      objectId: 'match-run-1',
+      contentHash: 'a'.repeat(64)
+    })
     expect(completed).toMatchObject({
       status: 'awaiting_review',
       progress: 85,
@@ -229,13 +255,10 @@ describe('candidateSearchQueryFromInstruction', () => {
     ])
     expect(completed.toolAudits.at(-1)).toMatchObject({ action: 'candidate.search', cloudPayload: 'none' })
     const retried = retryWorkTask(cancelWorkTask(completed))
-    const reused = recordCandidateMatchExecution(
-      retried,
-      true,
-      4,
-      new Date('2026-07-17T02:00:00.000Z'),
-      { objectId: 'match-run-1', contentHash: 'a'.repeat(64) }
-    )
+    const reused = recordCandidateMatchExecution(retried, true, 4, new Date('2026-07-17T02:00:00.000Z'), {
+      objectId: 'match-run-1',
+      contentHash: 'a'.repeat(64)
+    })
     expect(reused.status).toBe('awaiting_review')
     expect(reused.artifacts).toHaveLength(1)
     expect(recordCandidateMatchExecution(task, false, 4)).toMatchObject({
@@ -282,11 +305,7 @@ describe('candidateSearchQueryFromInstruction', () => {
     const started = recordProposalExportStarted(approved, 1, new Date('2026-07-17T00:03:00.000Z'))
     expect(started).toMatchObject({ status: 'running', progress: 96 })
     expect(started.messages.at(-1)?.content).toContain('試行 1')
-    const failed = recordProposalExportFailure(
-      started,
-      'PROPOSAL_EXPORT_OUTCOME_UNKNOWN',
-      new Date('2026-07-17T00:04:00.000Z')
-    )
+    const failed = recordProposalExportFailure(started, 'PROPOSAL_EXPORT_OUTCOME_UNKNOWN', new Date('2026-07-17T00:04:00.000Z'))
     expect(failed).toMatchObject({ status: 'awaiting_review', progress: 96 })
     expect(failed.messages.at(-1)?.content).toContain('自動再実行せず')
     expect(failed.toolAudits.at(-1)).toMatchObject({

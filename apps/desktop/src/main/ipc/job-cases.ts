@@ -42,7 +42,10 @@ import { MacWechatVisibleReader, WechatVisibleReadError } from '../wechat-visibl
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 class EmlFileImportError extends Error {
-  constructor(readonly code: EmlImportErrorCode, message: string) {
+  constructor(
+    readonly code: EmlImportErrorCode,
+    message: string
+  ) {
     super(message)
     this.name = 'EmlFileImportError'
   }
@@ -105,7 +108,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
   const importCaseBatch = createCaseTextBatchImporter(context)
   ipcMain.handle(ipcChannels.importCaseTextBatch, (event, input) => {
     assertTrustedSender(event)
-    return importCaseBatch(input)
+    return importCaseBatch(createChatPasteJobCaseDraftInputSchema.parse(input))
   })
 
   ipcMain.handle(ipcChannels.submitJobCaseReview, (event, rawInput): SubmitJobCaseReviewResult => {
@@ -138,12 +141,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     if (duplicate) return { review: duplicate }
     const source = processed.source
     const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
-    if (!repository.saveRedactedJobCaseSourceAndDraft(
-      processed.redaction.session,
-      processed.redaction.mappings,
-      source,
-      draft
-    )) {
+    if (!repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, source, draft)) {
       throw new Error('手動案件の草稿を作成できませんでした。')
     }
     const review = repository.getJobCaseReview(draft.reviewId)
@@ -154,215 +152,231 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     return { review: confirmed.review ?? review }
   })
 
-  ipcMain.handle(
-    ipcChannels.createChatPasteJobCaseDraft,
-    async (event, rawInput): Promise<CreateChatPasteJobCaseDraftResult> => {
-      assertTrustedSender(event)
-      const input = createChatPasteJobCaseDraftInputSchema.parse(rawInput)
-      // Shared with the agent intake gate. Exact duplicates return the existing
-      // review per its lifecycle instead of stacking a second draft.
-      const imported = await importChatPastedJobCaseText(
-        { repository, localNer, operator: currentOperator() }, input.text, new Date(), {}, null, effectiveJobCaseFieldAliases(repository).aliases
-      )
-      return { review: imported.review, outcome: imported.outcome }
-    }
-  )
+  ipcMain.handle(ipcChannels.createChatPasteJobCaseDraft, async (event, rawInput): Promise<CreateChatPasteJobCaseDraftResult> => {
+    assertTrustedSender(event)
+    const input = createChatPasteJobCaseDraftInputSchema.parse(rawInput)
+    // Shared with the agent intake gate. Exact duplicates return the existing
+    // review per its lifecycle instead of stacking a second draft.
+    const imported = await importChatPastedJobCaseText(
+      { repository, localNer, operator: currentOperator() },
+      input.text,
+      new Date(),
+      {},
+      null,
+      effectiveJobCaseFieldAliases(repository).aliases
+    )
+    return { review: imported.review, outcome: imported.outcome }
+  })
 
-  ipcMain.handle(
-    ipcChannels.prepareWechatVisibleRead,
-    async (event): Promise<PrepareWechatVisibleReadResult> => {
-      assertTrustedSender(event)
-      if (!wechatVisibleReader.isEnabled()) {
-        return {
-          status: 'blocked', scopeToken: null, expiresAt: null, countdownSeconds: 5,
-          targetVersion: null, failureCodes: ['WECHAT_FEATURE_KILL_SWITCH_ACTIVE']
-        }
+  ipcMain.handle(ipcChannels.prepareWechatVisibleRead, async (event): Promise<PrepareWechatVisibleReadResult> => {
+    assertTrustedSender(event)
+    if (!wechatVisibleReader.isEnabled()) {
+      return {
+        status: 'blocked',
+        scopeToken: null,
+        expiresAt: null,
+        countdownSeconds: 5,
+        targetVersion: null,
+        failureCodes: ['WECHAT_FEATURE_KILL_SWITCH_ACTIVE']
       }
-      if (wechatVisibleReadBusy) {
-        return {
-          status: 'blocked', scopeToken: null, expiresAt: null, countdownSeconds: 5,
-          targetVersion: null, failureCodes: ['WECHAT_VISIBLE_READ_BUSY']
-        }
+    }
+    if (wechatVisibleReadBusy) {
+      return {
+        status: 'blocked',
+        scopeToken: null,
+        expiresAt: null,
+        countdownSeconds: 5,
+        targetVersion: null,
+        failureCodes: ['WECHAT_VISIBLE_READ_BUSY']
       }
-      let preflight
-      try {
-        [preflight] = await Promise.all([
-          wechatVisibleReader.preflight(true),
-          wechatVisibleReader.verifyNetworkIsolation()
-        ])
-      } catch (cause) {
-        return {
-          status: 'blocked', scopeToken: null, expiresAt: null, countdownSeconds: 5,
-          targetVersion: null,
-          failureCodes: [cause instanceof WechatVisibleReadError ? cause.code : 'WECHAT_PREFLIGHT_FAILED']
-        }
+    }
+    let preflight
+    try {
+      ;[preflight] = await Promise.all([wechatVisibleReader.preflight(true), wechatVisibleReader.verifyNetworkIsolation()])
+    } catch (cause) {
+      return {
+        status: 'blocked',
+        scopeToken: null,
+        expiresAt: null,
+        countdownSeconds: 5,
+        targetVersion: null,
+        failureCodes: [cause instanceof WechatVisibleReadError ? cause.code : 'WECHAT_PREFLIGHT_FAILED']
       }
-      const target = wechatVisibleReader.primaryTarget(preflight)
-      const failureCodes = [
-        ...(!preflight.accessibilityTrusted ? ['MACOS_ACCESSIBILITY_PERMISSION_REQUIRED'] : []),
-        ...(!preflight.screenCaptureTrusted ? ['MACOS_SCREEN_CAPTURE_PERMISSION_REQUIRED'] : []),
-        ...(!preflight.windowCaptureAvailable ? ['MACOS_14_REQUIRED_FOR_WINDOW_CAPTURE'] : []),
-        ...(!target ? ['WECHAT_NOT_RUNNING'] : [])
-      ]
-      if (!target || failureCodes.length > 0) {
-        return {
-          status: 'blocked', scopeToken: null, expiresAt: null, countdownSeconds: 5,
-          targetVersion: target?.version ?? null, failureCodes
-        }
+    }
+    const target = wechatVisibleReader.primaryTarget(preflight)
+    const failureCodes = [
+      ...(!preflight.accessibilityTrusted ? ['MACOS_ACCESSIBILITY_PERMISSION_REQUIRED'] : []),
+      ...(!preflight.screenCaptureTrusted ? ['MACOS_SCREEN_CAPTURE_PERMISSION_REQUIRED'] : []),
+      ...(!preflight.windowCaptureAvailable ? ['MACOS_14_REQUIRED_FOR_WINDOW_CAPTURE'] : []),
+      ...(!target ? ['WECHAT_NOT_RUNNING'] : [])
+    ]
+    if (!target || failureCodes.length > 0) {
+      return {
+        status: 'blocked',
+        scopeToken: null,
+        expiresAt: null,
+        countdownSeconds: 5,
+        targetVersion: target?.version ?? null,
+        failureCodes
       }
-      const actor = currentOperator()
-      const requestNonce = randomUUID()
-      const scopeFingerprint = createHash('sha256')
-        .update(`${target.bundleIdentifier}|${target.processIdentifier}|${target.launchDate}`, 'utf8')
-        .digest('hex')
-      const actionRunId = preflightAction(
-        'wechat.visible.read',
-        {
-          origin: 'user-command',
-          workTaskId: null,
-          scopeId: 'frontmost-wechat-visible-conversation',
-          scopeFingerprint,
-          actorId: actor.operatorId,
-          contentRevision: target.version
-        },
-        {
-          targetBundleIdentifier: target.bundleIdentifier,
-          targetProcessIdentifier: target.processIdentifier,
-          targetLaunchDate: target.launchDate,
-          requestNonce
-        },
-        `Mac 微信 ${target.version} 的当前前台单一会话可见区域`,
-        `wechat-visible:${requestNonce}`
-      )
-      const confirmation = await dialog.showMessageBox({
-        type: 'warning',
-        title: '本次读取微信可见消息',
-        message: '只读取接下来前台微信单一窗口中当前可见的会话区域。',
-        detail: [
-          '确认后 SES Agent Desktop 会暂时隐藏，并切换到微信。',
-          '5 秒后读取；不要在倒计时期间切换到其他聊天。',
-          `微信 ${target.version} 的 AX 树若不暴露正文，将在本机断网 Helper 中使用窗口级截图与 Apple Vision OCR。`,
-          '截图和原文不保存、不写日志、不发送网络；只保存本地脱敏后的案件草稿。'
-        ].join('\n'),
-        buttons: ['确认本次读取', '取消'],
-        defaultId: 1,
-        cancelId: 1,
-        noLink: true
-      })
-      if (confirmation.response !== 0) {
-        repository.updateActionRun(actionRunId, 'cancelled', { errorCode: 'USER_CANCELLED' })
-        return {
-          status: 'cancelled', scopeToken: null, expiresAt: null, countdownSeconds: 5,
-          targetVersion: target.version, failureCodes: []
-        }
-      }
-      repository.updateActionRun(actionRunId, 'awaiting_foreground_confirmation')
-      const issued = wechatScopeTokens.issue({
-        webContentsId: event.sender.id,
+    }
+    const actor = currentOperator()
+    const requestNonce = randomUUID()
+    const scopeFingerprint = createHash('sha256')
+      .update(`${target.bundleIdentifier}|${target.processIdentifier}|${target.launchDate}`, 'utf8')
+      .digest('hex')
+    const actionRunId = preflightAction(
+      'wechat.visible.read',
+      {
+        origin: 'user-command',
+        workTaskId: null,
+        scopeId: 'frontmost-wechat-visible-conversation',
+        scopeFingerprint,
         actorId: actor.operatorId,
-        target,
-        actionRunId
+        contentRevision: target.version
+      },
+      {
+        targetBundleIdentifier: target.bundleIdentifier,
+        targetProcessIdentifier: target.processIdentifier,
+        targetLaunchDate: target.launchDate,
+        requestNonce
+      },
+      `Mac 微信 ${target.version} 的当前前台单一会话可见区域`,
+      `wechat-visible:${requestNonce}`
+    )
+    const confirmation = await dialog.showMessageBox({
+      type: 'warning',
+      title: '本次读取微信可见消息',
+      message: '只读取接下来前台微信单一窗口中当前可见的会话区域。',
+      detail: [
+        '确认后 SES Agent Desktop 会暂时隐藏，并切换到微信。',
+        '5 秒后读取；不要在倒计时期间切换到其他聊天。',
+        `微信 ${target.version} 的 AX 树若不暴露正文，将在本机断网 Helper 中使用窗口级截图与 Apple Vision OCR。`,
+        '截图和原文不保存、不写日志、不发送网络；只保存本地脱敏后的案件草稿。'
+      ].join('\n'),
+      buttons: ['确认本次读取', '取消'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true
+    })
+    if (confirmation.response !== 0) {
+      repository.updateActionRun(actionRunId, 'cancelled', { errorCode: 'USER_CANCELLED' })
+      return {
+        status: 'cancelled',
+        scopeToken: null,
+        expiresAt: null,
+        countdownSeconds: 5,
+        targetVersion: target.version,
+        failureCodes: []
+      }
+    }
+    repository.updateActionRun(actionRunId, 'awaiting_foreground_confirmation')
+    const issued = wechatScopeTokens.issue({
+      webContentsId: event.sender.id,
+      actorId: actor.operatorId,
+      target,
+      actionRunId
+    })
+    return {
+      status: 'ready',
+      scopeToken: issued.scopeToken,
+      expiresAt: issued.expiresAt,
+      countdownSeconds: 5,
+      targetVersion: target.version,
+      failureCodes: []
+    }
+  })
+
+  ipcMain.handle(ipcChannels.executeWechatVisibleRead, async (event, rawInput): Promise<ExecuteWechatVisibleReadResult> => {
+    assertTrustedSender(event)
+    if (wechatVisibleReadBusy) throw new Error('另一项微信可见消息读取正在进行。')
+    const input = executeWechatVisibleReadInputSchema.parse(rawInput)
+    const actor = currentOperator()
+    const scope = wechatScopeTokens.consume({
+      scopeToken: input.scopeToken,
+      webContentsId: event.sender.id,
+      actorId: actor.operatorId
+    })
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender)
+    let rawText = ''
+    let readResult: Awaited<ReturnType<MacWechatVisibleReader['readVisible']>> | null = null
+    wechatVisibleReadBusy = true
+    repository.updateActionRun(scope.actionRunId, 'running')
+    try {
+      ownerWindow?.hide()
+      await wechatVisibleReader.activate(scope.target)
+      await new Promise((resolveWait) => setTimeout(resolveWait, 5_000))
+      readResult = await wechatVisibleReader.readVisible(scope.target)
+      rawText = readResult.nodes
+        .map((node) => node.text)
+        .join('\n')
+        .trim()
+      for (const node of readResult.nodes) node.text = ''
+      if (rawText.length < 8) {
+        throw new WechatVisibleReadError('WECHAT_VISIBLE_MESSAGE_TEXT_UNAVAILABLE', '当前会话区域没有足够的可读消息。')
+      }
+      let localNameDetection
+      try {
+        localNameDetection = await localNer?.detectNames(rawText)
+      } catch {
+        localNameDetection = undefined
+      }
+      const knownPersonNames = collectLocalPersonNameCandidates(rawText, localNameDetection)
+      const sourceId = randomUUID()
+      const now = new Date()
+      const processed = createRedactedWechatVisibleJobCaseSource(
+        rawText,
+        sourceId,
+        knownPersonNames,
+        { captureMethod: readResult.captureMethod, truncated: readResult.truncated },
+        now
+      )
+      rawText = ''
+      const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
+        processed.source.redactedSubject,
+        processed.source.redactedBody,
+        processed.redaction.mappings
+      )
+      const source = processed.source
+      const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
+      if (
+        !duplicate &&
+        !repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, source, draft)
+      )
+        throw new Error('微信可见消息的脱敏案件草稿无法保存。')
+      const review = duplicate ?? repository.getJobCaseReview(draft.reviewId)
+      if (!review) throw new Error('创建的微信案件草稿无法重新读取。')
+      repository.updateActionRun(scope.actionRunId, 'succeeded', {
+        resultHash: createHash('sha256').update(`${source.redactedSubject}\n${source.redactedBody}`, 'utf8').digest('hex')
       })
       return {
-        status: 'ready', scopeToken: issued.scopeToken, expiresAt: issued.expiresAt,
-        countdownSeconds: 5, targetVersion: target.version, failureCodes: []
+        review,
+        evidence: {
+          captureMethod: readResult.captureMethod,
+          visibleTextNodeCount: readResult.nodes.length,
+          rawUtf8Bytes: readResult.rawUtf8Bytes,
+          truncated: readResult.truncated,
+          rawTextPersisted: false,
+          rawImagePersisted: false,
+          networkAccess: false
+        }
       }
-    }
-  )
-
-  ipcMain.handle(
-    ipcChannels.executeWechatVisibleRead,
-    async (event, rawInput): Promise<ExecuteWechatVisibleReadResult> => {
-      assertTrustedSender(event)
-      if (wechatVisibleReadBusy) throw new Error('另一项微信可见消息读取正在进行。')
-      const input = executeWechatVisibleReadInputSchema.parse(rawInput)
-      const actor = currentOperator()
-      const scope = wechatScopeTokens.consume({
-        scopeToken: input.scopeToken,
-        webContentsId: event.sender.id,
-        actorId: actor.operatorId
+    } catch (cause) {
+      repository.updateActionRun(scope.actionRunId, 'failed', {
+        errorCode: cause instanceof WechatVisibleReadError ? cause.code : 'WECHAT_VISIBLE_READ_FAILED'
       })
-      const ownerWindow = BrowserWindow.fromWebContents(event.sender)
-      let rawText = ''
-      let readResult: Awaited<ReturnType<MacWechatVisibleReader['readVisible']>> | null = null
-      wechatVisibleReadBusy = true
-      repository.updateActionRun(scope.actionRunId, 'running')
-      try {
-        ownerWindow?.hide()
-        await wechatVisibleReader.activate(scope.target)
-        await new Promise((resolveWait) => setTimeout(resolveWait, 5_000))
-        readResult = await wechatVisibleReader.readVisible(scope.target)
-        rawText = readResult.nodes.map((node) => node.text).join('\n').trim()
-        for (const node of readResult.nodes) node.text = ''
-        if (rawText.length < 8) {
-          throw new WechatVisibleReadError('WECHAT_VISIBLE_MESSAGE_TEXT_UNAVAILABLE', '当前会话区域没有足够的可读消息。')
-        }
-        let localNameDetection
-        try {
-          localNameDetection = await localNer?.detectNames(rawText)
-        } catch {
-          localNameDetection = undefined
-        }
-        const knownPersonNames = collectLocalPersonNameCandidates(rawText, localNameDetection)
-        const sourceId = randomUUID()
-        const now = new Date()
-        const processed = createRedactedWechatVisibleJobCaseSource(
-          rawText,
-          sourceId,
-          knownPersonNames,
-          { captureMethod: readResult.captureMethod, truncated: readResult.truncated },
-          now
-        )
-        rawText = ''
-        const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
-          processed.source.redactedSubject,
-          processed.source.redactedBody,
-          processed.redaction.mappings
-        )
-        const source = processed.source
-        const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
-        if (!duplicate && !repository.saveRedactedJobCaseSourceAndDraft(
-          processed.redaction.session,
-          processed.redaction.mappings,
-          source,
-          draft
-        )) throw new Error('微信可见消息的脱敏案件草稿无法保存。')
-        const review = duplicate ?? repository.getJobCaseReview(draft.reviewId)
-        if (!review) throw new Error('创建的微信案件草稿无法重新读取。')
-        repository.updateActionRun(scope.actionRunId, 'succeeded', {
-          resultHash: createHash('sha256')
-            .update(`${source.redactedSubject}\n${source.redactedBody}`, 'utf8')
-            .digest('hex')
-        })
-        return {
-          review,
-          evidence: {
-            captureMethod: readResult.captureMethod,
-            visibleTextNodeCount: readResult.nodes.length,
-            rawUtf8Bytes: readResult.rawUtf8Bytes,
-            truncated: readResult.truncated,
-            rawTextPersisted: false,
-            rawImagePersisted: false,
-            networkAccess: false
-          }
-        }
-      } catch (cause) {
-        repository.updateActionRun(scope.actionRunId, 'failed', {
-          errorCode: cause instanceof WechatVisibleReadError ? cause.code : 'WECHAT_VISIBLE_READ_FAILED'
-        })
-        throw cause
-      } finally {
-        rawText = ''
-        if (readResult) for (const node of readResult.nodes) node.text = ''
-        readResult = null
-        wechatVisibleReadBusy = false
-        if (ownerWindow && !ownerWindow.isDestroyed()) {
-          ownerWindow.show()
-          ownerWindow.focus()
-        }
+      throw cause
+    } finally {
+      rawText = ''
+      if (readResult) for (const node of readResult.nodes) node.text = ''
+      readResult = null
+      wechatVisibleReadBusy = false
+      if (ownerWindow && !ownerWindow.isDestroyed()) {
+        ownerWindow.show()
+        ownerWindow.focus()
       }
     }
-  )
+  })
 
   ipcMain.handle(ipcChannels.importEmlJobCaseDrafts, async (event): Promise<ImportEmlJobCaseDraftsResult> => {
     assertTrustedSender(event)
@@ -418,19 +432,18 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
           const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
           const now = new Date()
           const processed = createRedactedEmlJobCaseSource(parsed, sourceId, knownPersonNames, now)
-          const duplicate = repository.findJobCaseReviewByBusinessFingerprint(processed.source.redactedSubject, processed.source.redactedBody, processed.redaction.mappings)
+          const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
+            processed.source.redactedSubject,
+            processed.source.redactedBody,
+            processed.redaction.mappings
+          )
           if (duplicate) {
             items.push({ fileName, status: 'duplicate', classification: parsed.classification, errorCode: null, review: duplicate })
             continue
           }
           const draft = extractJobCaseDraft(processed.source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
           try {
-            repository.saveRedactedJobCaseSourceAndDraft(
-              processed.redaction.session,
-              processed.redaction.mappings,
-              processed.source,
-              draft
-            )
+            repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, processed.source, draft)
           } catch (error) {
             const duplicate = repository.getEmlJobCaseReview(parsed.sourceMessageKey)
             if (duplicate) {
@@ -447,9 +460,8 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
             fileName,
             status: 'failed',
             classification: null,
-            errorCode: error instanceof EmlFileImportError && error.code === 'PERSISTENCE_FAILED'
-              ? 'PERSISTENCE_FAILED'
-              : emlImportErrorCode(error),
+            errorCode:
+              error instanceof EmlFileImportError && error.code === 'PERSISTENCE_FAILED' ? 'PERSISTENCE_FAILED' : emlImportErrorCode(error),
             review: null
           })
         } finally {
@@ -506,11 +518,12 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
 
   // One derivation for the card, the rail badge and the agent's counts, so the
   // three can never disagree about what arrived today.
-  const newDigest = (): NewJobCaseDigest => deriveNewCaseDigest({
-    reviews: repository.listJobCaseReviews(),
-    seenReviewIds: repository.listSeenJobCaseReviewIds(),
-    now: new Date()
-  })
+  const newDigest = (): NewJobCaseDigest =>
+    deriveNewCaseDigest({
+      reviews: repository.listJobCaseReviews(),
+      seenReviewIds: repository.listSeenJobCaseReviewIds(),
+      now: new Date()
+    })
 
   ipcMain.handle(ipcChannels.getJobCaseNewDigest, (event): NewJobCaseDigest => {
     assertTrustedSender(event)

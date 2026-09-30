@@ -25,7 +25,6 @@ import type {
   StoredGmailMessageInput
 } from './rows'
 
-
 export const storedGmailMessageInputSchema: z.ZodType<StoredGmailMessageInput> = z.object({
   accountEmail: z.string().email().max(320),
   gmailMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
@@ -40,7 +39,10 @@ export const storedGmailMessageInputSchema: z.ZodType<StoredGmailMessageInput> =
   redactionSessionId: z.string().uuid(),
   classification: z.enum(['job-case', 'candidate-proposal', 'unclassified']),
   businessFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
-  duplicateOfMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable(),
+  duplicateOfMessageId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,128}$/)
+    .nullable(),
   warningCodes: z.array(z.string().min(1).max(120)).max(50),
   attachmentCount: z.number().int().nonnegative().max(1_000),
   importedAt: z.string().datetime()
@@ -134,16 +136,15 @@ export function candidateMatchEvaluation(rows: CandidateMatchResultRow[]): Candi
       .filter((row) => row.result_rank <= 20 && row.feedback_decision === 'suitable')
       .reduce((score, row) => score + 1 / Math.log2(row.result_rank + 1), 0)
     const idealCount = Math.min(20, suitable.length)
-    const idcg = Array.from({ length: idealCount }, (_, index) => 1 / Math.log2(index + 2))
-      .reduce((score, gain) => score + gain, 0)
-    judgedNdcgAt20 = Math.round(dcg / idcg * 10_000) / 10_000
+    const idcg = Array.from({ length: idealCount }, (_, index) => 1 / Math.log2(index + 2)).reduce((score, gain) => score + gain, 0)
+    judgedNdcgAt20 = Math.round((dcg / idcg) * 10_000) / 10_000
   }
   return {
     resultCount: rows.length,
     feedbackCount: reviewed.length,
     suitableCount: suitable.length,
     unsuitableCount: reviewed.length - suitable.length,
-    coveragePercent: rows.length === 0 ? 0 : Math.round(reviewed.length / rows.length * 100),
+    coveragePercent: rows.length === 0 ? 0 : Math.round((reviewed.length / rows.length) * 100),
     judgedNdcgAt20,
     recallAt20: null,
     recallStatus: 'requires-known-relevant-total'
@@ -162,41 +163,45 @@ export function matchingHomeFitSnapshot(
     termCoverage: match.retrieval.termCoverage,
     hardFilterUnknownCount: match.retrieval.hardFilters.filter((filter) => filter.outcome === 'unknown').length,
     missing: match.retrieval.hardFilters.filter((filter) => filter.outcome !== 'passed').map((filter) => filter.requested),
-    hardFilterStatus: match.retrieval.hardFilters.length === 0
-      ? 'none'
-      : match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
-        ? 'failed'
-        : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown') ? 'unknown' : 'passed',
+    hardFilterStatus:
+      match.retrieval.hardFilters.length === 0
+        ? 'none'
+        : match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
+          ? 'failed'
+          : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown')
+            ? 'unknown'
+            : 'passed',
     evidence: match.evidence.map((field) => ({
       key: field.key,
       label: field.label,
       value: field.value,
       sourceLabels: field.sourceLabels
     })),
-    projectEvidence: match.projectEvidence ? {
-      title: match.projectEvidence.title,
-      period: match.projectEvidence.period,
-      role: match.projectEvidence.role,
-      technologies: match.projectEvidence.technologies,
-      summary: match.projectEvidence.summary,
-      sourceLabels: match.projectEvidence.sourceLabels
-    } : null
+    projectEvidence: match.projectEvidence
+      ? {
+          title: match.projectEvidence.title,
+          period: match.projectEvidence.period,
+          role: match.projectEvidence.role,
+          technologies: match.projectEvidence.technologies,
+          summary: match.projectEvidence.summary,
+          sourceLabels: match.projectEvidence.sourceLabels
+        }
+      : null
   }
 }
 
-export function businessPriorityProjectionFromRow(
-  row: BusinessPriorityProjectionRow,
-  now = new Date()
-): BusinessPriorityProjection {
-  const overrideActive = row.override_level !== null && row.override_expires_at !== null &&
-    new Date(row.override_expires_at).getTime() > now.getTime()
-  const manualOverride = overrideActive ? {
-    level: row.override_level!,
-    actor: row.override_actor!,
-    reason: row.override_reason!,
-    expiresAt: row.override_expires_at!,
-    revision: row.override_revision
-  } : null
+export function businessPriorityProjectionFromRow(row: BusinessPriorityProjectionRow, now = new Date()): BusinessPriorityProjection {
+  const overrideActive =
+    row.override_level !== null && row.override_expires_at !== null && new Date(row.override_expires_at).getTime() > now.getTime()
+  const manualOverride = overrideActive
+    ? {
+        level: row.override_level!,
+        actor: row.override_actor!,
+        reason: row.override_reason!,
+        expiresAt: row.override_expires_at!,
+        revision: row.override_revision
+      }
+    : null
   return {
     id: row.id,
     matchResultId: row.match_result_id,

@@ -30,38 +30,76 @@ export function createCaseTextBatchImporter(context: Dependencies) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 180_000)
     let remoteId: string | null = null
-    const cancel = () => { if (remoteId) void cloud.cancel(remoteId).catch(() => undefined) }
+    const cancel = () => {
+      if (remoteId) void cloud.cancel(remoteId).catch(() => undefined)
+    }
     controller.signal.addEventListener('abort', cancel, { once: true })
     const batchId = randomUUID()
     try {
       const extraction = await cloud.extractBusinessText({
-        conversationId: batchId, requestId: randomUUID(), text: units.map(unit => unit.text).join('\n'), caseBatch: true,
+        conversationId: batchId,
+        requestId: randomUUID(),
+        text: units.map((unit) => unit.text).join('\n'),
+        caseBatch: true,
         aliases: effectiveJobCaseFieldAliases(context.repository).aliases,
         model: resolveAgentChatModel(context.agentChatModelCatalog, defaultAgentChatModelKey),
         signal: controller.signal,
-        onClientRequestId: id => { remoteId = id; if (controller.signal.aborted) cancel() },
-        onRemoteSettled: () => { remoteId = null }
+        onClientRequestId: (id) => {
+          remoteId = id
+          if (controller.signal.aborted) cancel()
+        },
+        onRemoteSettled: () => {
+          remoteId = null
+        }
       })
       controller.signal.throwIfAborted()
-      if (extraction.kind !== 'records' || !extraction.records.length) throw new Error('CASE_AI_NO_RECORDS')
+      const personnel = extraction.kind === 'records' ? (extraction.personnel ?? []) : []
+      if (extraction.kind !== 'records' || (!extraction.records.length && !personnel.length)) throw new Error('CASE_AI_NO_RECORDS')
       // Validate every range before the first write; never save the entire input as a fallback.
       let previousEnd = 0
-      const records = extraction.records.map(record => {
-        if (record.kind !== 'job-case' || record.startLine <= previousEnd || record.endLine < record.startLine || record.endLine > units.length) throw new Error('CASE_AI_INVALID_SEGMENTS')
+      const records = extraction.records.map((record) => {
+        if (
+          record.kind !== 'job-case' ||
+          record.startLine <= previousEnd ||
+          record.endLine < record.startLine ||
+          record.endLine > units.length
+        )
+          throw new Error('CASE_AI_INVALID_SEGMENTS')
         previousEnd = record.endLine
         const source = text.slice(units[record.startLine - 1]!.start, units[record.endLine - 1]!.end).trim()
         // List ordinals identify a position in the paste, not the business case.
         return { ...record, text: source.replace(/^(?:[①-⑳㉑-㉟㊱-㊿]|(?:案件\s*)?[0-9０-９]+[.．、)）](?![0-9０-９]))\s*/u, '') }
       })
-      const result: ImportCaseTextBatchResult = { created: 0, duplicates: 0, failed: 0, remainingText: '', reviewIds: [] }
+      // Personnel introductions pasted as cases are reported back, never saved as cases.
+      const result: ImportCaseTextBatchResult = {
+        created: 0,
+        duplicates: 0,
+        failed: 0,
+        remainingText: '',
+        reviewIds: [],
+        createdReviewIds: [],
+        skippedPersonnel: personnel.length
+      }
       const failed: string[] = []
       for (const record of records) {
         try {
-          const imported = await importChatPastedJobCaseText({ repository: context.repository, localNer: context.localNer, operator: context.currentOperator() },
-            record.text, new Date(), record.fields, batchId, effectiveJobCaseFieldAliases(context.repository).aliases)
-          if (imported.outcome === 'created') result.created++; else result.duplicates++
+          const imported = await importChatPastedJobCaseText(
+            { repository: context.repository, localNer: context.localNer, operator: context.currentOperator() },
+            record.text,
+            new Date(),
+            record.fields,
+            batchId,
+            effectiveJobCaseFieldAliases(context.repository).aliases
+          )
+          if (imported.outcome === 'created') {
+            result.created++
+            result.createdReviewIds!.push(imported.review.reviewId)
+          } else result.duplicates++
           result.reviewIds.push(imported.review.reviewId)
-        } catch { result.failed++; failed.push(record.text) }
+        } catch {
+          result.failed++
+          failed.push(record.text)
+        }
       }
       result.remainingText = failed.join('\n\n')
       return result

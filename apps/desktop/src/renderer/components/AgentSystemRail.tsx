@@ -1,70 +1,104 @@
-import { Icon, type IconName } from './Icon'
-import { useUiLocale } from '../i18n'
+import { Icon } from './Icon'
+import { localeText, useUiLocale } from '../i18n'
 
 interface AgentSystemRailProps {
   followActive?: boolean
   onFollowUps?(): void
-  businessKind?: 'case' | 'person'
-  onBusinessCases?(): void
-  onBusinessPeople?(): void
+  businessKind: 'case' | 'person'
+  onBusinessCases(): void
+  onBusinessPeople(): void
   /** Unread 新着案件; the badge is withheld at zero rather than showing "0". */
   caseUnseenCount?: number
-  onBusiness?(): void
   onAgent(): void
-  onCandidates(): void
-  onInterviews(): void
-  onCases(): void
-  onReviews(): void
   onSettings(): void
+  /** Opens the business command palette; shown as the 「⌘K 命令」 hint above settings. */
+  onCommandPalette?(): void
 }
 
-interface RailItem {
-  id: 'agent' | 'candidates' | 'interviews' | 'cases' | 'reviews'
-  icon: IconName
-  label: string
-  badge?: number
-  onClick(): void
-}
+const commandKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl '
 
 export function AgentSystemRail({
-  businessKind, onBusinessCases, onBusinessPeople, followActive, onFollowUps,
+  businessKind,
+  onBusinessCases,
+  onBusinessPeople,
+  followActive,
+  onFollowUps,
   caseUnseenCount = 0,
-  onBusiness,
   onAgent,
-  onCandidates,
-  onInterviews,
-  onCases,
-  onReviews,
-  onSettings
+  onSettings,
+  onCommandPalette
 }: AgentSystemRailProps) {
   const zh = useUiLocale() === 'zh-CN'
-  const items: RailItem[] = [
-    { id: 'agent', icon: 'sparkles', label: 'Agent', onClick: onAgent },
-    { id: 'candidates', icon: 'users', label: zh ? '候选人' : '候補者', onClick: onCandidates },
-    { id: 'interviews', icon: 'clock', label: zh ? '面试' : '面談', onClick: onInterviews },
-    { id: 'cases', icon: 'briefcase', label: zh ? '案件' : '案件', badge: caseUnseenCount, onClick: onCases },
-    { id: 'reviews', icon: 'shield', label: zh ? '审核' : '確認', onClick: onReviews }
-  ]
+  const t = localeText(zh)
 
-  return <aside aria-label={zh ? '系统导航' : 'システムナビゲーション'} className="agent-system-rail">
-    <strong aria-label="SES" className="agent-system-rail-brand">SES</strong>
-    {businessKind ? <nav className="hr-business-nav">
-      <button type="button" aria-current={businessKind === 'case' && !followActive ? 'page' : undefined} className={businessKind === 'case' && !followActive ? 'is-active' : ''} onClick={onBusinessCases}><Icon name="briefcase" size={21} /><span>{zh ? '案件' : '案件'}</span></button>
-      <button type="button" aria-current={businessKind === 'person' && !followActive ? 'page' : undefined} className={businessKind === 'person' && !followActive ? 'is-active' : ''} onClick={onBusinessPeople}><Icon name="users" size={21} /><span>{zh ? '人员' : '要員'}</span></button>
-      {onFollowUps ? <button type="button" aria-current={followActive ? 'page' : undefined} className={followActive ? 'is-active' : ''} onClick={onFollowUps}><Icon name="clock" size={21} /><span>{zh ? '跟进' : '対応記録'}</span></button> : null}
-      <button type="button" onClick={onAgent}><Icon name="sparkles" size={21} /><span>Agent</span></button>
-    </nav> : <nav>
-      {onBusiness ? <button aria-label={zh ? '信息整理与推广' : '情報整理・紹介'} onClick={onBusiness} type="button"><Icon name="upload" size={21} /><span>{zh ? '整理' : '整理'}</span></button> : null}
-      {items.map((item) => <button
-        aria-current={item.id === 'agent' ? 'page' : undefined}
-        aria-label={item.label}
-        className={item.id === 'agent' ? 'is-active' : ''}
-        key={item.id}
-        onClick={item.onClick}
-        title={item.label}
+  return (
+    <aside aria-label={t('系统导航', 'システムナビゲーション')} className="agent-system-rail">
+      <strong aria-label="SES" className="agent-system-rail-brand">
+        SES
+      </strong>
+      <nav className="hr-business-nav">
+        <button
+          type="button"
+          aria-current={businessKind === 'case' && !followActive ? 'page' : undefined}
+          className={businessKind === 'case' && !followActive ? 'is-active' : ''}
+          onClick={onBusinessCases}
+        >
+          <Icon name="briefcase" size={21} />
+          <span>{t('案件', '案件')}</span>
+          {caseUnseenCount > 0 ? (
+            <span aria-label={t(`${caseUnseenCount} 件未读`, `未読 ${caseUnseenCount} 件`)} className="agent-system-rail-badge">
+              {caseUnseenCount}
+            </span>
+          ) : null}
+        </button>
+        <button
+          type="button"
+          aria-current={businessKind === 'person' && !followActive ? 'page' : undefined}
+          className={businessKind === 'person' && !followActive ? 'is-active' : ''}
+          onClick={onBusinessPeople}
+        >
+          <Icon name="users" size={21} />
+          <span>{t('人员', '要員')}</span>
+        </button>
+        {onFollowUps ? (
+          <button
+            type="button"
+            aria-current={followActive ? 'page' : undefined}
+            className={followActive ? 'is-active' : ''}
+            onClick={onFollowUps}
+          >
+            <Icon name="clock" size={21} />
+            <span>{t('跟进', '対応記録')}</span>
+          </button>
+        ) : null}
+        <button type="button" onClick={onAgent}>
+          <Icon name="sparkles" size={21} />
+          <span>Agent</span>
+        </button>
+      </nav>
+      {onCommandPalette ? (
+        <button
+          aria-keyshortcuts="Meta+K Control+K"
+          aria-label={t('命令', 'コマンド')}
+          className="agent-system-rail-command"
+          onClick={onCommandPalette}
+          title={t(`命令（${commandKey}K；${commandKey}1–4 切换）`, `コマンド（${commandKey}K、${commandKey}1–4 で切替）`)}
+          type="button"
+        >
+          <kbd>{commandKey}K</kbd>
+          <span>{t('命令', 'コマンド')}</span>
+        </button>
+      ) : null}
+      <button
+        aria-label={t('设置', '設定')}
+        className="agent-system-rail-settings"
+        onClick={onSettings}
+        title={t('设置', '設定')}
         type="button"
-      ><Icon name={item.icon} size={21} /><span>{item.label}</span>{item.badge && item.badge > 0 ? <span aria-label={zh ? `${item.badge} 件未读` : `未読 ${item.badge} 件`} className="agent-system-rail-badge">{item.badge}</span> : null}</button>)}
-    </nav>}
-    <button aria-label={zh ? '设置' : '設定'} className="agent-system-rail-settings" onClick={onSettings} title={zh ? '设置' : '設定'} type="button"><Icon name="settings" size={21} /><span>{zh ? '设置' : '設定'}</span></button>
-  </aside>
+      >
+        <Icon name="settings" size={21} />
+        <span>{t('设置', '設定')}</span>
+      </button>
+    </aside>
+  )
 }

@@ -51,7 +51,11 @@ export class EmlParserError extends Error {
 }
 
 export const emlFileManifestSchema: z.ZodType<EmlFileManifest> = z.object({
-  name: z.string().min(1).max(180).refine((name) => !/[\\/\u0000]/u.test(name)),
+  name: z
+    .string()
+    .min(1)
+    .max(180)
+    .refine((name) => !/[\\/\u0000]/u.test(name)),
   size: z.number().int().positive().max(maxEmlFileSizeBytes),
   sha256: z.string().regex(/^[a-f0-9]{64}$/u)
 })
@@ -88,25 +92,21 @@ function firstMailbox(address: Address | undefined): { name: string; address: st
 }
 
 function senderDomain(address: string | undefined): string | null {
-  const domain = address?.trim().toLocaleLowerCase('en-US').match(/@([^@\s>]+)$/u)?.[1]
+  const domain = address
+    ?.trim()
+    .toLocaleLowerCase('en-US')
+    .match(/@([^@\s>]+)$/u)?.[1]
   if (!domain || domain.length > 253 || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(domain)) return null
   return domain
 }
 
 function clearAttachment(attachment: Attachment): void {
   if (attachment.content instanceof ArrayBuffer) new Uint8Array(attachment.content).fill(0)
-  else if (ArrayBuffer.isView(attachment.content)) new Uint8Array(
-    attachment.content.buffer,
-    attachment.content.byteOffset,
-    attachment.content.byteLength
-  ).fill(0)
+  else if (ArrayBuffer.isView(attachment.content))
+    new Uint8Array(attachment.content.buffer, attachment.content.byteOffset, attachment.content.byteLength).fill(0)
 }
 
-export async function parseEmlMessage(
-  rawManifest: EmlFileManifest,
-  bytes: Buffer,
-  now = new Date()
-): Promise<ParsedEmlMessage> {
+export async function parseEmlMessage(rawManifest: EmlFileManifest, bytes: Buffer, now = new Date()): Promise<ParsedEmlMessage> {
   const manifest = emlFileManifestSchema.parse(rawManifest)
   if (bytes.length !== manifest.size) throw new EmlParserError('INVALID_MANIFEST', 'EML size does not match its manifest.')
   const sha256 = createHash('sha256').update(bytes).digest('hex')
@@ -140,10 +140,8 @@ export async function parseEmlMessage(
     const sender = firstMailbox(email.from)
     const senderDisplayName = normalizeEmailHeaderValue(sender?.name, '').slice(0, 300) || null
     const identityAnchor = email.messageId?.trim() || manifest.sha256
-    const referenceAnchor = email.references?.trim().split(/\s+/u).at(-1)
-      || email.inReplyTo?.trim()
-      || email.messageId?.trim()
-      || manifest.sha256
+    const referenceAnchor =
+      email.references?.trim().split(/\s+/u).at(-1) || email.inReplyTo?.trim() || email.messageId?.trim() || manifest.sha256
     const result = parsedEmlMessageSchema.parse({
       version: 'parsed-eml-v1',
       file: manifest,

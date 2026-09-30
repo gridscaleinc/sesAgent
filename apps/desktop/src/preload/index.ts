@@ -1,47 +1,86 @@
 import type { CaseResumeImportProgress } from '@shared'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { ipcChannels, type AgentTurnEvent, type DesktopApi, type BusinessMatchingProgress, type GmailScheduledSyncCompletion } from '@shared/contracts'
+import {
+  ipcChannels,
+  type AgentTurnEvent,
+  type DesktopApi,
+  type BusinessMatchingProgress,
+  type GmailScheduledSyncCompletion
+} from '@shared/contracts'
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const modelKeyPattern = /^[a-z0-9][a-z0-9._-]{2,119}$/u
 
 function isStrictObject(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) &&
-    Object.keys(value).every((key) => keys.includes(key)) && keys.every((key) => key in value)
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).every((key) => keys.includes(key)) &&
+    keys.every((key) => key in value)
+  )
 }
 
 function parseAgentTurnEvent(value: unknown): AgentTurnEvent | null {
-  const record = typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null
-  if (!record || !uuidPattern.test(String(record.conversationId)) || !uuidPattern.test(String(record.requestId)) ||
-    !Number.isInteger(record.sequence) || Number(record.sequence) <= 0 ||
-    typeof record.modelKey !== 'string' || !modelKeyPattern.test(record.modelKey) ||
-    typeof record.modelDisplayName !== 'string' || record.modelDisplayName.length < 1 || record.modelDisplayName.length > 120) return null
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+  if (
+    !record ||
+    !uuidPattern.test(String(record.conversationId)) ||
+    !uuidPattern.test(String(record.requestId)) ||
+    !Number.isInteger(record.sequence) ||
+    Number(record.sequence) <= 0 ||
+    typeof record.modelKey !== 'string' ||
+    !modelKeyPattern.test(record.modelKey) ||
+    typeof record.modelDisplayName !== 'string' ||
+    record.modelDisplayName.length < 1 ||
+    record.modelDisplayName.length > 120
+  )
+    return null
   const baseKeys = ['type', 'conversationId', 'requestId', 'sequence', 'modelKey', 'modelDisplayName'] as const
   if (record.type === 'started') {
-    if (!isStrictObject(record, [...baseKeys, 'phase']) ||
-      !['planning', 'local-tool', 'connecting-model', 'streaming', 'stopping'].includes(String(record.phase))) return null
+    if (
+      !isStrictObject(record, [...baseKeys, 'phase']) ||
+      !['planning', 'local-tool', 'connecting-model', 'streaming', 'stopping'].includes(String(record.phase))
+    )
+      return null
     return record as unknown as AgentTurnEvent
   }
   if (record.type === 'delta') {
-    if (!isStrictObject(record, [...baseKeys, 'text']) || typeof record.text !== 'string' || record.text.length < 1 || record.text.length > 2_000) return null
+    if (
+      !isStrictObject(record, [...baseKeys, 'text']) ||
+      typeof record.text !== 'string' ||
+      record.text.length < 1 ||
+      record.text.length > 2_000
+    )
+      return null
     return record as unknown as AgentTurnEvent
   }
   if (record.type === 'completed') {
-    return isStrictObject(record, baseKeys) ? record as unknown as AgentTurnEvent : null
+    return isStrictObject(record, baseKeys) ? (record as unknown as AgentTurnEvent) : null
   }
   if (record.type === 'failed') {
-    if (!isStrictObject(record, [...baseKeys, 'code', 'message', 'localFallbackPreserved']) ||
-      typeof record.code !== 'string' || record.code.length < 1 || record.code.length > 120 ||
-      typeof record.message !== 'string' || record.message.length < 1 || record.message.length > 2_000 ||
-      record.localFallbackPreserved !== true) return null
+    if (
+      !isStrictObject(record, [...baseKeys, 'code', 'message', 'localFallbackPreserved']) ||
+      typeof record.code !== 'string' ||
+      record.code.length < 1 ||
+      record.code.length > 120 ||
+      typeof record.message !== 'string' ||
+      record.message.length < 1 ||
+      record.message.length > 2_000 ||
+      record.localFallbackPreserved !== true
+    )
+      return null
     return record as unknown as AgentTurnEvent
   }
   if (record.type === 'cancelled') {
-    if (!isStrictObject(record, [...baseKeys, 'cancelStatus', 'message']) ||
+    if (
+      !isStrictObject(record, [...baseKeys, 'cancelStatus', 'message']) ||
       ![null, 'cancel_requested', 'canceled', 'too_late'].includes(record.cancelStatus as null | string) ||
-      typeof record.message !== 'string' || record.message.length < 1 || record.message.length > 2_000) return null
+      typeof record.message !== 'string' ||
+      record.message.length < 1 ||
+      record.message.length > 2_000
+    )
+      return null
     return record as unknown as AgentTurnEvent
   }
   return null
@@ -62,8 +101,8 @@ const api: DesktopApi = {
   getBusinessFeed: () => ipcRenderer.invoke(ipcChannels.getBusinessFeed),
   markBusinessFeed: (input) => ipcRenderer.invoke(ipcChannels.markBusinessFeed, input),
   setCaseWorking: (input) => ipcRenderer.invoke(ipcChannels.setCaseWorking, input),
-  listPersonnelMailUpdates: (id) => ipcRenderer.invoke(ipcChannels.listPersonnelMailUpdates,id),
-  resolvePersonnelMailUpdate: (input) => ipcRenderer.invoke(ipcChannels.resolvePersonnelMailUpdate,input),
+  listPersonnelMailUpdates: (id) => ipcRenderer.invoke(ipcChannels.listPersonnelMailUpdates, id),
+  resolvePersonnelMailUpdate: (input) => ipcRenderer.invoke(ipcChannels.resolvePersonnelMailUpdate, input),
   getPersonnelWorkspace: () => ipcRenderer.invoke(ipcChannels.getPersonnelWorkspace),
   savePersonnelTemplate: (input) => ipcRenderer.invoke(ipcChannels.savePersonnelTemplate, input),
   beginBusinessProgress: (input) => ipcRenderer.invoke(ipcChannels.beginBusinessProgress, input),
@@ -88,37 +127,42 @@ const api: DesktopApi = {
   validatePersonnelMessage: (input) => ipcRenderer.invoke(ipcChannels.validatePersonnelMessage, input),
   recordPersonnelCopy: (input) => ipcRenderer.invoke(ipcChannels.recordPersonnelCopy, input),
   openPersonnelEmail: (input) => ipcRenderer.invoke(ipcChannels.openPersonnelEmail, input),
-  listCustomerIdentities:()=>ipcRenderer.invoke(ipcChannels.listCustomerIdentities),
-  saveCustomerIdentity:input=>ipcRenderer.invoke(ipcChannels.saveCustomerIdentity,input),
-  getInterviewAnswers:id=>ipcRenderer.invoke(ipcChannels.getInterviewAnswers,id),
-  getPairInterviewEvidence:input=>ipcRenderer.invoke(ipcChannels.getPairInterviewEvidence,input),
-  listMatchingOpportunities:()=>ipcRenderer.invoke(ipcChannels.listMatchingOpportunities),
-  controlMatchingOpportunity:input=>ipcRenderer.invoke(ipcChannels.controlMatchingOpportunity,input),
-  getQuestionBankHistory:id=>ipcRenderer.invoke(ipcChannels.getQuestionBankHistory,id),
-  restoreQuestionBankVersion:input=>ipcRenderer.invoke(ipcChannels.restoreQuestionBankVersion,input),
-  listQuestionBank:(input)=>ipcRenderer.invoke(ipcChannels.listQuestionBank,input),
-  controlQuestionBank:(input)=>ipcRenderer.invoke(ipcChannels.controlQuestionBank,input),
+  listCustomerIdentities: () => ipcRenderer.invoke(ipcChannels.listCustomerIdentities),
+  saveCustomerIdentity: (input) => ipcRenderer.invoke(ipcChannels.saveCustomerIdentity, input),
+  getInterviewAnswers: (id) => ipcRenderer.invoke(ipcChannels.getInterviewAnswers, id),
+  getPairInterviewEvidence: (input) => ipcRenderer.invoke(ipcChannels.getPairInterviewEvidence, input),
+  listMatchingOpportunities: () => ipcRenderer.invoke(ipcChannels.listMatchingOpportunities),
+  controlMatchingOpportunity: (input) => ipcRenderer.invoke(ipcChannels.controlMatchingOpportunity, input),
+  getQuestionBankHistory: (id) => ipcRenderer.invoke(ipcChannels.getQuestionBankHistory, id),
+  restoreQuestionBankVersion: (input) => ipcRenderer.invoke(ipcChannels.restoreQuestionBankVersion, input),
+  listQuestionBank: (input) => ipcRenderer.invoke(ipcChannels.listQuestionBank, input),
+  controlQuestionBank: (input) => ipcRenderer.invoke(ipcChannels.controlQuestionBank, input),
   getSystemExperience: () => ipcRenderer.invoke(ipcChannels.getSystemExperience),
-  controlSystemExperience: (input) => ipcRenderer.invoke(ipcChannels.controlSystemExperience,input),
-  getSystemExperienceDetails: (id) => ipcRenderer.invoke(ipcChannels.getSystemExperienceDetails,id),
-  recordExperienceExposure: (input) => ipcRenderer.invoke(ipcChannels.recordExperienceExposure,input),
+  controlSystemExperience: (input) => ipcRenderer.invoke(ipcChannels.controlSystemExperience, input),
+  getSystemExperienceDetails: (id) => ipcRenderer.invoke(ipcChannels.getSystemExperienceDetails, id),
+  recordExperienceExposure: (input) => ipcRenderer.invoke(ipcChannels.recordExperienceExposure, input),
   listWorkRules: () => ipcRenderer.invoke(ipcChannels.listWorkRules),
   getWorkRuleHistory: (input) => ipcRenderer.invoke(ipcChannels.getWorkRuleHistory, input),
   analyzeWorkRule: (input) => ipcRenderer.invoke(ipcChannels.analyzeWorkRule, input),
   saveWorkRule: (input) => ipcRenderer.invoke(ipcChannels.saveWorkRule, input),
   changeWorkRule: (input) => ipcRenderer.invoke(ipcChannels.changeWorkRule, input),
   assessCasePerson: (input) => ipcRenderer.invoke(ipcChannels.assessCasePerson, input),
-  listCasePersonAssessments: (input) => ipcRenderer.invoke(ipcChannels.listCasePersonAssessments, input),
-  prepareCaseAssessment: input => ipcRenderer.invoke(ipcChannels.prepareCaseAssessment, input),
+  prepareCaseAssessment: (input) => ipcRenderer.invoke(ipcChannels.prepareCaseAssessment, input),
   listCaseAssessments: (jobCaseId) => ipcRenderer.invoke(ipcChannels.listCaseAssessments, jobCaseId),
+  listCaseSearchSummaries: () => ipcRenderer.invoke(ipcChannels.listCaseSearchSummaries),
   getCaseQuestionDraft: (input) => ipcRenderer.invoke(ipcChannels.getCaseQuestionDraft, input),
   onCaseResumeImportProgress: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: unknown) => {
       if (!isStrictObject(payload, ['requestId', 'jobCaseId', 'stage', 'documentId'])) return
-      if (typeof payload.requestId !== 'string' || !uuidPattern.test(payload.requestId) ||
-        typeof payload.jobCaseId !== 'string' || !uuidPattern.test(payload.jobCaseId) ||
-        payload.stage !== 'parsing' && payload.stage !== 'assessing' ||
-        payload.documentId !== null && (typeof payload.documentId !== 'string' || !uuidPattern.test(payload.documentId))) return
+      if (
+        typeof payload.requestId !== 'string' ||
+        !uuidPattern.test(payload.requestId) ||
+        typeof payload.jobCaseId !== 'string' ||
+        !uuidPattern.test(payload.jobCaseId) ||
+        (payload.stage !== 'parsing' && payload.stage !== 'assessing') ||
+        (payload.documentId !== null && (typeof payload.documentId !== 'string' || !uuidPattern.test(payload.documentId)))
+      )
+        return
       listener(payload as unknown as CaseResumeImportProgress)
     }
     ipcRenderer.on(ipcChannels.caseResumeImportProgress, handler)
@@ -130,6 +174,8 @@ const api: DesktopApi = {
   generateRuleQuestions: (input) => ipcRenderer.invoke(ipcChannels.generateRuleQuestions, input),
   findPersonnelForCase: (input) => ipcRenderer.invoke(ipcChannels.findPersonnelForCase, input),
   findCasesForPersonnel: (input) => ipcRenderer.invoke(ipcChannels.findCasesForPersonnel, input),
+  getPersonnelCaseMatchRun: (input) => ipcRenderer.invoke(ipcChannels.getPersonnelCaseMatchRun, input),
+  listPersonnelCaseMatchRunSummaries: () => ipcRenderer.invoke(ipcChannels.listPersonnelCaseMatchRunSummaries),
   getStartupStatus: () => ipcRenderer.invoke(ipcChannels.getStartupStatus),
   getBootstrap: () => ipcRenderer.invoke(ipcChannels.getBootstrap),
   resolveActionApproval: (input) => ipcRenderer.invoke(ipcChannels.resolveActionApproval, input),
@@ -144,6 +190,11 @@ const api: DesktopApi = {
   prepareAiCommerceCloudPrompt: (input) => ipcRenderer.invoke(ipcChannels.prepareAiCommerceCloudPrompt, input),
   executeAiCommerceCloudPrompt: (input) => ipcRenderer.invoke(ipcChannels.executeAiCommerceCloudPrompt, input),
   beginIntroductionDraft: (input) => ipcRenderer.invoke(ipcChannels.beginIntroductionDraft, input),
+  saveCaseIntroductionDrafts: (input) => ipcRenderer.invoke(ipcChannels.saveCaseIntroductionDrafts, input),
+  listCaseIntroductionDrafts: (reviewId) => ipcRenderer.invoke(ipcChannels.listCaseIntroductionDrafts, reviewId),
+  savePersonnelIntroductionDrafts: (input) => ipcRenderer.invoke(ipcChannels.savePersonnelIntroductionDrafts, input),
+  listPersonnelIntroductionDrafts: (documentId) => ipcRenderer.invoke(ipcChannels.listPersonnelIntroductionDrafts, documentId),
+  exportSkillSheet: (input) => ipcRenderer.invoke(ipcChannels.exportSkillSheet, input),
   regenerateIntroduction: (input) => ipcRenderer.invoke(ipcChannels.regenerateIntroduction, input),
   saveBusinessField: (input) => ipcRenderer.invoke(ipcChannels.saveBusinessField, input),
   listAiConversations: (context) => ipcRenderer.invoke(ipcChannels.listAiConversations, context),
@@ -226,7 +277,7 @@ const api: DesktopApi = {
   getOriginalDocumentPreview: (sourceDocumentId) => ipcRenderer.invoke(ipcChannels.getOriginalDocumentPreview, sourceDocumentId),
   openOriginalDocument: (sourceDocumentId) => ipcRenderer.invoke(ipcChannels.openOriginalDocument, sourceDocumentId),
   updateCandidateProfile: (input) => ipcRenderer.invoke(ipcChannels.updateCandidateProfile, input),
-    previewCandidateDeletion: (sourceDocumentId) => ipcRenderer.invoke(ipcChannels.previewCandidateDeletion, sourceDocumentId),
+  previewCandidateDeletion: (sourceDocumentId) => ipcRenderer.invoke(ipcChannels.previewCandidateDeletion, sourceDocumentId),
   deleteCandidateData: (input) => ipcRenderer.invoke(ipcChannels.deleteCandidateData, input),
   listDataDeletionReports: () => ipcRenderer.invoke(ipcChannels.listDataDeletionReports),
   connectGoogleWorkspace: () => ipcRenderer.invoke(ipcChannels.connectGoogleWorkspace),

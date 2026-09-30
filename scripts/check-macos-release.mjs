@@ -71,7 +71,8 @@ for (const [helperPath, label] of nativeHelpers) {
 const iconPath = resolve('build/release/icon.icns')
 try {
   const icon = await readFile(iconPath)
-  if (icon.length < 1024 || icon.subarray(0, 4).toString('ascii') !== 'icns') failures.push('The generated app icon is not a valid ICNS file.')
+  if (icon.length < 1024 || icon.subarray(0, 4).toString('ascii') !== 'icns')
+    failures.push('The generated app icon is not a valid ICNS file.')
   else report.icon = 'ready'
 } catch {
   failures.push(`The generated app icon is missing: ${iconPath}`)
@@ -80,14 +81,21 @@ try {
 try {
   const privacy = JSON.parse(await readFile(resolve('build/privacy-verification/privacy-quality-report.json'), 'utf8'))
   if (
-    privacy?.version !== 'ses-privacy-quality-report-v1' || privacy?.releaseEligible !== true ||
-    privacy?.syntheticOnly !== true || privacy?.humanLabeledDataset !== false ||
-    privacy?.platform !== 'darwin' || privacy?.arch !== 'arm64' ||
-    privacy?.identifierRecall !== 1 || privacy?.redactionPrecision !== 1 ||
-    privacy?.residualLeakCount !== 0 || privacy?.safeCaseFalsePositiveCount !== 0 ||
-    privacy?.cloudDirectIdentifiers !== 0 || privacy?.networkAccess !== false ||
+    privacy?.version !== 'ses-privacy-quality-report-v1' ||
+    privacy?.releaseEligible !== true ||
+    privacy?.syntheticOnly !== true ||
+    privacy?.humanLabeledDataset !== false ||
+    privacy?.platform !== 'darwin' ||
+    privacy?.arch !== 'arm64' ||
+    privacy?.identifierRecall !== 1 ||
+    privacy?.redactionPrecision !== 1 ||
+    privacy?.residualLeakCount !== 0 ||
+    privacy?.safeCaseFalsePositiveCount !== 0 ||
+    privacy?.cloudDirectIdentifiers !== 0 ||
+    privacy?.networkAccess !== false ||
     privacy?.appleNer?.verified !== true
-  ) throw new Error('privacy quality report is incomplete')
+  )
+    throw new Error('privacy quality report is incomplete')
   report.privacyQualityGate = privacy.datasetSha256
 } catch {
   failures.push('The macOS privacy quality gate is missing, failed, or stale. Run npm run test:privacy-quality-gate.')

@@ -2,17 +2,29 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { BusinessObjectDeleteButton } from './BusinessObjectDeleteButton'
 
-const preview = { confirmationHash: 'snapshot-1', counts: { caseVersions: 2, profileVersions: 2, taskRecords: 1, businessFollowUps: 3, agentReferences: { messages: 4 } } }
+const preview = {
+  confirmationHash: 'snapshot-1',
+  counts: { caseVersions: 2, profileVersions: 2, taskRecords: 1, businessFollowUps: 3, agentReferences: { messages: 4 } }
+}
 beforeEach(() => {
-  Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
-    previewJobCaseDeletion: vi.fn(async () => preview), previewCandidateDeletion: vi.fn(async () => preview),
-    deleteJobCaseData: vi.fn(async () => ({ report: { components: { database: 'deleted' } } })),
-    deleteCandidateData: vi.fn(async () => ({ report: { components: { database: 'deleted' } } }))
-  } })
+  Object.defineProperty(window, 'sesAgent', {
+    configurable: true,
+    value: {
+      previewJobCaseDeletion: vi.fn(async () => preview),
+      previewCandidateDeletion: vi.fn(async () => preview),
+      deleteJobCaseData: vi.fn(async () => ({ report: { components: { database: 'deleted' } } })),
+      deleteCandidateData: vi.fn(async () => ({ report: { components: { database: 'deleted' } } }))
+    }
+  })
 })
 it.each(['case', 'person'] as const)('previews and confirms exactly the selected %s, then refreshes', async (kind) => {
-  const onDeleted = vi.fn(), onOpen = vi.fn()
-  render(<article onClick={onOpen}><BusinessObjectDeleteButton kind={kind} id="selected-id" title="選択した資料" onDeleted={onDeleted} /></article>)
+  const onDeleted = vi.fn(),
+    onOpen = vi.fn()
+  render(
+    <article onClick={onOpen}>
+      <BusinessObjectDeleteButton kind={kind} id="selected-id" title="選択した資料" onDeleted={onDeleted} />
+    </article>
+  )
   fireEvent.click(screen.getByRole('button', { name: '削除 選択した資料' }))
   const confirm = await screen.findByRole('button', { name: '削除を確定' })
   await waitFor(() => expect(confirm).toBeEnabled())
@@ -20,11 +32,16 @@ it.each(['case', 'person'] as const)('previews and confirms exactly the selected
   expect(screen.getByText('対応記録：3')).toBeVisible()
   expect(window.sesAgent.deleteJobCaseData).not.toHaveBeenCalled()
   expect(window.sesAgent.deleteCandidateData).not.toHaveBeenCalled()
-  fireEvent.click(confirm); fireEvent.click(confirm)
+  fireEvent.click(confirm)
+  fireEvent.click(confirm)
   await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1))
   const remove = kind === 'case' ? window.sesAgent.deleteJobCaseData : window.sesAgent.deleteCandidateData
   expect(remove).toHaveBeenCalledTimes(1)
-  expect(remove).toHaveBeenCalledWith({ [kind === 'case' ? 'reviewId' : 'sourceDocumentId']: 'selected-id', confirmationHash: 'snapshot-1', confirmationText: '削除' })
+  expect(remove).toHaveBeenCalledWith({
+    [kind === 'case' ? 'reviewId' : 'sourceDocumentId']: 'selected-id',
+    confirmationHash: 'snapshot-1',
+    confirmationText: '削除'
+  })
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   expect(onOpen).not.toHaveBeenCalled()
 })

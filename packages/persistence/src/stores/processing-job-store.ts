@@ -27,9 +27,7 @@ export class ProcessingJobStore extends DomainStore {
   }
 
   private getProcessingJobRow(jobId: string): ProcessingJobRow | null {
-    return this.database
-      .prepare<[string], ProcessingJobRow>('SELECT * FROM processing_jobs WHERE id = ?')
-      .get(jobId) ?? null
+    return this.database.prepare<[string], ProcessingJobRow>('SELECT * FROM processing_jobs WHERE id = ?').get(jobId) ?? null
   }
 
   getProcessingJob(jobId: string): ProcessingJobSummary | null {
@@ -44,19 +42,14 @@ export class ProcessingJobStore extends DomainStore {
 
   listProcessingJobs(workTaskId?: string): ProcessingJobSummary[] {
     const rows = workTaskId
-      ? this.database.prepare<[string], ProcessingJobRow>(
-          'SELECT * FROM processing_jobs WHERE work_task_id = ? ORDER BY created_at DESC, id DESC'
-        ).all(workTaskId)
-      : this.database.prepare<[], ProcessingJobRow>(
-          'SELECT * FROM processing_jobs ORDER BY created_at DESC, id DESC'
-        ).all()
+      ? this.database
+          .prepare<[string], ProcessingJobRow>('SELECT * FROM processing_jobs WHERE work_task_id = ? ORDER BY created_at DESC, id DESC')
+          .all(workTaskId)
+      : this.database.prepare<[], ProcessingJobRow>('SELECT * FROM processing_jobs ORDER BY created_at DESC, id DESC').all()
     return rows.map((row) => this.processingJobFromRow(row))
   }
 
-  enqueueProcessingJob(
-    rawInput: z.input<typeof enqueueProcessingJobInputSchema>,
-    now = new Date()
-  ): ProcessingJobSummary {
+  enqueueProcessingJob(rawInput: z.input<typeof enqueueProcessingJobInputSchema>, now = new Date()): ProcessingJobSummary {
     const input = enqueueProcessingJobInputSchema.parse(rawInput)
     const task = this.stores.workTasks.getWorkTask(input.workTaskId)
     if (!task) throw new Error('Processing job work task was not found.')
@@ -71,25 +64,27 @@ export class ProcessingJobStore extends DomainStore {
     }
     const id = randomUUID()
     const timestamp = now.toISOString()
-    this.database.prepare(
-      `INSERT INTO processing_jobs(
+    this.database
+      .prepare(
+        `INSERT INTO processing_jobs(
          id, job_type, work_task_id, task_step_id, idempotency_key, request_fingerprint,
          payload_ref, status, replay_policy, progress, attempt_count, max_attempts,
          created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, 0, 0, ?, ?, ?)`
-    ).run(
-      id,
-      input.type,
-      input.workTaskId,
-      input.taskStepId,
-      input.idempotencyKey,
-      input.requestFingerprint,
-      input.payloadRef,
-      input.replayPolicy,
-      input.maxAttempts,
-      timestamp,
-      timestamp
-    )
+      )
+      .run(
+        id,
+        input.type,
+        input.workTaskId,
+        input.taskStepId,
+        input.idempotencyKey,
+        input.requestFingerprint,
+        input.payloadRef,
+        input.replayPolicy,
+        input.maxAttempts,
+        timestamp,
+        timestamp
+      )
     const created = this.getProcessingJob(id)
     if (!created) throw new Error('Processing job could not be reloaded.')
     return created
@@ -104,10 +99,12 @@ export class ProcessingJobStore extends DomainStore {
       if (!row) throw new Error('Processing job was not found.')
       if (row.cancel_requested_at) {
         if (row.status === 'queued' || row.status === 'retry_wait') {
-          this.database.prepare(
-            `UPDATE processing_jobs SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
+          this.database
+            .prepare(
+              `UPDATE processing_jobs SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
                next_retry_at = NULL, updated_at = ? WHERE id = ?`
-          ).run(now.toISOString(), jobId)
+            )
+            .run(now.toISOString(), jobId)
         }
         return null
       }
@@ -116,12 +113,14 @@ export class ProcessingJobStore extends DomainStore {
       const leaseToken = randomUUID()
       const timestamp = now.toISOString()
       const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs).toISOString()
-      const updated = this.database.prepare(
-        `UPDATE processing_jobs
+      const updated = this.database
+        .prepare(
+          `UPDATE processing_jobs
          SET status = 'running', progress = MAX(progress, 1), attempt_count = attempt_count + 1,
              next_retry_at = NULL, lease_token = ?, lease_expires_at = ?, error_code = NULL, updated_at = ?
          WHERE id = ? AND status IN ('queued', 'retry_wait') AND cancel_requested_at IS NULL`
-      ).run(leaseToken, leaseExpiresAt, timestamp, jobId)
+        )
+        .run(leaseToken, leaseExpiresAt, timestamp, jobId)
       if (updated.changes !== 1) return null
       const job = this.getProcessingJob(jobId)
       if (!job) throw new Error('Acquired processing job could not be reloaded.')
@@ -132,10 +131,12 @@ export class ProcessingJobStore extends DomainStore {
 
   updateProcessingJobProgress(jobId: string, leaseToken: string, progress: number, now = new Date()): ProcessingJobSummary {
     const bounded = Math.max(1, Math.min(99, Math.trunc(progress)))
-    const updated = this.database.prepare(
-      `UPDATE processing_jobs SET progress = MAX(progress, ?), updated_at = ?
+    const updated = this.database
+      .prepare(
+        `UPDATE processing_jobs SET progress = MAX(progress, ?), updated_at = ?
        WHERE id = ? AND status = 'running' AND lease_token = ?`
-    ).run(bounded, now.toISOString(), jobId, leaseToken)
+      )
+      .run(bounded, now.toISOString(), jobId, leaseToken)
     if (updated.changes !== 1) throw new Error('Processing job lease is no longer active.')
     const job = this.getProcessingJob(jobId)
     if (!job) throw new Error('Processing job could not be reloaded.')
@@ -153,12 +154,7 @@ export class ProcessingJobStore extends DomainStore {
     return row.cancel_requested_at !== null
   }
 
-  completeProcessingJob(
-    jobId: string,
-    leaseToken: string,
-    result: unknown,
-    now = new Date()
-  ): ProcessingJobCompletion {
+  completeProcessingJob(jobId: string, leaseToken: string, result: unknown, now = new Date()): ProcessingJobCompletion {
     const resultJson = JSON.stringify(result)
     if (Buffer.byteLength(resultJson, 'utf8') > 1_000_000) throw new Error('Processing job result is too large.')
     const resultHash = createHash('sha256').update(resultJson).digest('hex')
@@ -169,19 +165,23 @@ export class ProcessingJobStore extends DomainStore {
       }
       const timestamp = now.toISOString()
       if (row.cancel_requested_at) {
-        this.database.prepare(
-          `UPDATE processing_jobs SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
+        this.database
+          .prepare(
+            `UPDATE processing_jobs SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
              next_retry_at = NULL, updated_at = ? WHERE id = ?`
-        ).run(timestamp, jobId)
+          )
+          .run(timestamp, jobId)
         const job = this.getProcessingJob(jobId)
         if (!job) throw new Error('Cancelled processing job could not be reloaded.')
         return { job, accepted: false }
       }
-      this.database.prepare(
-        `UPDATE processing_jobs SET status = 'succeeded', progress = 100, lease_token = NULL,
+      this.database
+        .prepare(
+          `UPDATE processing_jobs SET status = 'succeeded', progress = 100, lease_token = NULL,
            lease_expires_at = NULL, next_retry_at = NULL, result_json = ?, result_hash = ?, updated_at = ?
          WHERE id = ?`
-      ).run(resultJson, resultHash, timestamp, jobId)
+        )
+        .run(resultJson, resultHash, timestamp, jobId)
       const job = this.getProcessingJob(jobId)
       if (!job) throw new Error('Completed processing job could not be reloaded.')
       return { job, accepted: true }
@@ -207,15 +207,15 @@ export class ProcessingJobStore extends DomainStore {
       const cancelled = row.cancel_requested_at !== null
       const shouldRetry = !cancelled && retryable && row.attempt_count < row.max_attempts
       const status = cancelled ? 'cancelled' : shouldRetry ? 'retry_wait' : 'failed'
-      const exponentialDelay = Math.min(5 * 60_000, 5_000 * (2 ** Math.max(0, row.attempt_count - 1)))
-      const boundedRetryDelay = retryDelayMs === null
-        ? exponentialDelay
-        : Math.max(1_000, Math.min(5 * 60_000, retryDelayMs))
+      const exponentialDelay = Math.min(5 * 60_000, 5_000 * 2 ** Math.max(0, row.attempt_count - 1))
+      const boundedRetryDelay = retryDelayMs === null ? exponentialDelay : Math.max(1_000, Math.min(5 * 60_000, retryDelayMs))
       const nextRetryAt = shouldRetry ? new Date(now.getTime() + boundedRetryDelay).toISOString() : null
-      this.database.prepare(
-        `UPDATE processing_jobs SET status = ?, next_retry_at = ?, lease_token = NULL,
+      this.database
+        .prepare(
+          `UPDATE processing_jobs SET status = ?, next_retry_at = ?, lease_token = NULL,
            lease_expires_at = NULL, error_code = ?, updated_at = ? WHERE id = ?`
-      ).run(status, nextRetryAt, cancelled ? null : errorCode, timestamp, jobId)
+        )
+        .run(status, nextRetryAt, cancelled ? null : errorCode, timestamp, jobId)
       const job = this.getProcessingJob(jobId)
       if (!job) throw new Error('Failed processing job could not be reloaded.')
       return job
@@ -225,25 +225,29 @@ export class ProcessingJobStore extends DomainStore {
 
   requestProcessingJobCancellationForTask(workTaskId: string, now = new Date()): ProcessingJobSummary[] {
     const timestamp = now.toISOString()
-    this.database.prepare(
-      `UPDATE processing_jobs
+    this.database
+      .prepare(
+        `UPDATE processing_jobs
        SET cancel_requested_at = COALESCE(cancel_requested_at, ?),
            status = CASE WHEN status IN ('queued', 'retry_wait') THEN 'cancelled' ELSE status END,
            next_retry_at = CASE WHEN status IN ('queued', 'retry_wait') THEN NULL ELSE next_retry_at END,
            updated_at = ?
        WHERE work_task_id = ? AND status IN ('queued', 'running', 'retry_wait')`
-    ).run(timestamp, timestamp, workTaskId)
+      )
+      .run(timestamp, timestamp, workTaskId)
     return this.listProcessingJobs(workTaskId)
   }
 
   retryProcessingJobsForTask(workTaskId: string, now = new Date()): ProcessingJobSummary[] {
     const timestamp = now.toISOString()
-    this.database.prepare(
-      `UPDATE processing_jobs SET status = 'queued', progress = 0, attempt_count = 0, next_retry_at = NULL,
+    this.database
+      .prepare(
+        `UPDATE processing_jobs SET status = 'queued', progress = 0, attempt_count = 0, next_retry_at = NULL,
          lease_token = NULL, lease_expires_at = NULL, cancel_requested_at = NULL,
          error_code = NULL, result_json = NULL, result_hash = NULL, updated_at = ?
        WHERE work_task_id = ? AND replay_policy = 'safe-local' AND status IN ('failed', 'cancelled', 'retry_wait')`
-    ).run(timestamp, workTaskId)
+      )
+      .run(timestamp, workTaskId)
     return this.listProcessingJobs(workTaskId)
   }
 
@@ -252,13 +256,15 @@ export class ProcessingJobStore extends DomainStore {
     includeUnexpired = false
   ): { requeued: number; reviewRequired: number; cancelled: number } {
     const expired = includeUnexpired
-      ? this.database.prepare<[], ProcessingJobRow>(
-          `SELECT * FROM processing_jobs WHERE status = 'running' AND lease_expires_at IS NOT NULL`
-        ).all()
-      : this.database.prepare<[string], ProcessingJobRow>(
-          `SELECT * FROM processing_jobs
+      ? this.database
+          .prepare<[], ProcessingJobRow>(`SELECT * FROM processing_jobs WHERE status = 'running' AND lease_expires_at IS NOT NULL`)
+          .all()
+      : this.database
+          .prepare<[string], ProcessingJobRow>(
+            `SELECT * FROM processing_jobs
            WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`
-        ).all(now.toISOString())
+          )
+          .all(now.toISOString())
     let requeued = 0
     let reviewRequired = 0
     let cancelled = 0
@@ -266,22 +272,28 @@ export class ProcessingJobStore extends DomainStore {
       for (const row of expired) {
         const timestamp = now.toISOString()
         if (row.cancel_requested_at) {
-          this.database.prepare(
-            `UPDATE processing_jobs SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
+          this.database
+            .prepare(
+              `UPDATE processing_jobs SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
                next_retry_at = NULL, updated_at = ? WHERE id = ?`
-          ).run(timestamp, row.id)
+            )
+            .run(timestamp, row.id)
           cancelled += 1
         } else if (row.replay_policy === 'safe-local') {
-          this.database.prepare(
-            `UPDATE processing_jobs SET status = 'queued', progress = 0, lease_token = NULL,
+          this.database
+            .prepare(
+              `UPDATE processing_jobs SET status = 'queued', progress = 0, lease_token = NULL,
                lease_expires_at = NULL, next_retry_at = NULL, error_code = 'LEASE_EXPIRED', updated_at = ? WHERE id = ?`
-          ).run(timestamp, row.id)
+            )
+            .run(timestamp, row.id)
           requeued += 1
         } else {
-          this.database.prepare(
-            `UPDATE processing_jobs SET status = 'failed', lease_token = NULL, lease_expires_at = NULL,
+          this.database
+            .prepare(
+              `UPDATE processing_jobs SET status = 'failed', lease_token = NULL, lease_expires_at = NULL,
                next_retry_at = NULL, error_code = 'INTERRUPTED_REVIEW_REQUIRED', updated_at = ? WHERE id = ?`
-          ).run(timestamp, row.id)
+            )
+            .run(timestamp, row.id)
           reviewRequired += 1
         }
       }

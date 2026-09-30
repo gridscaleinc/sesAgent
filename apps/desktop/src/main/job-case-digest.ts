@@ -1,10 +1,4 @@
-import type {
-  JobCaseFieldKey,
-  JobCaseReviewSnapshot,
-  NewJobCaseDigest,
-  NewJobCaseDigestDay,
-  NewJobCaseDigestEntry
-} from '@shared'
+import type { JobCaseFieldKey, JobCaseReviewSnapshot, NewJobCaseDigest, NewJobCaseDigestDay, NewJobCaseDigestEntry } from '@shared'
 
 /** Every date in the workbench is read in the operator's business day. */
 const businessTimeZone = 'Asia/Tokyo'
@@ -12,13 +6,15 @@ const digestLookbackDays = 7
 
 /** Shown on every row, in this order; a field without a value is skipped. */
 export const digestHighlightFieldKeys = [
-  'required_skills', 'rate', 'location', 'remote', 'japanese_level'
+  'required_skills',
+  'rate',
+  'location',
+  'remote',
+  'japanese_level'
 ] as const satisfies readonly JobCaseFieldKey[]
 
 /** Without these a case cannot be broadcast or matched, so it is 要補完. */
-export const digestRequiredFieldKeys = [
-  'title', 'required_skills', 'rate', 'location'
-] as const satisfies readonly JobCaseFieldKey[]
+export const digestRequiredFieldKeys = ['title', 'required_skills', 'rate', 'location'] as const satisfies readonly JobCaseFieldKey[]
 
 /**
  * Warnings that mean business content is still missing or unsafe to trust.
@@ -33,7 +29,10 @@ const digestCompletionWarningCodes = new Set([
 ])
 
 const tokyoDayFormat = new Intl.DateTimeFormat('en-CA', {
-  timeZone: businessTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+  timeZone: businessTimeZone,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
 })
 
 /** The Asia/Tokyo calendar day of an instant, as YYYY-MM-DD. */
@@ -94,7 +93,9 @@ export function deriveNewCaseDigest(input: {
   const seen = new Set(input.seenReviewIds)
   const today = tokyoDayKey(input.now)
   const buckets = new Map<NewJobCaseDigestDay, NewJobCaseDigestEntry[]>([
-    ['today', []], ['yesterday', []], ['earlier', []]
+    ['today', []],
+    ['yesterday', []],
+    ['earlier', []]
   ])
   for (const review of input.reviews) {
     if (review.lifecycle !== 'active') continue
@@ -102,12 +103,18 @@ export function deriveNewCaseDigest(input: {
     if (age < 0 || age >= digestLookbackDays) continue
     buckets.get(age === 0 ? 'today' : age === 1 ? 'yesterday' : 'earlier')!.push(entryFrom(review, seen))
   }
-  const groups = [...buckets].flatMap(([day, entries]) => entries.length === 0 ? [] : [{
-    day,
-    count: entries.length,
-    unseenCount: entries.filter((entry) => entry.unseen).length,
-    entries: entries.sort((left, right) => right.arrivedAt.localeCompare(left.arrivedAt))
-  }])
+  const groups = [...buckets].flatMap(([day, entries]) =>
+    entries.length === 0
+      ? []
+      : [
+          {
+            day,
+            count: entries.length,
+            unseenCount: entries.filter((entry) => entry.unseen).length,
+            entries: entries.sort((left, right) => right.arrivedAt.localeCompare(left.arrivedAt))
+          }
+        ]
+  )
   return {
     groups,
     newCasesToday: buckets.get('today')!.length,

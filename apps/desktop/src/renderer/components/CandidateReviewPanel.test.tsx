@@ -44,18 +44,20 @@ const review: CandidateReviewSnapshot = {
     cloudEligible: false
   },
   fields,
-  projectExperiences: [{
-    draftId: 'project-001',
-    title: '決済基盤刷新',
-    period: '2022年4月〜2024年3月',
-    role: 'PL',
-    technologies: ['Java', 'AWS'],
-    summary: '決済基盤の設計とクラウド移行を担当',
-    confidence: 0.82,
-    sourceLabels: ['Page 1'],
-    changed: false,
-    changeReason: null
-  }],
+  projectExperiences: [
+    {
+      draftId: 'project-001',
+      title: '決済基盤刷新',
+      period: '2022年4月〜2024年3月',
+      role: 'PL',
+      technologies: ['Java', 'AWS'],
+      summary: '決済基盤の設計とクラウド移行を担当',
+      confidence: 0.82,
+      sourceLabels: ['Page 1'],
+      changed: false,
+      changeReason: null
+    }
+  ],
   completedAt: null,
   reviewerDisplayName: null,
   profile: null,
@@ -111,9 +113,9 @@ describe('CandidateReviewPanel', () => {
 
     expect(screen.getByText('ローカル本人情報')).toBeInTheDocument()
     expect(screen.getByText('候補者A')).toBeInTheDocument()
-    expect(screen.getByText((_, element) =>
-      element?.tagName === 'PRE' && element.textContent?.includes('• スキル: Java / AWS') === true
-    )).toBeInTheDocument()
+    expect(
+      screen.getByText((_, element) => element?.tagName === 'PRE' && element.textContent?.includes('• スキル: Java / AWS') === true)
+    ).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('希望単価 の確認値'), { target: { value: '85～95万円/月' } })
     expect(screen.getByLabelText('希望単価 の修正メモ')).toBeInTheDocument()
 
@@ -122,17 +124,22 @@ describe('CandidateReviewPanel', () => {
     fireEvent.click(submit)
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      documentId: review.documentId,
-      reviewRevision: 1,
-      piiReviewed: false,
-      fields: expect.arrayContaining([
-        expect.objectContaining({ key: 'rate', value: '85～95万円/月' })
-      ]),
-      projectExperiences: [expect.objectContaining({
-        draftId: 'project-001', title: '決済基盤刷新', technologies: ['Java', 'AWS'], confirmed: true
-      })]
-    }))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId: review.documentId,
+        reviewRevision: 1,
+        piiReviewed: false,
+        fields: expect.arrayContaining([expect.objectContaining({ key: 'rate', value: '85～95万円/月' })]),
+        projectExperiences: [
+          expect.objectContaining({
+            draftId: 'project-001',
+            title: '決済基盤刷新',
+            technologies: ['Java', 'AWS'],
+            confirmed: true
+          })
+        ]
+      })
+    )
   })
 
   it('renders immutable confirmation evidence after review completion', () => {

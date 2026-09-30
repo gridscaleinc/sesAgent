@@ -20,11 +20,7 @@ import {
 } from '@shared'
 import { registerAgentIpcHandlers } from '../agent-ipc'
 import { deriveNewCaseDigest } from '../job-case-digest'
-import {
-  executeBusinessTextIntakeTurn,
-  importChatPastedJobCaseText,
-  importPastedCandidateText
-} from '../business-text-intake'
+import { executeBusinessTextIntakeTurn, importChatPastedJobCaseText, importPastedCandidateText } from '../business-text-intake'
 import { effectiveApplicationPreferences, effectiveJobCaseFieldAliases } from '../app-defaults'
 import { assertWorkTaskAllowsExecution, createVerifiedPreview } from '../work-task-helpers'
 import { assertTrustedSender, type MainIpcContext } from './context'
@@ -35,7 +31,23 @@ export function registerCandidateMatchHandlers(
   context: MainIpcContext,
   runResumeAnalysisTask: (input: { fileToken: string; taskId: string }) => Promise<ResumeAnalysisTaskExecutionResult>
 ) {
-  const { conversationImports, previewedDrafts, repository, conversationalMatchingEnabled, agentChatModelCatalog, processingResources, currentOperator, currentMatchRuntimeIdentity, agentNarrativeStreamer, actionOrchestrator, preflightAction, withTaskOperation, failPendingProcessingJob, searchCandidates, localNer, fileVault } = context
+  const {
+    conversationImports,
+    previewedDrafts,
+    repository,
+    agentChatModelCatalog,
+    processingResources,
+    currentOperator,
+    currentMatchRuntimeIdentity,
+    agentNarrativeStreamer,
+    actionOrchestrator,
+    preflightAction,
+    withTaskOperation,
+    failPendingProcessingJob,
+    searchCandidates,
+    localNer,
+    fileVault
+  } = context
   // Rollback switch for the intake gate: disabled means every message routes
   // through the planner exactly as before the gate existed.
   const businessTextIntakeEnabled = process.env.SES_BUSINESS_TEXT_INTAKE_ENABLED !== '0'
@@ -50,102 +62,108 @@ export function registerCandidateMatchHandlers(
     existingJobId: string | null = null,
     agentTurn?: Pick<AgentToolExecutionMetadata, 'conversationId' | 'turnId' | 'requestId'>
   ): Promise<CandidateMatchTaskExecutionResult> => {
-      const task = repository.getWorkTask(taskId)
-      if (!task) throw new Error('候補者検索タスクが見つかりません。')
-      if (task.type !== 'MATCH_CANDIDATES') throw new Error('このタスクは候補者検索ではありません。')
-      assertWorkTaskAllowsExecution(task)
-      const jobCaseBinding = task.contextBindings.find((binding) => binding.objectType === 'job-case') ?? null
-      const boundJobCase = jobCaseBinding
-        ? repository.listActiveJobCases().find((jobCase) =>
-            jobCase.id === jobCaseBinding.objectId && String(jobCase.version) === jobCaseBinding.version
-          ) ?? null
-        : null
-      if (jobCaseBinding && !boundJobCase) {
-        throw new Error('案件が更新またはアーカイブされました。現在の案件からマッチングを作り直してください。')
-      }
-      const query = boundJobCase
-        ? candidateBenchmarkQueryFromJobCase(boundJobCase)
-        : candidateSearchQueryFromInstruction(task.instruction)
-      const candidateBinding = task.contextBindings.find((binding) => binding.objectType === 'candidate-profile')
-      const profiles = repository.listEligibleTalentProfiles().filter((profile) => !candidateBinding || profile.sourceDocumentId === candidateBinding.objectId)
-      if (candidateBinding && (profiles.length !== 1 || String(profiles[0]!.profileVersion) !== candidateBinding.version)) {
-        throw new Error('所选人员已更新或不在可匹配人才中，请核对资料后重新评估。')
-      }
-      const requestFingerprint = createHash('sha256').update(JSON.stringify({
-        version: 'candidate-match-job-v1',
-        query,
-        contextBindings: task.contextBindings,
-        model: currentMatchRuntimeIdentity,
-        profiles: profiles.map((profile) => ({
-          id: profile.id,
-          version: profile.profileVersion,
-          fields: profile.fields,
-          projectExperiences: profile.projectExperiences
-        }))
-      })).digest('hex')
-      const idempotencyKey = createHash('sha256')
-        .update(`candidate-match:${task.id}:${requestFingerprint}`)
-        .digest('hex')
-      const existingAgentConversation = agentTurn
-        ? repository.getAiConversation(agentTurn.conversationId)
-        : null
-      const persistedAgentConversationId = existingAgentConversation?.context.assistant === 'sales-agent'
-        ? agentTurn?.conversationId ?? null
-        : null
-      const actionRunId = preflightAction('candidate.match.local', {
-        origin: 'work-task', workTaskId: task.id, scopeId: task.scope.id,
-        scopeFingerprint: requestFingerprint, actorId: currentOperator().operatorId,
+    const task = repository.getWorkTask(taskId)
+    if (!task) throw new Error('候補者検索タスクが見つかりません。')
+    if (task.type !== 'MATCH_CANDIDATES') throw new Error('このタスクは候補者検索ではありません。')
+    assertWorkTaskAllowsExecution(task)
+    const jobCaseBinding = task.contextBindings.find((binding) => binding.objectType === 'job-case') ?? null
+    const boundJobCase = jobCaseBinding
+      ? (repository
+          .listActiveJobCases()
+          .find((jobCase) => jobCase.id === jobCaseBinding.objectId && String(jobCase.version) === jobCaseBinding.version) ?? null)
+      : null
+    if (jobCaseBinding && !boundJobCase) {
+      throw new Error('案件が更新またはアーカイブされました。現在の案件からマッチングを作り直してください。')
+    }
+    const query = boundJobCase ? candidateBenchmarkQueryFromJobCase(boundJobCase) : candidateSearchQueryFromInstruction(task.instruction)
+    const candidateBinding = task.contextBindings.find((binding) => binding.objectType === 'candidate-profile')
+    const profiles = repository
+      .listEligibleTalentProfiles()
+      .filter((profile) => !candidateBinding || profile.sourceDocumentId === candidateBinding.objectId)
+    if (candidateBinding && (profiles.length !== 1 || String(profiles[0]!.profileVersion) !== candidateBinding.version)) {
+      throw new Error('所选人员已更新或不在可匹配人才中，请核对资料后重新评估。')
+    }
+    const requestFingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          version: 'candidate-match-job-v1',
+          query,
+          contextBindings: task.contextBindings,
+          model: currentMatchRuntimeIdentity,
+          profiles: profiles.map((profile) => ({
+            id: profile.id,
+            version: profile.profileVersion,
+            fields: profile.fields,
+            projectExperiences: profile.projectExperiences
+          }))
+        })
+      )
+      .digest('hex')
+    const idempotencyKey = createHash('sha256').update(`candidate-match:${task.id}:${requestFingerprint}`).digest('hex')
+    const existingAgentConversation = agentTurn ? repository.getAiConversation(agentTurn.conversationId) : null
+    const persistedAgentConversationId =
+      existingAgentConversation?.context.assistant === 'sales-agent' ? (agentTurn?.conversationId ?? null) : null
+    const actionRunId = preflightAction(
+      'candidate.match.local',
+      {
+        origin: 'work-task',
+        workTaskId: task.id,
+        scopeId: task.scope.id,
+        scopeFingerprint: requestFingerprint,
+        actorId: currentOperator().operatorId,
         contentRevision: task.updatedAt,
         conversationId: persistedAgentConversationId,
-        turnId: persistedAgentConversationId ? agentTurn?.turnId ?? null : null
-      }, { taskId: task.id }, '確認済み候補者プールを端末内で照合します。', idempotencyKey)
-      const toAgentToolError = (cause: unknown): unknown => {
-        if (!agentTurn) return cause
-        if (cause instanceof AgentExecutionError) {
-          return new AgentExecutionError(cause.code, cause.message, actionRunId)
-        }
-        return new AgentExecutionError('AGENT_TOOL_FAILED', '候補者マッチングツールの実行に失敗しました。', actionRunId)
+        turnId: persistedAgentConversationId ? (agentTurn?.turnId ?? null) : null
+      },
+      { taskId: task.id },
+      '確認済み候補者プールを端末内で照合します。',
+      idempotencyKey
+    )
+    const toAgentToolError = (cause: unknown): unknown => {
+      if (!agentTurn) return cause
+      if (cause instanceof AgentExecutionError) {
+        return new AgentExecutionError(cause.code, cause.message, actionRunId)
       }
-      try {
-        const initialProcessingJob = existingJobId
-          ? repository.getProcessingJob(existingJobId)
-          : repository.enqueueProcessingJob({
-              type: 'candidate-match',
-              workTaskId: task.id,
-              taskStepId: task.steps[1]?.id ?? 'step-2',
-              idempotencyKey,
-              requestFingerprint,
-              payloadRef: `work-task:${task.id}:candidate-match`,
-              replayPolicy: 'safe-local',
-              maxAttempts: 3
-            })
-        if (!initialProcessingJob || initialProcessingJob.type !== 'candidate-match' || initialProcessingJob.workTaskId !== task.id) {
-          throw new Error('候補者検索ジョブと作業の関連が一致しません。')
-        }
-        let processingJob: ProcessingJobSummary = initialProcessingJob
-        if (processingJob.status !== 'succeeded') repository.updateActionRun(actionRunId, 'running', { processingJobId: processingJob.id })
-        const dispatchReference = repository.getProcessingJobDispatchReference(processingJob.id)
-        if (dispatchReference?.payloadRef !== `work-task:${task.id}:candidate-match`) {
-          processingJob = failPendingProcessingJob(processingJob.id, 'PAYLOAD_REFERENCE_INVALID') ?? processingJob
-          repository.saveWorkTask(recordCandidateMatchFailure(task, 'PAYLOAD_REFERENCE_INVALID'))
-          throw new Error('候補者検索ジョブのローカル参照が無効です。作業を再実行してください。')
-        }
-        if (dispatchReference.requestFingerprint !== requestFingerprint) {
-          processingJob = failPendingProcessingJob(processingJob.id, 'REQUEST_FINGERPRINT_STALE') ?? processingJob
-          repository.saveWorkTask(recordCandidateMatchFailure(task, 'REQUEST_FINGERPRINT_STALE'))
-          throw new Error('候補者プールまたは検索条件が変わりました。作業を再実行してください。')
-        }
-        if (processingJob.status === 'failed' || processingJob.status === 'cancelled') {
-          throw new Error('候補者検索ジョブは停止しています。作業を再実行してください。')
-        }
-        return await processingResources.run('local-ai', async () => {
+      return new AgentExecutionError('AGENT_TOOL_FAILED', '候補者マッチングツールの実行に失敗しました。', actionRunId)
+    }
+    try {
+      const initialProcessingJob = existingJobId
+        ? repository.getProcessingJob(existingJobId)
+        : repository.enqueueProcessingJob({
+            type: 'candidate-match',
+            workTaskId: task.id,
+            taskStepId: task.steps[1]?.id ?? 'step-2',
+            idempotencyKey,
+            requestFingerprint,
+            payloadRef: `work-task:${task.id}:candidate-match`,
+            replayPolicy: 'safe-local',
+            maxAttempts: 3
+          })
+      if (!initialProcessingJob || initialProcessingJob.type !== 'candidate-match' || initialProcessingJob.workTaskId !== task.id) {
+        throw new Error('候補者検索ジョブと作業の関連が一致しません。')
+      }
+      let processingJob: ProcessingJobSummary = initialProcessingJob
+      if (processingJob.status !== 'succeeded') repository.updateActionRun(actionRunId, 'running', { processingJobId: processingJob.id })
+      const dispatchReference = repository.getProcessingJobDispatchReference(processingJob.id)
+      if (dispatchReference?.payloadRef !== `work-task:${task.id}:candidate-match`) {
+        processingJob = failPendingProcessingJob(processingJob.id, 'PAYLOAD_REFERENCE_INVALID') ?? processingJob
+        repository.saveWorkTask(recordCandidateMatchFailure(task, 'PAYLOAD_REFERENCE_INVALID'))
+        throw new Error('候補者検索ジョブのローカル参照が無効です。作業を再実行してください。')
+      }
+      if (dispatchReference.requestFingerprint !== requestFingerprint) {
+        processingJob = failPendingProcessingJob(processingJob.id, 'REQUEST_FINGERPRINT_STALE') ?? processingJob
+        repository.saveWorkTask(recordCandidateMatchFailure(task, 'REQUEST_FINGERPRINT_STALE'))
+        throw new Error('候補者プールまたは検索条件が変わりました。作業を再実行してください。')
+      }
+      if (processingJob.status === 'failed' || processingJob.status === 'cancelled') {
+        throw new Error('候補者検索ジョブは停止しています。作業を再実行してください。')
+      }
+      return await processingResources.run('local-ai', async () => {
         processingJob = repository.getProcessingJob(processingJob.id) ?? processingJob
         if (processingJob.status === 'failed' || processingJob.status === 'cancelled') {
           throw new Error('候補者検索ジョブは停止しています。作業を再実行してください。')
         }
-        const lease = processingJob.status === 'succeeded'
-          ? null
-          : repository.acquireProcessingJob(processingJob.id, 5 * 60_000)
+        const lease = processingJob.status === 'succeeded' ? null : repository.acquireProcessingJob(processingJob.id, 5 * 60_000)
         if (processingJob.status !== 'succeeded' && !lease) {
           throw new Error('候補者検索ジョブは別の処理で実行中か、再試行待ちです。')
         }
@@ -163,7 +181,12 @@ export function registerCandidateMatchHandlers(
             throw new Error('候補者検索ジョブをキャンセルしました。')
           }
           const matches = query
-            ? await searchCandidates(query, candidateBinding ? 1 : 20, candidateBinding?.objectId, candidateBinding ? Number(candidateBinding.version) : undefined)
+            ? await searchCandidates(
+                query,
+                candidateBinding ? 1 : 20,
+                candidateBinding?.objectId,
+                candidateBinding ? Number(candidateBinding.version) : undefined
+              )
             : []
           if (lease && repository.isProcessingJobCancellationRequested(processingJob.id, lease.leaseToken)) {
             repository.completeProcessingJob(processingJob.id, lease.leaseToken, { cancelled: true })
@@ -173,13 +196,7 @@ export function registerCandidateMatchHandlers(
           const latestTask = repository.getWorkTask(taskId)
           if (!latestTask) throw new Error('候補者検索タスクが見つかりません。')
           assertWorkTaskAllowsExecution(latestTask)
-          const persisted = repository.saveCandidateMatchRun(
-            latestTask.id,
-            query,
-            matches,
-            new Date(),
-            currentMatchRuntimeIdentity
-          )
+          const persisted = repository.saveCandidateMatchRun(latestTask.id, query, matches, new Date(), currentMatchRuntimeIdentity)
           const evidenceCount = matches.reduce((total, match) => total + Math.max(1, match.evidence.length), 0)
           const updatedTask = recordCandidateMatchExecution(latestTask, Boolean(query), evidenceCount, new Date(), {
             objectId: persisted.run.id,
@@ -196,18 +213,16 @@ export function registerCandidateMatchHandlers(
             if (!completion.accepted) throw new Error('候補者検索ジョブをキャンセルしました。')
             processingJob = completion.job
           }
-          repository.updateActionRun(actionRunId, 'succeeded', { processingJobId: processingJob.id, resultHash: persisted.run.resultSetHash })
+          repository.updateActionRun(actionRunId, 'succeeded', {
+            processingJobId: processingJob.id,
+            resultHash: persisted.run.resultSetHash
+          })
           return { task: updatedTask, query, run: persisted.run, matches: persisted.matches, processingJob, actionRunId }
         } catch (cause) {
           if (lease) {
             const activeJob = repository.getProcessingJob(processingJob.id)
             if (activeJob?.status === 'running') {
-              processingJob = repository.failProcessingJob(
-                processingJob.id,
-                lease.leaseToken,
-                'CANDIDATE_MATCH_FAILED',
-                true
-              )
+              processingJob = repository.failProcessingJob(processingJob.id, lease.leaseToken, 'CANDIDATE_MATCH_FAILED', true)
             }
             const latestTask = repository.getWorkTask(taskId)
             if (latestTask && latestTask.status !== 'cancelled' && processingJob.status !== 'cancelled') {
@@ -225,14 +240,14 @@ export function registerCandidateMatchHandlers(
           })
           throw cause
         }
-        })
-      } catch (cause) {
-        const actionStatus = repository.getActionRunStatus(actionRunId)
-        if (actionStatus && !['failed', 'cancelled', 'succeeded'].includes(actionStatus)) {
-          repository.updateActionRun(actionRunId, 'failed', { errorCode: 'CANDIDATE_MATCH_FAILED' })
-        }
-        throw toAgentToolError(cause)
+      })
+    } catch (cause) {
+      const actionStatus = repository.getActionRunStatus(actionRunId)
+      if (actionStatus && !['failed', 'cancelled', 'succeeded'].includes(actionStatus)) {
+        repository.updateActionRun(actionRunId, 'failed', { errorCode: 'CANDIDATE_MATCH_FAILED' })
       }
+      throw toAgentToolError(cause)
+    }
   }
 
   ipcMain.handle(ipcChannels.executeCandidateMatchTask, async (event, rawTaskId): Promise<CandidateMatchTaskExecutionResult> => {
@@ -245,7 +260,6 @@ export function registerCandidateMatchHandlers(
     repository,
     actionOrchestrator,
     assertTrustedSender,
-    conversationalMatchingEnabled: () => conversationalMatchingEnabled,
     locale: () => effectiveApplicationPreferences(repository).locale,
     currentOperator,
     currentMatchRuntimeIdentity,
@@ -263,24 +277,28 @@ export function registerCandidateMatchHandlers(
       if (candidateDocumentId) {
         const profile = repository.listEligibleTalentProfiles().find((item) => item.sourceDocumentId === candidateDocumentId)
         if (!profile) throw new Error('所选人员不存在或已停用，请重新选择人员。')
-        task.contextBindings.push({ objectType: 'candidate-profile', objectId: candidateDocumentId, version: String(profile.profileVersion) })
+        task.contextBindings.push({
+          objectType: 'candidate-profile',
+          objectId: candidateDocumentId,
+          version: String(profile.profileVersion)
+        })
       }
       repository.saveWorkTask(task)
       return { taskId: task.id }
     },
-    runCandidateMatchTask: (taskId, metadata) => withTaskOperation(
-      taskId,
-      () => runCandidateMatchTask(taskId, null, metadata)
-    ),
+    runCandidateMatchTask: (taskId, metadata) => withTaskOperation(taskId, () => runCandidateMatchTask(taskId, null, metadata)),
     runResumeAnalysisTask: async (fileToken) => {
       // The renderer never names a task; the import task is derived from the
       // staged file it is bound to.
       const record = repository.getStagedFileRecords([fileToken])[0]
       if (!record) throw new Error('添付ファイルが見つかりません。')
-      const task = repository.listWorkTasks().find((candidate) =>
-        candidate.type === 'IMPORT_RESUME' &&
-        candidate.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === fileToken)
-      )
+      const task = repository
+        .listWorkTasks()
+        .find(
+          (candidate) =>
+            candidate.type === 'IMPORT_RESUME' &&
+            candidate.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === fileToken)
+        )
       if (!task) throw new Error('スキルシート取込タスクが見つかりません。')
       const execution = await runResumeAnalysisTask({ fileToken, taskId: task.id })
       return {
@@ -295,12 +313,15 @@ export function registerCandidateMatchHandlers(
       const persisted = (repository.getAiConversation(conversationId)?.messages ?? [])
         .flatMap((message) => message.blocks ?? [])
         .filter((block) => block.type === 'resume-import')
-        .flatMap((block) => block.type === 'resume-import' ? block.imported : [])
+        .flatMap((block) => (block.type === 'resume-import' ? block.imported : []))
         .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.documentId }))
-      const runtime = (conversationImports.get(conversationId) ?? [])
-        .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.sourceDocumentId }))
-      return [...persisted, ...runtime]
-        .filter((item, index, all) => all.findIndex((other) => other.sourceDocumentId === item.sourceDocumentId) === index)
+      const runtime = (conversationImports.get(conversationId) ?? []).map((item) => ({
+        anonymousLabel: item.label,
+        sourceDocumentId: item.sourceDocumentId
+      }))
+      return [...persisted, ...runtime].filter(
+        (item, index, all) => all.findIndex((other) => other.sourceDocumentId === item.sourceDocumentId) === index
+      )
     },
     newCaseDigestCounts: () => {
       const digest = deriveNewCaseDigest({
@@ -310,23 +331,28 @@ export function registerCandidateMatchHandlers(
       })
       return { newCasesToday: digest.newCasesToday, unseenCaseCount: digest.unseenCount }
     },
-    listSchedulableCandidates: () => repository.listCandidateReviews()
-      .filter((review) => review.recordStatus === 'active')
-      .map((review, index) => ({
-        anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
-        sourceDocumentId: review.documentId
-      })),
+    listSchedulableCandidates: () =>
+      repository
+        .listCandidateReviews()
+        .filter((review) => review.recordStatus === 'active')
+        .map((review, index) => ({
+          anonymousLabel: review.profile?.id ? `CANDIDATE_${index + 1}` : `RESUME_${index + 1}`,
+          sourceDocumentId: review.documentId
+        })),
     scheduleCandidateInterview: (input) => {
-      repository.saveCandidateInterviewSchedule({
-        sourceDocumentId: input.sourceDocumentId,
-        kind: input.kind,
-        scheduledAt: input.scheduledAt,
-        durationMinutes: input.durationMinutes,
-        meetingMethod: input.meetingMethod,
-        ...(input.meetingUrl ? { meetingUrl: input.meetingUrl } : {}),
-        interviewer: currentOperator().displayName,
-        ...(input.contactNote ? { contactNote: input.contactNote } : {})
-      }, currentOperator().displayName)
+      repository.saveCandidateInterviewSchedule(
+        {
+          sourceDocumentId: input.sourceDocumentId,
+          kind: input.kind,
+          scheduledAt: input.scheduledAt,
+          durationMinutes: input.durationMinutes,
+          meetingMethod: input.meetingMethod,
+          ...(input.meetingUrl ? { meetingUrl: input.meetingUrl } : {}),
+          interviewer: currentOperator().displayName,
+          ...(input.contactNote ? { contactNote: input.contactNote } : {})
+        },
+        currentOperator().displayName
+      )
     },
     cancelMatchTask: (taskId) => {
       const task = repository.getWorkTask(taskId)
@@ -337,37 +363,52 @@ export function registerCandidateMatchHandlers(
     modelCatalog: agentChatModelCatalog,
     previewedDrafts,
     narrativeStreamer: agentNarrativeStreamer,
-    ...(businessTextIntakeEnabled ? {
-      executeBusinessTextIntake: (useCase, input, decision, turn) => executeBusinessTextIntakeTurn({
-        repository,
-        actionOrchestrator,
-        locale: () => effectiveApplicationPreferences(repository).locale,
-        operatorId: () => currentOperator().operatorId,
-        importJobCaseText: (text, fieldOverrides, intakeBatchId) =>
-          importChatPastedJobCaseText(
-            { repository, localNer, operator: currentOperator() }, text, new Date(), fieldOverrides, intakeBatchId ?? null,
-            effectiveJobCaseFieldAliases(repository).aliases
-          ),
-        importCandidateText: (text, fieldOverrides) =>
-          importPastedCandidateText({ repository, fileVault, localNer }, text, new Date(), fieldOverrides),
-        registerConversationImport,
-        // Redacted cloud segmentation and verbatim-verified field extraction
-        // for every intake route. Its own switch, so the lane can be pulled
-        // without touching the local gate.
-        extractRecordsViaCloud: businessTextCloudAssistEnabled && agentNarrativeStreamer
-          ? (text, hooks) => agentNarrativeStreamer.extractBusinessText({
-              conversationId: input.conversationId,
-              requestId: input.requestId,
-              text,
-              aliases: effectiveJobCaseFieldAliases(repository).aliases,
-              model: resolveAgentChatModel(agentChatModelCatalog, input.modelKey),
-              signal: hooks.signal,
-              onClientRequestId: hooks.onClientRequestId,
-              onRemoteSettled: hooks.onRemoteSettled
-            })
-          : null
-      }, useCase, input, decision, turn)
-    } : {})
+    ...(businessTextIntakeEnabled
+      ? {
+          executeBusinessTextIntake: (useCase, input, decision, turn) =>
+            executeBusinessTextIntakeTurn(
+              {
+                repository,
+                actionOrchestrator,
+                locale: () => effectiveApplicationPreferences(repository).locale,
+                operatorId: () => currentOperator().operatorId,
+                importJobCaseText: (text, fieldOverrides, intakeBatchId) =>
+                  importChatPastedJobCaseText(
+                    { repository, localNer, operator: currentOperator() },
+                    text,
+                    new Date(),
+                    fieldOverrides,
+                    intakeBatchId ?? null,
+                    effectiveJobCaseFieldAliases(repository).aliases
+                  ),
+                importCandidateText: (text, fieldOverrides) =>
+                  importPastedCandidateText({ repository, fileVault, localNer }, text, new Date(), fieldOverrides),
+                registerConversationImport,
+                // Redacted cloud segmentation and verbatim-verified field extraction
+                // for every intake route. Its own switch, so the lane can be pulled
+                // without touching the local gate.
+                extractRecordsViaCloud:
+                  businessTextCloudAssistEnabled && agentNarrativeStreamer
+                    ? (text, hooks) =>
+                        agentNarrativeStreamer.extractBusinessText({
+                          conversationId: input.conversationId,
+                          requestId: input.requestId,
+                          text,
+                          aliases: effectiveJobCaseFieldAliases(repository).aliases,
+                          model: resolveAgentChatModel(agentChatModelCatalog, input.modelKey),
+                          signal: hooks.signal,
+                          onClientRequestId: hooks.onClientRequestId,
+                          onRemoteSettled: hooks.onRemoteSettled
+                        })
+                    : null
+              },
+              useCase,
+              input,
+              decision,
+              turn
+            )
+        }
+      : {})
   })
 
   return { runCandidateMatchTask, stop: agentIpcStop }

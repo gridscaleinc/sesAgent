@@ -10,9 +10,12 @@ const releasePackage = args.includes('--release')
 const requireSignature = args.includes('--require-signature')
 const positional = args.filter((value) => !['--release', '--require-signature'].includes(value))
 const packageMetadata = JSON.parse(await readFile(resolve('package.json'), 'utf8'))
-const dmgPath = resolve(positional[0] ?? (releasePackage
-  ? `release/SES-Agent-Desktop-${packageMetadata.version}-arm64.dmg`
-  : `release/dev/SES-Agent-Desktop-${packageMetadata.version}-arm64.dmg`))
+const dmgPath = resolve(
+  positional[0] ??
+    (releasePackage
+      ? `release/SES-Agent-Desktop-${packageMetadata.version}-arm64.dmg`
+      : `release/dev/SES-Agent-Desktop-${packageMetadata.version}-arm64.dmg`)
+)
 const mountPath = await mkdtemp(join(tmpdir(), 'ses-agent-dmg-'))
 const installationPath = await mkdtemp(join(tmpdir(), 'ses-agent-dmg-install-'))
 let attached = false
@@ -50,12 +53,18 @@ try {
     maxBuffer: 4 * 1024 * 1024
   })
   if (stderr.trim()) process.stderr.write(stderr)
-  process.stdout.write(`${JSON.stringify({
-    dmgPath,
-    mountedApp: appName,
-    codeSignatureVerified: requireSignature,
-    packageVerification: JSON.parse(stdout)
-  }, null, 2)}\n`)
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        dmgPath,
+        mountedApp: appName,
+        codeSignatureVerified: requireSignature,
+        packageVerification: JSON.parse(stdout)
+      },
+      null,
+      2
+    )}\n`
+  )
 } finally {
   if (attached) await detachWithRetry()
   await rm(mountPath, { recursive: true, force: true })

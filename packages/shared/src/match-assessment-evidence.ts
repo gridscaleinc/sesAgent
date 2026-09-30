@@ -3,7 +3,11 @@ import { mentionsRequiredTerm, positiveSkillEvidence } from './matching-requirem
 
 type AssessmentEvidence = Pick<CandidateMatchAssessment, 'fit' | 'met' | 'gaps' | 'confirm' | 'reason'>
 const normalize = (text: string) => text.normalize('NFKC').toLocaleLowerCase('en-US').trim()
-const atoms = (text: string) => text.split(/[,，、;；\n]+/u).map((part) => part.trim()).filter(Boolean)
+const atoms = (text: string) =>
+  text
+    .split(/[,，、;；\n]+/u)
+    .map((part) => part.trim())
+    .filter(Boolean)
 function mentions(text: string, term: string): boolean {
   return mentionsRequiredTerm(text, term)
 }
@@ -24,7 +28,8 @@ export function reviewMatchAssessmentEvidence<T extends AssessmentEvidence>(asse
         corrected = true
         continue
       }
-      if (!met.some((existing) => normalize(existing.requirement) === normalize(requirement))) met.push({ requirement, evidence: item.evidence })
+      if (!met.some((existing) => normalize(existing.requirement) === normalize(requirement)))
+        met.push({ requirement, evidence: item.evidence })
     }
   }
   for (const gap of assessment.gaps) {
@@ -35,9 +40,20 @@ export function reviewMatchAssessmentEvidence<T extends AssessmentEvidence>(asse
       confirm.push(requirement)
     }
   }
-  return { corrected, assessment: { ...assessment,
-    met: met.slice(0, 8), gaps: [], confirm: [...new Set(confirm)].slice(0, 8),
-    fit: corrected || (assessment.fit === 'weak' && confirm.length > 0 && met.length === 0) ? 'insufficient-info' : assessment.fit === 'strong' && confirm.length ? 'possible' : assessment.fit,
-    reason: corrected ? '' : assessment.reason
-  } }
+  return {
+    corrected,
+    assessment: {
+      ...assessment,
+      met: met.slice(0, 8),
+      gaps: [],
+      confirm: [...new Set(confirm)].slice(0, 8),
+      fit:
+        corrected || (assessment.fit === 'weak' && confirm.length > 0 && met.length === 0)
+          ? 'insufficient-info'
+          : assessment.fit === 'strong' && confirm.length
+            ? 'possible'
+            : assessment.fit,
+      reason: corrected ? '' : assessment.reason
+    }
+  }
 }

@@ -29,16 +29,27 @@ function review(
     status: 'completed',
     privacyReviewed: true,
     fields: jobCaseFieldKeys.map((key) => ({
-      key, label: key, originalValue: values[key] ?? null, value: values[key] ?? null,
-      confidence: 1, status: values[key] ? 'confirmed' as const : 'missing' as const,
-      sourceLabels: [], changed: false, changeReason: null
+      key,
+      label: key,
+      originalValue: values[key] ?? null,
+      value: values[key] ?? null,
+      confidence: 1,
+      status: values[key] ? ('confirmed' as const) : ('missing' as const),
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
     })),
     warningCodes: [],
     completedAt: '2026-08-26T02:30:00.000Z',
     reviewerDisplayName: 'HR',
     jobCase: {
-      id: '22222222-2222-4222-8222-222222222222', sourceReviewId: overrides.reviewId, version: 1,
-      status: 'active', confirmedAt: '2026-08-26T02:30:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false
+      id: '22222222-2222-4222-8222-222222222222',
+      sourceReviewId: overrides.reviewId,
+      version: 1,
+      status: 'active',
+      confirmedAt: '2026-08-26T02:30:00.000Z',
+      confirmedBy: 'HR',
+      containsDirectIdentifiers: false
     },
     lifecycle: 'active',
     cloudEligible: false,
@@ -61,18 +72,23 @@ describe('deriveNewCaseDigest', () => {
       seenReviewIds: [],
       now
     })
-    expect(digest.groups.map((group) => [group.day, group.count])).toEqual([['today', 1], ['yesterday', 1]])
+    expect(digest.groups.map((group) => [group.day, group.count])).toEqual([
+      ['today', 1],
+      ['yesterday', 1]
+    ])
     expect(digest.newCasesToday).toBe(1)
   })
 
   it('prefers the local intake time over the source message date', () => {
     // A sync imports a mail written a week ago: it arrived today.
     const digest = deriveNewCaseDigest({
-      reviews: [review({
-        reviewId: 'c1111111-1111-4111-8111-111111111111',
-        messageDate: '2026-08-19T01:00:00.000Z',
-        intakeAt: '2026-08-26T01:00:00.000Z'
-      })],
+      reviews: [
+        review({
+          reviewId: 'c1111111-1111-4111-8111-111111111111',
+          messageDate: '2026-08-19T01:00:00.000Z',
+          intakeAt: '2026-08-26T01:00:00.000Z'
+        })
+      ],
       seenReviewIds: [],
       now
     })
@@ -89,20 +105,22 @@ describe('deriveNewCaseDigest', () => {
     const all = deriveNewCaseDigest({ reviews, seenReviewIds: [], now })
     expect(all.unseenCount).toBe(3)
     const partial = deriveNewCaseDigest({
-      reviews, seenReviewIds: ['d1111111-1111-4111-8111-111111111111'], now
+      reviews,
+      seenReviewIds: ['d1111111-1111-4111-8111-111111111111'],
+      now
     })
     expect(partial.unseenCount).toBe(2)
     expect(partial.groups.find((group) => group.day === 'today')!.unseenCount).toBe(1)
-    expect(partial.groups.find((group) => group.day === 'today')!.entries
-      .find((entry) => entry.reviewId === 'd1111111-1111-4111-8111-111111111111')!.unseen).toBe(false)
+    expect(
+      partial.groups
+        .find((group) => group.day === 'today')!
+        .entries.find((entry) => entry.reviewId === 'd1111111-1111-4111-8111-111111111111')!.unseen
+    ).toBe(false)
   })
 
   it('marks a case 要補完 when a required field is empty and names the missing keys', () => {
     const digest = deriveNewCaseDigest({
-      reviews: [review(
-        { reviewId: 'a2222222-2222-4222-8222-222222222222' },
-        { ...completeValues, rate: undefined, location: undefined }
-      )],
+      reviews: [review({ reviewId: 'a2222222-2222-4222-8222-222222222222' }, { ...completeValues, rate: undefined, location: undefined })],
       seenReviewIds: [],
       now
     })

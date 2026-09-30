@@ -19,16 +19,18 @@ try {
   assert.equal(typeof relevant, 'number')
   assert.equal(typeof irrelevant, 'number')
   assert.ok(relevant! > irrelevant!, 'local Japanese reranker did not rank the relevant passage first')
-  process.stdout.write(`${JSON.stringify({
-    modelId: localRerankerModel.id,
-    revision: localRerankerModel.revision,
-    relevantScore: Math.round(relevant! * 10_000) / 10_000,
-    irrelevantScore: Math.round(irrelevant! * 10_000) / 10_000,
-    candidateCount: scores.size,
-    networkAccess: false,
-    processIsolation: true,
-    kernelNetworkSandbox: process.platform === 'darwin'
-  })}\n`)
+  process.stdout.write(
+    `${JSON.stringify({
+      modelId: localRerankerModel.id,
+      revision: localRerankerModel.revision,
+      relevantScore: Math.round(relevant! * 10_000) / 10_000,
+      irrelevantScore: Math.round(irrelevant! * 10_000) / 10_000,
+      candidateCount: scores.size,
+      networkAccess: false,
+      processIsolation: true,
+      kernelNetworkSandbox: process.platform === 'darwin'
+    })}\n`
+  )
 } finally {
   client.dispose()
 }

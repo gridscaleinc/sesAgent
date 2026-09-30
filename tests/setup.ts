@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom/vitest'
+import { configure } from '@testing-library/dom'
 import type { DesktopApi } from '@shared'
 
+// Whole-app renders run in parallel with ~140 other files; the 1s default for findBy/waitFor is too tight under that load.
+configure({ asyncUtilTimeout: 3000 })
 const aiConversationTestApi = {
   listAiConversations: async () => [],
   saveAiConversation: async (input: Parameters<DesktopApi['saveAiConversation']>[0]) => {

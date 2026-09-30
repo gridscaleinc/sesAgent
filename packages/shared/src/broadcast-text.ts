@@ -65,8 +65,13 @@ export const builtInBroadcastTemplateId = 'b7ca57de-0000-4000-8000-000000000001'
  */
 export function builtInBroadcastTemplate(now = new Date('2026-01-01T00:00:00.000Z')): BroadcastTemplate {
   const timestamp = now.toISOString()
-  const field = (key: BroadcastTemplateFieldKey, labelJa: string, labelZh: string, on = true) =>
-    ({ kind: 'field' as const, field: key, labelJa, labelZh, on })
+  const field = (key: BroadcastTemplateFieldKey, labelJa: string, labelZh: string, on = true) => ({
+    kind: 'field' as const,
+    field: key,
+    labelJa,
+    labelZh,
+    on
+  })
   return {
     id: builtInBroadcastTemplateId,
     name: '標準',
@@ -98,10 +103,7 @@ export function builtInBroadcastTemplate(now = new Date('2026-01-01T00:00:00.000
 
 /** Applies the shared condition wording map in declaration order. */
 export function translateBroadcastConditions(value: string): string {
-  return broadcastConditionWordMap.reduce(
-    (text, [japanese, chinese]) => text.split(japanese).join(chinese),
-    value
-  )
+  return broadcastConditionWordMap.reduce((text, [japanese, chinese]) => text.split(japanese).join(chinese), value)
 }
 
 function lastNumberIn(value: string): string | null {
@@ -142,11 +144,7 @@ export function publishedBroadcastFieldValue(
 ): string | null {
   const stored = value?.trim()
   if (!stored) return null
-  const resolved = key === 'rate'
-    ? publishedRate(stored, template, lang)
-    : key === 'notes'
-      ? publicNotes(stored)
-      : stored
+  const resolved = key === 'rate' ? publishedRate(stored, template, lang) : key === 'notes' ? publicNotes(stored) : stored
   if (!resolved) return null
   return lang === 'zh' && !untranslatedFieldKeys.has(key) ? translateBroadcastConditions(resolved) : resolved
 }
@@ -192,14 +190,9 @@ export function generateBroadcastText(
  * The short message that follows a case revision: only what actually changed,
  * so a group reading it can tell the difference without re-reading the案件.
  */
-export function generateUpdateNoticeText(
-  title: string,
-  changes: ReadonlyArray<BroadcastFieldChange>,
-  lang: BroadcastLanguage
-): string {
+export function generateUpdateNoticeText(title: string, changes: ReadonlyArray<BroadcastFieldChange>, lang: BroadcastLanguage): string {
   const localize = (value: string) => (lang === 'zh' ? translateBroadcastConditions(value) : value)
-  const lines = changes.map((change) =>
-    `・${localize(change.label)}：${localize(change.before)} → ${localize(change.after)}`)
+  const lines = changes.map((change) => `・${localize(change.label)}：${localize(change.before)} → ${localize(change.after)}`)
   return [`【更新】${title}`, ...lines].join('\n')
 }
 

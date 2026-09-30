@@ -1,5 +1,6 @@
 export const cloudAiPrivacyRuntimeMessages = Object.freeze({
-  qualityGateNotVerified: 'ローカルのプライバシー品質ゲートを確認できないため、Cloud AI を停止しました。データ安全画面で状態を確認してください。',
+  qualityGateNotVerified:
+    'ローカルのプライバシー品質ゲートを確認できないため、Cloud AI を停止しました。データ安全画面で状態を確認してください。',
   qualityEvidenceNotBound: 'プライバシー品質証跡と現在の実装を結び付けられないため、Cloud AI を停止しました。',
   localNerUnavailable: 'Cloud AI を使うには、ローカルの氏名検出が利用可能である必要があります。'
 })

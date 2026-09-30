@@ -5,12 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createConnection, createServer } from 'node:net'
 import { dirname, resolve } from 'node:path'
 import * as XLSX from 'xlsx'
-import {
-  LocalEmbeddingWorkerClient,
-  LocalRerankerWorkerClient,
-  localEmbeddingModel,
-  localRerankerModel
-} from '@local-ai'
+import { LocalEmbeddingWorkerClient, LocalRerankerWorkerClient, localEmbeddingModel, localRerankerModel } from '@local-ai'
 import { ParserWorkerClient } from '@parsers/worker-client'
 import type { StagedLocalFile } from '@shared/contracts'
 
@@ -24,13 +19,15 @@ const modelDirectory = resolve(root, 'models/Xenova/multilingual-e5-small')
 const rerankerModelDirectory = resolve(root, 'models/hotchpotch/japanese-reranker-tiny-v2')
 
 if (process.platform !== 'win32' || process.arch !== 'x64') {
-  process.stdout.write(`${JSON.stringify({
-    platform: process.platform,
-    arch: process.arch,
-    verified: false,
-    skipped: true,
-    reason: 'windows-x64-runtime-required'
-  })}\n`)
+  process.stdout.write(
+    `${JSON.stringify({
+      platform: process.platform,
+      arch: process.arch,
+      verified: false,
+      skipped: true,
+      reason: 'windows-x64-runtime-required'
+    })}\n`
+  )
   process.exit(0)
 }
 
@@ -56,25 +53,34 @@ try {
     socket.once('error', reject)
   })
   const probe = await new Promise<{ loopbackDenied: boolean; errorCode: string | null }>((resolvePromise, reject) => {
-    const child = spawn(launcherPath, [
-      '--profile', 'jp.sesai.agentdesktop.localworkers',
-      '--grant-read', root,
-      '--grant-read', dirname(process.execPath),
-      '--', process.execPath, networkProbePath
-    ], {
-      env: {
-        ELECTRON_RUN_AS_NODE: '1',
-        NODE_ENV: 'production',
-        SystemRoot: process.env.SystemRoot,
-        WINDIR: process.env.WINDIR,
-        ComSpec: process.env.ComSpec,
-        PATHEXT: process.env.PATHEXT,
-        PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
-        SES_NETWORK_PROBE_PORT: String(port)
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
-    })
+    const child = spawn(
+      launcherPath,
+      [
+        '--profile',
+        'jp.sesai.agentdesktop.localworkers',
+        '--grant-read',
+        root,
+        '--grant-read',
+        dirname(process.execPath),
+        '--',
+        process.execPath,
+        networkProbePath
+      ],
+      {
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          NODE_ENV: 'production',
+          SystemRoot: process.env.SystemRoot,
+          WINDIR: process.env.WINDIR,
+          ComSpec: process.env.ComSpec,
+          PATHEXT: process.env.PATHEXT,
+          PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
+          SES_NETWORK_PROBE_PORT: String(port)
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      }
+    )
     const output: Buffer[] = []
     const errors: Buffer[] = []
     child.stdout.on('data', (chunk: Buffer) => output.push(chunk))
@@ -183,18 +189,19 @@ const evidence = {
   launcherSha256: createHash('sha256').update(launcherBytes).digest('hex')
 }
 await mkdir(resolve(root, 'build/windows-verification'), { recursive: true })
-await writeFile(
-  resolve(root, 'build/windows-verification/local-worker-network-policy.json'),
-  `${JSON.stringify(evidence, null, 2)}\n`,
-  { encoding: 'utf8', mode: 0o600 }
+await writeFile(resolve(root, 'build/windows-verification/local-worker-network-policy.json'), `${JSON.stringify(evidence, null, 2)}\n`, {
+  encoding: 'utf8',
+  mode: 0o600
+})
+process.stdout.write(
+  `${JSON.stringify({
+    parserCompleted: evidence.parserCompleted,
+    embeddingCompleted: evidence.embeddingCompleted,
+    embeddingDimension: localEmbeddingModel.dimension,
+    rerankerCompleted: evidence.rerankerCompleted,
+    rerankerModel: localRerankerModel.id,
+    kernelNetworkIsolationVerified: true,
+    mechanism: evidence.mechanism,
+    releaseEligible: true
+  })}\n`
 )
-process.stdout.write(`${JSON.stringify({
-  parserCompleted: evidence.parserCompleted,
-  embeddingCompleted: evidence.embeddingCompleted,
-  embeddingDimension: localEmbeddingModel.dimension,
-  rerankerCompleted: evidence.rerankerCompleted,
-  rerankerModel: localRerankerModel.id,
-  kernelNetworkIsolationVerified: true,
-  mechanism: evidence.mechanism,
-  releaseEligible: true
-})}\n`)

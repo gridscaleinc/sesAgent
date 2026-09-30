@@ -187,11 +187,13 @@ describe('encrypted recovery packages', () => {
       source: { appVersion: '0.1.0', platform: 'darwin', arch: 'arm64', schemaVersion: 11 }
     })
     const stagingDirectory = join(data.root, 'wrong-password-staging')
-    await expect(stageRecoveryPackage({
-      packagePath: data.outputPath,
-      password: 'incorrect password value',
-      stagingDirectory
-    })).rejects.toThrow('復元パスワードが違うか')
+    await expect(
+      stageRecoveryPackage({
+        packagePath: data.outputPath,
+        password: 'incorrect password value',
+        stagingDirectory
+      })
+    ).rejects.toThrow('復元パスワードが違うか')
     await expect(stat(stagingDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
@@ -209,34 +211,40 @@ describe('encrypted recovery packages', () => {
     damaged[Math.floor(damaged.length / 2)] ^= 0x40
     await writeFile(data.outputPath, damaged, { mode: 0o600 })
     const stagingDirectory = join(data.root, 'tampered-staging')
-    await expect(stageRecoveryPackage({
-      packagePath: data.outputPath,
-      password: data.password,
-      stagingDirectory
-    })).rejects.toThrow()
+    await expect(
+      stageRecoveryPackage({
+        packagePath: data.outputPath,
+        password: data.password,
+        stagingDirectory
+      })
+    ).rejects.toThrow()
     await expect(stat(stagingDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('fails closed when a declared vault object is missing or is a symbolic link', async () => {
     const data = await fixture()
     const missingPath = join(data.root, 'vault', 'missing.sesv')
-    await expect(createRecoveryPackage({
-      outputPath: data.outputPath,
-      databaseSnapshotPath: data.databasePath,
-      vaultObjects: [{ token: randomUUID(), sourcePath: missingPath }],
-      masterKey: data.masterKey,
-      password: data.password,
-      source: { appVersion: '0.1.0', platform: 'darwin', arch: 'arm64', schemaVersion: 12 }
-    })).rejects.toThrow()
+    await expect(
+      createRecoveryPackage({
+        outputPath: data.outputPath,
+        databaseSnapshotPath: data.databasePath,
+        vaultObjects: [{ token: randomUUID(), sourcePath: missingPath }],
+        masterKey: data.masterKey,
+        password: data.password,
+        source: { appVersion: '0.1.0', platform: 'darwin', arch: 'arm64', schemaVersion: 12 }
+      })
+    ).rejects.toThrow()
     const linkedPath = join(data.root, 'vault', 'linked.sesv')
     await symlink(data.vaultPath, linkedPath)
-    await expect(createRecoveryPackage({
-      outputPath: data.outputPath,
-      databaseSnapshotPath: data.databasePath,
-      vaultObjects: [{ token: randomUUID(), sourcePath: linkedPath }],
-      masterKey: data.masterKey,
-      password: data.password,
-      source: { appVersion: '0.1.0', platform: 'darwin', arch: 'arm64', schemaVersion: 12 }
-    })).rejects.toThrow('not a regular file')
+    await expect(
+      createRecoveryPackage({
+        outputPath: data.outputPath,
+        databaseSnapshotPath: data.databasePath,
+        vaultObjects: [{ token: randomUUID(), sourcePath: linkedPath }],
+        masterKey: data.masterKey,
+        password: data.password,
+        source: { appVersion: '0.1.0', platform: 'darwin', arch: 'arm64', schemaVersion: 12 }
+      })
+    ).rejects.toThrow('not a regular file')
   })
 })

@@ -118,7 +118,11 @@ export interface LocalAiRuntime {
   platform: NodeJS.Platform
   ocr: LocalOcrPort | null
   personNameDetector: LocalPersonNameDetectorPort | null
-  status: 'vision-ocr-and-pii-active' | 'windows-ocr-and-pii-rules-active' | 'windows-ocr-bundled-isolation-pending' | 'pii-rules-active-ocr-unavailable'
+  status:
+    | 'vision-ocr-and-pii-active'
+    | 'windows-ocr-and-pii-rules-active'
+    | 'windows-ocr-bundled-isolation-pending'
+    | 'pii-rules-active-ocr-unavailable'
 }
 
 export interface MacVisionOcrClientOptions {
@@ -146,17 +150,13 @@ export class MacVisionOcrClient implements LocalOcrPort {
     }
 
     return new Promise((resolve, reject) => {
-      const child = spawn(
-        '/usr/bin/sandbox-exec',
-        ['-p', macOcrSandboxProfile, this.options.executablePath, '--pdf'],
-        {
-          env: {
-            LANG: process.env.LANG ?? 'ja_JP.UTF-8',
-            TZ: process.env.TZ ?? 'Asia/Tokyo'
-          },
-          stdio: ['pipe', 'pipe', 'ignore']
-        }
-      )
+      const child = spawn('/usr/bin/sandbox-exec', ['-p', macOcrSandboxProfile, this.options.executablePath, '--pdf'], {
+        env: {
+          LANG: process.env.LANG ?? 'ja_JP.UTF-8',
+          TZ: process.env.TZ ?? 'Asia/Tokyo'
+        },
+        stdio: ['pipe', 'pipe', 'ignore']
+      })
       const output: Buffer[] = []
       let outputBytes = 0
       let settled = false
@@ -237,15 +237,12 @@ export class MacNaturalLanguageNerClient implements LocalPersonNameDetectorPort 
         () => finish(() => reject(new Error('Apple NaturalLanguage NER exceeded its execution time limit.'))),
         15_000
       )
-      child.once('error', (error) =>
-        finish(() => reject(new Error('Apple NaturalLanguage NER could not start.', { cause: error })))
-      )
+      child.once('error', (error) => finish(() => reject(new Error('Apple NaturalLanguage NER could not start.', { cause: error }))))
       child.stdout.on('data', (chunk: Buffer) => {
         total += chunk.length
         if (total > 2 * 1024 * 1024) {
           finish(() => reject(new Error('Apple NaturalLanguage NER output exceeded its size limit.')))
-        }
-        else chunks.push(chunk)
+        } else chunks.push(chunk)
       })
       child.once('close', (code) => {
         if (settled) return
@@ -260,9 +257,7 @@ export class MacNaturalLanguageNerClient implements LocalPersonNameDetectorPort 
           finish(() => reject(new Error('Apple NaturalLanguage NER output violates its schema.', { cause: error })))
         }
       })
-      child.stdin.once('error', (error) =>
-        finish(() => reject(new Error('NER input could not be delivered.', { cause: error })))
-      )
+      child.stdin.once('error', (error) => finish(() => reject(new Error('NER input could not be delivered.', { cause: error }))))
       child.stdin.end(input)
     })
   }
@@ -308,7 +303,8 @@ export class WindowsOfflineOcrWorkerClient implements LocalOcrPort {
       !isAbsoluteWorkerPath(options.resourceManifestPath) ||
       options.appContainerGrantRoots.length === 0 ||
       options.appContainerGrantRoots.some((root) => !isAbsoluteWorkerPath(root))
-    ) throw new Error('Windows OCR worker, resource, and sandbox paths must be absolute.')
+    )
+      throw new Error('Windows OCR worker, resource, and sandbox paths must be absolute.')
     this.timeoutMs = options.timeoutMs ?? 120_000
     this.maxOutputBytes = options.maxOutputBytes ?? 10 * 1024 * 1024
   }
@@ -323,34 +319,38 @@ export class WindowsOfflineOcrWorkerClient implements LocalOcrPort {
     }
     const request: WindowsOfflineOcrWorkerRequest = { id: randomUUID(), kind: 'ocr-pdf', bytes }
     return new Promise<WindowsOfflineOcrResult>((resolve, reject) => {
-      const child = spawn(this.options.sandboxLauncherPath, [
-        '--profile',
-        'jp.sesai.agentdesktop.ocr',
-        ...this.options.appContainerGrantRoots.flatMap((root) => ['--grant-read', root]),
-        '--',
-        process.execPath,
-        this.options.workerPath,
-        '--stdio'
-      ], {
-        cwd: this.options.appContainerGrantRoots[0] ?? process.cwd(),
-        env: {
-          ELECTRON_RUN_AS_NODE: '1',
-          NODE_ENV: 'production',
-          SystemRoot: process.env.SystemRoot,
-          WINDIR: process.env.WINDIR,
-          ComSpec: process.env.ComSpec,
-          PATHEXT: process.env.PATHEXT,
-          PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
-          LANG: process.env.LANG ?? 'ja_JP.UTF-8',
-          TZ: process.env.TZ ?? 'Asia/Tokyo',
-          SES_WINDOWS_OCR_TESSDATA_PATH: this.options.tessdataPath,
-          SES_WINDOWS_OCR_MANIFEST_PATH: this.options.resourceManifestPath,
-          SES_TESSERACT_WORKER_PATH: this.options.tesseractWorkerPath
-        },
-        shell: false,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true
-      })
+      const child = spawn(
+        this.options.sandboxLauncherPath,
+        [
+          '--profile',
+          'jp.sesai.agentdesktop.ocr',
+          ...this.options.appContainerGrantRoots.flatMap((root) => ['--grant-read', root]),
+          '--',
+          process.execPath,
+          this.options.workerPath,
+          '--stdio'
+        ],
+        {
+          cwd: this.options.appContainerGrantRoots[0] ?? process.cwd(),
+          env: {
+            ELECTRON_RUN_AS_NODE: '1',
+            NODE_ENV: 'production',
+            SystemRoot: process.env.SystemRoot,
+            WINDIR: process.env.WINDIR,
+            ComSpec: process.env.ComSpec,
+            PATHEXT: process.env.PATHEXT,
+            PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
+            LANG: process.env.LANG ?? 'ja_JP.UTF-8',
+            TZ: process.env.TZ ?? 'Asia/Tokyo',
+            SES_WINDOWS_OCR_TESSDATA_PATH: this.options.tessdataPath,
+            SES_WINDOWS_OCR_MANIFEST_PATH: this.options.resourceManifestPath,
+            SES_TESSERACT_WORKER_PATH: this.options.tesseractWorkerPath
+          },
+          shell: false,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true
+        }
+      )
       const output: Buffer[] = []
       const errors: Buffer[] = []
       let outputBytes = 0
@@ -382,9 +382,8 @@ export class WindowsOfflineOcrWorkerClient implements LocalOcrPort {
         if (settled) return
         const raw = Buffer.concat(output).toString('utf8').trim()
         if (code !== 0) {
-          const errorCode = safeOcrErrorCode(raw) === 'UNKNOWN'
-            ? safeOcrErrorCode(Buffer.concat(errors).toString('utf8'))
-            : safeOcrErrorCode(raw)
+          const errorCode =
+            safeOcrErrorCode(raw) === 'UNKNOWN' ? safeOcrErrorCode(Buffer.concat(errors).toString('utf8')) : safeOcrErrorCode(raw)
           finish(() => reject(new Error(`Windows OCR rejected the document (${errorCode || code || signal || 'UNKNOWN'}).`)))
           return
         }
@@ -415,8 +414,11 @@ export function isWindowsOfflineOcrWorkerResponse(value: unknown): value is Wind
   if (candidate.ok) {
     return candidate.kind === 'ocr-pdf' && Boolean(candidate.result && typeof candidate.result === 'object')
   }
-  return ['ocr-pdf', 'invalid'].includes(String(candidate.kind)) &&
-    typeof candidate.errorCode === 'string' && typeof candidate.message === 'string'
+  return (
+    ['ocr-pdf', 'invalid'].includes(String(candidate.kind)) &&
+    typeof candidate.errorCode === 'string' &&
+    typeof candidate.message === 'string'
+  )
 }
 
 export function createLocalAiRuntime(options: {
@@ -498,8 +500,29 @@ function cleanNameCandidate(value: string): string | null {
 }
 
 const personNameStopwords = new Set([
-  '案件', '概要', '必須', 'スキル', '経験', '開発', '設計', '担当', '業務', '職務', '経歴',
-  '期間', '単価', '勤務地', '勤務', '役割', '要件', '技術', '工程', '内容', '詳細', '募集', '候補者'
+  '案件',
+  '概要',
+  '必須',
+  'スキル',
+  '経験',
+  '開発',
+  '設計',
+  '担当',
+  '業務',
+  '職務',
+  '経歴',
+  '期間',
+  '単価',
+  '勤務地',
+  '勤務',
+  '役割',
+  '要件',
+  '技術',
+  '工程',
+  '内容',
+  '詳細',
+  '募集',
+  '候補者'
 ])
 
 function looksLikeStructuredPersonName(value: string): boolean {
@@ -517,29 +540,255 @@ function looksLikeStructuredPersonName(value: string): boolean {
  * AWS（Aurora）, Jenkins, Maven, Ruby. Whole ASCII words, compared lower-case.
  */
 const technologyNamesMistakenForPeople = new Set([
-  'aurora', 'jenkins', 'maven', 'gradle', 'django', 'flask', 'angular', 'jasmine', 'mocha', 'ruby', 'rails', 'swift',
-  'kotlin', 'julia', 'rust', 'oracle', 'salesforce', 'snowflake', 'tableau', 'kafka', 'redis', 'cassandra', 'hadoop',
-  'spark', 'airflow', 'ansible', 'terraform', 'puppet', 'chef', 'vagrant', 'docker', 'kubernetes', 'jira', 'confluence',
-  'slack', 'zoom', 'sinatra', 'laravel', 'symfony', 'lumen', 'lambda', 'athena', 'kinesis', 'glue', 'redshift', 'fargate',
-  'cognito', 'amplify', 'vue', 'react', 'nuxt', 'next', 'svelte', 'ember', 'backbone', 'electron', 'ionic', 'flutter',
-  'dart', 'unity', 'unreal', 'blender', 'figma', 'sketch', 'zeplin', 'photoshop', 'illustrator', 'sap', 'dynamics',
-  'fiori', 'abap', 'btp', 'cdsview',
-  'azure', 'gcp', 'bigquery', 'looker', 'vertex', 'bedrock', 'claude', 'gemini', 'copilot', 'watson', 'alexa', 'siri',
-  'cortana', 'selenium', 'cypress', 'playwright', 'puppeteer', 'postman', 'swagger', 'graphql', 'prisma', 'sequelize',
-  'hibernate', 'struts', 'spring', 'grails', 'groovy', 'scala', 'akka', 'play', 'elixir', 'phoenix', 'erlang', 'haskell',
-  'clojure', 'lisp', 'perl', 'lua', 'bash', 'powershell', 'zabbix', 'nagios', 'grafana', 'prometheus', 'datadog', 'splunk',
-  'kibana', 'elasticsearch', 'logstash', 'fluentd', 'nginx', 'apache', 'tomcat', 'jboss', 'weblogic', 'websphere', 'jetty',
-  'node', 'deno', 'bun', 'express', 'koa', 'nest', 'fastify', 'hono', 'python', 'java', 'cobol', 'fortran', 'pascal',
-  'delphi', 'matlab', 'octave', 'pandas', 'numpy', 'keras', 'pytorch', 'tensorflow', 'mysql', 'postgres', 'postgresql',
-  'mariadb', 'mongodb', 'dynamodb', 'sqlite', 'sybase', 'informix', 'teradata', 'vertica', 'hive', 'presto', 'trino',
-  'flink', 'storm', 'beam', 'dbt', 'fivetran', 'talend', 'informatica', 'mulesoft', 'boomi', 'zapier', 'notion', 'asana',
-  'trello', 'backlog', 'redmine', 'gitlab', 'github', 'bitbucket', 'sourcetree', 'intellij', 'eclipse', 'xcode',
-  'android', 'ios', 'linux', 'ubuntu', 'debian', 'centos', 'redhat', 'fedora', 'solaris', 'aix', 'windows', 'macos',
-  'vmware', 'citrix', 'openshift', 'rancher', 'helm', 'istio', 'envoy', 'consul', 'vault', 'nomad', 'okta', 'auth0',
-  'keycloak', 'cloudflare', 'akamai', 'fastly', 'twilio', 'sendgrid', 'stripe', 'paypal', 'shopify', 'magento',
-  'wordpress', 'drupal', 'joomla', 'wix', 'hubspot', 'marketo', 'pardot', 'zendesk', 'freshdesk', 'intercom',
-  'servicenow', 'workday', 'netsuite', 'quickbooks', 'xero', 'freee', 'kintone', 'cybozu', 'garoon', 'chatwork', 'line',
-  'teams', 'webex', 'skype', 'discord', 'telegram', 'whatsapp', 'wechat'
+  'aurora',
+  'jenkins',
+  'maven',
+  'gradle',
+  'django',
+  'flask',
+  'angular',
+  'jasmine',
+  'mocha',
+  'ruby',
+  'rails',
+  'swift',
+  'kotlin',
+  'julia',
+  'rust',
+  'oracle',
+  'salesforce',
+  'snowflake',
+  'tableau',
+  'kafka',
+  'redis',
+  'cassandra',
+  'hadoop',
+  'spark',
+  'airflow',
+  'ansible',
+  'terraform',
+  'puppet',
+  'chef',
+  'vagrant',
+  'docker',
+  'kubernetes',
+  'jira',
+  'confluence',
+  'slack',
+  'zoom',
+  'sinatra',
+  'laravel',
+  'symfony',
+  'lumen',
+  'lambda',
+  'athena',
+  'kinesis',
+  'glue',
+  'redshift',
+  'fargate',
+  'cognito',
+  'amplify',
+  'vue',
+  'react',
+  'nuxt',
+  'next',
+  'svelte',
+  'ember',
+  'backbone',
+  'electron',
+  'ionic',
+  'flutter',
+  'dart',
+  'unity',
+  'unreal',
+  'blender',
+  'figma',
+  'sketch',
+  'zeplin',
+  'photoshop',
+  'illustrator',
+  'sap',
+  'dynamics',
+  'fiori',
+  'abap',
+  'btp',
+  'cdsview',
+  'azure',
+  'gcp',
+  'bigquery',
+  'looker',
+  'vertex',
+  'bedrock',
+  'claude',
+  'gemini',
+  'copilot',
+  'watson',
+  'alexa',
+  'siri',
+  'cortana',
+  'selenium',
+  'cypress',
+  'playwright',
+  'puppeteer',
+  'postman',
+  'swagger',
+  'graphql',
+  'prisma',
+  'sequelize',
+  'hibernate',
+  'struts',
+  'spring',
+  'grails',
+  'groovy',
+  'scala',
+  'akka',
+  'play',
+  'elixir',
+  'phoenix',
+  'erlang',
+  'haskell',
+  'clojure',
+  'lisp',
+  'perl',
+  'lua',
+  'bash',
+  'powershell',
+  'zabbix',
+  'nagios',
+  'grafana',
+  'prometheus',
+  'datadog',
+  'splunk',
+  'kibana',
+  'elasticsearch',
+  'logstash',
+  'fluentd',
+  'nginx',
+  'apache',
+  'tomcat',
+  'jboss',
+  'weblogic',
+  'websphere',
+  'jetty',
+  'node',
+  'deno',
+  'bun',
+  'express',
+  'koa',
+  'nest',
+  'fastify',
+  'hono',
+  'python',
+  'java',
+  'cobol',
+  'fortran',
+  'pascal',
+  'delphi',
+  'matlab',
+  'octave',
+  'pandas',
+  'numpy',
+  'keras',
+  'pytorch',
+  'tensorflow',
+  'mysql',
+  'postgres',
+  'postgresql',
+  'mariadb',
+  'mongodb',
+  'dynamodb',
+  'sqlite',
+  'sybase',
+  'informix',
+  'teradata',
+  'vertica',
+  'hive',
+  'presto',
+  'trino',
+  'flink',
+  'storm',
+  'beam',
+  'dbt',
+  'fivetran',
+  'talend',
+  'informatica',
+  'mulesoft',
+  'boomi',
+  'zapier',
+  'notion',
+  'asana',
+  'trello',
+  'backlog',
+  'redmine',
+  'gitlab',
+  'github',
+  'bitbucket',
+  'sourcetree',
+  'intellij',
+  'eclipse',
+  'xcode',
+  'android',
+  'ios',
+  'linux',
+  'ubuntu',
+  'debian',
+  'centos',
+  'redhat',
+  'fedora',
+  'solaris',
+  'aix',
+  'windows',
+  'macos',
+  'vmware',
+  'citrix',
+  'openshift',
+  'rancher',
+  'helm',
+  'istio',
+  'envoy',
+  'consul',
+  'vault',
+  'nomad',
+  'okta',
+  'auth0',
+  'keycloak',
+  'cloudflare',
+  'akamai',
+  'fastly',
+  'twilio',
+  'sendgrid',
+  'stripe',
+  'paypal',
+  'shopify',
+  'magento',
+  'wordpress',
+  'drupal',
+  'joomla',
+  'wix',
+  'hubspot',
+  'marketo',
+  'pardot',
+  'zendesk',
+  'freshdesk',
+  'intercom',
+  'servicenow',
+  'workday',
+  'netsuite',
+  'quickbooks',
+  'xero',
+  'freee',
+  'kintone',
+  'cybozu',
+  'garoon',
+  'chatwork',
+  'line',
+  'teams',
+  'webex',
+  'skype',
+  'discord',
+  'telegram',
+  'whatsapp',
+  'wechat'
 ])
 
 /**
@@ -642,12 +891,7 @@ export function mergeLocalOcr(document: DocumentIR, ocr: LocalOcrResult): Docume
         text: block.text,
         source: {
           page: page.page,
-          boundingBox: [
-            box.x * page.width,
-            box.y * page.height,
-            (box.x + box.width) * page.width,
-            (box.y + box.height) * page.height
-          ]
+          boundingBox: [box.x * page.width, box.y * page.height, (box.x + box.width) * page.width, (box.y + box.height) * page.height]
         }
       })
       if (block.confidence < 0.45) {

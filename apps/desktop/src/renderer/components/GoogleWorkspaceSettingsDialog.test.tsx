@@ -35,26 +35,30 @@ describe('GoogleWorkspaceSettingsDialog', () => {
     })
     fireEvent.click(screen.getByRole('checkbox', { name: /読取専用接続であることを確認した/ }))
     fireEvent.click(screen.getByRole('button', { name: '設定を保存して再起動' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
-      clientId: configuration.clientId,
-      workspaceDomain: 'company.co.jp',
-      labelIds: ['INBOX', 'Label_SES'],
-      query: '案件 OR 要員',
-      lookbackDays: 30,
-      maxMessagesPerRun: 200,
-      expectedRevision: null,
-      readonlyAcknowledged: true
-    }))
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        clientId: configuration.clientId,
+        workspaceDomain: 'company.co.jp',
+        labelIds: ['INBOX', 'Label_SES'],
+        query: '案件 OR 要員',
+        lookbackDays: 30,
+        maxMessagesPerRun: 200,
+        expectedRevision: null,
+        readonlyAcknowledged: true
+      })
+    )
     expect(await screen.findByText('設定を暗号化保存しました')).toBeInTheDocument()
   })
 
   it('shows managed environment settings as read-only', () => {
-    render(<GoogleWorkspaceSettingsDialog
-      configuration={{ ...configuration, source: 'managed-environment', editable: false, revision: null, configuredBy: '受管環境設定' }}
-      connected={false}
-      onClose={vi.fn()}
-      onSave={vi.fn()}
-    />)
+    render(
+      <GoogleWorkspaceSettingsDialog
+        configuration={{ ...configuration, source: 'managed-environment', editable: false, revision: null, configuredBy: '受管環境設定' }}
+        connected={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />
+    )
     expect(screen.getByText('会社の受管環境設定')).toBeInTheDocument()
     expect(screen.getByLabelText('Desktop OAuth Client ID')).toBeDisabled()
     expect(screen.queryByRole('button', { name: /設定を更新/ })).not.toBeInTheDocument()

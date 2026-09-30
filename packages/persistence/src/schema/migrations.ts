@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 59
+export const currentSchemaVersion = 63
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -543,15 +543,17 @@ export const backupTrackedTables = [
   'data_deletion_reports'
 ] as const
 
-export const backupRevisionTriggers = backupTrackedTables.flatMap((table) =>
-  (['INSERT', 'UPDATE', 'DELETE'] as const).map((operation) => {
-    const rowReference = operation === 'DELETE' ? 'OLD' : 'NEW'
-    const condition = table === 'work_tasks'
-      ? `\nWHEN ${rowReference}.id NOT LIKE 'task-sample-%'`
-      : table === 'change_outbox'
-        ? `\nWHEN NOT (${rowReference}.entity_type = 'work_task' AND ${rowReference}.entity_id LIKE 'task-sample-%')`
-        : ''
-    return `
+export const backupRevisionTriggers = backupTrackedTables
+  .flatMap((table) =>
+    (['INSERT', 'UPDATE', 'DELETE'] as const).map((operation) => {
+      const rowReference = operation === 'DELETE' ? 'OLD' : 'NEW'
+      const condition =
+        table === 'work_tasks'
+          ? `\nWHEN ${rowReference}.id NOT LIKE 'task-sample-%'`
+          : table === 'change_outbox'
+            ? `\nWHEN NOT (${rowReference}.entity_type = 'work_task' AND ${rowReference}.entity_id LIKE 'task-sample-%')`
+            : ''
+      return `
 CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()}
 AFTER ${operation} ON ${table}
 ${condition}
@@ -561,8 +563,9 @@ BEGIN
       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
   WHERE singleton = 1;
 END;`
-  })
-).join('\n')
+    })
+  )
+  .join('\n')
 
 export const migrationV14 = `
 BEGIN IMMEDIATE;
@@ -2275,7 +2278,7 @@ CREATE TRIGGER backup_revision_personnel_mail_updates_delete AFTER DELETE ON per
 BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;
 INSERT INTO schema_migrations(version,applied_at) VALUES(50,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
 // Backfill and version stamp run together in applyMigrations.
 export const migrationV51 = `
@@ -2284,7 +2287,7 @@ ALTER TABLE job_case_sources ADD COLUMN intake_fingerprint TEXT;
 CREATE INDEX job_case_sources_intake_fingerprint ON job_case_sources(intake_fingerprint);
 CREATE INDEX parsed_documents_intake_fingerprint ON parsed_documents(intake_fingerprint);
 CREATE INDEX IF NOT EXISTS staged_files_sha256_idx ON staged_files(sha256);
-`;
+`
 
 export const migrationV52 = `
 BEGIN IMMEDIATE;
@@ -2311,10 +2314,10 @@ CREATE TRIGGER backup_revision_case_person_feedback_insert AFTER INSERT ON case_
 BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;
 INSERT INTO schema_migrations(version,applied_at) VALUES(52,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
-
-export const migrationV53 = `
+export const migrationV53 =
+  `
 BEGIN IMMEDIATE;
 CREATE TABLE experience_runs (
  id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
@@ -2344,14 +2347,22 @@ CREATE TABLE experience_versions (
 );
 CREATE INDEX experience_versions_family ON experience_versions(task,method,keyword);
 CREATE TABLE experience_settings (singleton INTEGER PRIMARY KEY CHECK(singleton=1), payload TEXT NOT NULL);
-` + ['experience_runs','experience_events','experience_observations','experience_versions','experience_settings'].flatMap((table) =>
-  ['INSERT','UPDATE','DELETE'].map((operation) => `CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
-BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`)).join('\n') + `
+` +
+  ['experience_runs', 'experience_events', 'experience_observations', 'experience_versions', 'experience_settings']
+    .flatMap((table) =>
+      ['INSERT', 'UPDATE', 'DELETE'].map(
+        (operation) => `CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+      )
+    )
+    .join('\n') +
+  `
 INSERT INTO schema_migrations(version,applied_at) VALUES(53,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
-export const migrationV54 = `
+export const migrationV54 =
+  `
 BEGIN IMMEDIATE;
 CREATE TABLE experience_runs_v54 (
  id TEXT PRIMARY KEY, document_id TEXT REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
@@ -2376,13 +2387,22 @@ INSERT INTO experience_events_v54 SELECT * FROM experience_events;
 DROP TABLE experience_events;
 ALTER TABLE experience_events_v54 RENAME TO experience_events;
 CREATE INDEX experience_events_pending ON experience_events(analyzed,superseded,created_at);
-` + ['experience_runs','experience_events'].flatMap(table=>['INSERT','UPDATE','DELETE'].map(operation=>`CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
-BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`)).join('\n') + `
+` +
+  ['experience_runs', 'experience_events']
+    .flatMap((table) =>
+      ['INSERT', 'UPDATE', 'DELETE'].map(
+        (operation) => `CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+      )
+    )
+    .join('\n') +
+  `
 INSERT INTO schema_migrations(version,applied_at) VALUES(54,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
-export const migrationV55 = `
+export const migrationV55 =
+  `
 BEGIN IMMEDIATE;
 CREATE TABLE question_bank (id TEXT PRIMARY KEY, family TEXT NOT NULL UNIQUE, payload TEXT NOT NULL);
 CREATE TABLE question_bank_sources (
@@ -2398,24 +2418,41 @@ CREATE TABLE question_bank_uses (
  question_id TEXT NOT NULL, bank_id TEXT NOT NULL REFERENCES question_bank(id) ON DELETE CASCADE,
  payload TEXT NOT NULL, PRIMARY KEY(run_id,question_id)
 );
-` + ['question_bank','question_bank_sources','question_bank_uses'].flatMap(table=>['INSERT','UPDATE','DELETE'].map(operation=>`CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
-BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`)).join('\n') + `
+` +
+  ['question_bank', 'question_bank_sources', 'question_bank_uses']
+    .flatMap((table) =>
+      ['INSERT', 'UPDATE', 'DELETE'].map(
+        (operation) => `CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+      )
+    )
+    .join('\n') +
+  `
 INSERT INTO schema_migrations(version,applied_at) VALUES(55,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
-export const migrationV56 = `
+export const migrationV56 =
+  `
 BEGIN IMMEDIATE;
 CREATE TABLE customer_identities(id TEXT PRIMARY KEY, owner TEXT NOT NULL, payload TEXT NOT NULL);
 CREATE TABLE interview_answers(interview_id TEXT PRIMARY KEY REFERENCES candidate_interview_sessions(id) ON DELETE CASCADE, payload TEXT NOT NULL);
 CREATE TABLE matching_opportunities(id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE, review_id TEXT NOT NULL REFERENCES job_case_extractions(review_id) ON DELETE CASCADE, payload TEXT NOT NULL, UNIQUE(document_id,review_id));
 CREATE TABLE question_bank_revisions(id TEXT PRIMARY KEY,bank_id TEXT NOT NULL REFERENCES question_bank(id) ON DELETE CASCADE,payload TEXT NOT NULL);
 CREATE TABLE growth_checkpoints(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-` + ['customer_identities','interview_answers','matching_opportunities','question_bank_revisions','growth_checkpoints'].flatMap(table=>['INSERT','UPDATE','DELETE'].map(operation=>`CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
-BEGIN UPDATE local_data_revision SET revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`)).join('\n') + `
+` +
+  ['customer_identities', 'interview_answers', 'matching_opportunities', 'question_bank_revisions', 'growth_checkpoints']
+    .flatMap((table) =>
+      ['INSERT', 'UPDATE', 'DELETE'].map(
+        (operation) => `CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
+BEGIN UPDATE local_data_revision SET revision=revision+1,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+      )
+    )
+    .join('\n') +
+  `
 INSERT INTO schema_migrations(version,applied_at) VALUES(56,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
 // Existing imports keep their library membership; case-only imports opt out explicitly.
 export const migrationV57 = `
@@ -2423,10 +2460,11 @@ BEGIN IMMEDIATE;
 ALTER TABLE candidate_records ADD COLUMN in_talent_library INTEGER NOT NULL DEFAULT 1 CHECK(in_talent_library IN (0,1));
 INSERT INTO schema_migrations(version,applied_at) VALUES(57,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
 // Interview questions generated on the case assessment card, kept per person and case until round one exists.
-export const migrationV58 = `
+export const migrationV58 =
+  `
 BEGIN IMMEDIATE;
 CREATE TABLE case_person_question_drafts (
  id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
@@ -2434,21 +2472,165 @@ CREATE TABLE case_person_question_drafts (
  created_at TEXT NOT NULL, superseded_at TEXT
 );
 CREATE INDEX case_person_question_drafts_pair ON case_person_question_drafts(document_id, job_case_id, superseded_at, created_at DESC);
-` + ['INSERT','UPDATE','DELETE'].map(operation=>`CREATE TRIGGER backup_revision_case_person_question_drafts_${operation.toLowerCase()} AFTER ${operation} ON case_person_question_drafts
-BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`).join('\n') + `
+` +
+  ['INSERT', 'UPDATE', 'DELETE']
+    .map(
+      (
+        operation
+      ) => `CREATE TRIGGER backup_revision_case_person_question_drafts_${operation.toLowerCase()} AFTER ${operation} ON case_person_question_drafts
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+    )
+    .join('\n') +
+  `
 INSERT INTO schema_migrations(version,applied_at) VALUES(58,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
 
 // Cases the HR is currently working on. The HR list opens on this set; membership never restricts what a case can be used for.
-export const migrationV59 = `
+export const migrationV59 =
+  `
 BEGIN IMMEDIATE;
 CREATE TABLE job_case_working_set (
  review_id TEXT PRIMARY KEY REFERENCES job_case_review_states(review_id) ON DELETE CASCADE,
  added_at TEXT NOT NULL, added_by TEXT NOT NULL
 );
-` + ['INSERT','UPDATE','DELETE'].map(operation=>`CREATE TRIGGER backup_revision_job_case_working_set_${operation.toLowerCase()} AFTER ${operation} ON job_case_working_set
-BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`).join('\n') + `
+` +
+  ['INSERT', 'UPDATE', 'DELETE']
+    .map(
+      (
+        operation
+      ) => `CREATE TRIGGER backup_revision_job_case_working_set_${operation.toLowerCase()} AFTER ${operation} ON job_case_working_set
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+    )
+    .join('\n') +
+  `
 INSERT INTO schema_migrations(version,applied_at) VALUES(59,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
-`;
+`
+
+// Every user-data change must advance the backup revision. These tables were created without the full
+// INSERT/UPDATE/DELETE set. Embeddings (rebuildable) and the recovery bookkeeping tables stay untracked by design.
+// Also drops candidate_lifecycle again: v33 retired it, but v8 re-created it on every open until v1-v8 became run-once.
+const v60BackupTriggers: Array<[string, Array<'INSERT' | 'UPDATE' | 'DELETE'>]> = [
+  ['candidate_project_review_audits', ['INSERT', 'UPDATE', 'DELETE']],
+  ['action_events', ['UPDATE', 'DELETE']],
+  ['ai_work_rule_versions', ['UPDATE', 'DELETE']],
+  ['case_person_feedback', ['UPDATE', 'DELETE']],
+  ['case_person_assessments', ['UPDATE']]
+]
+export const migrationV60 =
+  `
+BEGIN IMMEDIATE;
+DROP TABLE IF EXISTS candidate_lifecycle;
+` +
+  v60BackupTriggers
+    .flatMap(([table, operations]) =>
+      operations.map(
+        (operation) => `CREATE TRIGGER IF NOT EXISTS backup_revision_${table}_v60_${operation.toLowerCase()} AFTER ${operation} ON ${table}
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+      )
+    )
+    .join('\n') +
+  `
+INSERT INTO schema_migrations(version,applied_at) VALUES(60,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// The latest AI-generated case introduction per case, language and style. A new generation replaces the previous one.
+export const migrationV61 =
+  `
+BEGIN IMMEDIATE;
+CREATE TABLE case_introduction_drafts (
+ review_id TEXT NOT NULL REFERENCES job_case_review_states(review_id) ON DELETE CASCADE,
+ lang TEXT NOT NULL CHECK (lang IN ('ja','zh')),
+ style TEXT NOT NULL CHECK (style IN ('standard','brief')),
+ job_case_version INTEGER NOT NULL,
+ text TEXT NOT NULL,
+ request TEXT,
+ experience_run_id TEXT,
+ generated_at TEXT NOT NULL,
+ PRIMARY KEY (review_id, lang, style)
+);
+` +
+  ['INSERT', 'UPDATE', 'DELETE']
+    .map(
+      (
+        operation
+      ) => `CREATE TRIGGER backup_revision_case_introduction_drafts_${operation.toLowerCase()} AFTER ${operation} ON case_introduction_drafts
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+    )
+    .join('\n') +
+  `
+INSERT INTO schema_migrations(version,applied_at) VALUES(61,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// The latest AI-generated personnel introduction per person, case ('' for the general introduction), language and style.
+// Removed with the person; a case introduction for a deleted or changed case is filtered out when read.
+export const migrationV62 =
+  `
+BEGIN IMMEDIATE;
+CREATE TABLE personnel_introduction_drafts (
+ document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
+ case_review_id TEXT NOT NULL DEFAULT '',
+ lang TEXT NOT NULL CHECK (lang IN ('ja','zh')),
+ style TEXT NOT NULL CHECK (style IN ('standard','brief')),
+ profile_version INTEGER NOT NULL,
+ job_case_version INTEGER,
+ text TEXT NOT NULL,
+ request TEXT,
+ experience_run_id TEXT,
+ generated_at TEXT NOT NULL,
+ PRIMARY KEY (document_id, case_review_id, lang, style)
+);
+` +
+  ['INSERT', 'UPDATE', 'DELETE']
+    .map(
+      (
+        operation
+      ) => `CREATE TRIGGER backup_revision_personnel_introduction_drafts_${operation.toLowerCase()} AFTER ${operation} ON personnel_introduction_drafts
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+    )
+    .join('\n') +
+  `
+INSERT INTO schema_migrations(version,applied_at) VALUES(62,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// The latest completed 找案件 run per person, so the result and the list badge survive a restart. Only the
+// person's matching output is kept (the same per-case evidence the case side stores in case_person_assessments),
+// never resume text. Removed with the person; each case row is removed with its case version.
+const v63Tables = ['person_case_match_runs', 'person_case_match_run_items']
+export const migrationV63 =
+  `
+BEGIN IMMEDIATE;
+CREATE TABLE person_case_match_runs (
+ document_id TEXT PRIMARY KEY REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
+ profile_version INTEGER NOT NULL,
+ rules_revision INTEGER NOT NULL,
+ policy_version TEXT NOT NULL,
+ case_signature TEXT NOT NULL,
+ summary TEXT NOT NULL,
+ searched_at TEXT NOT NULL
+);
+CREATE TABLE person_case_match_run_items (
+ document_id TEXT NOT NULL REFERENCES person_case_match_runs(document_id) ON DELETE CASCADE,
+ job_case_id TEXT NOT NULL REFERENCES job_cases(id) ON DELETE CASCADE,
+ position INTEGER NOT NULL,
+ payload TEXT NOT NULL,
+ PRIMARY KEY (document_id, job_case_id)
+);
+CREATE INDEX person_case_match_run_items_case ON person_case_match_run_items(job_case_id);
+` +
+  v63Tables
+    .flatMap((table) =>
+      ['INSERT', 'UPDATE', 'DELETE'].map(
+        (operation) => `CREATE TRIGGER backup_revision_${table}_${operation.toLowerCase()} AFTER ${operation} ON ${table}
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+      )
+    )
+    .join('\n') +
+  `
+INSERT INTO schema_migrations(version,applied_at) VALUES(63,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`

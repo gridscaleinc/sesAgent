@@ -1,11 +1,4 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-  randomUUID,
-  scrypt
-} from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, scrypt } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { chmod, lstat, mkdir, open, readFile, rename, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
@@ -32,54 +25,56 @@ const fileDescriptorSchema = z.object({
   bytes: z.number().int().nonnegative()
 })
 
-export const recoveryManifestSchema = z.object({
-  version: z.literal('ses-recovery-v1'),
-  backupId: z.string().uuid(),
-  createdAt: z.string().datetime(),
-  source: z.object({
-    appVersion: z.string().min(1).max(80),
-    platform: z.enum(['darwin', 'win32']),
-    arch: z.string().min(1).max(40),
-    schemaVersion: z.number().int().positive(),
-    databaseEngine: z.literal('sqlcipher-compatible'),
-    indexVersion: z.literal('deterministic-field-index-v1')
-  }),
-  database: fileDescriptorSchema.extend({ path: z.literal('database/ses-agent.db') }),
-  vaultObjects: z.array(fileDescriptorSchema.extend({ path: vaultEntryPathSchema })).max(10_000),
-  totals: z.object({
-    databaseBytes: z.number().int().nonnegative(),
-    vaultObjectCount: z.number().int().nonnegative(),
-    vaultBytes: z.number().int().nonnegative(),
-    protectedContentBytes: z.number().int().nonnegative()
-  }),
-  exclusions: z.object({
-    googleWorkspaceCredential: z.literal(true),
-    cloudProviderCredential: z.literal(true),
-    cache: z.literal(true),
-    logs: z.literal(true),
-    exportedFiles: z.literal(true)
-  }),
-  cloudDataIncluded: z.literal(false)
-}).superRefine((manifest, context) => {
-  const paths = new Set<string>()
-  for (const object of manifest.vaultObjects) {
-    if (paths.has(object.path)) context.addIssue({ code: 'custom', message: 'Duplicate vault object path.' })
-    paths.add(object.path)
-  }
-  const vaultBytes = manifest.vaultObjects.reduce((total, object) => total + object.bytes, 0)
-  if (manifest.totals.databaseBytes !== manifest.database.bytes) {
-    context.addIssue({ code: 'custom', message: 'Database byte total does not match the descriptor.' })
-  }
-  if (manifest.totals.vaultObjectCount !== manifest.vaultObjects.length) {
-    context.addIssue({ code: 'custom', message: 'Vault object count does not match the descriptors.' })
-  }
-  if (manifest.totals.vaultBytes !== vaultBytes) {
-    context.addIssue({ code: 'custom', message: 'Vault byte total does not match the descriptors.' })
-  }
-  if (manifest.totals.protectedContentBytes !== manifest.database.bytes + vaultBytes) {
-    context.addIssue({ code: 'custom', message: 'Protected content byte total is invalid.' })
-  }
-})
+export const recoveryManifestSchema = z
+  .object({
+    version: z.literal('ses-recovery-v1'),
+    backupId: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    source: z.object({
+      appVersion: z.string().min(1).max(80),
+      platform: z.enum(['darwin', 'win32']),
+      arch: z.string().min(1).max(40),
+      schemaVersion: z.number().int().positive(),
+      databaseEngine: z.literal('sqlcipher-compatible'),
+      indexVersion: z.literal('deterministic-field-index-v1')
+    }),
+    database: fileDescriptorSchema.extend({ path: z.literal('database/ses-agent.db') }),
+    vaultObjects: z.array(fileDescriptorSchema.extend({ path: vaultEntryPathSchema })).max(10_000),
+    totals: z.object({
+      databaseBytes: z.number().int().nonnegative(),
+      vaultObjectCount: z.number().int().nonnegative(),
+      vaultBytes: z.number().int().nonnegative(),
+      protectedContentBytes: z.number().int().nonnegative()
+    }),
+    exclusions: z.object({
+      googleWorkspaceCredential: z.literal(true),
+      cloudProviderCredential: z.literal(true),
+      cache: z.literal(true),
+      logs: z.literal(true),
+      exportedFiles: z.literal(true)
+    }),
+    cloudDataIncluded: z.literal(false)
+  })
+  .superRefine((manifest, context) => {
+    const paths = new Set<string>()
+    for (const object of manifest.vaultObjects) {
+      if (paths.has(object.path)) context.addIssue({ code: 'custom', message: 'Duplicate vault object path.' })
+      paths.add(object.path)
+    }
+    const vaultBytes = manifest.vaultObjects.reduce((total, object) => total + object.bytes, 0)
+    if (manifest.totals.databaseBytes !== manifest.database.bytes) {
+      context.addIssue({ code: 'custom', message: 'Database byte total does not match the descriptor.' })
+    }
+    if (manifest.totals.vaultObjectCount !== manifest.vaultObjects.length) {
+      context.addIssue({ code: 'custom', message: 'Vault object count does not match the descriptors.' })
+    }
+    if (manifest.totals.vaultBytes !== vaultBytes) {
+      context.addIssue({ code: 'custom', message: 'Vault byte total does not match the descriptors.' })
+    }
+    if (manifest.totals.protectedContentBytes !== manifest.database.bytes + vaultBytes) {
+      context.addIssue({ code: 'custom', message: 'Protected content byte total is invalid.' })
+    }
+  })
 
 export type RecoveryManifest = z.infer<typeof recoveryManifestSchema>
 
@@ -255,18 +250,25 @@ export async function createRecoveryPackage(options: CreateRecoveryPackageOption
   })
   const manifestBuffer = Buffer.from(JSON.stringify(manifest), 'utf8')
   const masterKeyBase64 = options.masterKey.toString('base64')
-  const keyMaterialBuffer = Buffer.from(JSON.stringify({
-    version: 'master-key-v1',
-    masterKey: masterKeyBase64,
-    masterKeySha256: createHash('sha256').update(options.masterKey).digest('hex')
-  }), 'utf8')
+  const keyMaterialBuffer = Buffer.from(
+    JSON.stringify({
+      version: 'master-key-v1',
+      masterKey: masterKeyBase64,
+      masterKeySha256: createHash('sha256').update(options.masterKey).digest('hex')
+    }),
+    'utf8'
+  )
   const entries: SourceEntry[] = [
     {
       header: { path: 'manifest.json', bytes: manifestBuffer.length, sha256: createHash('sha256').update(manifestBuffer).digest('hex') },
       buffer: manifestBuffer
     },
     {
-      header: { path: 'key-material.json', bytes: keyMaterialBuffer.length, sha256: createHash('sha256').update(keyMaterialBuffer).digest('hex') },
+      header: {
+        path: 'key-material.json',
+        bytes: keyMaterialBuffer.length,
+        sha256: createHash('sha256').update(keyMaterialBuffer).digest('hex')
+      },
       buffer: keyMaterialBuffer
     },
     { header: database, sourcePath: options.databaseSnapshotPath },
@@ -362,7 +364,9 @@ class AsyncChunkReader {
 
   async readExact(bytes: number): Promise<Buffer> {
     const chunks: Buffer[] = []
-    await this.consumeExact(bytes, async (chunk) => { chunks.push(Buffer.from(chunk)) })
+    await this.consumeExact(bytes, async (chunk) => {
+      chunks.push(Buffer.from(chunk))
+    })
     return chunks.length === 1 ? chunks[0] : Buffer.concat(chunks)
   }
 
@@ -428,25 +432,24 @@ function outputPathForEntry(stagingDirectory: string, path: string): string | nu
   return null
 }
 
-function descriptorsMatch(
-  left: z.infer<typeof fileDescriptorSchema>,
-  right: z.infer<typeof fileDescriptorSchema>
-): boolean {
+function descriptorsMatch(left: z.infer<typeof fileDescriptorSchema>, right: z.infer<typeof fileDescriptorSchema>): boolean {
   return left.path === right.path && left.sha256 === right.sha256 && left.bytes === right.bytes
 }
 
 export function recoveryConfirmationHash(manifest: RecoveryManifest, packageHash: string): string {
   return createHash('sha256')
-    .update([
-      manifest.version,
-      manifest.backupId,
-      manifest.createdAt,
-      String(manifest.source.schemaVersion),
-      manifest.database.sha256,
-      String(manifest.vaultObjects.length),
-      String(manifest.totals.protectedContentBytes),
-      packageHash
-    ].join('\u0000'))
+    .update(
+      [
+        manifest.version,
+        manifest.backupId,
+        manifest.createdAt,
+        String(manifest.source.schemaVersion),
+        manifest.database.sha256,
+        String(manifest.vaultObjects.length),
+        String(manifest.totals.protectedContentBytes),
+        packageHash
+      ].join('\u0000')
+    )
     .digest('hex')
 }
 
@@ -475,24 +478,11 @@ export async function stageRecoveryPackage(options: {
     passwordKey = await derivePasswordKey(options.password, salt)
     const ciphertextStart = outerHeaderBytes
     const ciphertextEnd = packageStat.size - tagBytes - 1
-    await authenticatePackage(
-      options.packagePath,
-      ciphertextStart,
-      ciphertextEnd,
-      passwordKey,
-      nonce,
-      preamble,
-      tag
-    )
+    await authenticatePackage(options.packagePath, ciphertextStart, ciphertextEnd, passwordKey, nonce, preamble, tag)
     const decipher = createDecipheriv('aes-256-gcm', passwordKey, nonce)
     decipher.setAAD(preamble)
     decipher.setAuthTag(tag)
-    const reader = new AsyncChunkReader(decryptedPackageChunks(
-      options.packagePath,
-      ciphertextStart,
-      ciphertextEnd,
-      decipher
-    ))
+    const reader = new AsyncChunkReader(decryptedPackageChunks(options.packagePath, ciphertextStart, ciphertextEnd, decipher))
     const entryCount = (await reader.readExact(4)).readUInt32BE(0)
     if (entryCount < 3 || entryCount > maximumEntryCount) throw new Error('Recovery package entry count is invalid.')
     const seen = new Set<string>()
@@ -681,10 +671,7 @@ export async function schedulePendingRestore(options: {
   if (resolve(expectedStaging) !== resolve(options.stagingDirectory)) {
     throw new Error('Recovery staging token does not match the managed directory.')
   }
-  for (const required of [
-    join(expectedStaging, 'data', 'ses-agent.db'),
-    join(expectedStaging, 'security', 'master-key.v1')
-  ]) {
+  for (const required of [join(expectedStaging, 'data', 'ses-agent.db'), join(expectedStaging, 'security', 'master-key.v1')]) {
     if (!(await pathExists(required))) throw new Error('Staged recovery data is incomplete.')
   }
   await mkdir(join(expectedStaging, 'vault', 'resume-files'), { recursive: true, mode: 0o700 })
@@ -716,7 +703,11 @@ async function moveForSwap(source: string, destination: string, required: boolea
   if (!destinationExists && required) throw new Error('Recovery swap source is missing.')
 }
 
-async function updatePendingPhase(userDataPath: string, marker: PendingRestoreMarker, phase: PendingRestoreMarker['phase']): Promise<PendingRestoreMarker> {
+async function updatePendingPhase(
+  userDataPath: string,
+  marker: PendingRestoreMarker,
+  phase: PendingRestoreMarker['phase']
+): Promise<PendingRestoreMarker> {
   const updated = pendingRestoreMarkerSchema.parse({ ...marker, phase })
   await writePrivateJsonAtomically(pendingMarkerPath(userDataPath), updated)
   return updated

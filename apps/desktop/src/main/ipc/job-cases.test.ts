@@ -9,7 +9,11 @@ const electronMock = vi.hoisted(() => {
   const handlers = new Map<string, Handler>()
   return {
     handlers,
-    ipcMain: { handle: vi.fn((channel: string, handler: Handler) => { handlers.set(channel, handler) }) }
+    ipcMain: {
+      handle: vi.fn((channel: string, handler: Handler) => {
+        handlers.set(channel, handler)
+      })
+    }
   }
 })
 
@@ -25,27 +29,52 @@ const todayReviewId = 'a1111111-1111-4111-8111-111111111111'
 const yesterdayReviewId = 'b1111111-1111-4111-8111-111111111111'
 
 const values: Partial<Record<JobCaseFieldKey, string>> = {
-  title: 'Java 決済基盤', required_skills: 'Java', rate: '65万円', location: '東京'
+  title: 'Java 決済基盤',
+  required_skills: 'Java',
+  rate: '65万円',
+  location: '東京'
 }
 
 function review(reviewId: string, intakeAt: string): JobCaseReviewSnapshot {
   return {
     reviewId,
     sourceId: '33333333-3333-4333-8333-333333333333',
-    sourceType: 'gmail', providerMessageId: null, threadId: 'thread-1', fromDomain: 'partner.example.jp',
-    messageDate: intakeAt, intakeAt, redactedSubject: '件名', redactedPreview: '本文',
-    reviewRevision: 1, status: 'completed', privacyReviewed: true,
+    sourceType: 'gmail',
+    providerMessageId: null,
+    threadId: 'thread-1',
+    fromDomain: 'partner.example.jp',
+    messageDate: intakeAt,
+    intakeAt,
+    redactedSubject: '件名',
+    redactedPreview: '本文',
+    reviewRevision: 1,
+    status: 'completed',
+    privacyReviewed: true,
     fields: jobCaseFieldKeys.map((key) => ({
-      key, label: key, originalValue: values[key] ?? null, value: values[key] ?? null,
-      confidence: 1, status: values[key] ? 'confirmed' as const : 'missing' as const,
-      sourceLabels: [], changed: false, changeReason: null
+      key,
+      label: key,
+      originalValue: values[key] ?? null,
+      value: values[key] ?? null,
+      confidence: 1,
+      status: values[key] ? ('confirmed' as const) : ('missing' as const),
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
     })),
-    warningCodes: [], completedAt: intakeAt, reviewerDisplayName: 'HR',
+    warningCodes: [],
+    completedAt: intakeAt,
+    reviewerDisplayName: 'HR',
     jobCase: {
-      id: '22222222-2222-4222-8222-222222222222', sourceReviewId: reviewId, version: 1, status: 'active',
-      confirmedAt: intakeAt, confirmedBy: 'HR', containsDirectIdentifiers: false
+      id: '22222222-2222-4222-8222-222222222222',
+      sourceReviewId: reviewId,
+      version: 1,
+      status: 'active',
+      confirmedAt: intakeAt,
+      confirmedBy: 'HR',
+      containsDirectIdentifiers: false
     },
-    lifecycle: 'active', cloudEligible: false
+    lifecycle: 'active',
+    cloudEligible: false
   }
 }
 
@@ -57,11 +86,17 @@ function context() {
       review(yesterdayReviewId, new Date(Date.now() - 86_400_000).toISOString())
     ]),
     listSeenJobCaseReviewIds: vi.fn(() => [...seen]),
-    markJobCaseReviewSeen: vi.fn((reviewId: string) => { seen.add(reviewId) })
+    markJobCaseReviewSeen: vi.fn((reviewId: string) => {
+      seen.add(reviewId)
+    })
   }
   return {
-    repository, parserWorker: null, localNer: null, wechatVisibleReader: null,
-    wechatScopeTokens: null, currentOperator: () => ({ operatorId: 'operator-1', displayName: 'HR' }),
+    repository,
+    parserWorker: null,
+    localNer: null,
+    wechatVisibleReader: null,
+    wechatScopeTokens: null,
+    currentOperator: () => ({ operatorId: 'operator-1', displayName: 'HR' }),
     preflightAction: vi.fn()
   }
 }
@@ -78,8 +113,11 @@ describe('今日新着案件 IPC handlers', () => {
   })
 
   it('uses the display-only repository read behind the trusted local source IPC', () => {
-    const source = { redactedSubject: 'SAP', redactedBody: 'BTP or <PERSON_NAME_001> or Cdsview',
-      localDisplay: { subject: 'SAP', body: 'BTP or Fiori or Cdsview' } }
+    const source = {
+      redactedSubject: 'SAP',
+      redactedBody: 'BTP or <PERSON_NAME_001> or Cdsview',
+      localDisplay: { subject: 'SAP', body: 'BTP or Fiori or Cdsview' }
+    }
     const getJobCaseSourceTextForDisplay = vi.fn(() => source)
     const getJobCaseSourceText = vi.fn()
     const deps = context()
@@ -121,14 +159,14 @@ describe('今日新着案件 IPC handlers', () => {
   })
 })
 
-
 it('returns an existing manual case without saving another source or re-confirming it', async () => {
   electronMock.handlers.clear()
   const deps = context()
   const existing = review(todayReviewId, new Date().toISOString())
   Object.assign(deps.repository, {
     findJobCaseReviewByBusinessFingerprint: vi.fn(() => existing),
-    saveRedactedJobCaseSourceAndDraft: vi.fn(), confirmJobCaseReview: vi.fn()
+    saveRedactedJobCaseSourceAndDraft: vi.fn(),
+    confirmJobCaseReview: vi.fn()
   })
   registerJobCaseHandlers(deps as never)
   expect(await invoke(ipcChannels.createManualJobCaseDraft, { subject: '案件名', body: '必須スキル：Java' })).toEqual({ review: existing })

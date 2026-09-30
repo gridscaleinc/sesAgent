@@ -3,7 +3,11 @@ import { afterEach, expect, it } from 'vitest'
 import type { CasePersonAssessment } from '@shared'
 import { AssessmentEvaluationStatus } from './AssessmentEvaluationStatus'
 afterEach(cleanup)
-const value = (cloud: Partial<CasePersonAssessment['cloud']>, assessed = false) => ({ result: { assessment: assessed ? {} : undefined }, cloud: { status: 'unavailable', reviewedCount: 0, modelName: null, ...cloud } }) as CasePersonAssessment
+const value = (cloud: Partial<CasePersonAssessment['cloud']>, assessed = false) =>
+  ({
+    result: { assessment: assessed ? {} : undefined },
+    cloud: { status: 'unavailable', reviewedCount: 0, modelName: null, ...cloud }
+  }) as CasePersonAssessment
 it.each([
   [value({ reason: 'policy-refresh' }), '已按新规则完成本地重算'],
   [value({ reason: 'service-unavailable' }), 'AI 服务暂不可用'],
@@ -17,6 +21,6 @@ it.each([
 })
 it('shows the individual reviewed result even when other people in its batch lack responses', () => {
   render(<AssessmentEvaluationStatus value={value({ status: 'partial', reason: 'no-valid-result', modelName: 'Test model' }, true)} zh />)
-  expect(screen.getByText('已完成云端 AI 评估 · Test model')).toBeInTheDocument()
+  expect(screen.getByText(/^已完成云端 AI 评估 · Test model · /)).toBeInTheDocument()
   expect(screen.queryByText(/未返回/)).not.toBeInTheDocument()
 })

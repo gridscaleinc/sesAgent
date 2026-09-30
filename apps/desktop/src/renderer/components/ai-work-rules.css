@@ -1,113 +1,577 @@
-.ai-work-rules, .case-resume-assessment { display: grid; gap: 16px; min-width: 0; }
-.ai-work-rules h3, .ai-work-rules h4, .case-resume-assessment h3 { margin: 0; }
-.ai-work-rules p, .case-resume-assessment p { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; }
-.work-rule-editor { display: grid; gap: 12px; }
-.work-rule-editor label, .case-assessment-feedback label { display: grid; gap: 6px; font-size: 13px; }
-.work-rule-editor input, .work-rule-editor select, .work-rule-editor textarea, .case-assessment-feedback input, .case-assessment-feedback select { width: 100%; box-sizing: border-box; border: 1px solid var(--border, #d9dee7); background: var(--surface, #fff); color: inherit; border-radius: 8px; padding: 9px 11px; font: inherit; }
-.work-rule-editor textarea { resize: vertical; min-height: 120px; }
-.work-rule-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.work-rule-preview, .work-rule-card, .case-assessment-card { border: 1px solid var(--border, #d9dee7); border-radius: 12px; padding: 14px; min-width: 0; }
-.work-rule-preview article { margin: 10px 0; padding: 10px; border-radius: 8px; background: var(--surface-muted, #f4f6f9); }
-.work-rule-preview article > span, .work-rule-card header > span { font-size: 12px; color: var(--text-secondary, #657187); }
-.work-rule-card header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
-.work-rule-history { padding-left: 20px; }
-.work-rule-history li { margin-top: 12px; }
-.case-resume-drop { border: 1px dashed var(--border, #aebbcf); border-radius: 12px; padding: 18px; text-align: center; background: var(--surface-muted, #f5f7fb); }
-.case-resume-drop.is-dragging { border-color: #386ad6; background: #eaf0ff; }
-.case-resume-assessment input[type=file] { max-width: 100%; }
-.case-assessment-feedback { display: grid; gap: 8px; margin-top: 12px; }
-.case-assessment-evidence { display: grid; gap: 8px; }
-.case-assessment-evidence > div { border-left: 3px solid #9aacc4; padding-left: 10px; }
-.case-assessment-evidence dt { font-weight: 600; }
-.case-assessment-evidence dd { margin: 4px 0; overflow-wrap: anywhere; }
-.case-assessment-questions { padding-left: 20px; }
-.case-assessment-questions li { margin-bottom: 14px; }
-.case-rule-tools { border-top: 1px solid var(--border, #d9dee7); padding-top: 14px; margin-top: 16px; }
-.case-rule-tools > summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
-.work-rule-applied { font-size: 12px; color: var(--text-secondary, #657187); margin: 8px 0; }
-.system-experience details { margin-top: 12px; }
-.system-experience summary { cursor: pointer; }
-.system-experience input[type=number] { width: 70px; margin: 8px; padding: 6px; }
-.experience-details { margin-top: 18px; border-top: 1px solid var(--border, #d9dee7); padding-top: 14px; }
-.experience-details blockquote { margin: 10px 0; padding: 8px 12px; background: var(--surface-muted, #f4f6f9); border-left: 3px solid #9aacc4; }
-.system-experience { font-size: 14px; line-height: 1.6; }
-.system-experience > header h3 { font-size: 18px; }
-.system-experience > header p, .system-experience small { color: var(--text-secondary, #657187); }
-.system-experience button { border: 1px solid var(--border, #d9dee7); border-radius: 8px; padding: 7px 12px; background: var(--surface, #fff); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
-.system-experience button:hover:not(:disabled) { background: #edf3fd; border-color: #94b5e8; }
-.system-experience button:focus-visible, .system-experience summary:focus-visible { outline: 2px solid #386ad6; outline-offset: 3px; }
-.system-experience .work-rule-actions { margin-top: 10px; }
-.case-assessment-questions textarea { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; resize: vertical; padding: 9px 11px; border: 1px solid var(--border, #d9dee7); border-radius: 8px; background: var(--surface, #fff); color: inherit; font: inherit; }
-.experience-metrics { width: 100%; border-collapse: collapse; font-size: 12px; }
-.experience-metrics th, .experience-metrics td { border-bottom: 1px solid var(--border, #d9dee7); padding: 8px 5px; text-align: left; }
-.experience-method { margin: 12px 0; padding: 12px; background: var(--surface, #fff); border-radius: 8px; }
-.question-bank { display: grid; gap: 12px; border-top: 1px solid var(--border, #d9dee7); padding-top: 18px; }
-.question-bank h4, .question-bank p { margin: 0; }
-.question-bank .work-rule-actions { align-items: end; }
-.question-bank label { display: grid; gap: 5px; min-width: 0; }
-.question-bank input, .question-bank select { box-sizing: border-box; max-width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid var(--border, #d9dee7); border-radius: 8px; background: var(--surface, #fff); color: inherit; font: inherit; }
-.question-bank input:focus-visible, .question-bank select:focus-visible { outline: 2px solid #386ad6; outline-offset: 2px; }
-.question-bank .work-rule-card { display: grid; gap: 9px; }
-.question-bank .work-rule-card > button { justify-self: start; }
-.system-experience button:disabled { opacity: .55; cursor: default; }
-.experience-trends .work-rule-card { margin-top: 10px; }
-.customer-identities .work-rule-editor { margin-top: 14px; }
-.customer-identities .work-rule-card, .interview-evidence .work-rule-card { margin: 10px 0; }
-.interview-evidence blockquote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid #9aacc4; background: var(--surface-muted, #f4f6f9); white-space: pre-wrap; overflow-wrap: anywhere; }
-.matching-opportunities { margin: 12px 0; padding: 14px; border: 1px solid var(--border, #d9dee7); border-radius: 12px; background: var(--surface, #fff); }
-.matching-opportunities summary, .interview-evidence summary { cursor: pointer; font-weight: 600; }
-.matching-opportunities .work-rule-card { margin-top: 10px; }
-.matching-opportunities button { padding: 7px 12px; border: 1px solid var(--border, #d9dee7); border-radius: 8px; background: var(--surface, #fff); color: inherit; cursor: pointer; }
+.ai-work-rules {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.ai-work-rules h3,
+.ai-work-rules h4 {
+  margin: 0;
+}
+.ai-work-rules p {
+  margin: 6px 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.work-rule-editor {
+  display: grid;
+  gap: 12px;
+}
+.work-rule-editor label,
+.case-assessment-feedback label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.work-rule-editor input,
+.work-rule-editor select,
+.work-rule-editor textarea,
+.case-assessment-feedback input,
+.case-assessment-feedback select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  background: var(--surface, var(--surface));
+  color: inherit;
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: inherit;
+}
+.work-rule-editor textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+.work-rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.work-rule-preview,
+.work-rule-card,
+.case-assessment-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+.work-rule-preview article {
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+.work-rule-preview article > span,
+.work-rule-card header > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.work-rule-card header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+.work-rule-history {
+  padding-left: 20px;
+}
+.work-rule-history li {
+  margin-top: 12px;
+}
+.case-assessment-feedback {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.case-assessment-evidence {
+  display: grid;
+  gap: 8px;
+}
+.case-assessment-evidence > div {
+  border-left: 3px solid #9aacc4;
+  padding-left: 10px;
+}
+.case-assessment-evidence dt {
+  font-weight: 600;
+}
+.case-assessment-evidence dd {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.work-rule-applied {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.system-experience details {
+  margin-top: 12px;
+}
+.system-experience summary {
+  cursor: pointer;
+}
+.system-experience input[type='number'] {
+  width: 70px;
+  margin: 8px;
+  padding: 6px;
+}
+.experience-details {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.experience-details blockquote {
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: var(--surface-faint);
+  border-left: 3px solid #9aacc4;
+}
+.system-experience {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.system-experience > header h3 {
+  font-size: 18px;
+}
+.system-experience > header p,
+.system-experience small {
+  color: var(--muted);
+}
+.system-experience button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--surface, var(--surface));
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.system-experience button:hover:not(:disabled) {
+  background: #edf3fd;
+  border-color: #94b5e8;
+}
+.system-experience button:focus-visible,
+.system-experience summary:focus-visible {
+  outline: 2px solid #2d68d8;
+  outline-offset: 3px;
+}
+.system-experience .work-rule-actions {
+  margin-top: 10px;
+}
+.experience-metrics {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.experience-metrics th,
+.experience-metrics td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 5px;
+  text-align: left;
+}
+.experience-method {
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--surface, var(--surface));
+  border-radius: 8px;
+}
+.question-bank {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+.question-bank h4,
+.question-bank p {
+  margin: 0;
+}
+.question-bank .work-rule-actions {
+  align-items: end;
+}
+.question-bank label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.question-bank input,
+.question-bank select {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface, var(--surface));
+  color: inherit;
+  font: inherit;
+}
+.question-bank input:focus-visible,
+.question-bank select:focus-visible {
+  outline: 2px solid #2d68d8;
+  outline-offset: 2px;
+}
+.question-bank .work-rule-card {
+  display: grid;
+  gap: 9px;
+}
+.question-bank .work-rule-card > button {
+  justify-self: start;
+}
+.system-experience button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.experience-trends .work-rule-card {
+  margin-top: 10px;
+}
+.customer-identities .work-rule-editor {
+  margin-top: 14px;
+}
+.customer-identities .work-rule-card,
+.interview-evidence .work-rule-card {
+  margin: 10px 0;
+}
+.interview-evidence blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid #9aacc4;
+  background: var(--surface-faint);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.matching-opportunities {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface, var(--surface));
+}
+.matching-opportunities summary,
+.interview-evidence summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.matching-opportunities .work-rule-card {
+  margin-top: 10px;
+}
+.matching-opportunities button {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface, var(--surface));
+  color: inherit;
+  cursor: pointer;
+}
 
 /* Interview question cards: one card per question, question text first, sources folded. */
-.interview-questions { display: grid; gap: 14px; min-width: 0; }
-.interview-questions-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-.interview-questions-header h4 { margin: 0; font-size: 15px; }
-.interview-questions-header small { display: block; margin-top: 4px; font-size: 12px; color: var(--muted, #667085); }
-.interview-question-list { display: grid; gap: 12px; }
-.interview-question-card { border: 1px solid var(--line, #dce2eb); border-radius: 12px; padding: 14px 16px; background: var(--surface, #fff); display: grid; gap: 10px; min-width: 0; }
-.interview-question-card.is-skipped { opacity: .55; }
-.interview-question-card > header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.interview-question-index { font-size: 12px; font-weight: 700; letter-spacing: .04em; color: var(--muted, #667085); }
-.interview-dimension { font-size: 12px; line-height: 1.5; padding: 2px 9px; border-radius: 999px; background: #eef2f7; color: #3b4a63; }
-.interview-question-card.dim-authenticity .interview-dimension { background: #e8f1eb; color: #2d5a42; }
-.interview-question-card.dim-core-capability .interview-dimension { background: #edf4ff; color: #175cd3; }
-.interview-question-card.dim-problem-solving .interview-dimension { background: #fff5df; color: #a15c05; }
-.interview-question-card.dim-ownership-collaboration .interview-dimension { background: #f3ecfb; color: #6b3fa0; }
-.interview-question-card.dim-case-readiness .interview-dimension { background: #e6f6f9; color: #0b6b7d; }
-.interview-question-card .interview-dimension.is-bank { background: #f4f6f9; color: #657187; }
-.interview-switch { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted, #667085); cursor: pointer; }
-.interview-switch input { width: 34px; height: 20px; margin: 0; appearance: none; border-radius: 999px; background: #cfd6e0; position: relative; cursor: pointer; transition: background .15s; }
-.interview-switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
-.interview-switch input:checked { background: #2d5a42; }
-.interview-switch input:checked::after { transform: translateX(14px); }
-.interview-switch input:disabled { opacity: .5; cursor: default; }
-.interview-question-card .interview-question-text { margin: 0; font-size: 15px; line-height: 1.65; color: var(--ink, #172036); white-space: pre-wrap; overflow-wrap: anywhere; }
-.interview-question-card textarea.interview-question-text { display: block; box-sizing: border-box; width: calc(100% + 16px); margin: 0 -8px; padding: 6px 8px; border: 1px solid transparent; border-radius: 8px; resize: none; field-sizing: content; min-height: 2.6em; background: transparent; font: inherit; font-size: 15px; line-height: 1.65; }
-.interview-question-card textarea.interview-question-text:hover { border-color: var(--line, #dce2eb); }
-.interview-question-card textarea.interview-question-text:focus { border-color: #2d5a42; background: #fff; outline: none; }
-.interview-followup { display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.6; color: var(--ink, #172036); }
-.interview-followup > span:first-child { flex-shrink: 0; color: var(--muted, #667085); }
-.interview-question-card .interview-followup input { flex: 1; min-width: 0; box-sizing: border-box; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px; margin: 0 -6px; font: inherit; font-size: 13px; background: transparent; }
-.interview-question-card .interview-followup input:hover { border-color: var(--line, #dce2eb); }
-.interview-question-card .interview-followup input:focus { border-color: #2d5a42; background: #fff; outline: none; }
-.interview-guide { margin: 0; display: grid; gap: 4px; font-size: 12.5px; line-height: 1.6; }
-.interview-guide > div { display: flex; gap: 8px; }
-.interview-guide dt { flex-shrink: 0; font-weight: 600; color: #087a5b; }
-.interview-guide .is-warning dt { color: #a15c05; }
-.interview-guide dd { margin: 0; color: #3b4a63; overflow-wrap: anywhere; }
-.interview-sources { font-size: 12px; color: var(--muted, #667085); }
-.interview-sources summary { cursor: pointer; }
-.interview-requirements { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.interview-requirements span { padding: 2px 8px; border-radius: 6px; background: #f4f6f9; color: #3b4a63; overflow-wrap: anywhere; }
-.interview-sources blockquote { margin: 6px 0 0; padding: 6px 10px; border-left: 3px solid #b6cebd; background: #f8faf9; color: #3b4a63; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.interview-questions-footer { position: sticky; bottom: 0; padding: 12px 0; background: var(--surface, #fff); border-top: 1px solid var(--line, #dce2eb); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.interview-questions-footer small { color: var(--muted, #667085); font-size: 12px; }
-.interview-questions-footer button.is-primary { background: #2d5a42; color: #fff; border-color: #2d5a42; }
-.interview-questions-empty { color: var(--muted, #667085); }
+.interview-questions {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.interview-questions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+/* Title on the left; the AI request, regenerate and copy tools share one row on the right. */
+.interview-questions-tools {
+  flex: 1 1 420px;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+.interview-questions-tools .ai-request-input {
+  flex: 1 1 200px;
+  max-width: 360px;
+}
+.interview-questions-tools button {
+  white-space: nowrap;
+}
+.interview-questions-header h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.interview-questions-header small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted, var(--muted));
+}
+.interview-question-list {
+  display: grid;
+  gap: 12px;
+}
+.interview-question-card {
+  border: 1px solid var(--line, var(--line));
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--surface, var(--surface));
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.interview-question-card.is-skipped {
+  opacity: 0.55;
+}
+.interview-question-card > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.interview-question-index {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted, var(--muted));
+}
+.interview-dimension {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--line-faint);
+  color: #3b4a63;
+}
+.interview-question-card.dim-authenticity .interview-dimension {
+  background: #eff9f5;
+  color: var(--forest);
+}
+.interview-question-card.dim-core-capability .interview-dimension {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.interview-question-card.dim-problem-solving .interview-dimension {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.interview-question-card.dim-ownership-collaboration .interview-dimension {
+  background: #f3ecfb;
+  color: #6b3fa0;
+}
+.interview-question-card.dim-case-readiness .interview-dimension {
+  background: #e6f6f9;
+  color: #0b6b7d;
+}
+.interview-question-card .interview-dimension.is-bank {
+  background: var(--surface-faint);
+  color: var(--muted);
+}
+.interview-switch {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted, var(--muted));
+  cursor: pointer;
+}
+.interview-switch input {
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  appearance: none;
+  border-radius: 999px;
+  background: #cbd2dc;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.interview-switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform 0.15s;
+}
+.interview-switch input:checked {
+  background: var(--forest);
+}
+.interview-switch input:checked::after {
+  transform: translateX(14px);
+}
+.interview-switch input:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.interview-question-card .interview-question-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--ink, var(--ink));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.interview-question-card textarea.interview-question-text {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  resize: none;
+  field-sizing: content;
+  min-height: 2.6em;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.interview-question-card textarea.interview-question-text:hover {
+  border-color: var(--line, var(--line));
+}
+.interview-question-card textarea.interview-question-text:focus {
+  border-color: var(--forest);
+  background: var(--surface);
+  outline: none;
+}
+.interview-followup {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink, var(--ink));
+}
+.interview-followup > span:first-child {
+  flex-shrink: 0;
+  color: var(--muted, var(--muted));
+}
+.interview-question-card .interview-followup input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+}
+.interview-question-card .interview-followup input:hover {
+  border-color: var(--line, var(--line));
+}
+.interview-question-card .interview-followup input:focus {
+  border-color: var(--forest);
+  background: var(--surface);
+  outline: none;
+}
+.interview-guide {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.interview-guide > div {
+  display: flex;
+  gap: 8px;
+}
+.interview-guide dt {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--green);
+}
+.interview-guide .is-warning dt {
+  color: var(--amber);
+}
+.interview-guide dd {
+  margin: 0;
+  color: #3b4a63;
+  overflow-wrap: anywhere;
+}
+.interview-sources {
+  font-size: 12px;
+  color: var(--muted, var(--muted));
+}
+.interview-sources summary {
+  cursor: pointer;
+}
+.interview-requirements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.interview-requirements span {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--surface-faint);
+  color: #3b4a63;
+  overflow-wrap: anywhere;
+}
+.interview-sources blockquote {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid #b6cebd;
+  background: #fafbfc;
+  color: #3b4a63;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.interview-questions-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 -4px 12px rgb(16 24 40 / 8%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.interview-questions-footer small {
+  color: var(--muted, var(--muted));
+  font-size: 12px;
+}
+.interview-questions-footer button.is-primary {
+  background: var(--forest);
+  color: var(--on-accent);
+  border-color: var(--forest);
+}
+.interview-questions-empty {
+  color: var(--muted, var(--muted));
+}
 
 /* One-line request box beside an AI generate button: what the operator wants this time. */
-.ai-request-input { flex: 1 1 220px; min-width: 0; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--line, #dce2eb); border-radius: 8px; font: inherit; font-size: 13px; background: var(--surface, #fff); }
-.ai-request-input:focus { border-color: #2d5a42; outline: none; }
-.hr-intro-generation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.case-assessment-card .assessment-request { margin: 4px 0; padding: 4px 8px; border-left: 3px solid #2d5a42; background: #f3f7f4; font-size: 12px; }
+.ai-request-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--line, var(--line));
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface, var(--surface));
+}
+.ai-request-input:focus {
+  border-color: var(--forest);
+  outline: none;
+}
+.hr-intro-generation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.case-assessment-card .assessment-request {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border-left: 3px solid var(--forest);
+  background: #fafcf9;
+  font-size: 12px;
+}

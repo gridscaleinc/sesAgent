@@ -1,19 +1,162 @@
-import { useEffect,useState } from 'react'
+import { useEffect, useState } from 'react'
 import { questionCategories, type BankQuestion, type QuestionBankRevision } from '@shared'
-import { useUiLocale } from '../i18n'
-export function QuestionBankPanel({active=true}:{active?:boolean}) {
- const zh=useUiLocale()==='zh-CN',t=(cn:string,ja:string)=>zh?cn:ja
- const [history,setHistory]=useState<Record<string,QuestionBankRevision[]>>({})
- const [rows,setRows]=useState<BankQuestion[]>([]),[search,setSearch]=useState(''),[category,setCategory]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
- const labels:Record<typeof questionCategories[number],string>={responsibility:t('本人职责','本人の担当'),design:t('设计决策','設計判断'),delivery:t('实际交付','実際の成果物'),troubleshooting:t('问题解决','問題解決'),testing:t('测试验证','テスト検証'),followup:t('后续追问','追加確認')}
- useEffect(()=>{if(!active||!window.sesAgent.listQuestionBank)return;let live=true;void window.sesAgent.listQuestionBank({includeDisabled:true}).then(value=>{if(live)setRows(value)}).catch(cause=>{if(live)setError(String(cause))});return ()=>{live=false}},[active])
- const operate=async(work:()=>Promise<BankQuestion[]>)=>{if(busy)return;setBusy(true);setError('');try{setRows(await work())}catch(cause){setError(String(cause))}finally{setBusy(false)}}
- const needle=search.normalize('NFKC').toLowerCase().trim(),shown=rows.filter(q=>(!category||q.category===category)&&(!needle||[q.text,q.keyword,q.scope.label].join(' ').normalize('NFKC').toLowerCase().includes(needle)))
- return <section className="question-bank" aria-label={t('面试题库','面談質問集')}><h4>{t('面试题库','面談質問集')}</h4>
-  <p>{t('从正常保存的问题整理通用问法，生成时结合当前简历改写。采用次数不代表已经提问。','保存した質問から汎用的な聞き方を整理し、生成時に現在の履歴書に合わせます。採用回数は質問済みの回数ではありません。')}</p>
-  <div className="work-rule-actions"><label>{t('搜索问题','質問を検索')} <input value={search} maxLength={120} onChange={e=>setSearch(e.target.value)}/></label><label>{t('问题分类','質問の分類')} <select value={category} onChange={e=>setCategory(e.target.value)}><option value="">{t('全部','すべて')}</option>{questionCategories.map(c=><option key={c} value={c}>{labels[c]}</option>)}</select></label><button disabled={busy} onClick={()=>void operate(()=>window.sesAgent.listQuestionBank({includeDisabled:true}))}>{t('刷新题库','質問集を更新')}</button></div>
-  {error?<p role="alert">{error}</p>:null}
-  {!shown.length?<p>{rows.length?t('没有符合筛选条件的问题。','条件に合う質問はありません。'):t('保存面试问题后，系统会在空闲时整理；目前还没有可复用的问题。','面談質問を保存すると待機時に整理します。再利用できる質問はまだありません。')}</p>:null}
-  {shown.map(q=><article className="work-rule-card" key={q.id}><header><strong>{labels[q.category]} · {q.keyword}</strong><span>{q.enabled?q.state==='frequent'?t('经常采用','よく採用'):t('可复用','再利用可能'):t('已停用','無効')} · v{q.version}</span></header><p>{q.text}</p><p>{t('评价要点','評価の観点')}：{q.scoringGuide}</p><small>{q.scope.label.split(' / ')[zh?0:1]??q.scope.label} · {q.scope.locale} · {t('来源问题','元の質問')} {q.sources} · {t('采用次数','採用回数')} {q.adoptions} · {t('改写次数','修正回数')} {q.edits} · {t('已记录回答','回答記録')} {q.answerRecords??0} · {t('仍需追问','追加確認あり')} {q.partialAnswers??0}</small><p>{q.reason.split(' / ')[zh?0:1]??q.reason}</p><button disabled={busy||!q.sources} onClick={()=>void operate(()=>window.sesAgent.controlQuestionBank({id:q.id,expectedVersion:q.version,enabled:!q.enabled}))}>{q.enabled?t('停用此题','この質問を無効にする'):t('恢复此题','この質問を再開')}</button><details onToggle={event=>{if(event.currentTarget.open&&window.sesAgent.getQuestionBankHistory)void window.sesAgent.getQuestionBankHistory(q.id).then(value=>setHistory(old=>({...old,[q.id]:value}))).catch(cause=>setError(String(cause)))}}><summary>{t('问法版本与比较依据','質問の版と比較根拠')}</summary>{!history[q.id]?.length?<p>{t('尚无自动改版记录。','自動改訂の記録はまだありません。')}</p>:history[q.id]!.map(version=><div className="experience-method" key={version.id}><strong>v{version.version}</strong><p>{version.text}</p><p>{version.reason}</p><small>{t('独立来源','独立した出典')}：{version.sources.length}</small><button disabled={busy||!q.sources||version.version===q.version} onClick={()=>void operate(()=>window.sesAgent.restoreQuestionBankVersion({id:q.id,expectedVersion:q.version,version:version.version}))}>{t('恢复此问法','この質問表現を復元')}</button></div>)}</details></article>)}
- </section>
+import { localizedIpcError, useUiLocale } from '../i18n'
+export function QuestionBankPanel({ active = true }: { active?: boolean }) {
+  const locale = useUiLocale(),
+    zh = locale === 'zh-CN',
+    t = (cn: string, ja: string) => (zh ? cn : ja)
+  const [history, setHistory] = useState<Record<string, QuestionBankRevision[]>>({})
+  const [rows, setRows] = useState<BankQuestion[]>([]),
+    [search, setSearch] = useState(''),
+    [category, setCategory] = useState(''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const labels: Record<(typeof questionCategories)[number], string> = {
+    responsibility: t('本人职责', '本人の担当'),
+    design: t('设计决策', '設計判断'),
+    delivery: t('实际交付', '実際の成果物'),
+    troubleshooting: t('问题解决', '問題解決'),
+    testing: t('测试验证', 'テスト検証'),
+    followup: t('后续追问', '追加確認')
+  }
+  useEffect(() => {
+    if (!active || !window.sesAgent.listQuestionBank) return
+    let live = true
+    void window.sesAgent
+      .listQuestionBank({ includeDisabled: true })
+      .then((value) => {
+        if (live) setRows(value)
+      })
+      .catch((cause) => {
+        if (live) setError(localizedIpcError(locale, cause, t('无法读取面试题库。', '面談質問集を読み込めませんでした。')))
+      })
+    return () => {
+      live = false
+    }
+  }, [active])
+  const operate = async (work: () => Promise<BankQuestion[]>) => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      setRows(await work())
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('操作失败，请重试。', '操作に失敗しました。もう一度お試しください。')))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const needle = search.normalize('NFKC').toLowerCase().trim(),
+    shown = rows.filter(
+      (q) =>
+        (!category || q.category === category) &&
+        (!needle || [q.text, q.keyword, q.scope.label].join(' ').normalize('NFKC').toLowerCase().includes(needle))
+    )
+  return (
+    <section className="question-bank" aria-label={t('面试题库', '面談質問集')}>
+      <h4>{t('面试题库', '面談質問集')}</h4>
+      <p>
+        {t(
+          '从正常保存的问题整理通用问法，生成时结合当前简历改写。采用次数不代表已经提问。',
+          '保存した質問から汎用的な聞き方を整理し、生成時に現在の履歴書に合わせます。採用回数は質問済みの回数ではありません。'
+        )}
+      </p>
+      <div className="work-rule-actions">
+        <label>
+          {t('搜索问题', '質問を検索')} <input value={search} maxLength={120} onChange={(e) => setSearch(e.target.value)} />
+        </label>
+        <label>
+          {t('问题分类', '質問の分類')}{' '}
+          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+            <option value="">{t('全部', 'すべて')}</option>
+            {questionCategories.map((c) => (
+              <option key={c} value={c}>
+                {labels[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button disabled={busy} onClick={() => void operate(() => window.sesAgent.listQuestionBank({ includeDisabled: true }))}>
+          {t('刷新题库', '質問集を更新')}
+        </button>
+      </div>
+      {error ? <p role="alert">{error}</p> : null}
+      {!shown.length ? (
+        <p>
+          {rows.length
+            ? t('没有符合筛选条件的问题。', '条件に合う質問はありません。')
+            : t(
+                '保存面试问题后，系统会在空闲时整理；目前还没有可复用的问题。',
+                '面談質問を保存すると待機時に整理します。再利用できる質問はまだありません。'
+              )}
+        </p>
+      ) : null}
+      {shown.map((q) => (
+        <article className="work-rule-card" key={q.id}>
+          <header>
+            <strong>
+              {labels[q.category]} · {q.keyword}
+            </strong>
+            <span>
+              {q.enabled ? (q.state === 'frequent' ? t('经常采用', 'よく採用') : t('可复用', '再利用可能')) : t('已停用', '無効')} · v
+              {q.version}
+            </span>
+          </header>
+          <p>{q.text}</p>
+          <p>
+            {t('评价要点', '評価の観点')}：{q.scoringGuide}
+          </p>
+          <small>
+            {q.scope.label.split(' / ')[zh ? 0 : 1] ?? q.scope.label} · {q.scope.locale} · {t('来源问题', '元の質問')} {q.sources} ·{' '}
+            {t('采用次数', '採用回数')} {q.adoptions} · {t('改写次数', '修正回数')} {q.edits} · {t('已记录回答', '回答記録')}{' '}
+            {q.answerRecords ?? 0} · {t('仍需追问', '追加確認あり')} {q.partialAnswers ?? 0}
+          </small>
+          <p>{q.reason.split(' / ')[zh ? 0 : 1] ?? q.reason}</p>
+          <button
+            disabled={busy || !q.sources}
+            onClick={() =>
+              void operate(() => window.sesAgent.controlQuestionBank({ id: q.id, expectedVersion: q.version, enabled: !q.enabled }))
+            }
+          >
+            {q.enabled ? t('停用此题', 'この質問を無効にする') : t('恢复此题', 'この質問を再開')}
+          </button>
+          <details
+            onToggle={(event) => {
+              if (event.currentTarget.open && window.sesAgent.getQuestionBankHistory)
+                void window.sesAgent
+                  .getQuestionBankHistory(q.id)
+                  .then((value) => setHistory((old) => ({ ...old, [q.id]: value })))
+                  .catch((cause) => setError(localizedIpcError(locale, cause, t('无法读取问法版本。', '質問の版を読み込めませんでした。'))))
+            }}
+          >
+            <summary>{t('问法版本与比较依据', '質問の版と比較根拠')}</summary>
+            {!history[q.id]?.length ? (
+              <p>{t('尚无自动改版记录。', '自動改訂の記録はまだありません。')}</p>
+            ) : (
+              history[q.id]!.map((version) => (
+                <div className="experience-method" key={version.id}>
+                  <strong>v{version.version}</strong>
+                  <p>{version.text}</p>
+                  <p>{version.reason}</p>
+                  <small>
+                    {t('独立来源', '独立した出典')}：{version.sources.length}
+                  </small>
+                  <button
+                    disabled={busy || !q.sources || version.version === q.version}
+                    onClick={() =>
+                      void operate(() =>
+                        window.sesAgent.restoreQuestionBankVersion({ id: q.id, expectedVersion: q.version, version: version.version })
+                      )
+                    }
+                  >
+                    {t('恢复此问法', 'この質問表現を復元')}
+                  </button>
+                </div>
+              ))
+            )}
+          </details>
+        </article>
+      ))}
+    </section>
+  )
 }

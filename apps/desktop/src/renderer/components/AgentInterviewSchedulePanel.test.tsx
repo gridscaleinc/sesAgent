@@ -13,9 +13,19 @@ const review: CandidateReviewSnapshot = {
   status: 'completed',
   piiReviewed: true,
   localIdentity: {
-    displayName: '张伟', gender: null, birthDate: null, nationality: null, phone: null, email: null,
-    address: null, education: null, major: null, graduationDate: null, degree: null,
-    storage: 'encrypted-local-only', cloudEligible: false
+    displayName: '张伟',
+    gender: null,
+    birthDate: null,
+    nationality: null,
+    phone: null,
+    email: null,
+    address: null,
+    education: null,
+    major: null,
+    graduationDate: null,
+    degree: null,
+    storage: 'encrypted-local-only',
+    cloudEligible: false
   },
   fields: [],
   projectExperiences: [],
@@ -71,13 +81,11 @@ const access: Extract<AgentSystemAccessBlock, { destination: 'interview-schedule
 describe('AgentInterviewSchedulePanel', () => {
   it('focuses the authoritative local interview without exposing its meeting URL', () => {
     const onClose = vi.fn()
-    render(<UiLocaleProvider locale="zh-CN"><AgentInterviewSchedulePanel
-      access={access}
-      interviews={[interview]}
-      onClose={onClose}
-      onSave={vi.fn()}
-      reviews={[review]}
-    /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <AgentInterviewSchedulePanel access={access} interviews={[interview]} onClose={onClose} onSave={vi.fn()} reviews={[review]} />
+      </UiLocaleProvider>
+    )
 
     expect(screen.getByRole('region', { name: '面试日程工作区' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /张伟 2026\/08\/26 14:00/u })).toBeInTheDocument()
@@ -100,27 +108,27 @@ describe('AgentInterviewSchedulePanel', () => {
       contactNote: input.contactNote ?? null,
       updatedAt: '2026-08-24T01:00:00.000Z'
     }))
-    render(<UiLocaleProvider locale="zh-CN"><AgentInterviewSchedulePanel
-      access={access}
-      interviews={[interview]}
-      onClose={vi.fn()}
-      onSave={onSave}
-      reviews={[review]}
-    /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <AgentInterviewSchedulePanel access={access} interviews={[interview]} onClose={vi.fn()} onSave={onSave} reviews={[review]} />
+      </UiLocaleProvider>
+    )
 
     fireEvent.click(screen.getByRole('button', { name: '修改面试' }))
     fireEvent.change(screen.getByRole('spinbutton', { name: '时长（分钟）' }), { target: { value: '55' } })
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }))
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-      interviewId: interview.id,
-      sourceDocumentId,
-      scheduledAt: '2026-08-26T05:00:00.000Z',
-      durationMinutes: 55,
-      meetingMethod: 'zoom',
-      meetingUrl: interview.meetingUrl,
-      interviewer: '李娜'
-    }))
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interviewId: interview.id,
+        sourceDocumentId,
+        scheduledAt: '2026-08-26T05:00:00.000Z',
+        durationMinutes: 55,
+        meetingMethod: 'zoom',
+        meetingUrl: interview.meetingUrl,
+        interviewer: '李娜'
+      })
+    )
   })
 })

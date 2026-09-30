@@ -50,11 +50,16 @@ export class CandidateEvaluationStore extends DomainStore {
       .prepare<[string], CandidateEvaluationDraftLabelRow>(
         `SELECT label.case_id, label.candidate_profile_id, label.candidate_profile_version,
                 label.expected_project_evidence, profile.profile_json,
-                profile.status AS profile_status, membership.status AS talent_pool_status
+                profile.status AS profile_status,
+                CASE WHEN record.record_status = 'active' AND record.in_talent_library = 1
+                       AND (business.document_id IS NULL OR business.status IN ('available','soon'))
+                     THEN 'eligible' ELSE 'none' END AS talent_pool_status
          FROM candidate_evaluation_draft_labels label
          JOIN candidate_evaluation_draft_cases draft_case ON draft_case.id = label.case_id
          JOIN candidate_profiles profile ON profile.id = label.candidate_profile_id
-         LEFT JOIN talent_pool_memberships membership ON membership.source_document_id = profile.source_document_id
+         -- Same eligibility as listEligibleTalentProfiles: imported, confirmed people are in the pool without a recruiting interview.
+         LEFT JOIN candidate_records record ON record.source_document_id = profile.source_document_id
+         LEFT JOIN candidate_business_states business ON business.document_id = profile.source_document_id
          WHERE draft_case.draft_id = ?
          ORDER BY label.case_id, label.candidate_profile_id`
       )
@@ -68,7 +73,8 @@ export class CandidateEvaluationStore extends DomainStore {
     const cases = caseRows.map((draftCase) => {
       const relevantCandidates = (labelsByCase.get(draftCase.id) ?? []).map((label) => {
         const profile = candidateProfileSchema.parse(JSON.parse(label.profile_json))
-        const active = label.profile_status === 'current' &&
+        const active =
+          label.profile_status === 'current' &&
           label.talent_pool_status === 'eligible' &&
           profile.profileVersion === label.candidate_profile_version
         return {
@@ -76,18 +82,17 @@ export class CandidateEvaluationStore extends DomainStore {
           profileVersion: label.candidate_profile_version,
           anonymousLabel: `候補者 ${label.candidate_profile_id.slice(0, 8).toLocaleUpperCase('en-US')}`,
           expectedProjectEvidence: label.expected_project_evidence === 1,
-          status: active ? 'active' as const : 'stale' as const
+          status: active ? ('active' as const) : ('stale' as const)
         }
       })
-      const jobCaseActive = draftCase.job_case_status === 'active' &&
-        (draftCase.job_case_lifecycle ?? 'active') === 'active'
+      const jobCaseActive = draftCase.job_case_status === 'active' && (draftCase.job_case_lifecycle ?? 'active') === 'active'
       const status = !jobCaseActive
-        ? 'job-case-stale' as const
+        ? ('job-case-stale' as const)
         : relevantCandidates.length === 0
-          ? 'no-relevant-candidates' as const
+          ? ('no-relevant-candidates' as const)
           : relevantCandidates.some((candidate) => candidate.status === 'stale')
-            ? 'candidate-stale' as const
-            : 'ready' as const
+            ? ('candidate-stale' as const)
+            : ('ready' as const)
       return {
         id: draftCase.id,
         jobCaseId: draftCase.job_case_id,
@@ -133,10 +138,7 @@ export class CandidateEvaluationStore extends DomainStore {
     return row ? this.candidateEvaluationDraftFromRow(row) : null
   }
 
-  createCandidateEvaluationDraft(
-    rawInput: CreateCandidateEvaluationDraftInput,
-    now = new Date()
-  ): CandidateEvaluationDraft {
+  createCandidateEvaluationDraft(rawInput: CreateCandidateEvaluationDraftInput, now = new Date()): CandidateEvaluationDraft {
     const input = createCandidateEvaluationDraftInputSchema.parse(rawInput)
     if (detectDirectIdentifiers(input.name).length > 0) {
       throw new Error('評価セット名に個人識別情報を含めることはできません。')
@@ -247,13 +249,7 @@ export class CandidateEvaluationStore extends DomainStore {
          ) VALUES (?, ?, ?, ?, ?)`
       )
       for (const profile of selectedProfiles) {
-        insertLabel.run(
-          caseId,
-          profile.id,
-          profile.profileVersion,
-          expectedProjectEvidence.has(profile.id) ? 1 : 0,
-          timestamp
-        )
+        insertLabel.run(caseId, profile.id, profile.profileVersion, expectedProjectEvidence.has(profile.id) ? 1 : 0, timestamp)
       }
     })
     save()
@@ -333,18 +329,18 @@ export class CandidateEvaluationStore extends DomainStore {
       )
       .get()
     return candidateEvaluationStateSchema.parse({
-      dataset: datasetRow ? {
-        id: datasetRow.id,
-        name: datasetRow.name,
-        datasetHash: datasetRow.dataset_hash,
-        caseCount: datasetRow.case_count,
-        relevantCandidates: datasetRow.relevant_candidate_count,
-        reviewerCount: datasetRow.reviewer_count,
-        importedAt: datasetRow.imported_at
-      } : null,
-      latestReport: reportRow
-        ? candidateEvaluationReportSchema.parse(JSON.parse(reportRow.report_json))
-        : null
+      dataset: datasetRow
+        ? {
+            id: datasetRow.id,
+            name: datasetRow.name,
+            datasetHash: datasetRow.dataset_hash,
+            caseCount: datasetRow.case_count,
+            relevantCandidates: datasetRow.relevant_candidate_count,
+            reviewerCount: datasetRow.reviewer_count,
+            importedAt: datasetRow.imported_at
+          }
+        : null,
+      latestReport: reportRow ? candidateEvaluationReportSchema.parse(JSON.parse(reportRow.report_json)) : null
     })
   }
 
@@ -366,10 +362,7 @@ export class CandidateEvaluationStore extends DomainStore {
       throw new Error('Benchmark ID already exists with different content. Use a new benchmark ID.')
     }
     const importedAt = now.toISOString()
-    const relevantCandidateCount = benchmark.cases.reduce(
-      (total, testCase) => total + testCase.relevantCandidateLabels.length,
-      0
-    )
+    const relevantCandidateCount = benchmark.cases.reduce((total, testCase) => total + testCase.relevantCandidateLabels.length, 0)
     const save = this.database.transaction(() => {
       if (!existing) {
         this.database
@@ -404,16 +397,17 @@ export class CandidateEvaluationStore extends DomainStore {
 
   candidateEvaluationDatasetIdsForLabels(labels: ReadonlySet<string>): string[] {
     const rows = this.database
-      .prepare<[], { id: string; payload_json: string }>(
-        'SELECT id, payload_json FROM candidate_evaluation_datasets'
-      )
+      .prepare<[], { id: string; payload_json: string }>('SELECT id, payload_json FROM candidate_evaluation_datasets')
       .all()
     return rows.flatMap((row) => {
       const benchmark = sesCandidateBenchmarkSchema.parse(JSON.parse(row.payload_json))
-      return benchmark.cases.some((testCase) =>
-        testCase.relevantCandidateLabels.some((label) => labels.has(label)) ||
-        testCase.expectedProjectEvidenceLabels.some((label) => labels.has(label))
-      ) ? [row.id] : []
+      return benchmark.cases.some(
+        (testCase) =>
+          testCase.relevantCandidateLabels.some((label) => labels.has(label)) ||
+          testCase.expectedProjectEvidenceLabels.some((label) => labels.has(label))
+      )
+        ? [row.id]
+        : []
     })
   }
 }

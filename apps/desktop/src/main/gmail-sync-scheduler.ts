@@ -14,7 +14,14 @@ export function resolveGmailSyncIntervalMinutes(raw: string | undefined): number
 export interface GmailSyncOutcome {
   personnelImported?: number
   status: 'never' | 'idle' | 'error'
-  lastRun: { imported: number; duplicates: number; filtered: number; failed: number; moreAvailable?: boolean; intake?: import('@shared').GmailBusinessIntakeResult } | null
+  lastRun: {
+    imported: number
+    duplicates: number
+    filtered: number
+    failed: number
+    moreAvailable?: boolean
+    intake?: import('@shared').GmailBusinessIntakeResult
+  } | null
 }
 
 export interface GmailSyncSchedulerDependencies {
@@ -78,10 +85,21 @@ export function createGmailSyncScheduler(deps: GmailSyncSchedulerDependencies) {
     try {
       const outcome = await deps.runSync()
       const run = outcome.lastRun
-      deps.onCompleted?.({ personnelImported: outcome.personnelImported ?? 0, imported: run?.imported ?? 0,
-        duplicates: run?.duplicates ?? 0, filtered: run?.filtered ?? 0, failed: run?.failed ?? 0 })
+      deps.onCompleted?.({
+        personnelImported: outcome.personnelImported ?? 0,
+        imported: run?.imported ?? 0,
+        duplicates: run?.duplicates ?? 0,
+        filtered: run?.filtered ?? 0,
+        failed: run?.failed ?? 0
+      })
       if (run && (run.imported > 0 || (outcome.personnelImported ?? 0) > 0)) {
-        deps.onImported({ ...(outcome.personnelImported ? { personnelImported: outcome.personnelImported } : {}), imported: run.imported, duplicates: run.duplicates, filtered: run.filtered, failed: run.failed })
+        deps.onImported({
+          ...(outcome.personnelImported ? { personnelImported: outcome.personnelImported } : {}),
+          imported: run.imported,
+          duplicates: run.duplicates,
+          filtered: run.filtered,
+          failed: run.failed
+        })
       }
       if (outcome.status === 'error' || (run?.intake?.casesFailed ?? 0) > 0 || (run?.intake?.personnelFailed ?? 0) > 0) {
         // The coordinator recorded a failed checkpoint without throwing; back off the same way.

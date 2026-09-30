@@ -31,10 +31,19 @@ function createFixtures() {
     reviewRevision: 1,
     status: 'awaiting-review',
     piiReviewed: false,
-    fields: [{
-      key: 'skills', label: 'スキル', originalValue: 'Java', value: 'Java', confidence: 0.9,
-      status: 'needs_review', sourceLabels: ['Skills!A2'], changed: false, changeReason: null
-    }],
+    fields: [
+      {
+        key: 'skills',
+        label: 'スキル',
+        originalValue: 'Java',
+        value: 'Java',
+        confidence: 0.9,
+        status: 'needs_review',
+        sourceLabels: ['Skills!A2'],
+        changed: false,
+        changeReason: null
+      }
+    ],
     projectExperiences: [],
     completedAt: null,
     reviewerDisplayName: null,
@@ -73,11 +82,7 @@ describe('ReviewCenter', () => {
     const queue = buildReviewQueue(tasks, [candidateReview], [jobCaseReview])
 
     expect(queue).toHaveLength(3)
-    expect(queue.map((item) => item.id)).toEqual([
-      'candidate:document-001',
-      'case:review-case-001',
-      'task:task-proposal-001'
-    ])
+    expect(queue.map((item) => item.id)).toEqual(['candidate:document-001', 'case:review-case-001', 'task:task-proposal-001'])
     expect(queue.some((item) => item.id === 'task:task-import-001')).toBe(false)
     expect(queue.find((item) => item.kind === 'candidate')).not.toHaveProperty('fileName')
   })
@@ -88,14 +93,7 @@ describe('ReviewCenter', () => {
     const onOpenTask = vi.fn()
     const onOpenCandidate = vi.fn()
     const onOpenCase = vi.fn()
-    render(
-      <ReviewCenter
-        items={items}
-        onOpenCandidate={onOpenCandidate}
-        onOpenCase={onOpenCase}
-        onOpenTask={onOpenTask}
-      />
-    )
+    render(<ReviewCenter items={items} onOpenCandidate={onOpenCandidate} onOpenCase={onOpenCase} onOpenTask={onOpenTask} />)
 
     expect(screen.getByRole('heading', { name: 'レビューセンター' })).toBeInTheDocument()
     expect(screen.queryByText('private-name.xlsx')).not.toBeInTheDocument()
@@ -116,15 +114,25 @@ describe('ReviewCenter', () => {
   it('merges a redacted action approval without duplicating domain review items', () => {
     const { tasks, candidateReview, jobCaseReview } = createFixtures()
     const approval: ActionApprovalSummary = {
-      id: 'approval-001', actionRunId: 'action-001', toolName: 'proposal.export', workTaskId: 'task-proposal-001',
-      status: 'pending', reason: '外部副作用を伴うため確認が必要です。', safeSummary: '承認済み提案を保存確認へ進めます。',
-      inputHash: 'a'.repeat(64), contentRevision: '1', expiresAt: '2026-07-21T00:00:00.000Z',
-      createdAt: '2026-07-20T01:00:00.000Z', resolvedAt: null
+      id: 'approval-001',
+      actionRunId: 'action-001',
+      toolName: 'proposal.export',
+      workTaskId: 'task-proposal-001',
+      status: 'pending',
+      reason: '外部副作用を伴うため確認が必要です。',
+      safeSummary: '承認済み提案を保存確認へ進めます。',
+      inputHash: 'a'.repeat(64),
+      contentRevision: '1',
+      expiresAt: '2026-07-21T00:00:00.000Z',
+      createdAt: '2026-07-20T01:00:00.000Z',
+      resolvedAt: null
     }
     const resolve = vi.fn()
     const items = buildReviewQueue(tasks, [candidateReview], [jobCaseReview], [approval])
     expect(items.filter((item) => item.kind === 'action-approval')).toHaveLength(1)
-    render(<ReviewCenter items={items} onOpenCandidate={vi.fn()} onOpenCase={vi.fn()} onOpenTask={vi.fn()} onResolveActionApproval={resolve} />)
+    render(
+      <ReviewCenter items={items} onOpenCandidate={vi.fn()} onOpenCase={vi.fn()} onOpenTask={vi.fn()} onResolveActionApproval={resolve} />
+    )
     expect(screen.getByText('承認済み提案を保存確認へ進めます。')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '承認' }))
     expect(resolve).toHaveBeenCalledWith('approval-001', 'approve')

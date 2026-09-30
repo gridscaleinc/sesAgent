@@ -66,12 +66,15 @@ export function classifyEmailText(subject: string, body: string): BusinessEmailC
   if (introduction.test(subject)) return 'candidate-proposal'
   if (/(?:案件|募集|求人)/u.test(subject)) return 'job-case'
   if (resume.test(subject)) return 'candidate-proposal'
-  if (introduction.test(body) || /(?:氏名|姓名|名前)\s*[:：]/u.test(body) && /(?:スキル|経験|技能|经验)/u.test(body)) return 'candidate-proposal'
+  if (introduction.test(body) || (/(?:氏名|姓名|名前)\s*[:：]/u.test(body) && /(?:スキル|経験|技能|经验)/u.test(body)))
+    return 'candidate-proposal'
   if (/(?:案件|募集|要件|単価|商流|稼働|参画)/u.test(text)) return 'job-case'
   if (/(?:要員|人材|候補者|人员|人員|人才)/u.test(text)) return 'candidate-proposal'
   return 'unclassified'
 }
 
 export function emailHasPromptInjectionPattern(text: string): boolean {
-  return /(?:ignore (?:all |the )?(?:previous|system) instructions?|system prompt|send (?:this|data) to|指示を無視|ルールを無視|他のファイルを読み|忽略(?:之前|所有|系统).{0,12}(?:指令|规则)|发送到)/iu.test(text)
+  return /(?:ignore (?:all |the )?(?:previous|system) instructions?|system prompt|send (?:this|data) to|指示を無視|ルールを無視|他のファイルを読み|忽略(?:之前|所有|系统).{0,12}(?:指令|规则)|发送到)/iu.test(
+    text
+  )
 }

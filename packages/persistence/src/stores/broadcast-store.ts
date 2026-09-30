@@ -16,6 +16,7 @@ import {
 } from '@shared/contracts'
 import { type BroadcastTemplateRow, type CaseBroadcastCopyRow, type CaseBroadcastRow } from '../rows'
 import { DomainStore } from './base'
+import { saveCaseIntroductionDraftsInputSchema, type CaseIntroductionDraft, type SaveCaseIntroductionDraftsInput } from '@shared'
 
 /** One copy as the caller hands it over; the store owns id, hash and time. */
 export interface CaseBroadcastCopyAppend {
@@ -99,9 +100,7 @@ export class BroadcastStore extends DomainStore {
    * migration means an untouched device always reads the current default.
    */
   listBroadcastTemplates(): BroadcastTemplate[] {
-    const rows = this.database
-      .prepare<[], BroadcastTemplateRow>('SELECT * FROM broadcast_templates ORDER BY created_at, id')
-      .all()
+    const rows = this.database.prepare<[], BroadcastTemplateRow>('SELECT * FROM broadcast_templates ORDER BY created_at, id').all()
     return rows.length > 0 ? rows.map(templateFromRow) : [builtInBroadcastTemplate()]
   }
 
@@ -122,9 +121,7 @@ export class BroadcastStore extends DomainStore {
   }
 
   private materializeBuiltInTemplate(timestamp: string): void {
-    const stored = this.database
-      .prepare<[], { count: number }>('SELECT count(*) AS count FROM broadcast_templates')
-      .get()
+    const stored = this.database.prepare<[], { count: number }>('SELECT count(*) AS count FROM broadcast_templates').get()
     if ((stored?.count ?? 0) > 0) return
     const builtIn = builtInBroadcastTemplate()
     this.persistTemplateRows(builtIn.id, builtIn, builtIn.revision, timestamp, timestamp)
@@ -133,9 +130,7 @@ export class BroadcastStore extends DomainStore {
   /** Editing a template bumps its revision, so a ledger row still names what it used. */
   updateBroadcastTemplate(rawInput: UpdateBroadcastTemplateInput, now = new Date()): BroadcastTemplate[] {
     const input = updateBroadcastTemplateInputSchema.parse(rawInput)
-    const stored = this.database
-      .prepare<[string], BroadcastTemplateRow>('SELECT * FROM broadcast_templates WHERE id = ?')
-      .get(input.id)
+    const stored = this.database.prepare<[string], BroadcastTemplateRow>('SELECT * FROM broadcast_templates WHERE id = ?').get(input.id)
     const timestamp = now.toISOString()
     // Editing the built-in default materialises it: the device has an opinion now.
     this.persistTemplateRows(input.id, input, (stored?.revision ?? 0) + 1, stored?.created_at ?? timestamp, timestamp)
@@ -144,9 +139,7 @@ export class BroadcastStore extends DomainStore {
 
   deleteBroadcastTemplate(rawInput: DeleteBroadcastTemplateInput): BroadcastTemplate[] {
     const input = deleteBroadcastTemplateInputSchema.parse(rawInput)
-    const stored = this.database
-      .prepare<[], { count: number }>('SELECT count(*) AS count FROM broadcast_templates')
-      .get()
+    const stored = this.database.prepare<[], { count: number }>('SELECT count(*) AS count FROM broadcast_templates').get()
     if ((stored?.count ?? 0) <= 1) throw new Error('紹介文テンプレートは最低1件必要です。')
     this.database.prepare('DELETE FROM broadcast_templates WHERE id = ?').run(input.id)
     return this.listBroadcastTemplates()
@@ -224,9 +217,7 @@ export class BroadcastStore extends DomainStore {
 
   listCaseBroadcastCopies(reviewId: string): CaseBroadcastCopy[] {
     return this.database
-      .prepare<[string], CaseBroadcastCopyRow>(
-        'SELECT * FROM case_broadcast_copies WHERE review_id = ? ORDER BY created_at DESC, id'
-      )
+      .prepare<[string], CaseBroadcastCopyRow>('SELECT * FROM case_broadcast_copies WHERE review_id = ? ORDER BY created_at DESC, id')
       .all(reviewId)
       .map(copyFromRow)
   }
@@ -242,9 +233,7 @@ export class BroadcastStore extends DomainStore {
   /** Pre-v43 send ledger rows for one case. Read-only history. */
   listCaseBroadcasts(reviewId: string): CaseBroadcastRecord[] {
     return this.database
-      .prepare<[string], CaseBroadcastRow>(
-        'SELECT * FROM case_broadcasts WHERE review_id = ? ORDER BY created_at DESC, id'
-      )
+      .prepare<[string], CaseBroadcastRow>('SELECT * FROM case_broadcasts WHERE review_id = ? ORDER BY created_at DESC, id')
       .all(reviewId)
       .map(recordFromRow)
   }
@@ -255,5 +244,59 @@ export class BroadcastStore extends DomainStore {
       .prepare<[], CaseBroadcastRow>('SELECT * FROM case_broadcasts ORDER BY created_at DESC, id')
       .all()
       .map(recordFromRow)
+  }
+
+  /** Replaces the stored introduction for each language in the input; the caller has checked case version and content. */
+  saveCaseIntroductionDrafts(raw: SaveCaseIntroductionDraftsInput, now = new Date()): CaseIntroductionDraft[] {
+    const input = saveCaseIntroductionDraftsInputSchema.parse(raw)
+    const generatedAt = now.toISOString()
+    const upsert = this.database.prepare(
+      `INSERT INTO case_introduction_drafts(review_id, lang, style, job_case_version, text, request, experience_run_id, generated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(review_id, lang, style) DO UPDATE SET job_case_version=excluded.job_case_version, text=excluded.text,
+         request=excluded.request, experience_run_id=excluded.experience_run_id, generated_at=excluded.generated_at`
+    )
+    this.database.transaction(() => {
+      for (const draft of input.drafts)
+        upsert.run(
+          input.reviewId,
+          draft.lang,
+          input.style,
+          input.jobCaseVersion,
+          draft.text,
+          input.request,
+          draft.experienceRunId,
+          generatedAt
+        )
+    })()
+    return this.listCaseIntroductionDrafts(input.reviewId)
+  }
+
+  listCaseIntroductionDrafts(reviewId: string): CaseIntroductionDraft[] {
+    return this.database
+      .prepare<
+        [string],
+        {
+          review_id: string
+          lang: 'ja' | 'zh'
+          style: 'standard' | 'brief'
+          job_case_version: number
+          text: string
+          request: string | null
+          experience_run_id: string | null
+          generated_at: string
+        }
+      >('SELECT * FROM case_introduction_drafts WHERE review_id = ? ORDER BY style, lang')
+      .all(reviewId)
+      .map((row) => ({
+        reviewId: row.review_id,
+        jobCaseVersion: row.job_case_version,
+        lang: row.lang,
+        style: row.style,
+        text: row.text,
+        request: row.request,
+        experienceRunId: row.experience_run_id,
+        generatedAt: row.generated_at
+      }))
   }
 }

@@ -42,13 +42,15 @@ function passingReport() {
 
 describe('privacy expert release evidence', () => {
   it('accepts only current aggregate human-labeled evidence at the minimum thresholds', () => {
-    expect(privacyExpertReportFailures(passingReport(), {
-      platform: 'darwin',
-      arch: 'arm64',
-      privacyImplementationSha256: 'b'.repeat(64),
-      cloudEnforcementSha256: 'c'.repeat(64),
-      now: new Date('2026-07-20T01:00:00.000Z')
-    })).toEqual([])
+    expect(
+      privacyExpertReportFailures(passingReport(), {
+        platform: 'darwin',
+        arch: 'arm64',
+        privacyImplementationSha256: 'b'.repeat(64),
+        cloudEnforcementSha256: 'c'.repeat(64),
+        now: new Date('2026-07-20T01:00:00.000Z')
+      })
+    ).toEqual([])
   })
 
   it('rejects stale implementation, leaked case content and weak name recall', () => {
@@ -59,18 +61,22 @@ describe('privacy expert release evidence', () => {
       containsCaseContent: true,
       automaticPersonNameRecall: 0.89
     }
-    expect(privacyExpertReportFailures(report, {
-      platform: 'darwin',
-      arch: 'arm64',
-      privacyImplementationSha256: 'b'.repeat(64),
-      cloudEnforcementSha256: 'c'.repeat(64),
-      now: new Date('2026-07-20T01:00:00.000Z')
-    })).toEqual(expect.arrayContaining([
-      'report:privacy-implementation-hash-stale',
-      'report:cloud-enforcement-hash-stale',
-      'report:name-recall',
-      'report:data-boundary'
-    ]))
+    expect(
+      privacyExpertReportFailures(report, {
+        platform: 'darwin',
+        arch: 'arm64',
+        privacyImplementationSha256: 'b'.repeat(64),
+        cloudEnforcementSha256: 'c'.repeat(64),
+        now: new Date('2026-07-20T01:00:00.000Z')
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        'report:privacy-implementation-hash-stale',
+        'report:cloud-enforcement-hash-stale',
+        'report:name-recall',
+        'report:data-boundary'
+      ])
+    )
   })
 
   it('rejects reports older than 30 days or reviews older than one year', () => {
@@ -79,13 +85,15 @@ describe('privacy expert release evidence', () => {
       reviewedAt: '2024-01-01T00:00:00.000Z',
       evaluatedAt: '2026-06-01T00:00:00.000Z'
     }
-    expect(privacyExpertReportFailures(report, {
-      platform: 'darwin',
-      arch: 'arm64',
-      privacyImplementationSha256: 'b'.repeat(64),
-      cloudEnforcementSha256: 'c'.repeat(64),
-      now: new Date('2026-07-20T01:00:00.000Z')
-    })).toEqual(expect.arrayContaining(['report:stale', 'report:review-stale']))
+    expect(
+      privacyExpertReportFailures(report, {
+        platform: 'darwin',
+        arch: 'arm64',
+        privacyImplementationSha256: 'b'.repeat(64),
+        cloudEnforcementSha256: 'c'.repeat(64),
+        now: new Date('2026-07-20T01:00:00.000Z')
+      })
+    ).toEqual(expect.arrayContaining(['report:stale', 'report:review-stale']))
   })
 
   it('does not coerce string metrics or accept a missing failure list', () => {
@@ -95,12 +103,14 @@ describe('privacy expert release evidence', () => {
       automaticPersonNameRecall: '0.99',
       failures: undefined
     }
-    expect(privacyExpertReportFailures(report, {
-      platform: 'darwin',
-      arch: 'arm64',
-      privacyImplementationSha256: 'b'.repeat(64),
-      cloudEnforcementSha256: 'c'.repeat(64),
-      now: new Date('2026-07-20T01:00:00.000Z')
-    })).toEqual(expect.arrayContaining(['report:cases', 'report:name-recall', 'report:not-release-eligible']))
+    expect(
+      privacyExpertReportFailures(report, {
+        platform: 'darwin',
+        arch: 'arm64',
+        privacyImplementationSha256: 'b'.repeat(64),
+        cloudEnforcementSha256: 'c'.repeat(64),
+        now: new Date('2026-07-20T01:00:00.000Z')
+      })
+    ).toEqual(expect.arrayContaining(['report:cases', 'report:name-recall', 'report:not-release-eligible']))
   })
 })

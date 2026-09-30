@@ -1,0 +1,22 @@
+/* Per-person next steps on each imported row when several resumes were imported at once. */
+.resume-import-person-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-left: auto;
+}
+.resume-import-person-actions button {
+  padding: 5px 8px;
+  color: #426080;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+}
+.resume-import-person-actions button.is-primary {
+  color: var(--on-accent);
+  background: var(--blue-bright);
+  border-color: var(--blue-bright);
+}

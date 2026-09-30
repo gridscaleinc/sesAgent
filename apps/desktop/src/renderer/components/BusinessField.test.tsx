@@ -3,7 +3,15 @@ import { expect, it, vi } from 'vitest'
 import { BusinessField } from './BusinessField'
 it('saves on blur once, retains failed input and retries without losing the baseline', async () => {
   let reject: (error: Error) => void = () => {}
-  const save = vi.fn().mockImplementationOnce(() => new Promise((_, no) => { reject = no })).mockResolvedValue({ version: 2 })
+  const save = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, no) => {
+          reject = no
+        })
+    )
+    .mockResolvedValue({ version: 2 })
   Object.defineProperty(window, 'sesAgent', { configurable: true, value: { saveBusinessField: save } })
   render(<BusinessField kind="case" id="a" version={1} field="rate" value="60万" label="単価" />)
   fireEvent.click(screen.getByRole('button', { name: '編集 単価' }))

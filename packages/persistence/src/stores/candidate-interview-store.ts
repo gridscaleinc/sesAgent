@@ -57,20 +57,24 @@ export class CandidateInterviewStore extends DomainStore {
     kind: CandidateInterviewSnapshot['kind'] = 'recruiting'
   ): CandidateInterviewRow | null {
     if (interviewId) {
-      return this.database
-        .prepare<[string, string], CandidateInterviewRow>(
-          'SELECT * FROM candidate_interview_sessions WHERE id = ? AND source_document_id = ?'
-        )
-        .get(interviewId, sourceDocumentId) ?? null
+      return (
+        this.database
+          .prepare<[string, string], CandidateInterviewRow>(
+            'SELECT * FROM candidate_interview_sessions WHERE id = ? AND source_document_id = ?'
+          )
+          .get(interviewId, sourceDocumentId) ?? null
+      )
     }
-    return this.database
-      .prepare<[string, string], CandidateInterviewRow>(
-        `SELECT * FROM candidate_interview_sessions
+    return (
+      this.database
+        .prepare<[string, string], CandidateInterviewRow>(
+          `SELECT * FROM candidate_interview_sessions
          WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL
          ORDER BY round_number DESC, updated_at DESC
          LIMIT 1`
-      )
-      .get(sourceDocumentId, kind) ?? null
+        )
+        .get(sourceDocumentId, kind) ?? null
+    )
   }
 
   private assertCandidateInterviewSubject(sourceDocumentId: string): void {
@@ -102,12 +106,22 @@ export class CandidateInterviewStore extends DomainStore {
     if (!parent) throw new Error('The prior interview round was not found.')
     if (parent.decision !== 'next-round') throw new Error('Record a next-round decision before creating a follow-up interview.')
     const kind = validated.kind ?? parent.kind
-    const round = this.database
-      .prepare<[string, string], { next_round: number }>(
-        `SELECT coalesce(max(round_number), 0) + 1 AS next_round
-         FROM candidate_interview_sessions WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL`
+    // One next round per decided round: a repeated request (double click, IPC retry) returns the round it already created.
+    const child = this.database
+      .prepare<[string, string, string], CandidateInterviewRow>(
+        `SELECT * FROM candidate_interview_sessions
+         WHERE source_document_id = ? AND kind = ? AND parent_interview_id = ? AND business_followup_id IS NULL
+         ORDER BY round_number LIMIT 1`
       )
-      .get(validated.sourceDocumentId, kind)?.next_round ?? parent.round_number + 1
+      .get(validated.sourceDocumentId, kind, parent.id)
+    if (child) return this.candidateInterviewFromRow(child)
+    const round =
+      this.database
+        .prepare<[string, string], { next_round: number }>(
+          `SELECT coalesce(max(round_number), 0) + 1 AS next_round
+         FROM candidate_interview_sessions WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL`
+        )
+        .get(validated.sourceDocumentId, kind)?.next_round ?? parent.round_number + 1
     const existing = this.database
       .prepare<[string, string, number], CandidateInterviewRow>(
         `SELECT * FROM candidate_interview_sessions
@@ -124,36 +138,36 @@ export class CandidateInterviewStore extends DomainStore {
     // A follow-up must not quietly repeat every first-round question. Only
     // unresolved items become candidates for the next round; the renderer can
     // use the parent plan as an exclusion set when generating new AI prompts.
-    const questionPlan = inheritedItems
-      .slice(0, 12)
-      .map((text, index) => ({
-        id: `inherited-${round}-${index + 1}`,
-        text,
-        source: 'inherited' as const,
-        sourceLabel: null,
-        selected: false
-      }))
-    this.database.prepare(
-      `INSERT INTO candidate_interview_sessions(
+    const questionPlan = inheritedItems.slice(0, 12).map((text, index) => ({
+      id: `inherited-${round}-${index + 1}`,
+      text,
+      source: 'inherited' as const,
+      sourceLabel: null,
+      selected: false
+    }))
+    this.database
+      .prepare(
+        `INSERT INTO candidate_interview_sessions(
          id, source_document_id, kind, round_number, parent_interview_id, stage,
          scheduled_at, duration_minutes, meeting_method, meeting_url, meeting_details_json, interviewer,
          contact_note, interview_goal, question_plan_json, interview_notes, unresolved_items_json,
          decision, decision_reason, decided_at, decided_by, created_at, updated_at, updated_by, cloud_eligible
        ) VALUES (?, ?, ?, ?, ?, 'new', NULL, 60, 'zoom', NULL, '{}', ?, NULL, NULL, ?, NULL, ?,
                  NULL, NULL, NULL, NULL, ?, ?, ?, 0)`
-    ).run(
-      id,
-      validated.sourceDocumentId,
-      kind,
-      round,
-      parent.id,
-      parent.interviewer,
-      JSON.stringify(questionPlan),
-      JSON.stringify(inheritedItems),
-      timestamp,
-      timestamp,
-      updatedBy
-    )
+      )
+      .run(
+        id,
+        validated.sourceDocumentId,
+        kind,
+        round,
+        parent.id,
+        parent.interviewer,
+        JSON.stringify(questionPlan),
+        JSON.stringify(inheritedItems),
+        timestamp,
+        timestamp,
+        updatedBy
+      )
     const saved = this.getCandidateInterviewRow(validated.sourceDocumentId, id, kind)
     if (!saved) throw new Error('Follow-up interview could not be created.')
     return this.candidateInterviewFromRow(saved)
@@ -179,17 +193,20 @@ export class CandidateInterviewStore extends DomainStore {
         .get(validated.sourceDocumentId)
       if (!activeCandidate) throw new Error('Only an active imported candidate can enter a recruiting interview.')
     } else {
-      const eligibleMembership = this.stores.candidates.listEligibleTalentProfiles().some((profile) => profile.sourceDocumentId === validated.sourceDocumentId)
+      const eligibleMembership = this.stores.candidates
+        .listEligibleTalentProfiles()
+        .some((profile) => profile.sourceDocumentId === validated.sourceDocumentId)
       if (!eligibleMembership) throw new Error('Only eligible talent-pool members can enter a client interview.')
     }
     let current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId, kind)
     if (!current && validated.roundNumber) {
-      current = this.database
-        .prepare<[string, string, number], CandidateInterviewRow>(
-          `SELECT * FROM candidate_interview_sessions
+      current =
+        this.database
+          .prepare<[string, string, number], CandidateInterviewRow>(
+            `SELECT * FROM candidate_interview_sessions
            WHERE source_document_id = ? AND kind = ? AND business_followup_id IS NULL AND round_number = ?`
-        )
-        .get(validated.sourceDocumentId, kind, validated.roundNumber) ?? null
+          )
+          .get(validated.sourceDocumentId, kind, validated.roundNumber) ?? null
     }
     if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
     if (current?.decision) throw new Error('A final interview decision is already recorded. Create a follow-up round instead.')
@@ -224,7 +241,7 @@ export class CandidateInterviewStore extends DomainStore {
         validated.scheduledAt,
         validated.durationMinutes,
         validated.meetingMethod,
-        validated.meetingMethod === 'zoom' || validated.meetingMethod === 'google-meet' ? validated.meetingUrl ?? null : null,
+        validated.meetingMethod === 'zoom' || validated.meetingMethod === 'google-meet' ? (validated.meetingUrl ?? null) : null,
         JSON.stringify(validated.meetingDetails ?? {}),
         validated.interviewer,
         validated.contactNote?.trim() || null,
@@ -233,10 +250,12 @@ export class CandidateInterviewStore extends DomainStore {
         updatedBy
       )
     if (kind === 'recruiting') {
-      this.database.prepare(
-        `UPDATE candidate_records SET recruiting_status = 'recruiting', updated_at = ?
+      this.database
+        .prepare(
+          `UPDATE candidate_records SET recruiting_status = 'recruiting', updated_at = ?
          WHERE source_document_id = ? AND recruiting_status IN ('ready-for-recruiting', 'on-hold')`
-      ).run(timestamp, validated.sourceDocumentId)
+        )
+        .run(timestamp, validated.sourceDocumentId)
     }
     const saved = this.getCandidateInterviewRow(validated.sourceDocumentId, id, kind)
     if (!saved) throw new Error('Interview schedule could not be saved.')
@@ -248,62 +267,67 @@ export class CandidateInterviewStore extends DomainStore {
     updatedBy: string,
     now = new Date()
   ): CandidateInterviewSnapshot {
-    return this.database.transaction(()=>{
-    const validated = saveCandidateInterviewPreparationInputSchema.parse(input)
-    const row = this.database
-      .prepare<[string], CandidateInterviewRow>('SELECT * FROM candidate_interview_sessions WHERE id = ?')
-      .get(validated.interviewId)
-    if (!row) throw new Error('Interview session was not found.')
-    if (row.business_followup_id) throw new Error('请在对应案件的跟进页面修改面试。')
-    if (row.decision) throw new Error('A completed interview cannot be edited.')
-    if (!['scheduled', 'prepared'].includes(row.stage)) {
-      throw new Error('Interview questions can only be edited before the interview starts.')
-    }
-    this.database.prepare(
-      `UPDATE candidate_interview_sessions
+    return this.database.transaction(() => {
+      const validated = saveCandidateInterviewPreparationInputSchema.parse(input)
+      const row = this.database
+        .prepare<[string], CandidateInterviewRow>('SELECT * FROM candidate_interview_sessions WHERE id = ?')
+        .get(validated.interviewId)
+      if (!row) throw new Error('Interview session was not found.')
+      if (row.business_followup_id) throw new Error('请在对应案件的跟进页面修改面试。')
+      if (row.decision) throw new Error('A completed interview cannot be edited.')
+      if (!['scheduled', 'prepared'].includes(row.stage)) {
+        throw new Error('Interview questions can only be edited before the interview starts.')
+      }
+      this.database
+        .prepare(
+          `UPDATE candidate_interview_sessions
        SET stage = 'prepared', interview_goal = ?, question_plan_json = ?, unresolved_items_json = ?,
            updated_at = ?, updated_by = ?
        WHERE id = ?`
-    ).run(
-      validated.interviewGoal?.trim() || null,
-      JSON.stringify(validated.questions),
-      JSON.stringify(validated.unresolvedItems ?? []),
-      now.toISOString(),
-      updatedBy,
-      validated.interviewId
-    )
-    const saved = this.database
-      .prepare<[string], CandidateInterviewRow>('SELECT * FROM candidate_interview_sessions WHERE id = ?')
-      .get(validated.interviewId)
-    if (!saved) throw new Error('Interview preparation could not be saved.')
-    const result=this.candidateInterviewFromRow(saved)
-    this.stores.experience.questionEdits(result.sourceDocumentId,null,result.id,result.questionPlan,updatedBy)
-    this.stores.experience.record({sourceKey:`interview:${result.id}:questions`,documentId:result.sourceDocumentId,reviewId:null,interviewId:result.id,kind:'questions',
-      text:result.interviewNotes??result.decisionReason??'',actor:updatedBy,data:{result:result.decision,questions:result.questionPlan}})
-    return result
+        )
+        .run(
+          validated.interviewGoal?.trim() || null,
+          JSON.stringify(validated.questions),
+          JSON.stringify(validated.unresolvedItems ?? []),
+          now.toISOString(),
+          updatedBy,
+          validated.interviewId
+        )
+      const saved = this.database
+        .prepare<[string], CandidateInterviewRow>('SELECT * FROM candidate_interview_sessions WHERE id = ?')
+        .get(validated.interviewId)
+      if (!saved) throw new Error('Interview preparation could not be saved.')
+      const result = this.candidateInterviewFromRow(saved)
+      this.stores.experience.questionEdits(result.sourceDocumentId, null, result.id, result.questionPlan, updatedBy)
+      this.stores.experience.record({
+        sourceKey: `interview:${result.id}:questions`,
+        documentId: result.sourceDocumentId,
+        reviewId: null,
+        interviewId: result.id,
+        kind: 'questions',
+        text: result.interviewNotes ?? result.decisionReason ?? '',
+        actor: updatedBy,
+        data: { result: result.decision, questions: result.questionPlan }
+      })
+      return result
     })()
   }
 
-  saveCandidateInterviewNotes(
-    input: SaveCandidateInterviewNotesInput,
-    updatedBy: string,
-    now = new Date()
-  ): CandidateInterviewSnapshot {
+  saveCandidateInterviewNotes(input: SaveCandidateInterviewNotesInput, updatedBy: string, now = new Date()): CandidateInterviewSnapshot {
     const validated = saveCandidateInterviewNotesInputSchema.parse(input)
     this.assertCandidateInterviewSubject(validated.sourceDocumentId)
     const current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId)
     if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
     if (!current) throw new Error('Interview session was not found.')
-    if (current.decision) throw new Error('A final interview decision is already recorded. Reopen the candidate before editing interview notes.')
+    if (current.decision)
+      throw new Error('A final interview decision is already recorded. Reopen the candidate before editing interview notes.')
     if (!['prepared', 'interviewing'].includes(current.stage)) {
       throw new Error('Interview notes can only be edited while the interview is in progress.')
     }
     const timestamp = now.toISOString()
     const stage = validated.stage ?? 'interviewing'
     const id = current.id
-    const unresolvedItems = validated.unresolvedItems ?? (current
-      ? JSON.parse(current.unresolved_items_json) as string[]
-      : [])
+    const unresolvedItems = validated.unresolvedItems ?? (current ? (JSON.parse(current.unresolved_items_json) as string[]) : [])
     this.database
       .prepare(
         `INSERT INTO candidate_interview_sessions(
@@ -330,9 +354,17 @@ export class CandidateInterviewStore extends DomainStore {
       )
     const saved = this.getCandidateInterviewRow(validated.sourceDocumentId, id)
     if (!saved) throw new Error('Interview notes could not be saved.')
-    const result=this.candidateInterviewFromRow(saved)
-    this.stores.experience.record({sourceKey:`interview:${result.id}:notes`,documentId:result.sourceDocumentId,reviewId:null,interviewId:result.id,kind:'notes',
-      text:result.interviewNotes??result.decisionReason??'',actor:updatedBy,data:{result:result.decision,questions:result.questionPlan}})
+    const result = this.candidateInterviewFromRow(saved)
+    this.stores.experience.record({
+      sourceKey: `interview:${result.id}:notes`,
+      documentId: result.sourceDocumentId,
+      reviewId: null,
+      interviewId: result.id,
+      kind: 'notes',
+      text: result.interviewNotes ?? result.decisionReason ?? '',
+      actor: updatedBy,
+      data: { result: result.decision, questions: result.questionPlan }
+    })
     return result
   }
 
@@ -350,11 +382,12 @@ export class CandidateInterviewStore extends DomainStore {
       throw new Error('Complete the interview record before recording a decision.')
     }
     const timestamp = now.toISOString()
-    const stage = validated.decision === 'passed'
-      ? 'passed'
-      : validated.decision === 'on-hold' || validated.decision === 'next-round'
-        ? 'on-hold'
-        : 'closed'
+    const stage =
+      validated.decision === 'passed'
+        ? 'passed'
+        : validated.decision === 'on-hold' || validated.decision === 'next-round'
+          ? 'on-hold'
+          : 'closed'
     const id = current.id
     return this.database.transaction(() => {
       this.database
@@ -384,37 +417,48 @@ export class CandidateInterviewStore extends DomainStore {
           decidedBy
         )
       if (current.kind === 'recruiting') {
-        const recruitingStatus = validated.decision === 'passed'
-          ? 'passed'
-          : validated.decision === 'failed'
-            ? 'rejected'
-            : validated.decision === 'withdrawn'
-              ? 'withdrawn'
-              : validated.decision === 'no-show'
-                ? 'no-show'
-                : validated.decision === 'on-hold' || validated.decision === 'next-round'
-                  ? 'on-hold'
-                  : 'recruiting'
-        const updated = this.database.prepare(
-          'UPDATE candidate_records SET recruiting_status = ?, updated_at = ? WHERE source_document_id = ?'
-        ).run(recruitingStatus, timestamp, validated.sourceDocumentId)
+        const recruitingStatus =
+          validated.decision === 'passed'
+            ? 'passed'
+            : validated.decision === 'failed'
+              ? 'rejected'
+              : validated.decision === 'withdrawn'
+                ? 'withdrawn'
+                : validated.decision === 'no-show'
+                  ? 'no-show'
+                  : validated.decision === 'on-hold' || validated.decision === 'next-round'
+                    ? 'on-hold'
+                    : 'recruiting'
+        const updated = this.database
+          .prepare('UPDATE candidate_records SET recruiting_status = ?, updated_at = ? WHERE source_document_id = ?')
+          .run(recruitingStatus, timestamp, validated.sourceDocumentId)
         if (updated.changes !== 1) throw new Error('Candidate recruiting state could not be updated.')
         if (validated.decision === 'passed') {
-          this.database.prepare(
-            `INSERT INTO talent_pool_memberships(source_document_id, status, admitted_interview_id, admitted_at, admitted_by, reason, updated_at)
+          this.database
+            .prepare(
+              `INSERT INTO talent_pool_memberships(source_document_id, status, admitted_interview_id, admitted_at, admitted_by, reason, updated_at)
              VALUES (?, 'eligible', ?, ?, ?, ?, ?)
              ON CONFLICT(source_document_id) DO UPDATE SET
                status = 'eligible', admitted_interview_id = excluded.admitted_interview_id,
                admitted_at = excluded.admitted_at, admitted_by = excluded.admitted_by,
                reason = excluded.reason, updated_at = excluded.updated_at`
-          ).run(validated.sourceDocumentId, current.id, timestamp, decidedBy, validated.decisionReason, timestamp)
+            )
+            .run(validated.sourceDocumentId, current.id, timestamp, decidedBy, validated.decisionReason, timestamp)
         }
       }
       const saved = this.getCandidateInterviewRow(validated.sourceDocumentId, id)
       if (!saved) throw new Error('Interview decision could not be saved.')
-      const result=this.candidateInterviewFromRow(saved)
-      this.stores.experience.record({sourceKey:`interview:${result.id}:feedback`,documentId:result.sourceDocumentId,reviewId:null,interviewId:result.id,kind:'feedback',
-        text:[result.decisionReason,result.interviewNotes].filter(Boolean).join('\n'),actor:decidedBy,data:{result:result.decision,questions:result.questionPlan}})
+      const result = this.candidateInterviewFromRow(saved)
+      this.stores.experience.record({
+        sourceKey: `interview:${result.id}:feedback`,
+        documentId: result.sourceDocumentId,
+        reviewId: null,
+        interviewId: result.id,
+        kind: 'feedback',
+        text: [result.decisionReason, result.interviewNotes].filter(Boolean).join('\n'),
+        actor: decidedBy,
+        data: { result: result.decision, questions: result.questionPlan }
+      })
       return result
     })()
   }

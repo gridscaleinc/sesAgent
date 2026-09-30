@@ -3,9 +3,30 @@ import { expect, it } from 'vitest'
 import type { GmailSyncState } from '@shared'
 import { GmailSyncFeedback } from './GmailSyncFeedback'
 
-const state = { status: 'idle', lookbackDays: 30, lastError: null, lastRun: { mode: 'baseline', imported: 10, discovered: 10,
-  duplicates: 0, filtered: 0, failed: 0, moreAvailable: true, intake: { casesCreated: 4, casesConfirmed: 3, casesNeedAttention: 1,
-    casesFailed: 0, personnelCreated: 2, personnelFailed: 1, pendingCases: 0, pendingPersonnel: 5 } } } as GmailSyncState
+const state = {
+  status: 'idle',
+  lookbackDays: 30,
+  lastError: null,
+  lastRun: {
+    mode: 'baseline',
+    imported: 10,
+    discovered: 10,
+    duplicates: 0,
+    filtered: 0,
+    failed: 0,
+    moreAvailable: true,
+    intake: {
+      casesCreated: 4,
+      casesConfirmed: 3,
+      casesNeedAttention: 1,
+      casesFailed: 0,
+      personnelCreated: 2,
+      personnelFailed: 1,
+      pendingCases: 0,
+      pendingPersonnel: 5
+    }
+  }
+} as GmailSyncState
 
 it('distinguishes received messages from usable cases, people, failures, and outstanding work', () => {
   render(<GmailSyncFeedback state={state} zh />)
@@ -16,7 +37,12 @@ it('distinguishes received messages from usable cases, people, failures, and out
 })
 
 it('shows actionable authentication errors even when an older successful timestamp exists', () => {
-  render(<GmailSyncFeedback state={{ ...state, status: 'error', lastError: 'GOOGLE_REAUTH_REQUIRED', lastSyncedAt: '2026-09-10T00:00:00Z' }} zh />)
+  render(
+    <GmailSyncFeedback
+      state={{ ...state, status: 'error', lastError: 'GOOGLE_REAUTH_REQUIRED', lastSyncedAt: '2026-09-10T00:00:00Z' }}
+      zh
+    />
+  )
   expect(screen.getByRole('alert')).toHaveTextContent('请重新连接 Google 邮箱')
 })
 

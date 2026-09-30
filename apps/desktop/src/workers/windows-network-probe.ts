@@ -23,8 +23,10 @@ const result = await new Promise<{ loopbackDenied: boolean; errorCode: string | 
   })
 })
 
-process.stdout.write(`${JSON.stringify({
-  version: 'windows-appcontainer-network-probe-v1',
-  ...result
-})}\n`)
+process.stdout.write(
+  `${JSON.stringify({
+    version: 'windows-appcontainer-network-probe-v1',
+    ...result
+  })}\n`
+)
 if (!result.loopbackDenied) process.exitCode = 2

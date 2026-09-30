@@ -61,13 +61,18 @@ try {
     candidate?.version === 'windows-release-evidence-v1' &&
     candidate?.kind === 'ocr-worker-kernel-network-deny' &&
     candidate?.verified === true &&
-    candidate?.platform === 'win32' && candidate?.arch === 'x64' &&
+    candidate?.platform === 'win32' &&
+    candidate?.arch === 'x64' &&
     candidate?.mechanism === 'appcontainer-no-network-capabilities' &&
-    Array.isArray(candidate?.appContainerCapabilities) && candidate.appContainerCapabilities.length === 0 &&
+    Array.isArray(candidate?.appContainerCapabilities) &&
+    candidate.appContainerCapabilities.length === 0 &&
     candidate?.unsandboxedLoopbackReachable === true &&
-    candidate?.sandboxedLoopbackDenied === true && candidate?.sandboxedOcrCompleted === true &&
-    sandboxLauncher !== null && candidate?.launcherSha256 === sandboxLauncher.sha256
-  ) networkIsolationEvidence = candidate
+    candidate?.sandboxedLoopbackDenied === true &&
+    candidate?.sandboxedOcrCompleted === true &&
+    sandboxLauncher !== null &&
+    candidate?.launcherSha256 === sandboxLauncher.sha256
+  )
+    networkIsolationEvidence = candidate
 } catch {
   // Development builds intentionally carry explicit unverified evidence and keep OCR disabled.
 }
@@ -89,13 +94,20 @@ try {
     candidate?.version === 'windows-release-evidence-v1' &&
     candidate?.kind === 'local-worker-kernel-network-deny' &&
     candidate?.verified === true &&
-    candidate?.platform === 'win32' && candidate?.arch === 'x64' &&
+    candidate?.platform === 'win32' &&
+    candidate?.arch === 'x64' &&
     candidate?.mechanism === 'appcontainer-no-network-capabilities' &&
-    Array.isArray(candidate?.appContainerCapabilities) && candidate.appContainerCapabilities.length === 0 &&
-    candidate?.unsandboxedLoopbackReachable === true && candidate?.sandboxedLoopbackDenied === true &&
-    candidate?.parserCompleted === true && candidate?.embeddingCompleted === true && candidate?.rerankerCompleted === true &&
-    sandboxLauncher !== null && candidate?.launcherSha256 === sandboxLauncher.sha256
-  ) localWorkerNetworkIsolationEvidence = candidate
+    Array.isArray(candidate?.appContainerCapabilities) &&
+    candidate.appContainerCapabilities.length === 0 &&
+    candidate?.unsandboxedLoopbackReachable === true &&
+    candidate?.sandboxedLoopbackDenied === true &&
+    candidate?.parserCompleted === true &&
+    candidate?.embeddingCompleted === true &&
+    candidate?.rerankerCompleted === true &&
+    sandboxLauncher !== null &&
+    candidate?.launcherSha256 === sandboxLauncher.sha256
+  )
+    localWorkerNetworkIsolationEvidence = candidate
 } catch {
   // Development builds carry an explicit unverified record until Windows x64 proves the policy.
 }
@@ -124,14 +136,15 @@ await writeFile(join(outputDirectory, 'resource-manifest.json'), `${JSON.stringi
   mode: 0o600
 })
 
-const totalBytes = (await Promise.all(resources.map((resource) => stat(resource.target))))
-  .reduce((total, item) => total + item.size, 0)
-process.stdout.write(`${JSON.stringify({
-  outputDirectory,
-  engine: manifest.engine,
-  languages: manifest.languages,
-  totalBytes,
-  sandboxLauncherBuilt: sandboxLauncher !== null,
-  networkIsolationVerified: networkIsolationEvidence.verified,
-  localWorkerNetworkIsolationVerified: localWorkerNetworkIsolationEvidence.verified
-})}\n`)
+const totalBytes = (await Promise.all(resources.map((resource) => stat(resource.target)))).reduce((total, item) => total + item.size, 0)
+process.stdout.write(
+  `${JSON.stringify({
+    outputDirectory,
+    engine: manifest.engine,
+    languages: manifest.languages,
+    totalBytes,
+    sandboxLauncherBuilt: sandboxLauncher !== null,
+    networkIsolationVerified: networkIsolationEvidence.verified,
+    localWorkerNetworkIsolationVerified: localWorkerNetworkIsolationEvidence.verified
+  })}\n`
+)

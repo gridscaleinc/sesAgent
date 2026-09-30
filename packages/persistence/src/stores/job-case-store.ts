@@ -102,8 +102,16 @@ export class JobCaseStore extends DomainStore {
       )
       .get(source.providerAccount, source.providerMessageId)
     if (!row) throw new Error('Gmail job-case source could not be reloaded.')
-    this.database.prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
-      .run(jobCaseIntakeFingerprint(row.redacted_subject, row.redacted_body, this.stores.privacy.getLocalPiiMappings(row.redaction_session_id)), row.id)
+    this.database
+      .prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
+      .run(
+        jobCaseIntakeFingerprint(
+          row.redacted_subject,
+          row.redacted_body,
+          this.stores.privacy.getLocalPiiMappings(row.redaction_session_id)
+        ),
+        row.id
+      )
     return jobCaseSourceFromRow(row)
   }
 
@@ -126,7 +134,8 @@ export class JobCaseStore extends DomainStore {
     }
     const save = this.database.transaction(() => {
       this.insertJobCaseSource(source)
-      if (!this.insertJobCaseDraft(draft)) throw new Error('相同案件已存在，请查看已有记录。 / 同じ案件は登録済みです。既存の案件をご確認ください。')
+      if (!this.insertJobCaseDraft(draft))
+        throw new Error('相同案件已存在，请查看已有记录。 / 同じ案件は登録済みです。既存の案件をご確認ください。')
       return true
     })
     return save()
@@ -151,7 +160,8 @@ export class JobCaseStore extends DomainStore {
     const save = this.database.transaction(() => {
       this.stores.privacy.persistRedactionSession(session, mappings)
       this.insertJobCaseSource(source)
-      if (!this.insertJobCaseDraft(draft)) throw new Error('相同案件已存在，请查看已有记录。 / 同じ案件は登録済みです。既存の案件をご確認ください。')
+      if (!this.insertJobCaseDraft(draft))
+        throw new Error('相同案件已存在，请查看已有记录。 / 同じ案件は登録済みです。既存の案件をご確認ください。')
       return true
     })
     return save()
@@ -181,8 +191,16 @@ export class JobCaseStore extends DomainStore {
         jobCaseBusinessFingerprint(source.redactedSubject, source.redactedBody),
         source.createdAt
       )
-    this.database.prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
-      .run(jobCaseIntakeFingerprint(source.redactedSubject, source.redactedBody, this.stores.privacy.getLocalPiiMappings(source.redactionSessionId)), source.id)
+    this.database
+      .prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
+      .run(
+        jobCaseIntakeFingerprint(
+          source.redactedSubject,
+          source.redactedBody,
+          this.stores.privacy.getLocalPiiMappings(source.redactionSessionId)
+        ),
+        source.id
+      )
   }
 
   findJobCaseReviewByBusinessFingerprint(subject: string, body: string, mappings: LocalPiiMapping[] = []): JobCaseReviewSnapshot | null {
@@ -211,7 +229,13 @@ export class JobCaseStore extends DomainStore {
 
   private insertJobCaseDraft(draft: JobCaseExtractionDraftV2): boolean {
     const source = this.database.prepare<[string], JobCaseSourceRow>('SELECT * FROM job_case_sources WHERE id = ?').get(draft.sourceId)
-    const duplicate = source ? this.findJobCaseReviewByBusinessFingerprint(source.redacted_subject, source.redacted_body, this.stores.privacy.getLocalPiiMappings(source.redaction_session_id)) : null
+    const duplicate = source
+      ? this.findJobCaseReviewByBusinessFingerprint(
+          source.redacted_subject,
+          source.redacted_body,
+          this.stores.privacy.getLocalPiiMappings(source.redaction_session_id)
+        )
+      : null
     if (duplicate) {
       if (source?.source_type === 'gmail' && duplicate.sourceId !== source.id) {
         const warnings = [...new Set([...(JSON.parse(source.warning_codes_json) as string[]), 'BUSINESS_DUPLICATE_SKIPPED'])]
@@ -225,14 +249,7 @@ export class JobCaseStore extends DomainStore {
            review_id, source_id, draft_json, extraction_version, created_at, updated_at
          ) VALUES (?, ?, ?, ?, ?, ?)`
       )
-      .run(
-        draft.reviewId,
-        draft.sourceId,
-        JSON.stringify(draft),
-        draft.version,
-        draft.createdAt,
-        draft.createdAt
-      )
+      .run(draft.reviewId, draft.sourceId, JSON.stringify(draft), draft.version, draft.createdAt, draft.createdAt)
     if (inserted.changes !== 1) return false
     this.database
       .prepare(
@@ -259,20 +276,19 @@ export class JobCaseStore extends DomainStore {
       .get(reviewId)
     if (!row) return null
     const draft = jobCaseExtractionDraftSchema.parse(JSON.parse(row.draft_json))
-    const auditRows = row.status === 'completed'
-      ? this.database
-          .prepare<[string, number], JobCaseFieldAuditRow>(
-            `SELECT field_key, original_value, confirmed_value, change_reason, source_labels_json
+    const auditRows =
+      row.status === 'completed'
+        ? this.database
+            .prepare<[string, number], JobCaseFieldAuditRow>(
+              `SELECT field_key, original_value, confirmed_value, change_reason, source_labels_json
              FROM job_case_field_review_audits
              WHERE review_id = ? AND review_revision = ?`
-          )
-          .all(reviewId, row.revision)
-      : []
+            )
+            .all(reviewId, row.revision)
+        : []
     const auditsByKey = new Map(auditRows.map((audit) => [audit.field_key, audit]))
     const caseRow = this.database
-      .prepare<[string], JobCaseRow>(
-        'SELECT case_json, status FROM job_cases WHERE source_review_id = ? ORDER BY version DESC LIMIT 1'
-      )
+      .prepare<[string], JobCaseRow>('SELECT case_json, status FROM job_cases WHERE source_review_id = ? ORDER BY version DESC LIMIT 1')
       .get(reviewId)
     const jobCase = caseRow ? confirmedJobCaseSchema.parse(JSON.parse(caseRow.case_json)) : null
     const latestFields = new Map(jobCase?.fields.map((field) => [field.key, field]) ?? [])
@@ -304,8 +320,8 @@ export class JobCaseStore extends DomainStore {
           confidence: field.confidence,
           status: audit ? 'confirmed' : latest ? 'needs_review' : field.status,
           sourceLabels: audit
-            ? JSON.parse(audit.source_labels_json) as string[]
-            : latest?.sourceLabels ?? field.sources.map((source) => source.sourceLabel),
+            ? (JSON.parse(audit.source_labels_json) as string[])
+            : (latest?.sourceLabels ?? field.sources.map((source) => source.sourceLabel)),
           changed: audit ? audit.original_value !== audit.confirmed_value : false,
           changeReason: audit?.change_reason ?? null
         }
@@ -326,7 +342,7 @@ export class JobCaseStore extends DomainStore {
         : null,
       lifecycle: lifecycle?.state ?? 'active',
       intakeAt: row.intake_at,
-      intakeBatchId: draft.version === 'job-case-extraction-v2' ? draft.intakeBatchId ?? null : null,
+      intakeBatchId: draft.version === 'job-case-extraction-v2' ? (draft.intakeBatchId ?? null) : null,
       cloudEligible: false
     })
   }
@@ -373,9 +389,7 @@ export class JobCaseStore extends DomainStore {
       .prepare<[string], JobCaseLifecycleRow>('SELECT * FROM job_case_lifecycle WHERE source_review_id = ?')
       .get(reviewId)
     return this.database
-      .prepare<[string], JobCaseRow>(
-        'SELECT case_json, status FROM job_cases WHERE source_review_id = ? ORDER BY version DESC'
-      )
+      .prepare<[string], JobCaseRow>('SELECT case_json, status FROM job_cases WHERE source_review_id = ? ORDER BY version DESC')
       .all(reviewId)
       .map((row) => {
         const jobCase = confirmedJobCaseSchema.parse(JSON.parse(row.case_json))
@@ -386,7 +400,7 @@ export class JobCaseStore extends DomainStore {
           sourceType: source.sourceType,
           version: jobCase.version,
           reviewRevision: jobCase.reviewRevision,
-          status: row.status === 'active' && lifecycle?.state === 'archived' ? 'archived' as const : row.status,
+          status: row.status === 'active' && lifecycle?.state === 'archived' ? ('archived' as const) : row.status,
           fields: jobCase.fields,
           confirmedAt: jobCase.confirmedAt,
           confirmedBy: jobCase.confirmedBy,
@@ -419,23 +433,22 @@ export class JobCaseStore extends DomainStore {
   getJobCaseSourceTextForDisplay(reviewId: string): JobCaseSourceText | null {
     const sourceText = this.getJobCaseSourceText(reviewId)
     if (!sourceText) return null
-    const source = this.database.prepare<[string], { redaction_session_id: string }>(
-      `SELECT source.redaction_session_id FROM job_case_sources source
+    const source = this.database
+      .prepare<[string], { redaction_session_id: string }>(
+        `SELECT source.redaction_session_id FROM job_case_sources source
        JOIN job_case_extractions extraction ON extraction.source_id = source.id
        WHERE extraction.review_id = ?`
-    ).get(reviewId)!
-    const mappings = new Map(this.stores.privacy.getLocalPiiMappings(source.redaction_session_id)
-      .map(mapping => [mapping.placeholder, mapping.originalValue]))
+      )
+      .get(reviewId)!
+    const mappings = new Map(
+      this.stores.privacy.getLocalPiiMappings(source.redaction_session_id).map((mapping) => [mapping.placeholder, mapping.originalValue])
+    )
     // One pass only: a literal placeholder in an original value is not a new lookup.
-    const restore = (text: string) => text.replace(/<[A-Z][A-Z0-9_]*?_\d{3,}>/gu, token => mappings.get(token) ?? token)
+    const restore = (text: string) => text.replace(/<[A-Z][A-Z0-9_]*?_\d{3,}>/gu, (token) => mappings.get(token) ?? token)
     return { ...sourceText, localDisplay: { subject: restore(sourceText.redactedSubject), body: restore(sourceText.redactedBody) } }
   }
 
-  setJobCaseLifecycle(
-    input: SetJobCaseLifecycleInput,
-    changedBy: string,
-    now = new Date()
-  ): JobCaseReviewSnapshot {
+  setJobCaseLifecycle(input: SetJobCaseLifecycleInput, changedBy: string, now = new Date()): JobCaseReviewSnapshot {
     const validated = setJobCaseLifecycleInputSchema.parse(input)
     const state = this.database
       .prepare<[string], JobCaseReviewStateRow>('SELECT * FROM job_case_review_states WHERE review_id = ?')
@@ -455,7 +468,8 @@ export class JobCaseStore extends DomainStore {
         )
         .run(validated.reviewId, validated.state, validated.reason, changedBy, changedAt)
       // An invalid case leaves the working set; restoring it does not put it back.
-      if (validated.state === 'archived') this.database.prepare('DELETE FROM job_case_working_set WHERE review_id = ?').run(validated.reviewId)
+      if (validated.state === 'archived')
+        this.database.prepare('DELETE FROM job_case_working_set WHERE review_id = ?').run(validated.reviewId)
       this.database
         .prepare(
           `INSERT INTO job_case_events(
@@ -472,9 +486,7 @@ export class JobCaseStore extends DomainStore {
           changedAt
         )
       this.database
-        .prepare(
-          'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'job_case_lifecycle', validated.reviewId, state.revision, 'upsert', changedAt)
     })
     save()
@@ -483,11 +495,7 @@ export class JobCaseStore extends DomainStore {
     return review
   }
 
-  reopenJobCaseReview(
-    input: ReopenJobCaseReviewInput,
-    changedBy: string,
-    now = new Date()
-  ): JobCaseReviewSnapshot {
+  reopenJobCaseReview(input: ReopenJobCaseReviewInput, changedBy: string, now = new Date()): JobCaseReviewSnapshot {
     const validated = reopenJobCaseReviewInputSchema.parse(input)
     const state = this.database
       .prepare<[string], JobCaseReviewStateRow>('SELECT * FROM job_case_review_states WHERE review_id = ?')
@@ -536,33 +544,35 @@ export class JobCaseStore extends DomainStore {
     const source = jobCaseSourceFromRow(sourceRow)
     const history = this.getJobCaseHistory(reviewId)
     const relatedIds = new Set([reviewId, source.id, ...history.map((version) => version.id)])
-    const taskRecords = this.stores.workTasks.listWorkTasks().filter((task) =>
-      task.contextBindings.some((binding) => binding.objectType === 'job-case' && relatedIds.has(binding.objectId))
-    ).length
-    const reviewAudits = this.database
-      .prepare<[string], { count: number }>(
-        'SELECT count(*) AS count FROM job_case_field_review_audits WHERE review_id = ?'
-      )
-      .get(reviewId)?.count ?? 0
-    const evaluationDraftCases = this.database
-      .prepare<[string], { count: number }>(
-        `SELECT count(*) AS count FROM candidate_evaluation_draft_cases draft_case
+    const taskRecords = this.stores.workTasks
+      .listWorkTasks()
+      .filter((task) =>
+        task.contextBindings.some((binding) => binding.objectType === 'job-case' && relatedIds.has(binding.objectId))
+      ).length
+    const reviewAudits =
+      this.database
+        .prepare<[string], { count: number }>('SELECT count(*) AS count FROM job_case_field_review_audits WHERE review_id = ?')
+        .get(reviewId)?.count ?? 0
+    const evaluationDraftCases =
+      this.database
+        .prepare<[string], { count: number }>(
+          `SELECT count(*) AS count FROM candidate_evaluation_draft_cases draft_case
          JOIN job_cases job ON job.id = draft_case.job_case_id
          WHERE job.source_review_id = ?`
-      )
-      .get(reviewId)?.count ?? 0
-    const proposalDrafts = this.database
-      .prepare<[string], { count: number }>(
-        `SELECT count(*) AS count FROM proposal_drafts proposal
+        )
+        .get(reviewId)?.count ?? 0
+    const proposalDrafts =
+      this.database
+        .prepare<[string], { count: number }>(
+          `SELECT count(*) AS count FROM proposal_drafts proposal
          JOIN job_cases job ON job.id = proposal.job_case_id
          WHERE job.source_review_id = ?`
-      )
-      .get(reviewId)?.count ?? 0
-    const piiMappings = this.database
-      .prepare<[string], { count: number }>(
-        'SELECT count(*) AS count FROM local_pii_mappings WHERE redaction_session_id = ?'
-      )
-      .get(source.redactionSessionId)?.count ?? 0
+        )
+        .get(reviewId)?.count ?? 0
+    const piiMappings =
+      this.database
+        .prepare<[string], { count: number }>('SELECT count(*) AS count FROM local_pii_mappings WHERE redaction_session_id = ?')
+        .get(source.redactionSessionId)?.count ?? 0
     const caseIds = history.map((version) => version.id)
     const caseIdSet = new Set(caseIds)
     const agentMatchRuns = this.database
@@ -581,8 +591,14 @@ export class JobCaseStore extends DomainStore {
       matchRunIds: agentRunIds,
       matchResultIds: new Set(agentResultRows.map((row) => row.id))
     })
-    const followUps = this.database.prepare<[string], { id: string; revision: number }>('SELECT id,revision FROM business_followups WHERE review_id=? ORDER BY id').all(reviewId)
-    const progressMail = this.database.prepare<[string], {id:string;payload:string}>('SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.review_id=? ORDER BY mail.id').all(reviewId)
+    const followUps = this.database
+      .prepare<[string], { id: string; revision: number }>('SELECT id,revision FROM business_followups WHERE review_id=? ORDER BY id')
+      .all(reviewId)
+    const progressMail = this.database
+      .prepare<[string], { id: string; payload: string }>(
+        'SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.review_id=? ORDER BY mail.id'
+      )
+      .all(reviewId)
     const counts = {
       ...(followUps.length ? { businessFollowUps: followUps.length } : {}),
       caseVersions: history.length,
@@ -595,16 +611,20 @@ export class JobCaseStore extends DomainStore {
       gmailMessages: source.sourceType === 'gmail' ? 1 : 0,
       agentReferences
     }
-    const confirmationHash = createHash('sha256').update(JSON.stringify({
-      reviewId,
-      sourceId: source.id,
-      providerMessageId: source.providerMessageId,
-      latestCaseId: history[0]?.id,
-      latestVersion: history[0]?.version,
-      followUps,
-      progressMail,
-      counts
-    })).digest('hex')
+    const confirmationHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          reviewId,
+          sourceId: source.id,
+          providerMessageId: source.providerMessageId,
+          latestCaseId: history[0]?.id,
+          latestVersion: history[0]?.version,
+          followUps,
+          progressMail,
+          counts
+        })
+      )
+      .digest('hex')
     const title = history[0]?.fields.find((field) => field.key === 'title')?.value ?? source.redactedSubject
     return jobCaseDeletionPreviewSchema.parse({
       reviewId,
@@ -654,10 +674,9 @@ export class JobCaseStore extends DomainStore {
       matchRunIds: agentRunIds,
       matchResultIds: new Set(agentResultRows.map((row) => row.id))
     }
-    const taskIds = this.stores.workTasks.listWorkTasks()
-      .filter((task) => task.contextBindings.some((binding) =>
-        binding.objectType === 'job-case' && relatedIds.has(binding.objectId)
-      ))
+    const taskIds = this.stores.workTasks
+      .listWorkTasks()
+      .filter((task) => task.contextBindings.some((binding) => binding.objectType === 'job-case' && relatedIds.has(binding.objectId)))
       .map((task) => task.id)
     const deletedAt = now.toISOString()
     const remove = this.database.transaction(() => {
@@ -669,9 +688,7 @@ export class JobCaseStore extends DomainStore {
       for (const caseId of caseIds) {
         this.database.prepare("DELETE FROM change_outbox WHERE entity_type = 'job_case' AND entity_id = ?").run(caseId)
       }
-      this.database
-        .prepare("DELETE FROM change_outbox WHERE entity_type = 'job_case_lifecycle' AND entity_id = ?")
-        .run(input.reviewId)
+      this.database.prepare("DELETE FROM change_outbox WHERE entity_type = 'job_case_lifecycle' AND entity_id = ?").run(input.reviewId)
       this.database.prepare('DELETE FROM job_cases WHERE source_review_id = ?').run(input.reviewId)
       if (source.sourceType === 'gmail' && source.providerAccount && source.providerMessageId) {
         this.database
@@ -698,9 +715,7 @@ export class JobCaseStore extends DomainStore {
       this.database.prepare('DELETE FROM local_pii_mappings WHERE redaction_session_id = ?').run(source.redactionSessionId)
       this.database.prepare('DELETE FROM redaction_sessions WHERE id = ?').run(source.redactionSessionId)
       this.database
-        .prepare(
-          'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'job_case', input.reviewId, 1, 'delete', deletedAt)
     })
     remove()
@@ -713,15 +728,29 @@ export class JobCaseStore extends DomainStore {
       if (!review || review.lifecycle !== 'active') throw new Error('案件不存在或已归档。')
       const field = review.fields.find((item) => item.key === input.field)
       if (!field || input.projectId) throw new Error('无效的案件字段。')
-      if (review.reviewRevision !== input.version && field.value !== input.previousValue) throw new Error('这一项已被更新，输入内容已保留，请核对后重试。')
+      if (review.reviewRevision !== input.version && field.value !== input.previousValue)
+        throw new Error('这一项已被更新，输入内容已保留，请核对后重试。')
       const value = input.value?.trim() || null
       if (field.value === value) return { version: review.reviewRevision }
-      const current = review.status === 'completed'
-        ? this.reopenJobCaseReview({ reviewId: input.id, reason: 'HR直接编辑并自动保存' }, reviewerName)
-        : review
-      const saved = this.confirmJobCaseReview({ reviewId: input.id, reviewRevision: current.reviewRevision, privacyReviewed: true,
-        fields: review.fields.map((item) => ({ key: item.key, value: item.key === input.field ? value : item.value,
-          confirmed: true, changeReason: 'HR直接编辑并自动保存' })) }, reviewerId, reviewerName)
+      const current =
+        review.status === 'completed'
+          ? this.reopenJobCaseReview({ reviewId: input.id, reason: 'HR直接编辑并自动保存' }, reviewerName)
+          : review
+      const saved = this.confirmJobCaseReview(
+        {
+          reviewId: input.id,
+          reviewRevision: current.reviewRevision,
+          privacyReviewed: true,
+          fields: review.fields.map((item) => ({
+            key: item.key,
+            value: item.key === input.field ? value : item.value,
+            confirmed: true,
+            changeReason: 'HR直接编辑并自动保存'
+          }))
+        },
+        reviewerId,
+        reviewerName
+      )
       return { version: saved.reviewRevision }
     })()
   }
@@ -752,13 +781,9 @@ export class JobCaseStore extends DomainStore {
     if (!sourceRow) throw new Error('Job case source was not found.')
     const source = jobCaseSourceFromRow(sourceRow)
     const previousCaseRow = this.database
-      .prepare<[string], JobCaseRow>(
-        "SELECT case_json, status FROM job_cases WHERE source_review_id = ? AND status = 'active' LIMIT 1"
-      )
+      .prepare<[string], JobCaseRow>("SELECT case_json, status FROM job_cases WHERE source_review_id = ? AND status = 'active' LIMIT 1")
       .get(validated.reviewId)
-    const previousCase = previousCaseRow
-      ? confirmedJobCaseSchema.parse(JSON.parse(previousCaseRow.case_json))
-      : null
+    const previousCase = previousCaseRow ? confirmedJobCaseSchema.parse(JSON.parse(previousCaseRow.case_json)) : null
     const previousFields = new Map(previousCase?.fields.map((field) => [field.key, field]) ?? [])
     const submissionByKey = new Map(validated.fields.map((field) => [field.key, field]))
     if (submissionByKey.size !== draft.fields.length || draft.fields.some((field) => !submissionByKey.has(field.key))) {
@@ -784,7 +809,9 @@ export class JobCaseStore extends DomainStore {
       return [`${label}（${found.join(', ')}）`]
     })
     if (residualIdentifiers.length > 0) {
-      throw new Error(`案件フィールドに直接識別子を保存できません: ${residualIdentifiers.join('、')}`)
+      throw new Error(
+        `案件字段含有个人信息，无法确认：${residualIdentifiers.join('、')}。请在案件详情中删除这些内容后重试。 / 案件フィールドに直接識別子を保存できません: ${residualIdentifiers.join('、')}`
+      )
     }
 
     const reviewedAt = now.toISOString()
@@ -795,11 +822,10 @@ export class JobCaseStore extends DomainStore {
       if (!current || current.status !== 'awaiting-review' || current.revision !== validated.reviewRevision) {
         throw new Error('Job case review changed while it was being confirmed.')
       }
-      const latestVersion = this.database
-        .prepare<[string], { version: number | null }>(
-          'SELECT max(version) AS version FROM job_cases WHERE source_review_id = ?'
-        )
-        .get(validated.reviewId)?.version ?? 0
+      const latestVersion =
+        this.database
+          .prepare<[string], { version: number | null }>('SELECT max(version) AS version FROM job_cases WHERE source_review_id = ?')
+          .get(validated.reviewId)?.version ?? 0
       const version = latestVersion + 1
       const caseId = randomUUID()
       const jobCase = confirmedJobCaseSchema.parse({
@@ -869,19 +895,10 @@ export class JobCaseStore extends DomainStore {
              completed_at = ?, updated_at = ?
            WHERE review_id = ? AND revision = ? AND status = 'awaiting-review'`
         )
-        .run(
-          reviewerId,
-          reviewerDisplayName,
-          reviewedAt,
-          reviewedAt,
-          validated.reviewId,
-          validated.reviewRevision
-        )
+        .run(reviewerId, reviewerDisplayName, reviewedAt, reviewedAt, validated.reviewId, validated.reviewRevision)
       if (updated.changes !== 1) throw new Error('Job case review could not be committed.')
       this.database
-        .prepare(
-          'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'job_case', caseId, version, 'upsert', reviewedAt)
     })
     save()

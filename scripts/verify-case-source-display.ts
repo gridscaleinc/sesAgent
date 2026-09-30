@@ -8,7 +8,8 @@ import { createRedactedManualJobCaseSource, extractJobCaseDraft } from '@job-cas
 import { collectLocalPersonNameCandidates, MacNaturalLanguageNerClient } from '@local-ai'
 
 const directory = await mkdtemp(join(tmpdir(), 'ses-case-source-display-'))
-const databaseKey = randomBytes(32), mappingKey = randomBytes(32)
+const databaseKey = randomBytes(32),
+  mappingKey = randomBytes(32)
 const repository = new EncryptedApplicationRepository({ path: join(directory, 'test.db'), databaseKey, mappingKey })
 try {
   const firstBody = '必須スキル：BTP or Fiori or Cdsview\n担当：山田太郎\n連絡先：contact@example.com'
@@ -29,22 +30,39 @@ try {
   assert.equal(repository.getJobCaseSourceTextForDisplay(randomUUID()), null)
   assert.deepEqual(repository.getJobCaseSourceText(first), redacted, 'local reading never changes stored redacted source')
   const agent = JSON.stringify(repository.getAgentJobCaseDraftFacts(first, '案件 A'))
-  for (const original of ['山田太郎', 'contact@example.com', 'localDisplay']) assert.ok(!agent.includes(original), 'local display data does not enter agent facts')
+  for (const original of ['山田太郎', 'contact@example.com', 'localDisplay'])
+    assert.ok(!agent.includes(original), 'local display data does not enter agent facts')
 
   let nativeNer = 'not-applicable'
   if (process.platform === 'darwin') {
     const ner = new MacNaturalLanguageNerClient(resolve('build/native/macos/ses-vision-ocr'))
-    const text = '日语流畅的FI 中上级SE+会BTP或者Fiori或者Cdsview 至少一个熟悉\nBTP or Fiori or Cdsviewの活用を前提とした設計経験がある方\n担当：山田太郎'
+    const text =
+      '日语流畅的FI 中上级SE+会BTP或者Fiori或者Cdsview 至少一个熟悉\nBTP or Fiori or Cdsviewの活用を前提とした設計経験がある方\n担当：山田太郎'
     const names = collectLocalPersonNameCandidates(text, await ner.detectNames(text))
     assert.ok(!names.includes('Fiori'))
     assert.ok(names.includes('山田太郎'))
     const newCase = create(firstBody, names)
     assert.ok(repository.getJobCaseSourceText(newCase)!.redactedBody.includes('BTP or Fiori or Cdsview'))
-    assert.ok(repository.getJobCaseReview(newCase)!.fields.find(field => field.key === 'required_skills')!.value!.includes('Fiori'))
+    assert.ok(
+      repository
+        .getJobCaseReview(newCase)!
+        .fields.find((field) => field.key === 'required_skills')!
+        .value!.includes('Fiori')
+    )
     nativeNer = 'passed'
   }
-  console.log(JSON.stringify({ localSourceRestoration: 'passed', isolatedMappings: 'passed', redactedCloudReadUnchanged: 'passed', nativeNer, networkAccess: false }))
+  console.log(
+    JSON.stringify({
+      localSourceRestoration: 'passed',
+      isolatedMappings: 'passed',
+      redactedCloudReadUnchanged: 'passed',
+      nativeNer,
+      networkAccess: false
+    })
+  )
 } finally {
-  repository.close(); databaseKey.fill(0); mappingKey.fill(0)
+  repository.close()
+  databaseKey.fill(0)
+  mappingKey.fill(0)
   await rm(directory, { recursive: true, force: true })
 }

@@ -43,14 +43,11 @@ async function verifySignature(path) {
     '}'
   ].join(' ')
   try {
-    const { stdout } = await run('powershell.exe', [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy', 'Bypass',
-      '-Command', command,
-      path
-    ], { windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024 })
+    const { stdout } = await run(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command, path],
+      { windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024 }
+    )
     return JSON.parse(stdout.trim())
   } catch (error) {
     if (requireSignature) throw new Error(`Windows installer signature is not valid: ${basename(path)}`, { cause: error })
@@ -122,7 +119,7 @@ async function walk(directory) {
   }
   for (const entry of entries) {
     const path = join(directory, entry.name)
-    if (entry.isDirectory()) paths.push(...await walk(path))
+    if (entry.isDirectory()) paths.push(...(await walk(path)))
     else if (entry.isFile()) paths.push(path)
   }
   return paths
@@ -204,7 +201,7 @@ try {
   const databasePath = await findEncryptedDatabase()
   sentinelPath ??= join(dirname(dirname(databasePath)), 'installer-preservation-sentinel.txt')
   if (previousInstallerPath) {
-    if (databasePath !== databaseBeforeUpgrade || await readFile(sentinelPath, 'utf8') !== 'preserve-on-upgrade-and-uninstall\n') {
+    if (databasePath !== databaseBeforeUpgrade || (await readFile(sentinelPath, 'utf8')) !== 'preserve-on-upgrade-and-uninstall\n') {
       throw new Error('Encrypted business data was not preserved during NSIS upgrade.')
     }
   } else {
@@ -224,20 +221,26 @@ try {
   if (!databaseMetadata.isFile() || sentinel !== 'preserve-on-upgrade-and-uninstall\n') {
     throw new Error('Encrypted business data was not preserved after NSIS uninstall.')
   }
-  process.stdout.write(`${JSON.stringify({
-    installer: basename(installerPath),
-    releaseChannel: developmentInstaller ? 'development-unsigned' : 'release',
-    signatureStatus: signature.Status,
-    signerSubject: signature.Subject || null,
-    installedLaunchVerified: true,
-    schemaVersion: 37,
-    keyProtection: 'windows-dpapi',
-    encryptedDatabase: true,
-    memberCallbackProtocol: 'com.gridscale.native.ses-agent',
-    upgradeVerified: previousInstallerPath !== null,
-    uninstallVerified: true,
-    businessDataPreservedAfterUninstall: true
-  }, null, 2)}\n`)
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        installer: basename(installerPath),
+        releaseChannel: developmentInstaller ? 'development-unsigned' : 'release',
+        signatureStatus: signature.Status,
+        signerSubject: signature.Subject || null,
+        installedLaunchVerified: true,
+        schemaVersion: 37,
+        keyProtection: 'windows-dpapi',
+        encryptedDatabase: true,
+        memberCallbackProtocol: 'com.gridscale.native.ses-agent',
+        upgradeVerified: previousInstallerPath !== null,
+        uninstallVerified: true,
+        businessDataPreservedAfterUninstall: true
+      },
+      null,
+      2
+    )}\n`
+  )
 } finally {
   if (uninstallerPath) {
     try {

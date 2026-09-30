@@ -43,29 +43,43 @@ describe('EncryptedFileVault', () => {
       source: { name: 'candidate.xlsx', format: 'xlsx', sha256: 'a'.repeat(64), size: 2048 },
       blocks: [
         { id: 'name-label', kind: 'cell', text: '氏名', source: { sheet: '履歴書', cell: 'A5', printArea: 'A1:AM90', inPrintArea: true } },
-        { id: 'name-value', kind: 'cell', text: '楊凱', source: { sheet: '履歴書', cell: 'D5', mergedRange: 'D5:I5', printArea: 'A1:AM90', inPrintArea: true } },
-        { id: 'school-value', kind: 'cell', text: '鄭州大学', source: { sheet: '履歴書', cell: 'D8', mergedRange: 'D8:R8', printArea: 'A1:AM90', inPrintArea: true } }
+        {
+          id: 'name-value',
+          kind: 'cell',
+          text: '楊凱',
+          source: { sheet: '履歴書', cell: 'D5', mergedRange: 'D5:I5', printArea: 'A1:AM90', inPrintArea: true }
+        },
+        {
+          id: 'school-value',
+          kind: 'cell',
+          text: '鄭州大学',
+          source: { sheet: '履歴書', cell: 'D8', mergedRange: 'D8:R8', printArea: 'A1:AM90', inPrintArea: true }
+        }
       ],
       warnings: [],
       requiresLocalOcr: false,
       statistics: { pages: 0, sheets: 1, blocks: 3, characters: 10 },
       security: { externalContentLoaded: false, macrosExecuted: false, rawFileCloudEligible: false }
     }
-    const preview = buildOriginalDocumentPreview(document, {
-      displayName: '楊凱',
-      gender: null,
-      birthDate: null,
-      nationality: null,
-      phone: null,
-      email: null,
-      address: null,
-      education: '鄭州大学',
-      major: null,
-      graduationDate: null,
-      degree: null,
-      storage: 'encrypted-local-only',
-      cloudEligible: false
-    }, null)
+    const preview = buildOriginalDocumentPreview(
+      document,
+      {
+        displayName: '楊凱',
+        gender: null,
+        birthDate: null,
+        nationality: null,
+        phone: null,
+        email: null,
+        address: null,
+        education: '鄭州大学',
+        major: null,
+        graduationDate: null,
+        degree: null,
+        storage: 'encrypted-local-only',
+        cloudEligible: false
+      },
+      null
+    )
 
     expect(preview).toMatchObject({
       viewMode: 'spreadsheet',

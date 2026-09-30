@@ -1,11 +1,6 @@
 // @vitest-environment node
 import type { CandidateMatchRunSummary } from '@shared'
-import {
-  candidatePoolFingerprint,
-  evaluateMatchRunValidity,
-  projectBusinessPriority,
-  type MatchRunValidityContext
-} from './index'
+import { candidatePoolFingerprint, evaluateMatchRunValidity, projectBusinessPriority, type MatchRunValidityContext } from './index'
 
 const run: CandidateMatchRunSummary = {
   id: '7afc4d8d-65ea-48cb-97dc-ff722fcf8f67',
@@ -27,8 +22,13 @@ const run: CandidateMatchRunSummary = {
   },
   createdAt: '2026-08-18T00:00:00.000Z',
   evaluation: {
-    resultCount: 1, feedbackCount: 0, suitableCount: 0, unsuitableCount: 0,
-    coveragePercent: 0, judgedNdcgAt20: null, recallAt20: null,
+    resultCount: 1,
+    feedbackCount: 0,
+    suitableCount: 0,
+    unsuitableCount: 0,
+    coveragePercent: 0,
+    judgedNdcgAt20: null,
+    recallAt20: null,
     recallStatus: 'requires-known-relevant-total'
   }
 }
@@ -76,13 +76,22 @@ describe('matching projections', () => {
 
   it('projects business priority only from timing, availability and proposal follow-up state', () => {
     const high = projectBusinessPriority({
-      caseTiming: '即日', candidateAvailability: null, proposalStatus: null, followUpStage: null
+      caseTiming: '即日',
+      candidateAvailability: null,
+      proposalStatus: null,
+      followUpStage: null
     })
     const followUp = projectBusinessPriority({
-      caseTiming: '来月', candidateAvailability: '来月参画可', proposalStatus: 'exported', followUpStage: 'sent'
+      caseTiming: '来月',
+      candidateAvailability: '来月参画可',
+      proposalStatus: 'exported',
+      followUpStage: 'sent'
     })
     const paused = projectBusinessPriority({
-      caseTiming: '来月', candidateAvailability: '来月参画可', proposalStatus: 'exported', followUpStage: 'declined'
+      caseTiming: '来月',
+      candidateAvailability: '来月参画可',
+      proposalStatus: 'exported',
+      followUpStage: 'declined'
     })
     expect(high.level).toBe('high')
     expect(high.reasons).toContain('CANDIDATE_AVAILABILITY_UNKNOWN')

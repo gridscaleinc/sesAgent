@@ -108,66 +108,60 @@ export function registerCandidateEvaluationHandlers(context: MainIpcContext) {
     return candidateEvaluationAuthoringWorkspace()
   })
 
-  ipcMain.handle(
-    ipcChannels.evaluateCandidateEvaluationDraft,
-    async (event, rawInput): Promise<EvaluateCandidateEvaluationDraftResult> => {
-      assertTrustedSender(event)
-      const input = evaluateCandidateEvaluationDraftInputSchema.parse(rawInput)
-      if (candidateEvaluationBusy) throw new Error('別の候補者評価が進行中です。')
-      candidateEvaluationBusy = true
-      try {
-        const benchmark = repository.buildCandidateEvaluationBenchmark(input.draftId, input.expectedRevision)
-        const report = await evaluateCandidateBenchmark(benchmark)
-        return {
-          workspace: candidateEvaluationAuthoringWorkspace(),
-          state: repository.saveCandidateEvaluation(benchmark, report)
-        }
-      } finally {
-        candidateEvaluationBusy = false
+  ipcMain.handle(ipcChannels.evaluateCandidateEvaluationDraft, async (event, rawInput): Promise<EvaluateCandidateEvaluationDraftResult> => {
+    assertTrustedSender(event)
+    const input = evaluateCandidateEvaluationDraftInputSchema.parse(rawInput)
+    if (candidateEvaluationBusy) throw new Error('別の候補者評価が進行中です。')
+    candidateEvaluationBusy = true
+    try {
+      const benchmark = repository.buildCandidateEvaluationBenchmark(input.draftId, input.expectedRevision)
+      const report = await evaluateCandidateBenchmark(benchmark)
+      return {
+        workspace: candidateEvaluationAuthoringWorkspace(),
+        state: repository.saveCandidateEvaluation(benchmark, report)
       }
+    } finally {
+      candidateEvaluationBusy = false
     }
-  )
+  })
 
-  ipcMain.handle(
-    ipcChannels.importCandidateEvaluationBenchmark,
-    async (event): Promise<ImportCandidateEvaluationBenchmarkResult> => {
-      assertTrustedSender(event)
-      if (candidateEvaluationBusy) throw new Error('別の候補者評価が進行中です。')
-      candidateEvaluationBusy = true
-      try {
-        const selection = await dialog.showOpenDialog({
-          title: '脱敏済み SES 候補者評価セットを選択',
-          filters: [{ name: 'SES Candidate Benchmark', extensions: ['json'] }],
-          properties: ['openFile', 'dontAddToRecent']
-        })
-        if (selection.canceled || selection.filePaths.length !== 1) {
-          return { cancelled: true, state: repository.getCandidateEvaluationState() }
-        }
-        const inputPath = selection.filePaths[0]!
-        const file = await lstat(inputPath)
-        if (!file.isFile() || file.isSymbolicLink()) throw new Error('評価セットは通常の JSON ファイルを選択してください。')
-        if (file.size <= 0 || file.size > 1024 * 1024) throw new Error('評価セットは 1 MB 以下である必要があります。')
-        if (extname(inputPath).toLocaleLowerCase('en-US') !== '.json') throw new Error('評価セットは .json 形式である必要があります。')
-        let raw: unknown
-        try {
-          raw = JSON.parse(await readFile(inputPath, 'utf8'))
-        } catch {
-          throw new Error('評価セットの JSON を読み取れませんでした。')
-        }
-        const benchmark = sesCandidateBenchmarkSchema.parse(raw)
-        const privacyText = [benchmark.name, ...benchmark.cases.map((testCase) => testCase.query)].join('\n')
-        const identifiers = detectDirectIdentifiers(privacyText)
-        if (identifiers.length > 0 || /<(?:PERSON_NAME|PHONE|EMAIL|ADDRESS|PRIVATE_EMAIL)_\d+>/iu.test(privacyText)) {
-          throw new Error('評価セットに個人識別情報または PII 占位符が含まれています。脱敏済み条件だけを使用してください。')
-        }
-        const report = await evaluateCandidateBenchmark(benchmark)
-        return {
-          cancelled: false,
-          state: repository.saveCandidateEvaluation(benchmark, report)
-        }
-      } finally {
-        candidateEvaluationBusy = false
+  ipcMain.handle(ipcChannels.importCandidateEvaluationBenchmark, async (event): Promise<ImportCandidateEvaluationBenchmarkResult> => {
+    assertTrustedSender(event)
+    if (candidateEvaluationBusy) throw new Error('別の候補者評価が進行中です。')
+    candidateEvaluationBusy = true
+    try {
+      const selection = await dialog.showOpenDialog({
+        title: '脱敏済み SES 候補者評価セットを選択',
+        filters: [{ name: 'SES Candidate Benchmark', extensions: ['json'] }],
+        properties: ['openFile', 'dontAddToRecent']
+      })
+      if (selection.canceled || selection.filePaths.length !== 1) {
+        return { cancelled: true, state: repository.getCandidateEvaluationState() }
       }
+      const inputPath = selection.filePaths[0]!
+      const file = await lstat(inputPath)
+      if (!file.isFile() || file.isSymbolicLink()) throw new Error('評価セットは通常の JSON ファイルを選択してください。')
+      if (file.size <= 0 || file.size > 1024 * 1024) throw new Error('評価セットは 1 MB 以下である必要があります。')
+      if (extname(inputPath).toLocaleLowerCase('en-US') !== '.json') throw new Error('評価セットは .json 形式である必要があります。')
+      let raw: unknown
+      try {
+        raw = JSON.parse(await readFile(inputPath, 'utf8'))
+      } catch {
+        throw new Error('評価セットの JSON を読み取れませんでした。')
+      }
+      const benchmark = sesCandidateBenchmarkSchema.parse(raw)
+      const privacyText = [benchmark.name, ...benchmark.cases.map((testCase) => testCase.query)].join('\n')
+      const identifiers = detectDirectIdentifiers(privacyText)
+      if (identifiers.length > 0 || /<(?:PERSON_NAME|PHONE|EMAIL|ADDRESS|PRIVATE_EMAIL)_\d+>/iu.test(privacyText)) {
+        throw new Error('評価セットに個人識別情報または PII 占位符が含まれています。脱敏済み条件だけを使用してください。')
+      }
+      const report = await evaluateCandidateBenchmark(benchmark)
+      return {
+        cancelled: false,
+        state: repository.saveCandidateEvaluation(benchmark, report)
+      }
+    } finally {
+      candidateEvaluationBusy = false
     }
-  )
+  })
 }

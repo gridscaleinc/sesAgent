@@ -28,7 +28,10 @@ export const jobCaseFieldCanonicalLabels: Record<JobCaseFieldKey, string> = {
 
 /** Labels compare after NFKC, without spaces or bracket decorations, case-insensitively. */
 export function normalizeJobCaseFieldLabel(label: string): string {
-  return label.normalize('NFKC').replace(/[\s　【】[\]()（）]/gu, '').toLocaleLowerCase('ja-JP')
+  return label
+    .normalize('NFKC')
+    .replace(/[\s　【】[\]()（）]/gu, '')
+    .toLocaleLowerCase('ja-JP')
 }
 
 /** The built-in field a written label is an alias of, or null when it is not an alias. */

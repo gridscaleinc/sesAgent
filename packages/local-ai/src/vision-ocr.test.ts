@@ -72,14 +72,16 @@ describe('mergeVisionOcr', () => {
       version: 'windows-ocr-v1',
       engine: 'windows-media-ocr',
       networkAccess: false,
-      pages: [{
-        page: 1,
-        width: 500,
-        height: 700,
-        textBlocks: [{ text: '氏名：山田 太郎', confidence: 0.97, boundingBox: { x: 0.1, y: 0.8, width: 0.4, height: 0.04 } }],
-        faceRegions: [],
-        barcodeRegions: []
-      }],
+      pages: [
+        {
+          page: 1,
+          width: 500,
+          height: 700,
+          textBlocks: [{ text: '氏名：山田 太郎', confidence: 0.97, boundingBox: { x: 0.1, y: 0.8, width: 0.4, height: 0.04 } }],
+          faceRegions: [],
+          barcodeRegions: []
+        }
+      ],
       warnings: ['SIGNATURE_DETECTION_REQUIRES_HUMAN_REVIEW'],
       coverage: {
         textRecognition: 'windows-ja-JP',
@@ -116,9 +118,15 @@ describe('collectLocalPersonNameCandidates', () => {
   })
 
   it('preserves the known Java API compound while still masking labeled names', () => {
-    const detection=nameDetectionResultSchema.parse({version:'apple-nl-ner-v1',engine:'apple-natural-language',networkAccess:false,requiresHumanConfirmation:true,entities:[{text:'Java API',startUtf16:0,endUtf16:8,tag:'personalName'}]})
-    expect(collectLocalPersonNameCandidates('Java API実装',detection)).toEqual([])
-    expect(collectLocalPersonNameCandidates('氏名：Java API',detection)).toEqual(['Java API'])
+    const detection = nameDetectionResultSchema.parse({
+      version: 'apple-nl-ner-v1',
+      engine: 'apple-natural-language',
+      networkAccess: false,
+      requiresHumanConfirmation: true,
+      entities: [{ text: 'Java API', startUtf16: 0, endUtf16: 8, tag: 'personalName' }]
+    })
+    expect(collectLocalPersonNameCandidates('Java API実装', detection)).toEqual([])
+    expect(collectLocalPersonNameCandidates('氏名：Java API', detection)).toEqual(['Java API'])
   })
 
   it('does not let the tagger turn a technology into a person', () => {
@@ -139,31 +147,53 @@ describe('collectLocalPersonNameCandidates', () => {
     })
     expect(collectLocalPersonNameCandidates(`${line}\nZorp／Bash`, appleResult)).toEqual(['Tim Cook'])
     // Listed between other technologies - the Spark-next-to-Scala shape - even when unknown to the list.
-    expect(collectLocalPersonNameCandidates('③ 9月〜長期、SE 2名、英語、日本語、Zorp，Spark，現場常駐。', nameDetectionResultSchema.parse({
-      version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false, requiresHumanConfirmation: true,
-      entities: [{ text: 'Zorp', startUtf16: 18, endUtf16: 22, tag: 'personalName' }]
-    }))).toEqual([])
+    expect(
+      collectLocalPersonNameCandidates(
+        '③ 9月〜長期、SE 2名、英語、日本語、Zorp，Spark，現場常駐。',
+        nameDetectionResultSchema.parse({
+          version: 'apple-nl-ner-v1',
+          engine: 'apple-natural-language',
+          networkAccess: false,
+          requiresHumanConfirmation: true,
+          entities: [{ text: 'Zorp', startUtf16: 18, endUtf16: 22, tag: 'personalName' }]
+        })
+      )
+    ).toEqual([])
     // The same single word stays a name when nothing marks it as a technology.
-    expect(collectLocalPersonNameCandidates('担当は Zorp です', nameDetectionResultSchema.parse({
-      version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false, requiresHumanConfirmation: true,
-      entities: [{ text: 'Zorp', startUtf16: 4, endUtf16: 8, tag: 'personalName' }]
-    }))).toEqual(['Zorp'])
+    expect(
+      collectLocalPersonNameCandidates(
+        '担当は Zorp です',
+        nameDetectionResultSchema.parse({
+          version: 'apple-nl-ner-v1',
+          engine: 'apple-natural-language',
+          networkAccess: false,
+          requiresHumanConfirmation: true,
+          entities: [{ text: 'Zorp', startUtf16: 4, endUtf16: 8, tag: 'personalName' }]
+        })
+      )
+    ).toEqual(['Zorp'])
   })
 
   it('does not treat common two-column SES headings or role descriptions as person names', () => {
-    expect(collectLocalPersonNameCandidates([
-      '案件 概要',
-      '必須 スキル',
-      '担当：バックエンド開発',
-      'クラウド基盤の設計・構築を担当'
-    ].join('\n'))).toEqual([])
+    expect(
+      collectLocalPersonNameCandidates(['案件 概要', '必須 スキル', '担当：バックエンド開発', 'クラウド基盤の設計・構築を担当'].join('\n'))
+    ).toEqual([])
   })
 
   it('preserves SAP technology names in mixed Chinese/Japanese requirements while still finding the contact', () => {
-    const text = '日语流畅的FI 中上级SE+会BTP或者Fiori或者Cdsview 至少一个熟悉\nBTP or Fiori or Cdsviewの活用を前提とした設計経験\nABAP開発\n担当：山田太郎'
+    const text =
+      '日语流畅的FI 中上级SE+会BTP或者Fiori或者Cdsview 至少一个熟悉\nBTP or Fiori or Cdsviewの活用を前提とした設計経験\nABAP開発\n担当：山田太郎'
     const appleResult = nameDetectionResultSchema.parse({
-      version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false, requiresHumanConfirmation: true,
-      entities: ['BTP', 'Fiori', 'Cdsview', 'ABAP'].map(name => ({ text: name, startUtf16: text.indexOf(name), endUtf16: text.indexOf(name) + name.length, tag: 'personalName' }))
+      version: 'apple-nl-ner-v1',
+      engine: 'apple-natural-language',
+      networkAccess: false,
+      requiresHumanConfirmation: true,
+      entities: ['BTP', 'Fiori', 'Cdsview', 'ABAP'].map((name) => ({
+        text: name,
+        startUtf16: text.indexOf(name),
+        endUtf16: text.indexOf(name) + name.length,
+        tag: 'personalName'
+      }))
     })
     expect(collectLocalPersonNameCandidates(text, appleResult)).toEqual(['山田太郎'])
   })
@@ -214,11 +244,9 @@ describe('createLocalAiRuntime', () => {
   })
 
   it('associates a spreadsheet name label with the next value on the same row', () => {
-    expect(collectLocalPersonNameCandidates([
-      '[SHEET:履歴書!A5] 氏名',
-      '[SHEET:履歴書!D5] 山田太郎',
-      '[SHEET:履歴書!J5] 男'
-    ].join('\n'))).toContain('山田太郎')
+    expect(
+      collectLocalPersonNameCandidates(['[SHEET:履歴書!A5] 氏名', '[SHEET:履歴書!D5] 山田太郎', '[SHEET:履歴書!J5] 男'].join('\n'))
+    ).toContain('山田太郎')
   })
 
   it('reports a bundled-but-disabled Windows OCR runtime before kernel isolation is verified', () => {

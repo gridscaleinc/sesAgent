@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { jobCaseFieldKeys, type BroadcastTemplate } from './contracts'
-import {
-  builtInBroadcastTemplate,
-  generateBroadcastText,
-  generateUpdateNoticeText,
-  type BroadcastFieldValue
-} from './broadcast-text'
+import { builtInBroadcastTemplate, generateBroadcastText, generateUpdateNoticeText, type BroadcastFieldValue } from './broadcast-text'
 
 /** A realistic RPA案件 as the operator would have confirmed it. */
 const uiPathCase: Record<string, string> = {
@@ -47,43 +42,47 @@ function withNotesOn(template: BroadcastTemplate): BroadcastTemplate {
 
 describe('generateBroadcastText', () => {
   it('writes the whole Japanese message for a confirmed case', () => {
-    expect(generateBroadcastText(fieldsOf(), uiPathCase.title, builtInBroadcastTemplate(), 'ja')).toBe([
-      '【案件】UiPath RPA 開発（金融系）',
-      '必須：UiPath 実務3年以上、VB.NET',
-      '尚可：Python、SQL',
-      '作業内容：要件定義～開発・テスト',
-      '開始：即日または10月',
-      '場所：都内（大手町）',
-      '勤務形態：リモート併用（週2出社）',
-      '勤務時間：9:00-18:00 残業少ない',
-      '単価：～65万円',
-      '日本語：ビジネスレベル',
-      '就労資格：就労資格必須、外国籍可',
-      '面談：オンライン1回',
-      '人数：2名',
-      '',
-      'ご興味のある方はこのグループでご連絡ください。'
-    ].join('\n'))
+    expect(generateBroadcastText(fieldsOf(), uiPathCase.title, builtInBroadcastTemplate(), 'ja')).toBe(
+      [
+        '【案件】UiPath RPA 開発（金融系）',
+        '必須：UiPath 実務3年以上、VB.NET',
+        '尚可：Python、SQL',
+        '作業内容：要件定義～開発・テスト',
+        '開始：即日または10月',
+        '場所：都内（大手町）',
+        '勤務形態：リモート併用（週2出社）',
+        '勤務時間：9:00-18:00 残業少ない',
+        '単価：～65万円',
+        '日本語：ビジネスレベル',
+        '就労資格：就労資格必須、外国籍可',
+        '面談：オンライン1回',
+        '人数：2名',
+        '',
+        'ご興味のある方はこのグループでご連絡ください。'
+      ].join('\n')
+    )
   })
 
   it('writes the Chinese message with Chinese labels and mapped condition words', () => {
-    expect(generateBroadcastText(fieldsOf(), uiPathCase.title, builtInBroadcastTemplate(), 'zh')).toBe([
-      '【案件】UiPath RPA 開発（金融系）',
-      '必须：UiPath 実務3年以上、VB.NET',
-      '加分：Python、SQL',
-      '工作内容：要件定義～開発・テスト',
-      '开始：即日或10月',
-      '地点：都内（大手町）',
-      '出勤方式：远程+到岗（每周到岗2天）',
-      '工作时间：9:00-18:00 加班少',
-      '单价：～65万日元',
-      '日语：商务级',
-      '签证：就労資格必須、可外籍',
-      '面谈：オンライン1次',
-      '人数：2名',
-      '',
-      '有合适人选请在群里联系。'
-    ].join('\n'))
+    expect(generateBroadcastText(fieldsOf(), uiPathCase.title, builtInBroadcastTemplate(), 'zh')).toBe(
+      [
+        '【案件】UiPath RPA 開発（金融系）',
+        '必须：UiPath 実務3年以上、VB.NET',
+        '加分：Python、SQL',
+        '工作内容：要件定義～開発・テスト',
+        '开始：即日或10月',
+        '地点：都内（大手町）',
+        '出勤方式：远程+到岗（每周到岗2天）',
+        '工作时间：9:00-18:00 加班少',
+        '单价：～65万日元',
+        '日语：商务级',
+        '签证：就労資格必須、可外籍',
+        '面谈：オンライン1次',
+        '人数：2名',
+        '',
+        '有合适人选请在群里联系。'
+      ].join('\n')
+    )
   })
 
   it('never emits the contract chain or the payment terms, whatever the case holds', () => {
@@ -126,12 +125,9 @@ describe('generateBroadcastText', () => {
 
   it('skips the lines whose field is empty rather than printing blanks', () => {
     const thin: Record<string, string> = { title: 'Java 保守', required_skills: 'Java' }
-    expect(generateBroadcastText(fieldsOf(thin), thin.title, builtInBroadcastTemplate(), 'ja')).toBe([
-      '【案件】Java 保守',
-      '必須：Java',
-      '',
-      'ご興味のある方はこのグループでご連絡ください。'
-    ].join('\n'))
+    expect(generateBroadcastText(fieldsOf(thin), thin.title, builtInBroadcastTemplate(), 'ja')).toBe(
+      ['【案件】Java 保守', '必須：Java', '', 'ご興味のある方はこのグループでご連絡ください。'].join('\n')
+    )
   })
 
   it('emits fixed-text lines verbatim in the language being written, and honours the on switch', () => {
@@ -144,11 +140,9 @@ describe('generateBroadcastText', () => {
         { kind: 'field', field: 'required_skills', labelJa: '必須', labelZh: '必须', on: true }
       ]
     })
-    expect(generateBroadcastText(fieldsOf(), uiPathCase.title, template, 'ja')).toBe([
-      '【案件】UiPath RPA 開発（金融系）',
-      '※弊社プロパー限定',
-      '必須：UiPath 実務3年以上、VB.NET'
-    ].join('\n'))
+    expect(generateBroadcastText(fieldsOf(), uiPathCase.title, template, 'ja')).toBe(
+      ['【案件】UiPath RPA 開発（金融系）', '※弊社プロパー限定', '必須：UiPath 実務3年以上、VB.NET'].join('\n')
+    )
     expect(generateBroadcastText(fieldsOf(), uiPathCase.title, template, 'zh')).toContain('※仅限自社正社员')
     expect(generateBroadcastText(fieldsOf(), uiPathCase.title, template, 'zh')).not.toContain('草稿中的一句')
   })
@@ -166,16 +160,14 @@ describe('generateUpdateNoticeText', () => {
   ]
 
   it('lists only what changed, in Japanese', () => {
-    expect(generateUpdateNoticeText('UiPath RPA 開発', changes, 'ja')).toBe([
-      '【更新】UiPath RPA 開発',
-      '・単価：60万円 → 65万円',
-      '・開始：9月 → 10月'
-    ].join('\n'))
+    expect(generateUpdateNoticeText('UiPath RPA 開発', changes, 'ja')).toBe(
+      ['【更新】UiPath RPA 開発', '・単価：60万円 → 65万円', '・開始：9月 → 10月'].join('\n')
+    )
   })
 
   it('maps condition wording for the Chinese version', () => {
-    expect(generateUpdateNoticeText('UiPath RPA 開発', [
-      { label: '単価', before: '応相談', after: '65万円' }
-    ], 'zh')).toBe(['【更新】UiPath RPA 開発', '・単価：面议 → 65万日元'].join('\n'))
+    expect(generateUpdateNoticeText('UiPath RPA 開発', [{ label: '単価', before: '応相談', after: '65万円' }], 'zh')).toBe(
+      ['【更新】UiPath RPA 開発', '・単価：面议 → 65万日元'].join('\n')
+    )
   })
 })

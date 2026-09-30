@@ -28,7 +28,13 @@ function documentTextForLocalPrivacy(document: Awaited<ReturnType<ParserWorkerCl
 }
 
 export async function analyzeStagedResumeLocally(
-  { repository, fileVault, parserWorker, localOcr, localNer }: Pick<MainIpcContext, 'repository' | 'fileVault' | 'parserWorker' | 'localOcr' | 'localNer'>,
+  {
+    repository,
+    fileVault,
+    parserWorker,
+    localOcr,
+    localNer
+  }: Pick<MainIpcContext, 'repository' | 'fileVault' | 'parserWorker' | 'localOcr' | 'localNer'>,
   record: ReturnType<EncryptedApplicationRepository['getStagedFileRecords']>[number],
   onParsed: () => void = () => undefined
 ) {
@@ -83,12 +89,17 @@ export async function analyzeStagedResumeLocally(
   return { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt }
 }
 
-export async function importStagedResumeLocally(context: Parameters<typeof analyzeStagedResumeLocally>[0], record: Parameters<typeof analyzeStagedResumeLocally>[1], inTalentLibrary = true) {
+export async function importStagedResumeLocally(
+  context: Parameters<typeof analyzeStagedResumeLocally>[0],
+  record: Parameters<typeof analyzeStagedResumeLocally>[1],
+  inTalentLibrary = true
+) {
   const { repository } = context
-  const { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt } = await analyzeStagedResumeLocally(context, record)
-  const preview = redaction.redactedContent.length > 4000
-    ? `${redaction.redactedContent.slice(0, 3999)}…`
-    : redaction.redactedContent
+  const { document, extraction, redaction, identifierCounts, knownPersonNames, analyzedAt } = await analyzeStagedResumeLocally(
+    context,
+    record
+  )
+  const preview = redaction.redactedContent.length > 4000 ? `${redaction.redactedContent.slice(0, 3999)}…` : redaction.redactedContent
   const summary: ResumeAnalysisSummary = {
     analysisVersion: 'resume-analysis-v6',
     fileToken: record.token,
@@ -100,15 +111,16 @@ export async function importStagedResumeLocally(context: Parameters<typeof analy
       .map(([type, count]) => ({ type, count }))
       .toSorted((a, b) => a.type.localeCompare(b.type)),
     localProcessing: {
-      ocr: document.ocr?.engine === 'apple-vision'
-        ? 'apple-vision-completed'
-        : document.ocr?.engine === 'windows-tesseract-wasm'
-          ? 'windows-tesseract-wasm-completed'
-          : document.ocr?.engine === 'windows-media-ocr'
-            ? 'windows-media-ocr-completed'
-        : document.requiresLocalOcr
-          ? 'requires-local-ocr'
-          : 'not-required',
+      ocr:
+        document.ocr?.engine === 'apple-vision'
+          ? 'apple-vision-completed'
+          : document.ocr?.engine === 'windows-tesseract-wasm'
+            ? 'windows-tesseract-wasm-completed'
+            : document.ocr?.engine === 'windows-media-ocr'
+              ? 'windows-media-ocr-completed'
+              : document.requiresLocalOcr
+                ? 'requires-local-ocr'
+                : 'not-required',
       ocrPages: document.ocr?.processedPages ?? 0,
       personNameCandidates: knownPersonNames.length,
       networkAccess: false
@@ -144,7 +156,8 @@ export async function importStagedResumeLocally(context: Parameters<typeof analy
   if (duplicate) {
     repository.removeStagedFiles([record.token])
     await context.fileVault.discardStagedFile(record)
-    if (inTalentLibrary && duplicate.inTalentLibrary === false && duplicate.profile) repository.addCandidateToLibrary(duplicate.documentId, duplicate.profile.version)
+    if (inTalentLibrary && duplicate.inTalentLibrary === false && duplicate.profile)
+      repository.addCandidateToLibrary(duplicate.documentId, duplicate.profile.version)
     return duplicate.documentId
   }
   repository.saveRedactionSession(redaction.session, redaction.mappings)

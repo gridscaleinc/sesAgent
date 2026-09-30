@@ -14,18 +14,34 @@ const content = '候補者 山田太郎 / 090-1234-5678 / Java 8年'
 function passedGates(overrides: Partial<CloudPrivacyGateSnapshot> = {}): CloudPrivacyGateSnapshot {
   return {
     qualityGate: {
-      status: 'passed', datasetVersion: 'ses-privacy-regression-v1', syntheticOnly: true,
-      caseCount: 28, identifierRecall: 1, redactionPrecision: 1, residualLeakCount: 0,
-      safeCaseFalsePositiveCount: 0, appleNerVerified: true, reportHash: qualityReportHash,
+      status: 'passed',
+      datasetVersion: 'ses-privacy-regression-v1',
+      syntheticOnly: true,
+      caseCount: 28,
+      identifierRecall: 1,
+      redactionPrecision: 1,
+      residualLeakCount: 0,
+      safeCaseFalsePositiveCount: 0,
+      appleNerVerified: true,
+      reportHash: qualityReportHash,
       failureCodes: []
     },
     expertGate: {
-      status: 'passed', datasetVersion: 'ses-privacy-expert-dataset-v1', humanLabeledDataset: true,
-      sourceDocumentCount: 50, caseCount: 60, automaticPersonNameRecall: 0.93,
-      postReviewIdentifierRecall: 1, redactionPrecision: 0.98,
-      reviewedAt: '2026-08-17T00:00:00.000Z', evaluatedAt: '2026-08-17T01:00:00.000Z',
-      reportHash: 'e'.repeat(64), attestationHash: expertAttestationHash,
-      privacyImplementationSha256, cloudEnforcementSha256, failureCodes: []
+      status: 'passed',
+      datasetVersion: 'ses-privacy-expert-dataset-v1',
+      humanLabeledDataset: true,
+      sourceDocumentCount: 50,
+      caseCount: 60,
+      automaticPersonNameRecall: 0.93,
+      postReviewIdentifierRecall: 1,
+      redactionPrecision: 0.98,
+      reviewedAt: '2026-08-17T00:00:00.000Z',
+      evaluatedAt: '2026-08-17T01:00:00.000Z',
+      reportHash: 'e'.repeat(64),
+      attestationHash: expertAttestationHash,
+      privacyImplementationSha256,
+      cloudEnforcementSha256,
+      failureCodes: []
     },
     binding: {
       qualityReportHash,
@@ -50,18 +66,20 @@ function localNer(): LocalPersonNameDetectorPort {
   }
 }
 
-function createHarness(options: {
-  gates?: () => Promise<CloudPrivacyGateSnapshot>
-  confirm?: () => Promise<boolean>
-  now?: () => Date
-  localNer?: LocalPersonNameDetectorPort | null
-} = {}) {
+function createHarness(
+  options: {
+    gates?: () => Promise<CloudPrivacyGateSnapshot>
+    confirm?: () => Promise<boolean>
+    now?: () => Date
+    localNer?: LocalPersonNameDetectorPort | null
+  } = {}
+) {
   const sessions: Array<{ session: RedactionSessionEvidence; mappings: LocalPiiMapping[] }> = []
-  const invoke = vi.fn(async (
-    payload: RedactedPayload,
-    operationId: string,
-    auditContext: CloudCallAuditContext
-  ) => ({ payload, operationId, auditContext }))
+  const invoke = vi.fn(async (payload: RedactedPayload, operationId: string, auditContext: CloudCallAuditContext) => ({
+    payload,
+    operationId,
+    auditContext
+  }))
   const confirm = vi.fn(options.confirm ?? (async () => true))
   const service = new CloudAiReviewService({
     repository: {
@@ -69,7 +87,7 @@ function createHarness(options: {
         sessions.push({ session, mappings })
       }
     },
-    localNer: Object.hasOwn(options, 'localNer') ? options.localNer ?? null : localNer(),
+    localNer: Object.hasOwn(options, 'localNer') ? (options.localNer ?? null) : localNer(),
     endpointId: 'aicommerce',
     policyVersion: 'cloud-redaction-v2',
     loadGates: options.gates ?? (async () => passedGates()),
@@ -125,7 +143,9 @@ describe('CloudAiReviewService', () => {
     const failedQuality = passedGates({
       qualityGate: {
         ...passedGates().qualityGate,
-        status: 'not-verified', datasetVersion: null, failureCodes: ['quality:missing']
+        status: 'not-verified',
+        datasetVersion: null,
+        failureCodes: ['quality:missing']
       },
       binding: null
     })
@@ -191,15 +211,14 @@ describe('CloudAiReviewService', () => {
     const withoutExpert = passedGates({
       expertGate: {
         ...passedGates().expertGate,
-        status: 'not-verified', datasetVersion: null, attestationHash: null,
+        status: 'not-verified',
+        datasetVersion: null,
+        attestationHash: null,
         failureCodes: ['expert:missing']
       },
       binding: { ...passedGates().binding!, expertAttestationHash: null }
     })
-    const loadGates = vi.fn()
-      .mockResolvedValueOnce(passedGates())
-      .mockResolvedValueOnce(withoutExpert)
-      .mockResolvedValueOnce(withoutExpert)
+    const loadGates = vi.fn().mockResolvedValueOnce(passedGates()).mockResolvedValueOnce(withoutExpert).mockResolvedValueOnce(withoutExpert)
     const { service, confirm, invoke } = createHarness({ gates: loadGates })
     const prepared = await service.prepare(content, 'operator-1')
 
@@ -209,12 +228,15 @@ describe('CloudAiReviewService', () => {
   })
 
   it('rechecks privacy evidence after native confirmation and immediately before provider invocation', async () => {
-    const loadGates = vi.fn()
+    const loadGates = vi
+      .fn()
       .mockResolvedValueOnce(passedGates())
       .mockResolvedValueOnce(passedGates())
-      .mockResolvedValueOnce(passedGates({
-        binding: { ...passedGates().binding!, qualityReportHash: 'f'.repeat(64) }
-      }))
+      .mockResolvedValueOnce(
+        passedGates({
+          binding: { ...passedGates().binding!, qualityReportHash: 'f'.repeat(64) }
+        })
+      )
     const { service, confirm, invoke } = createHarness({ gates: loadGates })
     const prepared = await service.prepare(content, 'operator-1')
 
@@ -225,14 +247,19 @@ describe('CloudAiReviewService', () => {
   })
 
   it('rejects a ticket when the local detection summary changes after review preparation', async () => {
-    const detectNames = vi.fn()
+    const detectNames = vi
+      .fn()
       .mockResolvedValueOnce({
-        version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false,
+        version: 'apple-nl-ner-v1',
+        engine: 'apple-natural-language',
+        networkAccess: false,
         requiresHumanConfirmation: true,
         entities: [{ text: '山田太郎', startUtf16: 4, endUtf16: 8, tag: 'personalName' }]
       })
       .mockResolvedValueOnce({
-        version: 'apple-nl-ner-v1', engine: 'apple-natural-language', networkAccess: false,
+        version: 'apple-nl-ner-v1',
+        engine: 'apple-natural-language',
+        networkAccess: false,
         requiresHumanConfirmation: true,
         entities: []
       })

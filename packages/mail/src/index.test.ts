@@ -39,9 +39,7 @@ describe('Gmail method allowlist', () => {
   it('blocks every send method', () => {
     expect(isGmailMethodAllowed('POST', '/gmail/v1/users/me/messages/send')).toBe(false)
     expect(isGmailMethodAllowed('POST', '/gmail/v1/users/me/drafts/send')).toBe(false)
-    expect(() => assertGmailMethodAllowed('POST', '/gmail/v1/users/me/drafts/send')).toThrow(
-      'Blocked Gmail API method'
-    )
+    expect(() => assertGmailMethodAllowed('POST', '/gmail/v1/users/me/drafts/send')).toThrow('Blocked Gmail API method')
   })
 
   it('blocks message deletion and label mutation', () => {
@@ -101,16 +99,16 @@ describe('Gmail read-only synchronization primitives', () => {
     })
     expect(normalized.subject).toBe('案件 Bcc: attacker@example.com')
     expect(normalized.from).not.toContain('\u0000')
-    expect(() => decodeGmailMessage({ ...messageFixture, internalDate: '99999999999999999999' })).toThrow(
-      'internalDate'
-    )
-    expect(() => gmailSyncConfigurationSchema.parse({
-      version: 'gmail-sync-config-v1',
-      labelIds: ['Label_SES'],
-      query: 'from:vendor@example.com',
-      lookbackDays: 30,
-      maxMessagesPerRun: 100
-    })).toThrow()
+    expect(() => decodeGmailMessage({ ...messageFixture, internalDate: '99999999999999999999' })).toThrow('internalDate')
+    expect(() =>
+      gmailSyncConfigurationSchema.parse({
+        version: 'gmail-sync-config-v1',
+        labelIds: ['Label_SES'],
+        query: 'from:vendor@example.com',
+        lookbackDays: 30,
+        maxMessagesPerRun: 100
+      })
+    ).toThrow()
   })
 
   it('rejects deeply nested or cumulatively oversized MIME text before local processing', () => {
@@ -124,16 +122,18 @@ describe('Gmail read-only synchronization primitives', () => {
     expect(() => decodeGmailMessage({ ...messageFixture, payload: nestedPart })).toThrow('complexity limit')
 
     const largePart = Buffer.alloc(1_100_000, 0x61).toString('base64url')
-    expect(() => decodeGmailMessage({
-      ...messageFixture,
-      payload: {
-        mimeType: 'multipart/alternative',
-        parts: [
-          { mimeType: 'text/plain', body: { data: largePart } },
-          { mimeType: 'text/html', body: { data: largePart } }
-        ]
-      }
-    })).toThrow('Combined Gmail message body exceeds')
+    expect(() =>
+      decodeGmailMessage({
+        ...messageFixture,
+        payload: {
+          mimeType: 'multipart/alternative',
+          parts: [
+            { mimeType: 'text/plain', body: { data: largePart } },
+            { mimeType: 'text/html', body: { data: largePart } }
+          ]
+        }
+      })
+    ).toThrow('Combined Gmail message body exceeds')
   })
 
   it('redacts direct identifiers locally before creating a storage record', () => {
@@ -155,12 +155,7 @@ describe('Gmail read-only synchronization primitives', () => {
         ]
       }
     })
-    const result = redactGmailMessageForLocalStorage(
-      message,
-      'hr@example.co.jp',
-      ['山田太郎'],
-      new Date('2026-07-17T00:00:00.000Z')
-    )
+    const result = redactGmailMessageForLocalStorage(message, 'hr@example.co.jp', ['山田太郎'], new Date('2026-07-17T00:00:00.000Z'))
     const storedContent = `${result.message.redactedSubject}\n${result.message.redactedBody}`
     expect(storedContent).not.toContain('山田太郎')
     expect(storedContent).not.toContain('090-1234-5678')
@@ -203,7 +198,9 @@ describe('Gmail read-only synchronization primitives', () => {
     }
     expect(messageMatchesSyncScope(message, config, new Date('2026-07-17T00:00:00.000Z'))).toBe(true)
     expect(messageMatchesSyncScope({ ...message, labelIds: ['INBOX'] }, config, new Date('2026-07-17T00:00:00.000Z'))).toBe(false)
-    expect(messageMatchesSyncScope({ ...message, internalDate: '2025-01-01T00:00:00.000Z' }, config, new Date('2026-07-17T00:00:00.000Z'))).toBe(false)
+    expect(
+      messageMatchesSyncScope({ ...message, internalDate: '2025-01-01T00:00:00.000Z' }, config, new Date('2026-07-17T00:00:00.000Z'))
+    ).toBe(false)
   })
 
   it('uses only allowlisted list/history/get endpoints and surfaces an expired history checkpoint', async () => {
@@ -257,10 +254,12 @@ describe('Gmail read-only synchronization primitives', () => {
           })
         : Response.json({
             historyId: '210',
-            history: [{
-              id: '209',
-              labelsAdded: [{ message: { id: 'msg_002', threadId: 'thread_002' }, labelIds: ['Label_SES'] }]
-            }]
+            history: [
+              {
+                id: '209',
+                labelsAdded: [{ message: { id: 'msg_002', threadId: 'thread_002' }, labelIds: ['Label_SES'] }]
+              }
+            ]
           })
     }) as typeof fetch
     const client = new GmailReadClient(async () => 'readonly-access-token', fetchMock)
@@ -284,7 +283,7 @@ describe('Gmail read-only synchronization primitives', () => {
   })
 
   it('refreshes once after a Gmail 401 and retries with the new Bearer token', async () => {
-    const tokenProvider = vi.fn(async (forceRefresh = false) => forceRefresh ? 'fresh-readonly-token' : 'stale-readonly-token')
+    const tokenProvider = vi.fn(async (forceRefresh = false) => (forceRefresh ? 'fresh-readonly-token' : 'stale-readonly-token'))
     const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       const authorization = new Headers(init?.headers).get('authorization')
       return authorization === 'Bearer fresh-readonly-token'
@@ -317,18 +316,28 @@ class MemoryGmailSyncStore {
   lastError: string | null = null
   messages = new Map<string, GmailProcessedMessage>()
 
-  getGmailSyncCheckpoint() { return this.checkpoint }
+  getGmailSyncCheckpoint() {
+    return this.checkpoint
+  }
   saveGmailSyncSuccess(_accountEmail: string, configHash: string, historyId: string, lastRun: GmailSyncRun) {
     this.checkpoint = { configHash, historyId }
     this.lastRun = { ...lastRun }
     this.lastError = null
   }
-  saveGmailSyncFailure(_accountEmail: string, configHash: string, errorCode: string, _failedAt: string, lastRun: GmailSyncRun | null = null) {
+  saveGmailSyncFailure(
+    _accountEmail: string,
+    configHash: string,
+    errorCode: string,
+    _failedAt: string,
+    lastRun: GmailSyncRun | null = null
+  ) {
     this.checkpoint = { configHash, historyId: this.checkpoint?.historyId ?? null }
     this.lastRun = lastRun ? { ...lastRun } : null
     this.lastError = errorCode
   }
-  hasGmailMessage(_accountEmail: string, messageId: string) { return this.messages.has(messageId) }
+  hasGmailMessage(_accountEmail: string, messageId: string) {
+    return this.messages.has(messageId)
+  }
   findGmailMessageByFingerprint(_accountEmail: string, fingerprint: string) {
     return [...this.messages.values()].find((message) => message.businessFingerprint === fingerprint)?.gmailMessageId ?? null
   }
@@ -367,20 +376,23 @@ describe('Gmail synchronization coordinator', () => {
     const fixtures = new Map<string, unknown>([
       ['msg_001', { ...messageTwo, id: 'msg_001', threadId: 'thread_001', historyId: '120' }],
       ['msg_002', messageTwo],
-      ['msg_003', {
-        ...messageTwo,
-        id: 'msg_003',
-        threadId: 'thread_003',
-        historyId: '205',
-        payload: {
-          ...messageTwo.payload,
-          headers: [
-            { name: 'Subject', value: 'Python要員のご提案' },
-            { name: 'From', value: 'partner@example.co.jp' }
-          ],
-          body: { data: Buffer.from('Python要員、来月から稼働可能です。').toString('base64url') }
+      [
+        'msg_003',
+        {
+          ...messageTwo,
+          id: 'msg_003',
+          threadId: 'thread_003',
+          historyId: '205',
+          payload: {
+            ...messageTwo.payload,
+            headers: [
+              { name: 'Subject', value: 'Python要員のご提案' },
+              { name: 'From', value: 'partner@example.co.jp' }
+            ],
+            body: { data: Buffer.from('Python要員、来月から稼働可能です。').toString('base64url') }
+          }
         }
-      }]
+      ]
     ])
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input))
@@ -391,13 +403,15 @@ describe('Gmail synchronization coordinator', () => {
         if (expiredHistory) return new Response('{}', { status: 404 })
         return Response.json({
           historyId: profileHistoryId,
-          history: [{
-            id: profileHistoryId,
-            messagesAdded: [
-              { message: { id: 'msg_001', threadId: 'thread_001' } },
-              { message: { id: 'msg_003', threadId: 'thread_003' } }
-            ]
-          }]
+          history: [
+            {
+              id: profileHistoryId,
+              messagesAdded: [
+                { message: { id: 'msg_001', threadId: 'thread_001' } },
+                { message: { id: 'msg_003', threadId: 'thread_003' } }
+              ]
+            }
+          ]
         })
       }
       if (url.pathname.endsWith('/messages')) {
@@ -424,12 +438,7 @@ describe('Gmail synchronization coordinator', () => {
     const coordinator = new GmailSyncCoordinator(
       gmail,
       store,
-      async (message) => redactGmailMessageForLocalStorage(
-        message,
-        'hr@example.co.jp',
-        [],
-        new Date('2026-07-17T00:00:00.000Z')
-      ).message,
+      async (message) => redactGmailMessageForLocalStorage(message, 'hr@example.co.jp', [], new Date('2026-07-17T00:00:00.000Z')).message,
       () => new Date('2026-07-17T00:00:00.000Z')
     )
 
@@ -462,9 +471,15 @@ describe('Gmail synchronization coordinator', () => {
 class MemoryCredentialStore implements GoogleWorkspaceCredentialStore {
   value: GoogleWorkspaceCredential | null = null
 
-  async load() { return this.value }
-  async save(value: GoogleWorkspaceCredential) { this.value = value }
-  async clear() { this.value = null }
+  async load() {
+    return this.value
+  }
+  async save(value: GoogleWorkspaceCredential) {
+    this.value = value
+  }
+  async clear() {
+    this.value = null
+  }
 }
 
 describe('Google Workspace desktop OAuth', () => {
@@ -474,7 +489,8 @@ describe('Google Workspace desktop OAuth', () => {
       if (
         url === 'https://accounts.google.com/.well-known/openid-configuration' ||
         url === 'https://gmail.googleapis.com/$discovery/rest?version=v1'
-      ) return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+      )
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
       throw new Error(`Unexpected URL: ${url}`)
     }) as typeof fetch
     const report = await diagnoseGoogleWorkspaceReadiness({
@@ -522,13 +538,15 @@ describe('Google Workspace desktop OAuth', () => {
       },
       timeoutMs: 5_000
     })
-    await expect(provider.requestAuthorization({
-      clientId: '1234567890-desktopclient.apps.googleusercontent.com',
-      workspaceDomain: 'example.co.jp',
-      scopes: [gmailReadonlyScope],
-      state: 'expected-state',
-      codeChallenge: 'challenge'
-    })).resolves.toMatchObject({ code: 'loopback-code', redirectUri: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/oauth2\/callback$/) })
+    await expect(
+      provider.requestAuthorization({
+        clientId: '1234567890-desktopclient.apps.googleusercontent.com',
+        workspaceDomain: 'example.co.jp',
+        scopes: [gmailReadonlyScope],
+        state: 'expected-state',
+        codeChallenge: 'challenge'
+      })
+    ).resolves.toMatchObject({ code: 'loopback-code', redirectUri: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/oauth2\/callback$/) })
     await vi.waitFor(() => expect(callbackStatuses).toEqual([400, 200]))
   })
 
@@ -547,13 +565,15 @@ describe('Google Workspace desktop OAuth', () => {
       configuredBy: 'local-admin',
       updatedAt: '2026-07-20T00:00:00.000Z'
     }
-    const configHash = syncConfigurationHash(gmailSyncConfigurationSchema.parse({
-      version: 'gmail-sync-config-v1',
-      labelIds: configuration.labelIds,
-      query: configuration.query,
-      lookbackDays: configuration.lookbackDays,
-      maxMessagesPerRun: configuration.maxMessagesPerRun
-    }))
+    const configHash = syncConfigurationHash(
+      gmailSyncConfigurationSchema.parse({
+        version: 'gmail-sync-config-v1',
+        labelIds: configuration.labelIds,
+        query: configuration.query,
+        lookbackDays: configuration.lookbackDays,
+        maxMessagesPerRun: configuration.maxMessagesPerRun
+      })
+    )
     const report = createGoogleWorkspaceOnlineAcceptanceReport({
       configuration,
       live: {
@@ -593,14 +613,25 @@ describe('Google Workspace desktop OAuth', () => {
   it('keeps online acceptance action-required until bounded sync and redaction evidence exist', () => {
     const report = createGoogleWorkspaceOnlineAcceptanceReport({
       configuration: {
-        version: 'google-workspace-admin-config-v1', source: 'managed-environment', editable: false,
-        clientId: '1234567890-abcdefghijklmnop.apps.googleusercontent.com', workspaceDomain: 'example.co.jp',
-        labelIds: ['Label_SES'], query: '案件', lookbackDays: 30, maxMessagesPerRun: 200,
-        revision: null, configuredBy: 'managed', updatedAt: '2026-07-20T00:00:00.000Z'
+        version: 'google-workspace-admin-config-v1',
+        source: 'managed-environment',
+        editable: false,
+        clientId: '1234567890-abcdefghijklmnop.apps.googleusercontent.com',
+        workspaceDomain: 'example.co.jp',
+        labelIds: ['Label_SES'],
+        query: '案件',
+        lookbackDays: 30,
+        maxMessagesPerRun: 200,
+        revision: null,
+        configuredBy: 'managed',
+        updatedAt: '2026-07-20T00:00:00.000Z'
       },
       live: {
-        checkedAt: '2026-07-20T00:05:00.000Z', grantedScopes: [gmailReadonlyScope],
-        accountIdentityVerified: true, mailboxMetadataAccessed: true, messageContentAccessed: false
+        checkedAt: '2026-07-20T00:05:00.000Z',
+        grantedScopes: [gmailReadonlyScope],
+        accountIdentityVerified: true,
+        mailboxMetadataAccessed: true,
+        messageContentAccessed: false
       },
       credentialProtection: 'windows-dpapi',
       sync: { configHash: null, status: 'never', lastSyncedAt: null, lastRun: null },
@@ -613,9 +644,7 @@ describe('Google Workspace desktop OAuth', () => {
   })
 
   it('builds an S256 PKCE system-browser request for read-only Gmail access', () => {
-    expect(createPkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe(
-      'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
-    )
+    expect(createPkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM')
     const request: AuthorizationCodeRequest = {
       clientId: '1234567890-desktopclient.apps.googleusercontent.com',
       workspaceDomain: 'example.co.jp',
@@ -630,15 +659,11 @@ describe('Google Workspace desktop OAuth', () => {
     expect(url.searchParams.get('state')).toBe('csrf-state')
     expect(url.searchParams.get('access_type')).toBe('offline')
     expect(url.searchParams.get('hd')).toBe('example.co.jp')
-    const publicUrl = new URL(buildGoogleAuthorizationUrl(
-      { ...request, workspaceDomain: null },
-      'http://127.0.0.1:43123/oauth2/callback'
-    ))
+    const publicUrl = new URL(buildGoogleAuthorizationUrl({ ...request, workspaceDomain: null }, 'http://127.0.0.1:43123/oauth2/callback'))
     expect(publicUrl.searchParams.has('hd')).toBe(false)
-    expect(() => buildGoogleAuthorizationUrl(
-      { ...request, scopes: [gmailComposeScope] as never },
-      'http://127.0.0.1:43123/oauth2/callback'
-    )).toThrow('write scope')
+    expect(() =>
+      buildGoogleAuthorizationUrl({ ...request, scopes: [gmailComposeScope] as never }, 'http://127.0.0.1:43123/oauth2/callback')
+    ).toThrow('write scope')
   })
 
   it.each([
@@ -714,16 +739,19 @@ describe('Google Workspace desktop OAuth', () => {
             return { code: 'authorization-code', redirectUri: 'http://127.0.0.1:43123/oauth2/callback' }
           }
         },
-        fetch: vi.fn(async () => Response.json({
-          error: 'invalid_grant',
-          error_description: 'The code_verifier parameter contains sensitive provider detail that must not be surfaced'
-        }, { status: 400 })) as typeof fetch
+        fetch: vi.fn(async () =>
+          Response.json(
+            {
+              error: 'invalid_grant',
+              error_description: 'The code_verifier parameter contains sensitive provider detail that must not be surfaced'
+            },
+            { status: 400 }
+          )
+        ) as typeof fetch
       }
     )
 
-    await expect(client.connectReadonly()).rejects.toThrow(
-      'Google authorization code exchange failed (400: invalid_grant/code_verifier).'
-    )
+    await expect(client.connectReadonly()).rejects.toThrow('Google authorization code exchange failed (400: invalid_grant/code_verifier).')
     await expect(client.connectReadonly()).rejects.not.toThrow('sensitive provider detail')
     expect(store.value).toBeNull()
   })
@@ -734,13 +762,16 @@ describe('Google Workspace desktop OAuth', () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
       if (url === 'https://oauth2.googleapis.com/token') {
-        return new Response(JSON.stringify({
-          access_token: 'access-token-with-enough-length-001',
-          refresh_token: 'refresh-token-001',
-          expires_in: 3600,
-          scope: gmailReadonlyScope,
-          token_type: 'Bearer'
-        }), { status: 200, headers: { 'content-type': 'application/json' } })
+        return new Response(
+          JSON.stringify({
+            access_token: 'access-token-with-enough-length-001',
+            refresh_token: 'refresh-token-001',
+            expires_in: 3600,
+            scope: gmailReadonlyScope,
+            token_type: 'Bearer'
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
       }
       if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/profile') {
         return new Response(JSON.stringify({ emailAddress: 'hr@example.co.jp', historyId: '100' }), {
@@ -797,15 +828,17 @@ describe('Google Workspace desktop OAuth', () => {
             return { code: 'authorization-code', redirectUri: 'http://127.0.0.1:43123/oauth2/callback' }
           }
         },
-        fetch: vi.fn(async (input) => String(input) === 'https://oauth2.googleapis.com/token'
-          ? Response.json({
-              access_token: 'access-token-with-enough-length-001',
-              refresh_token: 'refresh-token-001',
-              expires_in: 3600,
-              scope: gmailReadonlyScope,
-              token_type: 'Bearer'
-            })
-          : new Response('', { status: 403 })) as typeof fetch
+        fetch: vi.fn(async (input) =>
+          String(input) === 'https://oauth2.googleapis.com/token'
+            ? Response.json({
+                access_token: 'access-token-with-enough-length-001',
+                refresh_token: 'refresh-token-001',
+                expires_in: 3600,
+                scope: gmailReadonlyScope,
+                token_type: 'Bearer'
+              })
+            : new Response('', { status: 403 })
+        ) as typeof fetch
       }
     )
 
@@ -824,13 +857,19 @@ describe('Google Workspace desktop OAuth', () => {
             return { code: 'authorization-code', redirectUri: 'http://127.0.0.1:43123/oauth2/callback' }
           }
         },
-        fetch: vi.fn(async () => new Response(JSON.stringify({
-          access_token: 'access-token-with-enough-length-001',
-          refresh_token: 'refresh-token-001',
-          expires_in: 3600,
-          scope: `${gmailReadonlyScope} ${gmailComposeScope}`,
-          token_type: 'Bearer'
-        }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch
+        fetch: vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                access_token: 'access-token-with-enough-length-001',
+                refresh_token: 'refresh-token-001',
+                expires_in: 3600,
+                scope: `${gmailReadonlyScope} ${gmailComposeScope}`,
+                token_type: 'Bearer'
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } }
+            )
+        ) as typeof fetch
       }
     )
 
@@ -855,7 +894,11 @@ describe('Google Workspace desktop OAuth', () => {
       { clientId: '1234567890-desktopclient.apps.googleusercontent.com', workspaceDomain: 'example.co.jp' },
       {
         credentialStore: store,
-        authorizationCodeProvider: { async requestAuthorization() { throw new Error('not used') } },
+        authorizationCodeProvider: {
+          async requestAuthorization() {
+            throw new Error('not used')
+          }
+        },
         fetch: vi.fn() as typeof fetch
       }
     )
@@ -867,12 +910,18 @@ describe('Google Workspace desktop OAuth', () => {
   it('rejects any additional scope, non-Bearer token, or non-loopback callback before storing credentials', async () => {
     for (const tokenResponse of [
       {
-        access_token: 'access-token-with-enough-length-001', refresh_token: 'refresh-token-001', expires_in: 3600,
-        scope: `${gmailReadonlyScope} openid`, token_type: 'Bearer'
+        access_token: 'access-token-with-enough-length-001',
+        refresh_token: 'refresh-token-001',
+        expires_in: 3600,
+        scope: `${gmailReadonlyScope} openid`,
+        token_type: 'Bearer'
       },
       {
-        access_token: 'access-token-with-enough-length-001', refresh_token: 'refresh-token-001', expires_in: 3600,
-        scope: gmailReadonlyScope, token_type: 'MAC'
+        access_token: 'access-token-with-enough-length-001',
+        refresh_token: 'refresh-token-001',
+        expires_in: 3600,
+        scope: gmailReadonlyScope,
+        token_type: 'MAC'
       }
     ]) {
       const store = new MemoryCredentialStore()
@@ -939,14 +988,18 @@ describe('Google Workspace desktop OAuth', () => {
       { clientId: '1234567890-desktopclient.apps.googleusercontent.com', workspaceDomain: 'example.co.jp' },
       {
         credentialStore: store,
-        authorizationCodeProvider: { async requestAuthorization() { throw new Error('not used') } },
+        authorizationCodeProvider: {
+          async requestAuthorization() {
+            throw new Error('not used')
+          }
+        },
         fetch: fetchMock,
         now: () => new Date('2026-07-17T00:00:00.000Z')
       }
     )
-    await expect(Promise.all([
-      client.getAccessToken(), client.getAccessToken(), client.getAccessToken(), client.getAccessToken()
-    ])).resolves.toEqual(Array(4).fill('rotated-access-token-with-enough-length'))
+    await expect(
+      Promise.all([client.getAccessToken(), client.getAccessToken(), client.getAccessToken(), client.getAccessToken()])
+    ).resolves.toEqual(Array(4).fill('rotated-access-token-with-enough-length'))
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(refreshBody).toContain('grant_type=refresh_token')
     expect(refreshBody).not.toContain('client_secret')
@@ -957,7 +1010,11 @@ describe('Google Workspace desktop OAuth', () => {
       { clientId: '1234567890-desktopclient.apps.googleusercontent.com', workspaceDomain: 'example.co.jp' },
       {
         credentialStore: store,
-        authorizationCodeProvider: { async requestAuthorization() { throw new Error('not used') } },
+        authorizationCodeProvider: {
+          async requestAuthorization() {
+            throw new Error('not used')
+          }
+        },
         fetch: vi.fn(async () => new Response('', { status: 400 })) as typeof fetch,
         now: () => new Date('2026-07-17T00:00:00.000Z')
       }
@@ -983,7 +1040,11 @@ describe('Google Workspace desktop OAuth', () => {
       { clientId: '1234567890-desktopclient.apps.googleusercontent.com', workspaceDomain: 'example.co.jp' },
       {
         credentialStore: store,
-        authorizationCodeProvider: { async requestAuthorization() { throw new Error('not used') } },
+        authorizationCodeProvider: {
+          async requestAuthorization() {
+            throw new Error('not used')
+          }
+        },
         fetch: vi.fn(async () => new Response('', { status: 500 })) as typeof fetch
       }
     )
@@ -1011,7 +1072,11 @@ describe('Google Workspace desktop OAuth', () => {
       { clientId: '1234567890-desktopclient.apps.googleusercontent.com', workspaceDomain: 'example.co.jp' },
       {
         credentialStore: store,
-        authorizationCodeProvider: { async requestAuthorization() { throw new Error('not used') } },
+        authorizationCodeProvider: {
+          async requestAuthorization() {
+            throw new Error('not used')
+          }
+        },
         fetch: vi.fn(async (input, init) => {
           requestUrl = String(input)
           requestBody = String(init?.body)

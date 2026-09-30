@@ -21,10 +21,14 @@ export interface BusinessFeedEntry {
   fields: Array<{ key: CandidateFieldKey | JobCaseFieldKey; value: string }>
   changes: Array<{ key: string; before: string | null; after: string | null }>
 }
-export const markBusinessFeedSchema = z.object({
-  kind: z.enum(['case', 'person']), objectId: z.string().uuid(), revision: z.string().regex(/^[a-f0-9]{64}$/u),
-  action: z.enum(['seen', 'defer', 'done'])
-}).strict()
+export const markBusinessFeedSchema = z
+  .object({
+    kind: z.enum(['case', 'person']),
+    objectId: z.string().uuid(),
+    revision: z.string().regex(/^[a-f0-9]{64}$/u),
+    action: z.enum(['seen', 'defer', 'done'])
+  })
+  .strict()
 export type MarkBusinessFeedInput = z.infer<typeof markBusinessFeedSchema>
 /** Adds a case to, or removes it from, the set the HR is currently working on. */
 export const setCaseWorkingSchema = z.object({ reviewId: z.string().uuid(), working: z.boolean() }).strict()
@@ -35,6 +39,7 @@ export function changedBusinessFields(
   after: ReadonlyArray<{ key: string; value: string | null }>
 ): BusinessFeedEntry['changes'] {
   const previous = new Map(before.map((field) => [field.key, field.value]))
-  return after.filter((field) => (previous.get(field.key) ?? null) !== field.value)
+  return after
+    .filter((field) => (previous.get(field.key) ?? null) !== field.value)
     .map((field) => ({ key: field.key, before: previous.get(field.key) ?? null, after: field.value }))
 }

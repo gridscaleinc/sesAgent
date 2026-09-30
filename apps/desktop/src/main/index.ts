@@ -72,11 +72,7 @@ import {
   type StartupStatus
 } from '@shared'
 import { shouldRunReleaseAgentSmoke } from './startup-smoke'
-import {
-  effectiveOperatorProfile,
-  gmailSyncConfigurationFromAdmin,
-  loadManagedGoogleWorkspaceConfiguration
-} from './app-defaults'
+import { effectiveOperatorProfile, gmailSyncConfigurationFromAdmin, loadManagedGoogleWorkspaceConfiguration } from './app-defaults'
 import { synchronizeImportTask } from './work-task-helpers'
 import { assertTrustedSender, createMainIpcContext, type MainIpcDependencies } from './ipc/context'
 import { clearOriginalOpenRoot, prepareOriginalOpenRoot } from './original-open-root'
@@ -106,8 +102,9 @@ const aiCommerceProductionProbeMode = process.env.SES_AICOMMERCE_PRODUCTION_PROB
 function hasVerifiedWindowsOcrNetworkEvidence(path: string): boolean {
   try {
     const evidence = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
-    return evidence.version === 'windows-release-evidence-v1' &&
-      evidence.kind === 'ocr-worker-kernel-network-deny' && evidence.verified === true
+    return (
+      evidence.version === 'windows-release-evidence-v1' && evidence.kind === 'ocr-worker-kernel-network-deny' && evidence.verified === true
+    )
   } catch {
     return false
   }
@@ -228,15 +225,13 @@ function byteRange(value: string | null, size: number): { start: number; end: nu
   return { start, end: Math.min(end, size - 1) }
 }
 
-async function registerOriginalDocumentProtocol(
-  repository: EncryptedApplicationRepository,
-  fileVault: EncryptedFileVault
-): Promise<void> {
+async function registerOriginalDocumentProtocol(repository: EncryptedApplicationRepository, fileVault: EncryptedFileVault): Promise<void> {
   await protocol.handle('ses-agent-original', async (request) => {
     const requestUrl = new URL(request.url)
-    const parsedId = requestUrl.hostname === 'document'
-      ? candidateProfileSourceInputSchema.safeParse(decodeURIComponent(requestUrl.pathname.slice(1)))
-      : { success: false as const }
+    const parsedId =
+      requestUrl.hostname === 'document'
+        ? candidateProfileSourceInputSchema.safeParse(decodeURIComponent(requestUrl.pathname.slice(1)))
+        : { success: false as const }
     if (!parsedId.success) return new Response('Not found', { status: 404 })
     if (!['GET', 'HEAD'].includes(request.method)) return new Response('Method not allowed', { status: 405 })
     const record = repository.getStagedFileRecords([parsedId.data])[0]
@@ -244,9 +239,7 @@ async function registerOriginalDocumentProtocol(
     const plaintext = await fileVault.decryptForLocalProcessing(record)
     const range = byteRange(request.headers.get('range'), plaintext.length)
     const responseLength = range ? range.end - range.start + 1 : plaintext.length
-    const body = request.method === 'HEAD'
-      ? null
-      : Uint8Array.from(range ? plaintext.subarray(range.start, range.end + 1) : plaintext)
+    const body = request.method === 'HEAD' ? null : Uint8Array.from(range ? plaintext.subarray(range.start, range.end + 1) : plaintext)
     const headers: Record<string, string> = {
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-store, private',
@@ -318,36 +311,35 @@ async function initializeServices(): Promise<{
       : join(process.cwd(), 'build', 'native', 'windows', 'ocr')
     const windowsOcrEvidencePath = join(windowsOcrResources, 'network-isolation-evidence.json')
     const windowsOcrSandboxLauncherPath = join(windowsOcrResources, 'ses-ocr-sandbox.exe')
-    const windowsAppContainerGrantRoots = app.isPackaged
-      ? [dirname(process.execPath)]
-      : [process.cwd(), dirname(process.execPath)]
-    const windowsLocalWorkerSandbox = process.platform === 'win32' && existsSync(windowsOcrSandboxLauncherPath)
-      ? {
-          launcherPath: windowsOcrSandboxLauncherPath,
-          grantReadRoots: windowsAppContainerGrantRoots
-        }
-      : undefined
-    const localAi = createLocalAiRuntime(process.platform === 'darwin'
-      ? {
-          macExecutablePath: app.isPackaged
-            ? join(process.resourcesPath, 'native', 'macos', 'ses-vision-ocr')
-            : join(process.cwd(), 'build', 'native', 'macos', 'ses-vision-ocr')
-        }
-      : process.platform === 'win32'
+    const windowsAppContainerGrantRoots = app.isPackaged ? [dirname(process.execPath)] : [process.cwd(), dirname(process.execPath)]
+    const windowsLocalWorkerSandbox =
+      process.platform === 'win32' && existsSync(windowsOcrSandboxLauncherPath)
         ? {
-            windowsOcrSandboxLauncherPath: existsSync(windowsOcrSandboxLauncherPath)
-              ? windowsOcrSandboxLauncherPath
-              : undefined,
-            windowsOcrWorkerPath: join(__dirname, 'windows-ocr-worker.js'),
-            windowsTesseractWorkerPath: join(__dirname, 'tesseract-worker.js'),
-            windowsTessdataPath: join(windowsOcrResources, 'tessdata'),
-            windowsOcrResourceManifestPath: join(windowsOcrResources, 'resource-manifest.json'),
-            windowsAppContainerGrantRoots,
-            windowsNetworkIsolation: hasVerifiedWindowsOcrNetworkEvidence(windowsOcrEvidencePath)
-              ? 'windows-kernel-network-verified'
-              : undefined
+            launcherPath: windowsOcrSandboxLauncherPath,
+            grantReadRoots: windowsAppContainerGrantRoots
           }
-        : {})
+        : undefined
+    const localAi = createLocalAiRuntime(
+      process.platform === 'darwin'
+        ? {
+            macExecutablePath: app.isPackaged
+              ? join(process.resourcesPath, 'native', 'macos', 'ses-vision-ocr')
+              : join(process.cwd(), 'build', 'native', 'macos', 'ses-vision-ocr')
+          }
+        : process.platform === 'win32'
+          ? {
+              windowsOcrSandboxLauncherPath: existsSync(windowsOcrSandboxLauncherPath) ? windowsOcrSandboxLauncherPath : undefined,
+              windowsOcrWorkerPath: join(__dirname, 'windows-ocr-worker.js'),
+              windowsTesseractWorkerPath: join(__dirname, 'tesseract-worker.js'),
+              windowsTessdataPath: join(windowsOcrResources, 'tessdata'),
+              windowsOcrResourceManifestPath: join(windowsOcrResources, 'resource-manifest.json'),
+              windowsAppContainerGrantRoots,
+              windowsNetworkIsolation: hasVerifiedWindowsOcrNetworkEvidence(windowsOcrEvidencePath)
+                ? 'windows-kernel-network-verified'
+                : undefined
+            }
+          : {}
+    )
     if (!app.isPackaged || releaseSmokeMode) {
       console.info('[local-ai-ready]', {
         platform: process.platform,
@@ -372,22 +364,28 @@ async function initializeServices(): Promise<{
       'onnx',
       process.platform === 'win32' ? 'model_qint8_avx2.onnx' : 'model_qint8_arm64.onnx'
     )
-    const rerankerWorker = existsSync(join(rerankerModelDirectory, 'model-manifest.json')) && existsSync(rerankerModelPath)
-      ? new LocalRerankerWorkerClient({
-          workerPath: join(__dirname, 'reranker-worker.js'),
-          modelDirectory: rerankerModelDirectory,
-          windowsSandbox: windowsLocalWorkerSandbox
-        })
-      : null
-    const candidateRetrieval = new LocalHybridCandidateRetrieval(embeddingWorker, repository, {
-      modelId: localEmbeddingModel.id,
-      modelRevision: localEmbeddingModel.revision,
-      dimension: localEmbeddingModel.dimension,
-      maximumRerankCandidates: localRerankerModel.maximumCandidates
-    }, rerankerWorker ?? undefined)
+    const rerankerWorker =
+      existsSync(join(rerankerModelDirectory, 'model-manifest.json')) && existsSync(rerankerModelPath)
+        ? new LocalRerankerWorkerClient({
+            workerPath: join(__dirname, 'reranker-worker.js'),
+            modelDirectory: rerankerModelDirectory,
+            windowsSandbox: windowsLocalWorkerSandbox
+          })
+        : null
+    const candidateRetrieval = new LocalHybridCandidateRetrieval(
+      embeddingWorker,
+      repository,
+      {
+        modelId: localEmbeddingModel.id,
+        modelRevision: localEmbeddingModel.revision,
+        dimension: localEmbeddingModel.dimension,
+        maximumRerankCandidates: localRerankerModel.maximumCandidates
+      },
+      rerankerWorker ?? undefined
+    )
     const privateGoogle = loadPrivateGoogleConfiguration(join(userDataPath, 'security', 'google-private-client.v1.json'), app.isPackaged)
-    const googleWorkspaceConfiguration = loadManagedGoogleWorkspaceConfiguration(new Date(), privateGoogle ?? undefined) ??
-      repository.getGoogleWorkspaceAdminConfiguration()
+    const googleWorkspaceConfiguration =
+      loadManagedGoogleWorkspaceConfiguration(new Date(), privateGoogle ?? undefined) ?? repository.getGoogleWorkspaceAdminConfiguration()
     const googleClientId = googleWorkspaceConfiguration?.clientId ?? null
     const googleClientSecret = privateGoogle?.clientSecret ?? (process.env.SES_GOOGLE_OAUTH_CLIENT_SECRET?.trim() || undefined)
     const googleWorkspaceDomain = googleWorkspaceConfiguration?.workspaceDomain ?? null
@@ -400,9 +398,8 @@ async function initializeServices(): Promise<{
             ...(privateGoogle ? { accountEmail: privateGoogle.accountEmail, privateLocalWeb: privateGoogle.privateLocalWeb } : {})
           },
           {
-            credentialStore: new SafeStorageJsonCredentialVault(
-              join(userDataPath, 'security', 'google-workspace-credential.v1'),
-              (input) => googleWorkspaceCredentialSchema.parse(input)
+            credentialStore: new SafeStorageJsonCredentialVault(join(userDataPath, 'security', 'google-workspace-credential.v1'), (input) =>
+              googleWorkspaceCredentialSchema.parse(input)
             ),
             authorizationCodeProvider: new LoopbackAuthorizationCodeProvider({
               openExternal: (url) => shell.openExternal(url),
@@ -415,9 +412,8 @@ async function initializeServices(): Promise<{
     const aiCommerceConfiguration = loadAiCommerceConfiguration()
     const aiCommerce = aiCommerceConfiguration
       ? new AiCommerceNativeClient(aiCommerceConfiguration, {
-          credentialStore: new SafeStorageJsonCredentialVault(
-            join(userDataPath, 'security', 'aicommerce-native-credential.v1'),
-            (input) => parseAiCommerceNativeCredential(input)
+          credentialStore: new SafeStorageJsonCredentialVault(join(userDataPath, 'security', 'aicommerce-native-credential.v1'), (input) =>
+            parseAiCommerceNativeCredential(input)
           ),
           pendingAuthorizationStore: new SafeStorageJsonCredentialVault(
             join(userDataPath, 'security', 'aicommerce-native-pending-authorization.v1'),
@@ -476,8 +472,12 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   registerPersonnelHandlers(context)
   registerWorkRuleHandlers(context)
   registerSystemExperienceHandlers(context)
-  const stopOpportunityDiscovery=startOpportunityDiscovery(context,()=>repository.listProcessingJobs().some(job=>job.status==='running')?0:powerMonitor.getSystemIdleTime())
-  const stopExperienceLearning = startExperienceLearning(context, () => repository.listProcessingJobs().some(job=>job.status==='running') ? 0 : powerMonitor.getSystemIdleTime())
+  const stopOpportunityDiscovery = startOpportunityDiscovery(context, () =>
+    repository.listProcessingJobs().some((job) => job.status === 'running') ? 0 : powerMonitor.getSystemIdleTime()
+  )
+  const stopExperienceLearning = startExperienceLearning(context, () =>
+    repository.listProcessingJobs().some((job) => job.status === 'running') ? 0 : powerMonitor.getSystemIdleTime()
+  )
   registerAtsImportHandlers(context)
   registerCandidateEvaluationHandlers(context)
   registerJobCaseHandlers(context)
@@ -508,15 +508,18 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
       if (task.status === 'failed') {
         const retryAt = job.nextRetryAt ?? new Date().toISOString()
         const errorCode = job.errorCode ?? 'BACKGROUND_RETRY'
-        const retryTask = job.type === 'candidate-match'
-          ? recordCandidateMatchRetryScheduled(task, errorCode, retryAt)
-          : job.type === 'resume-analysis'
-            ? recordResumeAnalysisRetryScheduled(task, errorCode, retryAt)
-            : task
+        const retryTask =
+          job.type === 'candidate-match'
+            ? recordCandidateMatchRetryScheduled(task, errorCode, retryAt)
+            : job.type === 'resume-analysis'
+              ? recordResumeAnalysisRetryScheduled(task, errorCode, retryAt)
+              : task
         if (retryTask !== task) repository.saveWorkTask(retryTask)
       }
       if (job.type === 'candidate-match') {
-        await withTaskOperation(job.workTaskId, async () => { await runCandidateMatchTask(job.workTaskId, job.id) })
+        await withTaskOperation(job.workTaskId, async () => {
+          await runCandidateMatchTask(job.workTaskId, job.id)
+        })
         return
       }
       if (job.type === 'resume-analysis') {
@@ -571,7 +574,10 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
       // HR may not be looking at the app when mail lands. Counts only - case
       // content never enters an OS notification.
       if (counts.imported > 0 && BrowserWindow.getFocusedWindow() === null && Notification.isSupported()) {
-        const notice = new Notification({ title: 'SES Agent', body: `メール ${counts.imported}件・人材取込 ${counts.personnelImported ?? 0}件` })
+        const notice = new Notification({
+          title: 'SES Agent',
+          body: `メール ${counts.imported}件・人材取込 ${counts.personnelImported ?? 0}件`
+        })
         notice.on('click', () => {
           const window = BrowserWindow.getAllWindows()[0]
           if (!window) return
@@ -592,8 +598,12 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   if (context.googleWorkspaceConfiguration && context.gmailSyncConfig) gmailSyncScheduler.start()
   googleWorkspaceSync.setSyncResultListener((state) => {
     const run = state.lastRun
-    if (state.status !== 'error' && !(run?.intake?.casesFailed || run?.intake?.personnelFailed) &&
-      (run?.moreAvailable || run?.intake?.pendingCases || run?.intake?.pendingPersonnel)) gmailSyncScheduler.requestContinuation()
+    if (
+      state.status !== 'error' &&
+      !(run?.intake?.casesFailed || run?.intake?.personnelFailed) &&
+      (run?.moreAvailable || run?.intake?.pendingCases || run?.intake?.pendingPersonnel)
+    )
+      gmailSyncScheduler.requestContinuation()
   })
   return () => {
     stopExperienceLearning()
@@ -660,17 +670,15 @@ function createMainWindow(): BrowserWindow {
       void (async () => {
         let state: { api: string; body: string; styles: number } | null = null
         for (let attempt = 0; attempt < 100; attempt += 1) {
-          state = await window.webContents.executeJavaScript(
+          state = (await window.webContents.executeJavaScript(
             `({ api: typeof window.sesAgent, body: document.body.innerText.slice(0, 240), styles: document.styleSheets.length })`
-          ) as { api: string; body: string; styles: number }
+          )) as { api: string; body: string; styles: number }
           if (!state.body.includes('安全な作業環境を準備しています')) break
           await new Promise((resolveWait) => setTimeout(resolveWait, 50))
         }
         console.info('[renderer-ready]', state)
         if (releaseSmokeMode) {
-          const startup = await window.webContents.executeJavaScript(
-            'window.sesAgent.getStartupStatus()'
-          ) as StartupStatus
+          const startup = (await window.webContents.executeJavaScript('window.sesAgent.getStartupStatus()')) as StartupStatus
           if (!shouldRunReleaseAgentSmoke(startup)) {
             setTimeout(() => app.quit(), 100)
             return
@@ -678,15 +686,7 @@ function createMainWindow(): BrowserWindow {
           const agentSmokeConversationId = process.env.SES_AGENT_SMOKE_CONVERSATION_ID ?? null
           const agentSmoke = await window.webContents.executeJavaScript(`(async () => {
             const api = window.sesAgent
-            const bootstrap = await api.getBootstrap()
             const context = { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null }
-            if (bootstrap.featureFlags?.conversationalMatchingEnabled !== true) {
-              return {
-                bridge: typeof api,
-                conversationalMatchingEnabled: false,
-                classicMatchingPath: document.body.innerText.includes('AI マッチング')
-              }
-            }
             const existingConversationId = ${JSON.stringify(agentSmokeConversationId)}
             if (existingConversationId) {
               const reopened = await api.listAiConversations(context)
@@ -694,7 +694,6 @@ function createMainWindow(): BrowserWindow {
               const remaining = await api.listAiConversations(context)
               return {
                 bridge: typeof api,
-                conversationalMatchingEnabled: true,
                 reopened: reopened.some((conversation) => conversation.id === existingConversationId),
                 deleted: deletion.deletedConversationIds.includes(existingConversationId),
                 remaining: remaining.some((conversation) => conversation.id === existingConversationId)
@@ -712,7 +711,6 @@ function createMainWindow(): BrowserWindow {
             const saved = await api.listAiConversations(context)
             return {
               bridge: typeof api,
-              conversationalMatchingEnabled: true,
               turnStatus: turn.status,
               planningFailedClosed: turn.status === 'failed' && turn.toolName === null && turn.actionRunId === null &&
                 turn.assistantMessage.mode === 'local-fallback' && turn.assistantMessage.narrativeStatus === 'failed-local-fallback' &&
@@ -853,7 +851,8 @@ function registerStartupRecoveryIpcHandlers(userDataPath: string): void {
       await expireRecoveryPreview()
       const preview = recoveryPreview
       if (!preview || preview.token !== input.restoreToken) throw new Error('復元確認の有効期限が切れました。もう一度検証してください。')
-      if (preview.staged.confirmationHash !== input.confirmationHash) throw new Error('復元対象が変更されました。もう一度検証してください。')
+      if (preview.staged.confirmationHash !== input.confirmationHash)
+        throw new Error('復元対象が変更されました。もう一度検証してください。')
       const protectedMasterKeyPath = join(dirname(preview.staged.databasePath), '..', 'security', 'master-key.v1')
       await masterKeyProvider.writeProtectedMasterKey(protectedMasterKeyPath, preview.staged.masterKey)
       await schedulePendingRestore({
@@ -905,16 +904,10 @@ async function verifyActivatedRecovery(
     (input) => parseAiCommercePendingAuthorization(input)
   )
   await aiCommercePendingAuthorizationVault.clear()
-  services.repository.recordRecoveryEvent(
-    'restore-completed',
-    activation.marker.summary,
-    activation.marker.packageHash
-  )
+  services.repository.recordRecoveryEvent('restore-completed', activation.marker.summary, activation.marker.packageHash)
 }
 
-async function runWindowsPackageWorkerSmoke(
-  services: Awaited<ReturnType<typeof initializeServices>>
-): Promise<void> {
+async function runWindowsPackageWorkerSmoke(services: Awaited<ReturnType<typeof initializeServices>>): Promise<void> {
   if (!app.isPackaged || process.platform !== 'win32') {
     throw new Error('Packaged Windows worker verification is only available in a packaged Windows application.')
   }
@@ -939,7 +932,8 @@ async function runWindowsPackageWorkerSmoke(
   let parserCompleted = false
   try {
     const parsed = await services.parserWorker.parse(parserFile, parserBytes)
-    parserCompleted = parsed.blocks.some((block) => block.text === 'PACKAGED_APPCONTAINER_PARSER_SENTINEL') &&
+    parserCompleted =
+      parsed.blocks.some((block) => block.text === 'PACKAGED_APPCONTAINER_PARSER_SENTINEL') &&
       parsed.security.rawFileCloudEligible === false
   } finally {
     parserBytes.fill(0)
@@ -947,9 +941,8 @@ async function runWindowsPackageWorkerSmoke(
   if (!parserCompleted) throw new Error('The packaged AppContainer parser did not return the expected local result.')
 
   const vectors = await services.embeddingWorker.embedQueries(['パッケージ内のローカル候補者検索を検証する'])
-  const embeddingCompleted = vectors.length === 1 &&
-    vectors[0]?.length === localEmbeddingModel.dimension &&
-    vectors[0].every((value) => Number.isFinite(value))
+  const embeddingCompleted =
+    vectors.length === 1 && vectors[0]?.length === localEmbeddingModel.dimension && vectors[0].every((value) => Number.isFinite(value))
   if (!embeddingCompleted) throw new Error('The packaged AppContainer embedding worker returned an invalid vector.')
 
   if (!services.rerankerWorker) throw new Error('The packaged local reranker worker is unavailable.')
@@ -957,8 +950,8 @@ async function runWindowsPackageWorkerSmoke(
     { id: 'relevant', text: 'AWS、Terraform、Kubernetesを使ったクラウド基盤の設計構築を担当' },
     { id: 'irrelevant', text: '経理事務、請求書処理、月次決算を担当' }
   ])
-  const rerankerCompleted = (rerankerScores.get('relevant') ?? Number.NEGATIVE_INFINITY) >
-    (rerankerScores.get('irrelevant') ?? Number.POSITIVE_INFINITY)
+  const rerankerCompleted =
+    (rerankerScores.get('relevant') ?? Number.NEGATIVE_INFINITY) > (rerankerScores.get('irrelevant') ?? Number.POSITIVE_INFINITY)
   if (!rerankerCompleted) throw new Error('The packaged local reranker did not rank the relevant passage first.')
 
   const fixturePath = process.env.SES_WINDOWS_PACKAGE_OCR_FIXTURE_PATH?.trim() || null
@@ -980,17 +973,20 @@ async function runWindowsPackageWorkerSmoke(
     throw new Error('A packaged OCR fixture was provided while Windows OCR is disabled.')
   }
 
-  console.info('[windows-package-workers-ready]', JSON.stringify({
-    parserCompleted,
-    embeddingCompleted,
-    embeddingDimension: localEmbeddingModel.dimension,
-    rerankerCompleted,
-    rerankerModel: localRerankerModel.id,
-    ocrCompleted,
-    ocrEngine,
-    ocrStatus: services.localAiStatus,
-    rawPersonalDataCloudEligible: false
-  }))
+  console.info(
+    '[windows-package-workers-ready]',
+    JSON.stringify({
+      parserCompleted,
+      embeddingCompleted,
+      embeddingDimension: localEmbeddingModel.dimension,
+      rerankerCompleted,
+      rerankerModel: localRerankerModel.id,
+      ocrCompleted,
+      ocrEngine,
+      ocrStatus: services.localAiStatus,
+      rawPersonalDataCloudEligible: false
+    })
+  )
 }
 
 async function startApplication(): Promise<void> {
@@ -1009,17 +1005,20 @@ async function startApplication(): Promise<void> {
       if (!services.aiCommerce) throw new Error('AICommerce production configuration is unavailable.')
       const dashboard = await services.aiCommerce.getDashboard()
       const result = await services.aiCommerce.requestText('请只回复 OK。')
-      console.info('[aicommerce-production-probe-ready]', JSON.stringify({
-        diagnosticOnly: true,
-        privacyGateExemption: 'fixed-synthetic-connectivity-probe',
-        appCode: services.aiCommerce.configuration.appCode,
-        productCode: services.aiCommerce.configuration.productCode,
-        walletVerified: dashboard.wallet !== null,
-        capabilityCount: dashboard.capabilities.length,
-        billingModeUsed: result.billingModeUsed,
-        aiResponseVerified: result.content.trim().length > 0,
-        usageCredits: result.usageCredits
-      }))
+      console.info(
+        '[aicommerce-production-probe-ready]',
+        JSON.stringify({
+          diagnosticOnly: true,
+          privacyGateExemption: 'fixed-synthetic-connectivity-probe',
+          appCode: services.aiCommerce.configuration.appCode,
+          productCode: services.aiCommerce.configuration.productCode,
+          walletVerified: dashboard.wallet !== null,
+          capabilityCount: dashboard.capabilities.length,
+          billingModeUsed: result.billingModeUsed,
+          aiResponseVerified: result.content.trim().length > 0,
+          usageCredits: result.usageCredits
+        })
+      )
       services.embeddingWorker.dispose()
       services.rerankerWorker?.dispose()
       services.repository.close()
@@ -1119,7 +1118,7 @@ async function startApplication(): Promise<void> {
       app.exit(1)
       return
     }
-    if (!activation && await isRecoverableLocalStorageFailure(userDataPath, error)) {
+    if (!activation && (await isRecoverableLocalStorageFailure(userDataPath, error))) {
       console.info('[startup-storage-unavailable]', message)
       registerStartupRecoveryIpcHandlers(userDataPath)
       if (usesBundledRenderer()) await registerAppProtocol()

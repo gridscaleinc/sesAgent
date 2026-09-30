@@ -36,36 +36,60 @@ export const privacyExpertTextIdentifierTypes = [
   'personal_account_or_url'
 ] as const
 
-const privacyExpertExpectedIdentifierSchema = z.object({
-  type: z.enum(privacyExpertTextIdentifierTypes),
-  value: z.string().min(1).max(200)
-}).strict()
+const privacyExpertExpectedIdentifierSchema = z
+  .object({
+    type: z.enum(privacyExpertTextIdentifierTypes),
+    value: z.string().min(1).max(200)
+  })
+  .strict()
 
-export const privacyExpertDatasetSchema = z.object({
-  version: z.literal('ses-privacy-expert-dataset-v1'),
-  templateOnly: z.literal(false),
-  humanLabeledDataset: z.literal(true),
-  syntheticOnly: z.literal(false),
-  locale: z.literal('ja-JP'),
-  review: z.object({
-    protocolVersion: z.literal('ses-privacy-human-review-v1'),
-    sourceDocumentCount: z.number().int().min(50).max(10_000),
-    independentReviewerCount: z.number().int().min(2).max(20),
-    disagreementsResolved: z.literal(true),
-    approvedForLocalEvaluation: z.literal(true),
-    personalDataHandling: z.enum(['pseudonymized-local-only', 'consented-local-only']),
-    reviewedAt: z.string().min(20).max(40).refine((value) => Number.isFinite(Date.parse(value)), 'Invalid review date.')
-  }).strict(),
-  cases: z.array(z.object({
-    id: z.string().regex(/^[a-z0-9][a-z0-9-]{2,79}$/u),
-    text: z.string().min(1).max(10_000),
-    expected: z.array(privacyExpertExpectedIdentifierSchema).min(1).max(50)
-  }).strict()).min(50).max(1_000),
-  safeCases: z.array(z.object({
-    id: z.string().regex(/^[a-z0-9][a-z0-9-]{2,79}$/u),
-    text: z.string().min(1).max(10_000)
-  }).strict()).min(20).max(500)
-}).strict()
+export const privacyExpertDatasetSchema = z
+  .object({
+    version: z.literal('ses-privacy-expert-dataset-v1'),
+    templateOnly: z.literal(false),
+    humanLabeledDataset: z.literal(true),
+    syntheticOnly: z.literal(false),
+    locale: z.literal('ja-JP'),
+    review: z
+      .object({
+        protocolVersion: z.literal('ses-privacy-human-review-v1'),
+        sourceDocumentCount: z.number().int().min(50).max(10_000),
+        independentReviewerCount: z.number().int().min(2).max(20),
+        disagreementsResolved: z.literal(true),
+        approvedForLocalEvaluation: z.literal(true),
+        personalDataHandling: z.enum(['pseudonymized-local-only', 'consented-local-only']),
+        reviewedAt: z
+          .string()
+          .min(20)
+          .max(40)
+          .refine((value) => Number.isFinite(Date.parse(value)), 'Invalid review date.')
+      })
+      .strict(),
+    cases: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(/^[a-z0-9][a-z0-9-]{2,79}$/u),
+            text: z.string().min(1).max(10_000),
+            expected: z.array(privacyExpertExpectedIdentifierSchema).min(1).max(50)
+          })
+          .strict()
+      )
+      .min(50)
+      .max(1_000),
+    safeCases: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(/^[a-z0-9][a-z0-9-]{2,79}$/u),
+            text: z.string().min(1).max(10_000)
+          })
+          .strict()
+      )
+      .min(20)
+      .max(500)
+  })
+  .strict()
 
 export type PrivacyExpertDataset = z.infer<typeof privacyExpertDatasetSchema>
 
@@ -201,7 +225,8 @@ const detectionRules: CaptureRule[] = [
   },
   {
     identifierType: 'birth_date',
-    pattern: /(?:生年月日|誕生日|DOB)\s*[:：]?\s*((?:19|20|１９|２０)[0-9０-９]{2}(?:年|[/.．\-ー－])[0-9０-９]{1,2}(?:月|[/.．\-ー－])[0-9０-９]{1,2}日?)/giu,
+    pattern:
+      /(?:生年月日|誕生日|DOB)\s*[:：]?\s*((?:19|20|１９|２０)[0-9０-９]{2}(?:年|[/.．\-ー－])[0-9０-９]{1,2}(?:月|[/.．\-ー－])[0-9０-９]{1,2}日?)/giu,
     captureGroup: 1
   },
   {
@@ -228,7 +253,8 @@ const detectionRules: CaptureRule[] = [
   },
   {
     identifierType: 'residence_status',
-    pattern: /(?:^|[\s　])((?:永住者|定住者|高度専門職|技術・人文知識・国際業務|日本人の配偶者等|永住者の配偶者等|特定活動|特定技能|技能実習|留学|家族滞在))(?:$|[\s　,，;；])/gmu,
+    pattern:
+      /(?:^|[\s　])((?:永住者|定住者|高度専門職|技術・人文知識・国際業務|日本人の配偶者等|永住者の配偶者等|特定活動|特定技能|技能実習|留学|家族滞在))(?:$|[\s　,，;；])/gmu,
     captureGroup: 1
   },
   {
@@ -253,18 +279,42 @@ const detectionRules: CaptureRule[] = [
 
 const dlpRules: Array<{ label: string; pattern: RegExp }> = [
   { label: 'private_email', pattern: /[\p{L}\p{N}.．!#$%&'*+/=?^_`{|}~-]+[@＠][\p{L}\p{N}-]+(?:[.．][\p{L}\p{N}-]+)+/iu },
-  { label: 'phone', pattern: /(?<![0-9０-９])(?:[+＋](?:81|８１)[-ー－\s]?(?:[0０])?|[0０])(?:[0-9０-９][-ー－\s]?){8,10}[0-9０-９](?![0-9０-９])/u },
+  {
+    label: 'phone',
+    pattern: /(?<![0-9０-９])(?:[+＋](?:81|８１)[-ー－\s]?(?:[0０])?|[0０])(?:[0-9０-９][-ー－\s]?){8,10}[0-9０-９](?![0-9０-９])/u
+  },
   // Digit boundaries keep rate ranges and reference numbers (5500-65000,
   // 20250-8251) from reading as a postal code; a bare 150-0001 still fails closed.
   { label: 'postal_address', pattern: /(?<![0-9０-９])(?:〒\s*)?[0-9０-９]{3}[-ー－][0-9０-９]{4}(?![0-9０-９])/u },
-  { label: 'birth_date', pattern: /(?:生年月日|誕生日|DOB)\s*[:：]?\s*(?:19|20|１９|２０)[0-9０-９]{2}(?:年|[/.．\-ー－])[0-9０-９]{1,2}/iu },
+  {
+    label: 'birth_date',
+    pattern: /(?:生年月日|誕生日|DOB)\s*[:：]?\s*(?:19|20|１９|２０)[0-9０-９]{2}(?:年|[/.．\-ー－])[0-9０-９]{1,2}/iu
+  },
   { label: 'government_id', pattern: /(?:マイナンバー|個人番号|旅券番号|パスポート番号|在留カード番号)\s*[:：]?\s*[A-Z0-9０-９-]{6,}/iu },
-  { label: 'nationality', pattern: /(?:国籍|Nationality)\s*[:：](?!\s*<(?:NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION)_\d{3}>)\s*[^\n\r\t|｜,，;；]{1,80}/iu },
+  {
+    label: 'nationality',
+    pattern: /(?:国籍|Nationality)\s*[:：](?!\s*<(?:NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION)_\d{3}>)\s*[^\n\r\t|｜,，;；]{1,80}/iu
+  },
   { label: 'nationality', pattern: /(?:外国籍不可|日本国籍(?:のみ|限定)|日本人(?:のみ|限定))/u },
-  { label: 'residence_status', pattern: /(?:在留資格|Residence\s+status|Visa\s+status|ビザ(?:種別|種類)?)\s*[:：](?!\s*<(?:NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION)_\d{3}>)\s*[^\n\r\t|｜,，;；]{1,100}/iu },
-  { label: 'residence_status', pattern: /(?:^|[\s　])(?:永住者|定住者|高度専門職|技術・人文知識・国際業務|日本人の配偶者等|永住者の配偶者等|特定活動|特定技能|技能実習|留学|家族滞在)(?:$|[\s　,，;；])/mu },
-  { label: 'work_authorization', pattern: /(?:就労資格|就労可否|就労制限|Work\s+authori[sz]ation)\s*[:：](?!\s*<(?:NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION)_\d{3}>)\s*[^\n\r\t|｜,，;；]{1,100}/iu },
-  { label: 'work_authorization', pattern: /(?:^|[\s　])(?:就労制限なし|就労資格あり（職種・期限要確認）|資格外活動のみ（制限あり）|就労不可)(?:$|[\s　,，;；])/mu },
+  {
+    label: 'residence_status',
+    pattern:
+      /(?:在留資格|Residence\s+status|Visa\s+status|ビザ(?:種別|種類)?)\s*[:：](?!\s*<(?:NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION)_\d{3}>)\s*[^\n\r\t|｜,，;；]{1,100}/iu
+  },
+  {
+    label: 'residence_status',
+    pattern:
+      /(?:^|[\s　])(?:永住者|定住者|高度専門職|技術・人文知識・国際業務|日本人の配偶者等|永住者の配偶者等|特定活動|特定技能|技能実習|留学|家族滞在)(?:$|[\s　,，;；])/mu
+  },
+  {
+    label: 'work_authorization',
+    pattern:
+      /(?:就労資格|就労可否|就労制限|Work\s+authori[sz]ation)\s*[:：](?!\s*<(?:NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION)_\d{3}>)\s*[^\n\r\t|｜,，;；]{1,100}/iu
+  },
+  {
+    label: 'work_authorization',
+    pattern: /(?:^|[\s　])(?:就労制限なし|就労資格あり（職種・期限要確認）|資格外活動のみ（制限あり）|就労不可)(?:$|[\s　,，;；])/mu
+  },
   { label: 'personal_account_or_url', pattern: /(?:https?:\/\/|www\.)[^\s<>()]+/iu }
 ]
 
@@ -332,7 +382,8 @@ export function detectDirectIdentifiers(input: string, knownPersonNames: string[
     ...collectRuleDetections(input).map((item) => item.identifierType),
     ...collectKnownPersonDetections(input, knownPersonNames).map((item) => item.identifierType)
   ]
-  const placeholderPattern = /<(PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/gu
+  const placeholderPattern =
+    /<(PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|NATIONALITY|RESIDENCE_STATUS|WORK_AUTHORIZATION|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/gu
   for (const match of input.matchAll(placeholderPattern)) {
     const type = match[1]?.toLocaleLowerCase('en-US')
     if (type && directIdentifierSchema.safeParse(type).success) detected.push(type as DirectIdentifier)
@@ -359,10 +410,7 @@ export function redactTextForCloud(input: string, options: LocalRedactionOptions
   const sessionId = options.sessionId ?? randomUUID()
   const policyVersion = options.policyVersion ?? 'cloud-redaction-v2'
   const knownPersonNames = options.knownPersonNames ?? []
-  const detections = removeOverlaps([
-    ...collectRuleDetections(input),
-    ...collectKnownPersonDetections(input, knownPersonNames)
-  ])
+  const detections = removeOverlaps([...collectRuleDetections(input), ...collectKnownPersonDetections(input, knownPersonNames)])
   const counters = new Map<DirectIdentifier, number>()
   const values = new Map<string, string>()
   const mappings: LocalPiiMapping[] = []
@@ -392,9 +440,7 @@ export function redactTextForCloud(input: string, options: LocalRedactionOptions
   const blockedReasons = runIndependentDlp(content, knownPersonNames)
   for (const risk of options.mediaRisks ?? []) blockedReasons.push(`unredacted-media:${risk}`)
   if (options.personNameReviewCompleted !== true) blockedReasons.push('coverage:person_name_review_required')
-  const hasUncertainCoverage = blockedReasons.some(
-    (reason) => reason.startsWith('unredacted-media:') || reason.startsWith('coverage:')
-  )
+  const hasUncertainCoverage = blockedReasons.some((reason) => reason.startsWith('unredacted-media:') || reason.startsWith('coverage:'))
   const status = blockedReasons.length === 0 ? 'passed' : hasUncertainCoverage ? 'uncertain' : 'failed'
   const contentHash = status === 'passed' ? hashContent(content) : null
   const removedTypes = [...new Set(mappings.map((mapping) => mapping.identifierType))]
@@ -471,20 +517,14 @@ export function evaluatePrivacyExpertDataset(
       knownPersonNames: automaticNames,
       personNameReviewCompleted: true
     })
-    const automaticMappings = new Set(
-      automatic.mappings.map((mapping) => mappingKey(mapping.identifierType, mapping.originalValue))
-    )
-    const reviewedPersonNames = testCase.expected
-      .filter((expected) => expected.type === 'person_name')
-      .map((expected) => expected.value)
+    const automaticMappings = new Set(automatic.mappings.map((mapping) => mappingKey(mapping.identifierType, mapping.originalValue)))
+    const reviewedPersonNames = testCase.expected.filter((expected) => expected.type === 'person_name').map((expected) => expected.value)
     const reviewed = redactTextForCloud(testCase.text, {
       sourceVersion: `privacy-expert-reviewed:${testCase.id}`,
       knownPersonNames: [...new Set([...automaticNames, ...reviewedPersonNames])],
       personNameReviewCompleted: true
     })
-    const reviewedMappings = new Set(
-      reviewed.mappings.map((mapping) => mappingKey(mapping.identifierType, mapping.originalValue))
-    )
+    const reviewedMappings = new Set(reviewed.mappings.map((mapping) => mappingKey(mapping.identifierType, mapping.originalValue)))
 
     expectedIdentifiers += expectedMappings.size
     mappingCount += reviewedMappings.size
@@ -525,21 +565,17 @@ export function evaluatePrivacyExpertDataset(
     }
   }
 
-  const postReviewIdentifierRecall = expectedIdentifiers === 0
-    ? 0
-    : postReviewDetectedIdentifiers / expectedIdentifiers
-  const automaticPersonNameRecall = expectedPersonNames === 0
-    ? 0
-    : automaticallyDetectedPersonNames / expectedPersonNames
-  const automaticNonNameIdentifierRecall = expectedNonNameIdentifiers === 0
-    ? 0
-    : automaticallyDetectedNonNameIdentifiers / expectedNonNameIdentifiers
+  const postReviewIdentifierRecall = expectedIdentifiers === 0 ? 0 : postReviewDetectedIdentifiers / expectedIdentifiers
+  const automaticPersonNameRecall = expectedPersonNames === 0 ? 0 : automaticallyDetectedPersonNames / expectedPersonNames
+  const automaticNonNameIdentifierRecall =
+    expectedNonNameIdentifiers === 0 ? 0 : automaticallyDetectedNonNameIdentifiers / expectedNonNameIdentifiers
   const redactionPrecision = mappingCount === 0 ? 0 : expectedMappingCount / mappingCount
   const safeCaseFalsePositiveRate = safeCaseFalsePositiveCount / dataset.safeCases.length
   if (expectedPersonNames < privacyExpertQualityThresholds.expectedPersonNames) {
     failures.push('dataset:insufficient-person-name-coverage')
   }
-  const releaseEligible = failures.length === 0 &&
+  const releaseEligible =
+    failures.length === 0 &&
     postReviewIdentifierRecall === privacyExpertQualityThresholds.postReviewIdentifierRecall &&
     automaticNonNameIdentifierRecall === privacyExpertQualityThresholds.automaticNonNameIdentifierRecall &&
     redactionPrecision >= privacyExpertQualityThresholds.redactionPrecision &&
@@ -664,12 +700,10 @@ export class CloudRedactionGateway {
     }
 
     const requiredAuditHashes = [auditContext.qualityGateReportHash, auditContext.reviewTicketHash]
-    const invalidOptionalExpertHash = auditContext.expertAttestationHash !== null &&
-      !/^[a-f0-9]{64}$/u.test(auditContext.expertAttestationHash)
-    if (
-      requiredAuditHashes.some((value) => !/^[a-f0-9]{64}$/u.test(value)) ||
-      invalidOptionalExpertHash
-    ) block('invalid-gate-audit-context')
+    const invalidOptionalExpertHash =
+      auditContext.expertAttestationHash !== null && !/^[a-f0-9]{64}$/u.test(auditContext.expertAttestationHash)
+    if (requiredAuditHashes.some((value) => !/^[a-f0-9]{64}$/u.test(value)) || invalidOptionalExpertHash)
+      block('invalid-gate-audit-context')
     if (auditContext.gatePolicyVersion !== this.config.policyVersion) block('gate-policy-mismatch')
     if (!payload || payload[redactedPayloadBrand] !== true) block('unbranded-payload')
     const parsed = redactedPayloadSchema.safeParse(payload)
@@ -680,7 +714,8 @@ export class CloudRedactionGateway {
     if (!adapter) return block('provider-not-registered')
     if (!this.config.allowedEndpoints.includes(adapter.endpoint)) block('endpoint-not-allowed')
     const endpoint = new URL(adapter.endpoint)
-    const loopbackHttp = endpoint.protocol === 'http:' &&
+    const loopbackHttp =
+      endpoint.protocol === 'http:' &&
       (endpoint.hostname === 'localhost' || endpoint.hostname === '127.0.0.1' || endpoint.hostname === '[::1]')
     if (endpoint.protocol !== 'https:' && !(this.config.allowLoopbackHttp === true && loopbackHttp)) {
       block('endpoint-not-https')

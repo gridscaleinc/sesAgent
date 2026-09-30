@@ -10,10 +10,7 @@ function bounded(value: string, maximum: number): string {
  * the original file name and local document identifiers are excluded upstream
  * when the conversation projection is serialized.
  */
-export function agentDraftFactsFromResumeAnalysis(
-  analysis: ResumeAnalysisSummary,
-  label: string
-): AgentCandidateDraftFacts {
+export function agentDraftFactsFromResumeAnalysis(analysis: ResumeAnalysisSummary, label: string): AgentCandidateDraftFacts {
   return {
     documentId: analysis.fileToken,
     label: bounded(label, 60),

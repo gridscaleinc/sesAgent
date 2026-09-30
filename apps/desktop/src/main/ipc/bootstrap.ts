@@ -3,12 +3,7 @@ import { defaultAgentChatModelKey } from '@agent'
 import { googleWorkspaceConfigurationFingerprint } from '@mail'
 import { getPlatformKeyProtection } from '@platform'
 import { hasPendingRestore } from '@recovery'
-import {
-  type BootstrapPayload,
-  type StartupStatus,
-  ipcChannels,
-  resolveActionApprovalInputSchema
-} from '@shared'
+import { type BootstrapPayload, type StartupStatus, ipcChannels, resolveActionApprovalInputSchema } from '@shared'
 import {
   effectiveJobCaseFieldAliases,
   cloudPrivacyGateLoadOptions,
@@ -22,7 +17,20 @@ import { assertTrustedSender, type MainIpcContext } from './context'
 
 /** Startup status, relaunch, the renderer bootstrap payload and action approvals. */
 export function registerBootstrapHandlers(context: MainIpcContext) {
-  const { repository, localAiStatus, googleWorkspace, aiCommerce, googleWorkspaceDomain, googleWorkspaceConfiguration, gmailSyncConfig, userDataPath, conversationalMatchingEnabled, agentChatModelCatalog, wechatVisibleReader, currentOperator, currentMatchRuntimeIdentity } = context
+  const {
+    repository,
+    localAiStatus,
+    googleWorkspace,
+    aiCommerce,
+    googleWorkspaceDomain,
+    googleWorkspaceConfiguration,
+    gmailSyncConfig,
+    userDataPath,
+    agentChatModelCatalog,
+    wechatVisibleReader,
+    currentOperator,
+    currentMatchRuntimeIdentity
+  } = context
   ipcMain.handle(ipcChannels.getStartupStatus, (event): StartupStatus => {
     assertTrustedSender(event)
     return { mode: 'normal' }
@@ -40,9 +48,7 @@ export function registerBootstrapHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.getBootstrap, async (event): Promise<BootstrapPayload> => {
     assertTrustedSender(event)
     const [gmail, aiCommerceState, privacyGates, wechatVisibleMessage] = await Promise.all([
-      googleWorkspace
-        ? googleWorkspace.getState()
-        : Promise.resolve(unconfiguredGoogleWorkspaceState(googleWorkspaceDomain)),
+      googleWorkspace ? googleWorkspace.getState() : Promise.resolve(unconfiguredGoogleWorkspaceState(googleWorkspaceDomain)),
       aiCommerce ? aiCommerce.getState() : Promise.resolve(unconfiguredAiCommerceState()),
       loadCloudPrivacyGates(cloudPrivacyGateLoadOptions()),
       wechatVisibleReader.feasibility()
@@ -53,7 +59,6 @@ export function registerBootstrapHandlers(context: MainIpcContext) {
       operatorProfile: currentOperator(),
       preferences: effectiveApplicationPreferences(repository),
       jobCaseFieldAliases: effectiveJobCaseFieldAliases(repository),
-      featureFlags: { conversationalMatchingEnabled },
       agentChatModels: agentChatModelCatalog.map(({ key, displayName }) => ({ key, displayName })),
       defaultAgentChatModelKey,
       tasks: repository.listWorkTasks(),
@@ -81,9 +86,7 @@ export function registerBootstrapHandlers(context: MainIpcContext) {
       gmail,
       googleWorkspaceConfiguration,
       googleWorkspaceAcceptance: googleWorkspaceConfiguration
-        ? repository.getLatestGoogleWorkspaceAcceptanceReport(
-            googleWorkspaceConfigurationFingerprint(googleWorkspaceConfiguration)
-          )
+        ? repository.getLatestGoogleWorkspaceAcceptanceReport(googleWorkspaceConfigurationFingerprint(googleWorkspaceConfiguration))
         : null,
       gmailSync: gmailSyncState(repository, gmail, gmailSyncConfig),
       aiCommerce: aiCommerceState,

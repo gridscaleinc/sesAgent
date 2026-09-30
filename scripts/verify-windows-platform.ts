@@ -52,16 +52,52 @@ assert.equal(development.win?.signExecutable, false, 'The internal Windows devel
 assert.match(windowsWorkflow, /npm run test:installer:win -- --development/u)
 assert.match(windowsWorkflow, /npm run test:privacy-quality-gate/u)
 assert.match(windowsWorkflow, /npm run test:google-workspace-contract/u)
-assert.equal(files.some((pattern) => pattern.includes('win32')), false, 'Windows ONNX Runtime is excluded from its own package.')
-assert.equal(files.some((pattern) => pattern.includes('darwin/**/*')), true, 'Darwin ONNX Runtime exclusion is missing.')
-assert.equal(resources.some((resource) => resource.from?.includes('native/macos')), false, 'The Windows package includes a macOS helper.')
-assert.equal(resources.some((resource) => resource.from?.includes('multilingual-e5-small')), true, 'The Windows package is missing the fixed local embedding model.')
-assert.equal(resources.some((resource) => resource.from?.includes('japanese-reranker-tiny-v2')), true, 'The Windows package is missing the fixed local reranker model.')
+assert.equal(
+  files.some((pattern) => pattern.includes('win32')),
+  false,
+  'Windows ONNX Runtime is excluded from its own package.'
+)
+assert.equal(
+  files.some((pattern) => pattern.includes('darwin/**/*')),
+  true,
+  'Darwin ONNX Runtime exclusion is missing.'
+)
+assert.equal(
+  resources.some((resource) => resource.from?.includes('native/macos')),
+  false,
+  'The Windows package includes a macOS helper.'
+)
+assert.equal(
+  resources.some((resource) => resource.from?.includes('multilingual-e5-small')),
+  true,
+  'The Windows package is missing the fixed local embedding model.'
+)
+assert.equal(
+  resources.some((resource) => resource.from?.includes('japanese-reranker-tiny-v2')),
+  true,
+  'The Windows package is missing the fixed local reranker model.'
+)
 const privacyEvidenceResource = resources.find((resource) => resource.from?.includes('build/privacy-verification'))
-assert.equal(privacyEvidenceResource?.filter?.includes('privacy-quality-report.json'), true, 'The Windows package is missing the fixed privacy quality evidence.')
-assert.equal(privacyEvidenceResource?.filter?.includes('privacy-expert-report.json'), true, 'The Windows package is missing the human-labeled privacy evidence contract.')
-assert.equal(privacyEvidenceResource?.filter?.includes('cloud-enforcement-manifest.json'), true, 'The Windows package is missing the bound Cloud enforcement manifest.')
-assert.equal(resources.some((resource) => resource.from?.includes('build/native/windows/ocr')), true, 'The Windows package is missing the offline OCR resources.')
+assert.equal(
+  privacyEvidenceResource?.filter?.includes('privacy-quality-report.json'),
+  true,
+  'The Windows package is missing the fixed privacy quality evidence.'
+)
+assert.equal(
+  privacyEvidenceResource?.filter?.includes('privacy-expert-report.json'),
+  true,
+  'The Windows package is missing the human-labeled privacy evidence contract.'
+)
+assert.equal(
+  privacyEvidenceResource?.filter?.includes('cloud-enforcement-manifest.json'),
+  true,
+  'The Windows package is missing the bound Cloud enforcement manifest.'
+)
+assert.equal(
+  resources.some((resource) => resource.from?.includes('build/native/windows/ocr')),
+  true,
+  'The Windows package is missing the offline OCR resources.'
+)
 assert.equal(
   resources.some((resource) => resource.from?.includes('build/native/windows/ocr') && resource.to?.includes('native/windows/ocr')),
   true,
@@ -78,7 +114,11 @@ for (const worker of [
   'apps/desktop/src/workers/windows-ocr-worker.ts',
   'apps/desktop/src/workers/tesseract-worker.ts'
 ]) {
-  assert.match(await readFile(worker, 'utf8'), /installParserNetworkDenyGuard\(\)/u, `${worker} does not install the shared network deny guard.`)
+  assert.match(
+    await readFile(worker, 'utf8'),
+    /installParserNetworkDenyGuard\(\)/u,
+    `${worker} does not install the shared network deny guard.`
+  )
 }
 
 const manifest = JSON.parse(await readFile('build/native/windows/ocr/resource-manifest.json', 'utf8')) as OcrManifest
@@ -99,7 +139,10 @@ for (const source of [
   assert.match(clientSource, /jp\.sesai\.agentdesktop\.localworkers/u, `${source} is not wired to the local-worker AppContainer profile.`)
   assert.match(clientSource, /--stdio/u, `${source} is missing its AppContainer stdio protocol.`)
 }
-const localWorkerEvidence = JSON.parse(await readFile('build/native/windows/ocr/local-worker-network-evidence.json', 'utf8')) as Record<string, unknown>
+const localWorkerEvidence = JSON.parse(await readFile('build/native/windows/ocr/local-worker-network-evidence.json', 'utf8')) as Record<
+  string,
+  unknown
+>
 assert.equal(localWorkerEvidence.version, 'windows-release-evidence-v1')
 assert.equal(localWorkerEvidence.kind, 'local-worker-kernel-network-deny')
 assert.equal(typeof localWorkerEvidence.verified, 'boolean')
@@ -157,30 +200,32 @@ assert.deepEqual(security.releaseBlockers, [
   'WINDOWS_LOCAL_WORKER_KERNEL_NETWORK_POLICY_NOT_VERIFIED'
 ])
 
-process.stdout.write(`${JSON.stringify({
-  platform: 'win32',
-  packageTarget: 'nsis-x64',
-  developmentPackageConfigReady: true,
-  releaseSigningRequired: true,
-  updateSignatureVerification: true,
-  onnxWin32Included: true,
-  offlineOcrRuntimeBundled: sandboxLauncherBuilt,
-  offlineOcrSandboxLauncherSourceReady: true,
-  offlineOcrSandboxLauncherBuilt: sandboxLauncherBuilt,
-  offlineOcrRuntimeIntegrity: true,
-  offlineOcrEngine: manifest.engine,
-  offlineOcrLanguages: manifest.languages,
-  macHelperExcluded: true,
-  safeStorageProvider: 'windows-dpapi',
-  sharedNodeNetworkDenyGuard: true,
-  parserEmbeddingAppContainerSourceReady: true,
-  rerankerAppContainerSourceReady: true,
-  privacyQualityEvidenceBundled: true,
-  privacyExpertEvidenceRequiredByRelease: true,
-  crossPlatformElectronTsxRunner: true,
-  packagedWorkerSmokeRequiredByRelease: true,
-  localWorkerKernelNetworkIsolationVerified: localWorkerEvidence.verified,
-  rawPersonalDataCloudEligible: false,
-  releaseReady: false,
-  releaseBlockers: security.releaseBlockers
-})}\n`)
+process.stdout.write(
+  `${JSON.stringify({
+    platform: 'win32',
+    packageTarget: 'nsis-x64',
+    developmentPackageConfigReady: true,
+    releaseSigningRequired: true,
+    updateSignatureVerification: true,
+    onnxWin32Included: true,
+    offlineOcrRuntimeBundled: sandboxLauncherBuilt,
+    offlineOcrSandboxLauncherSourceReady: true,
+    offlineOcrSandboxLauncherBuilt: sandboxLauncherBuilt,
+    offlineOcrRuntimeIntegrity: true,
+    offlineOcrEngine: manifest.engine,
+    offlineOcrLanguages: manifest.languages,
+    macHelperExcluded: true,
+    safeStorageProvider: 'windows-dpapi',
+    sharedNodeNetworkDenyGuard: true,
+    parserEmbeddingAppContainerSourceReady: true,
+    rerankerAppContainerSourceReady: true,
+    privacyQualityEvidenceBundled: true,
+    privacyExpertEvidenceRequiredByRelease: true,
+    crossPlatformElectronTsxRunner: true,
+    packagedWorkerSmokeRequiredByRelease: true,
+    localWorkerKernelNetworkIsolationVerified: localWorkerEvidence.verified,
+    rawPersonalDataCloudEligible: false,
+    releaseReady: false,
+    releaseBlockers: security.releaseBlockers
+  })}\n`
+)

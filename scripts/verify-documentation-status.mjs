@@ -34,7 +34,7 @@ if (!expertEvidenceSource.includes("privacyExpertReportVersion = 'ses-privacy-ex
   failures.push('privacy-expert-evidence:report-version')
 }
 const sharedContracts = await readFile(resolve(root, 'packages/shared/src/contracts.ts'), 'utf8')
-if (sharedContracts.includes("sendAiCommerceCloudPrompt") || sharedContracts.includes("aicommerce:send-cloud-prompt")) {
+if (sharedContracts.includes('sendAiCommerceCloudPrompt') || sharedContracts.includes('aicommerce:send-cloud-prompt')) {
   failures.push('shared-contracts:legacy-cloud-entrypoint')
 }
 if (!sharedContracts.includes('prepareAiCommerceCloudPrompt') || !sharedContracts.includes('executeAiCommerceCloudPrompt')) {
@@ -52,13 +52,15 @@ if (failures.length > 0) {
   throw new Error(`Documentation status verification failed:\n${failures.join('\n')}`)
 }
 
-process.stdout.write(JSON.stringify({
-  version: 'ses-documentation-status-v1',
-  packageVersion: packageManifest.version,
-  schemaVersion,
-  documents: currentDocuments.length,
-  cloudContract: 'main-owned-two-stage-review-v1',
-  privacyExpertReportVersion: 'ses-privacy-expert-quality-report-v2',
-  embeddingModel: `${embeddingManifest.modelId}@${embeddingManifest.revision}`,
-  rerankerModel: `${rerankerManifest.modelId}@${rerankerManifest.revision}`
-}) + '\n')
+process.stdout.write(
+  JSON.stringify({
+    version: 'ses-documentation-status-v1',
+    packageVersion: packageManifest.version,
+    schemaVersion,
+    documents: currentDocuments.length,
+    cloudContract: 'main-owned-two-stage-review-v1',
+    privacyExpertReportVersion: 'ses-privacy-expert-quality-report-v2',
+    embeddingModel: `${embeddingManifest.modelId}@${embeddingManifest.revision}`,
+    rerankerModel: `${rerankerManifest.modelId}@${rerankerManifest.revision}`
+  }) + '\n'
+)

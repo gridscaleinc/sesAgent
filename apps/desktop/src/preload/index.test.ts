@@ -36,11 +36,15 @@ it('keeps legacy counts valid and drops invalid counts or content-bearing payloa
   handler({} as any, counts)
   expect(listener).toHaveBeenCalledTimes(1)
   for (const payload of [
-    { ...counts, personnelImported: -1 }, { ...counts, personnelImported: 1.5 },
-    { ...counts, personnelImported: '1' }, { ...counts, imported: NaN },
+    { ...counts, personnelImported: -1 },
+    { ...counts, personnelImported: 1.5 },
+    { ...counts, personnelImported: '1' },
+    { ...counts, imported: NaN },
     { ...counts, personnelImported: 0, subject: 'private content' },
-    { imported: 0 }, null
-  ]) handler({} as any, payload)
+    { imported: 0 },
+    null
+  ])
+    handler({} as any, payload)
   expect(listener).toHaveBeenCalledTimes(1)
 })
 
@@ -49,10 +53,16 @@ it('validates case import progress and removes its scoped listener', () => {
   const unsubscribe = api.onCaseResumeImportProgress(listener)
   const [channel, handler] = vi.mocked(ipcRenderer.on).mock.calls.at(-1)!
   expect(channel).toBe(ipcChannels.caseResumeImportProgress)
-  const payload = { requestId: '11111111-1111-4111-8111-111111111111', jobCaseId: '22222222-2222-4222-8222-222222222222', stage: 'parsing', documentId: null }
+  const payload = {
+    requestId: '11111111-1111-4111-8111-111111111111',
+    jobCaseId: '22222222-2222-4222-8222-222222222222',
+    stage: 'parsing',
+    documentId: null
+  }
   handler({} as any, payload)
   expect(listener).toHaveBeenCalledWith(payload)
-  for (const invalid of [null, {...payload, stage: 'done'}, {...payload, requestId: 'wrong'}, {...payload, text: 'unexpected'}]) handler({} as any, invalid)
+  for (const invalid of [null, { ...payload, stage: 'done' }, { ...payload, requestId: 'wrong' }, { ...payload, text: 'unexpected' }])
+    handler({} as any, invalid)
   expect(listener).toHaveBeenCalledTimes(1)
   unsubscribe()
   expect(ipcRenderer.removeListener).toHaveBeenCalledWith(channel, handler)

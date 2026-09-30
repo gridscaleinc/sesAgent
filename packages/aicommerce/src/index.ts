@@ -4,45 +4,66 @@ import { z } from 'zod'
 export type AiCommerceBillingMode = 'automatic' | 'standard' | 'subscription'
 export type AiCommerceChargePool = Exclude<AiCommerceBillingMode, 'automatic'>
 
-const nativeClientCodeSchema = z.string().trim().regex(/^[A-Za-z0-9._-]{3,120}$/u)
-const applicationCodeSchema = z.string().trim().max(64).regex(/^[a-z0-9][a-z0-9._-]*$/u)
-const productCodeSchema = z.string().trim().max(128).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
-const productionOrLoopbackUrlSchema = z.string().trim().url().transform((value, context) => {
-  const url = new URL(value)
-  const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]'
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
-    context.addIssue({ code: 'custom', message: 'AICommerce URLs must use HTTPS, except local loopback development URLs.' })
-    return z.NEVER
-  }
-  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-    context.addIssue({ code: 'custom', message: 'AICommerce base URLs must be origins without credentials or paths.' })
-    return z.NEVER
-  }
-  return url.origin
-})
+const nativeClientCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._-]{3,120}$/u)
+const applicationCodeSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9._-]*$/u)
+const productCodeSchema = z
+  .string()
+  .trim()
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
+const productionOrLoopbackUrlSchema = z
+  .string()
+  .trim()
+  .url()
+  .transform((value, context) => {
+    const url = new URL(value)
+    const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]'
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+      context.addIssue({ code: 'custom', message: 'AICommerce URLs must use HTTPS, except local loopback development URLs.' })
+      return z.NEVER
+    }
+    if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+      context.addIssue({ code: 'custom', message: 'AICommerce base URLs must be origins without credentials or paths.' })
+      return z.NEVER
+    }
+    return url.origin
+  })
 
-const nativeRedirectUriSchema = z.string().trim().url().transform((value, context) => {
-  const url = new URL(value)
-  if (url.protocol === 'http:' || url.protocol === 'https:' || !url.protocol || url.username || url.password || url.search || url.hash) {
-    context.addIssue({ code: 'custom', message: 'The Native redirect URI must be the registered custom-scheme callback URI.' })
-    return z.NEVER
-  }
-  if (url.hostname !== 'auth' || url.pathname !== '/callback') {
-    context.addIssue({ code: 'custom', message: 'The Native redirect URI must use the registered ://auth/callback shape.' })
-    return z.NEVER
-  }
-  return url.toString()
-})
+const nativeRedirectUriSchema = z
+  .string()
+  .trim()
+  .url()
+  .transform((value, context) => {
+    const url = new URL(value)
+    if (url.protocol === 'http:' || url.protocol === 'https:' || !url.protocol || url.username || url.password || url.search || url.hash) {
+      context.addIssue({ code: 'custom', message: 'The Native redirect URI must be the registered custom-scheme callback URI.' })
+      return z.NEVER
+    }
+    if (url.hostname !== 'auth' || url.pathname !== '/callback') {
+      context.addIssue({ code: 'custom', message: 'The Native redirect URI must use the registered ://auth/callback shape.' })
+      return z.NEVER
+    }
+    return url.toString()
+  })
 
-const aiCommerceConfigurationSchema = z.object({
-  membersBaseUrl: productionOrLoopbackUrlSchema,
-  aiCommerceBaseUrl: productionOrLoopbackUrlSchema,
-  clientId: nativeClientCodeSchema,
-  appCode: applicationCodeSchema,
-  productCode: productCodeSchema,
-  redirectUri: nativeRedirectUriSchema,
-  billingMode: z.enum(['automatic', 'standard', 'subscription'])
-}).strict()
+const aiCommerceConfigurationSchema = z
+  .object({
+    membersBaseUrl: productionOrLoopbackUrlSchema,
+    aiCommerceBaseUrl: productionOrLoopbackUrlSchema,
+    clientId: nativeClientCodeSchema,
+    appCode: applicationCodeSchema,
+    productCode: productCodeSchema,
+    redirectUri: nativeRedirectUriSchema,
+    billingMode: z.enum(['automatic', 'standard', 'subscription'])
+  })
+  .strict()
 
 export type AiCommerceConfiguration = z.infer<typeof aiCommerceConfigurationSchema>
 
@@ -91,22 +112,28 @@ export function loadAiCommerceConfiguration(
       ['AICOMMERCE_APP_CODE', raw.appCode],
       ['AICOMMERCE_PRODUCT_CODE', raw.productCode],
       ['MEMBER_NATIVE_REDIRECT_URI', raw.redirectUri]
-    ].filter(([, configured]) => !configured).map(([key]) => key)
-    throw new Error(missing.length > 0
-      ? `AICommerce managed configuration is missing: ${missing.join(', ')}.`
-      : 'AICommerce managed configuration contains an invalid URL, client/product code, redirect URI, or billing mode.')
+    ]
+      .filter(([, configured]) => !configured)
+      .map(([key]) => key)
+    throw new Error(
+      missing.length > 0
+        ? `AICommerce managed configuration is missing: ${missing.join(', ')}.`
+        : 'AICommerce managed configuration contains an invalid URL, client/product code, redirect URI, or billing mode.'
+    )
   }
   return parsed.data
 }
 
-const pendingAuthorizationSchema = z.object({
-  version: z.literal('aicommerce-native-pending-authorization-v1'),
-  state: z.string().min(24).max(512),
-  codeVerifier: z.string().min(43).max(128),
-  redirectUri: nativeRedirectUriSchema,
-  createdAt: z.string().datetime(),
-  expiresAt: z.string().datetime()
-}).strict()
+const pendingAuthorizationSchema = z
+  .object({
+    version: z.literal('aicommerce-native-pending-authorization-v1'),
+    state: z.string().min(24).max(512),
+    codeVerifier: z.string().min(43).max(128),
+    redirectUri: nativeRedirectUriSchema,
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime()
+  })
+  .strict()
 
 export type AiCommercePendingAuthorization = z.infer<typeof pendingAuthorizationSchema>
 
@@ -114,19 +141,21 @@ export function parseAiCommercePendingAuthorization(input: unknown): AiCommerceP
   return pendingAuthorizationSchema.parse(input)
 }
 
-const nativeCredentialSchema = z.object({
-  version: z.literal('aicommerce-native-credential-v1'),
-  memberId: z.string().min(1).max(160),
-  memberDisplayName: z.string().trim().min(1).max(300).nullable(),
-  accountId: z.string().min(1).max(160),
-  accessToken: z.string().min(20).max(16_384),
-  accessTokenExpiresAt: z.string().datetime(),
-  refreshToken: z.string().min(10).max(16_384),
-  refreshTokenExpiresAt: z.string().datetime(),
-  accountAiToken: z.string().min(12).max(16_384),
-  accountAiTokenExpiresAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-}).strict()
+const nativeCredentialSchema = z
+  .object({
+    version: z.literal('aicommerce-native-credential-v1'),
+    memberId: z.string().min(1).max(160),
+    memberDisplayName: z.string().trim().min(1).max(300).nullable(),
+    accountId: z.string().min(1).max(160),
+    accessToken: z.string().min(20).max(16_384),
+    accessTokenExpiresAt: z.string().datetime(),
+    refreshToken: z.string().min(10).max(16_384),
+    refreshTokenExpiresAt: z.string().datetime(),
+    accountAiToken: z.string().min(12).max(16_384),
+    accountAiTokenExpiresAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict()
 
 export type AiCommerceNativeCredential = z.infer<typeof nativeCredentialSchema>
 
@@ -226,101 +255,134 @@ interface JsonHttpResponse<T> {
   body: T
 }
 
-const tokenExchangeSchema = z.object({
-  ok: z.boolean().optional(),
-  member: z.object({
-    id: z.string().min(1).max(160),
-    displayName: z.string().trim().min(1).max(300).nullable().optional()
-  }),
-  session: z.object({
-    accessToken: z.string().min(20),
-    accessTokenExpiresAt: z.string().datetime(),
-    refreshToken: z.string().min(10),
-    refreshTokenExpiresAt: z.string().datetime()
-  }),
-  token: z.object({
-    accountId: z.string().min(1).max(160),
-    accountAiToken: z.string().min(12),
-    expiresAt: z.string().datetime()
+const tokenExchangeSchema = z
+  .object({
+    ok: z.boolean().optional(),
+    member: z.object({
+      id: z.string().min(1).max(160),
+      displayName: z.string().trim().min(1).max(300).nullable().optional()
+    }),
+    session: z.object({
+      accessToken: z.string().min(20),
+      accessTokenExpiresAt: z.string().datetime(),
+      refreshToken: z.string().min(10),
+      refreshTokenExpiresAt: z.string().datetime()
+    }),
+    token: z.object({
+      accountId: z.string().min(1).max(160),
+      accountAiToken: z.string().min(12),
+      expiresAt: z.string().datetime()
+    })
   })
-}).passthrough()
+  .passthrough()
 
-const refreshSchema = z.object({
-  ok: z.boolean().optional(),
-  session: z.object({
-    accessToken: z.string().min(20),
-    accessTokenExpiresAt: z.string().datetime(),
-    refreshToken: z.string().min(10),
-    refreshTokenExpiresAt: z.string().datetime()
+const refreshSchema = z
+  .object({
+    ok: z.boolean().optional(),
+    session: z.object({
+      accessToken: z.string().min(20),
+      accessTokenExpiresAt: z.string().datetime(),
+      refreshToken: z.string().min(10),
+      refreshTokenExpiresAt: z.string().datetime()
+    })
   })
-}).passthrough()
+  .passthrough()
 
-const tokenResetSchema = z.object({
-  ok: z.boolean().optional(),
-  token: z.object({
-    accountAiToken: z.string().min(12),
-    expiresAt: z.string().datetime()
+const tokenResetSchema = z
+  .object({
+    ok: z.boolean().optional(),
+    token: z.object({
+      accountAiToken: z.string().min(12),
+      expiresAt: z.string().datetime()
+    })
   })
-}).passthrough()
+  .passthrough()
 
-const walletSchema = z.object({
-  balance_credits: z.number().int().nonnegative(),
-  reserved_credits: z.number().int().nonnegative()
-}).passthrough()
+const walletSchema = z
+  .object({
+    balance_credits: z.number().int().nonnegative(),
+    reserved_credits: z.number().int().nonnegative()
+  })
+  .passthrough()
 
-const capabilitySchema = z.object({
-  capability_alias: z.string().trim().min(1).max(160),
-  request_type: z.string().trim().min(1).max(80).optional(),
-  display_name: z.string().trim().min(1).max(300).optional(),
-  modality: z.string().trim().min(1).max(80).nullable().optional(),
-  status: z.string().trim().min(1).max(80).optional()
-}).passthrough()
+const capabilitySchema = z
+  .object({
+    capability_alias: z.string().trim().min(1).max(160),
+    request_type: z.string().trim().min(1).max(80).optional(),
+    display_name: z.string().trim().min(1).max(300).optional(),
+    modality: z.string().trim().min(1).max(80).nullable().optional(),
+    status: z.string().trim().min(1).max(80).optional()
+  })
+  .passthrough()
 
 const capabilitiesSchema = z.object({ capabilities: z.array(capabilitySchema).max(100) }).passthrough()
 
-const aiResponseSchema = z.object({
-  request_id: z.string().min(1).max(300).optional(),
-  ai_request_id: z.string().min(1).max(300).optional(),
-  status: z.enum(['succeeded', 'queued', 'processing', 'failed']).optional(),
-  output: z.object({
-    message: z.object({ content: z.string().min(1).max(2_000_000) }).optional(),
-    content: z.string().min(1).max(2_000_000).optional(),
-    text: z.string().min(1).max(2_000_000).optional()
-  }).optional(),
-  usage: z.object({ amount_credits: z.number().int().nonnegative().optional() }).optional(),
-  wallet: z.object({
-    balance_credits: z.number().int().nonnegative(),
-    reserved_credits: z.number().int().nonnegative().optional()
-  }).optional(),
-  error: z.object({
-    code: z.string().min(1).max(160).optional(),
-    message: z.string().min(1).max(500).optional()
-  }).optional()
-}).passthrough()
+const aiResponseSchema = z
+  .object({
+    request_id: z.string().min(1).max(300).optional(),
+    ai_request_id: z.string().min(1).max(300).optional(),
+    status: z.enum(['succeeded', 'queued', 'processing', 'failed']).optional(),
+    output: z
+      .object({
+        message: z.object({ content: z.string().min(1).max(2_000_000) }).optional(),
+        content: z.string().min(1).max(2_000_000).optional(),
+        text: z.string().min(1).max(2_000_000).optional()
+      })
+      .optional(),
+    usage: z.object({ amount_credits: z.number().int().nonnegative().optional() }).optional(),
+    wallet: z
+      .object({
+        balance_credits: z.number().int().nonnegative(),
+        reserved_credits: z.number().int().nonnegative().optional()
+      })
+      .optional(),
+    error: z
+      .object({
+        code: z.string().min(1).max(160).optional(),
+        message: z.string().min(1).max(500).optional()
+      })
+      .optional()
+  })
+  .passthrough()
 
-const responsesStreamInputSchema = z.object({
-  model: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u),
-  instructions: z.string().min(1).max(12_000),
-  input: z.string().min(1).max(20_000),
-  maxOutputTokens: z.number().int().min(128).max(8_192),
-  operationId: z.string().regex(/^[A-Za-z0-9._-]{8,96}$/u).optional()
-}).strict()
+const responsesStreamInputSchema = z
+  .object({
+    model: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u),
+    instructions: z.string().min(1).max(12_000),
+    input: z.string().min(1).max(20_000),
+    maxOutputTokens: z.number().int().min(128).max(8_192),
+    operationId: z
+      .string()
+      .regex(/^[A-Za-z0-9._-]{8,96}$/u)
+      .optional()
+  })
+  .strict()
 
-const chatCompletionsStreamInputSchema = responsesStreamInputSchema.extend({
-  provider: z.enum(['openai', 'deepseek'])
-}).strict()
+const chatCompletionsStreamInputSchema = responsesStreamInputSchema
+  .extend({
+    provider: z.enum(['openai', 'deepseek'])
+  })
+  .strict()
 
-const cancelResponseSchema = z.object({
-  status: z.enum(['cancel_requested', 'canceled', 'too_late']).optional(),
-  cancel_status: z.enum(['cancel_requested', 'canceled', 'too_late']).optional()
-}).passthrough().superRefine((value, context) => {
-  if (value.status === undefined && value.cancel_status === undefined) {
-    context.addIssue({ code: 'custom', message: 'A cancel status is required.' })
-  }
-})
+const cancelResponseSchema = z
+  .object({
+    status: z.enum(['cancel_requested', 'canceled', 'too_late']).optional(),
+    cancel_status: z.enum(['cancel_requested', 'canceled', 'too_late']).optional()
+  })
+  .passthrough()
+  .superRefine((value, context) => {
+    if (value.status === undefined && value.cancel_status === undefined) {
+      context.addIssue({ code: 'custom', message: 'A cancel status is required.' })
+    }
+  })
 
 class AiCommerceStreamAttemptError extends AiCommerceRequestError {
-  constructor(code: string, status: number, message: string, readonly receivedStreamContent: boolean) {
+  constructor(
+    code: string,
+    status: number,
+    message: string,
+    readonly receivedStreamContent: boolean
+  ) {
     super(code, status, message)
     this.name = 'AiCommerceStreamAttemptError'
   }
@@ -344,7 +406,12 @@ async function parseNativeTextEventStream(
     } catch {
       // Invalid responses are rejected regardless of best-effort body cleanup.
     }
-    throw new AiCommerceStreamAttemptError('AI_STREAM_CONTENT_TYPE_INVALID', response.status, 'AICommerce did not return a real event stream.', false)
+    throw new AiCommerceStreamAttemptError(
+      'AI_STREAM_CONTENT_TYPE_INVALID',
+      response.status,
+      'AICommerce did not return a real event stream.',
+      false
+    )
   }
   if (!response.body) {
     throw new AiCommerceStreamAttemptError('AI_STREAM_BODY_MISSING', 502, 'AICommerce returned an empty event stream.', false)
@@ -395,9 +462,7 @@ async function parseNativeTextEventStream(
     }
     const record = payload as Record<string, unknown>
     if (protocol === 'chat-completions') {
-      const error = typeof record.error === 'object' && record.error !== null
-        ? record.error as Record<string, unknown>
-        : null
+      const error = typeof record.error === 'object' && record.error !== null ? (record.error as Record<string, unknown>) : null
       if (error) {
         const code = typeof error.code === 'string' ? error.code : 'AI_STREAM_ERROR'
         fail(code, 'AICommerce reported a streaming error.')
@@ -416,9 +481,7 @@ async function parseNativeTextEventStream(
         if (finishReason === 'length' || finishReason === 'max_tokens') {
           fail('AI_RESPONSE_INCOMPLETE', 'The AI response reached its output limit and was incomplete.')
         }
-        const delta = typeof choice.delta === 'object' && choice.delta !== null
-          ? choice.delta as Record<string, unknown>
-          : null
+        const delta = typeof choice.delta === 'object' && choice.delta !== null ? (choice.delta as Record<string, unknown>) : null
         const fragment = typeof delta?.content === 'string' ? delta.content : ''
         if (fragment.length > 0) {
           content += fragment
@@ -442,9 +505,8 @@ async function parseNativeTextEventStream(
     }
     if (type === 'response.completed') {
       if (completed) fail('AI_STREAM_TERMINAL_DUPLICATED', 'AICommerce returned more than one terminal response event.')
-      const completedResponse = typeof record.response === 'object' && record.response !== null
-        ? record.response as Record<string, unknown>
-        : null
+      const completedResponse =
+        typeof record.response === 'object' && record.response !== null ? (record.response as Record<string, unknown>) : null
       responseId = typeof completedResponse?.id === 'string' ? completedResponse.id : ''
       completed = true
       return
@@ -454,12 +516,13 @@ async function parseNativeTextEventStream(
       fail(code, 'AICommerce reported a streaming error.')
     }
     if (type === 'response.failed' || type === 'response.incomplete') {
-      const failedResponse = typeof record.response === 'object' && record.response !== null
-        ? record.response as Record<string, unknown>
-        : null
+      const failedResponse =
+        typeof record.response === 'object' && record.response !== null ? (record.response as Record<string, unknown>) : null
       responseId = typeof failedResponse?.id === 'string' ? failedResponse.id : responseId
-      fail(type === 'response.failed' ? 'AI_RESPONSE_FAILED' : 'AI_RESPONSE_INCOMPLETE',
-        type === 'response.failed' ? 'The AI response failed.' : 'The AI response was incomplete.')
+      fail(
+        type === 'response.failed' ? 'AI_RESPONSE_FAILED' : 'AI_RESPONSE_INCOMPLETE',
+        type === 'response.failed' ? 'The AI response failed.' : 'The AI response was incomplete.'
+      )
     }
   }
 
@@ -540,18 +603,24 @@ function constantTimeEqual(left: string, right: string): boolean {
 function sameRedirectTarget(left: string, right: string): boolean {
   const leftUrl = new URL(left)
   const rightUrl = new URL(right)
-  return leftUrl.protocol.toLocaleLowerCase('en-US') === rightUrl.protocol.toLocaleLowerCase('en-US') &&
+  return (
+    leftUrl.protocol.toLocaleLowerCase('en-US') === rightUrl.protocol.toLocaleLowerCase('en-US') &&
     leftUrl.hostname.toLocaleLowerCase('en-US') === rightUrl.hostname.toLocaleLowerCase('en-US') &&
-    leftUrl.port === rightUrl.port && leftUrl.pathname === rightUrl.pathname
+    leftUrl.port === rightUrl.port &&
+    leftUrl.pathname === rightUrl.pathname
+  )
 }
 
 function parseFailure(status: number, payload: unknown, fallback: string): AiCommerceRequestError {
   const parsed = aiResponseSchema.safeParse(payload)
-  const code = parsed.success && parsed.data.error?.code
-    ? parsed.data.error.code
-    : status === 401 ? 'TOKEN_INVALID'
-      : status === 402 ? 'INSUFFICIENT_CREDITS'
-        : `HTTP_${status}`
+  const code =
+    parsed.success && parsed.data.error?.code
+      ? parsed.data.error.code
+      : status === 401
+        ? 'TOKEN_INVALID'
+        : status === 402
+          ? 'INSUFFICIENT_CREDITS'
+          : `HTTP_${status}`
   const safeMessages: Record<string, string> = {
     TOKEN_INVALID: 'AI sign-in has expired. Please sign in again.',
     TOKEN_REVOKED: 'AI sign-in has been revoked. Please sign in again.',
@@ -595,16 +664,23 @@ export class AiCommerceNativeClient {
   }
 
   get allowsLoopbackHttp(): boolean {
-    return this.configuration.aiCommerceBaseUrl.startsWith('http://localhost') ||
+    return (
+      this.configuration.aiCommerceBaseUrl.startsWith('http://localhost') ||
       this.configuration.aiCommerceBaseUrl.startsWith('http://127.0.0.1') ||
       this.configuration.aiCommerceBaseUrl.startsWith('http://[::1]')
+    )
   }
 
   private now(): Date {
     return this.dependencies.now?.() ?? new Date()
   }
 
-  private async requestJson<T>(method: string, path: string, headers: Record<string, string> = {}, body?: unknown): Promise<JsonHttpResponse<T>> {
+  private async requestJson<T>(
+    method: string,
+    path: string,
+    headers: Record<string, string> = {},
+    body?: unknown
+  ): Promise<JsonHttpResponse<T>> {
     const requestHeaders: Record<string, string> = { accept: 'application/json', ...headers }
     const init: RequestInit = { method, headers: requestHeaders, redirect: 'error' }
     if (body !== undefined) {
@@ -617,11 +693,14 @@ export class AiCommerceNativeClient {
     } catch (cause) {
       throw new AiCommerceRequestError('NETWORK_ERROR', 0, 'The membership or AI service could not be reached.')
     }
-    const parsed = await response.json().catch(() => ({})) as T
+    const parsed = (await response.json().catch(() => ({}))) as T
     return { status: response.status, body: parsed }
   }
 
-  private async saveCredential(input: z.infer<typeof tokenExchangeSchema>, prior: AiCommerceNativeCredential | null = null): Promise<AiCommerceNativeCredential> {
+  private async saveCredential(
+    input: z.infer<typeof tokenExchangeSchema>,
+    prior: AiCommerceNativeCredential | null = null
+  ): Promise<AiCommerceNativeCredential> {
     const credential = nativeCredentialSchema.parse({
       version: 'aicommerce-native-credential-v1',
       memberId: input.member.id,
@@ -650,17 +729,26 @@ export class AiCommerceNativeClient {
   ): AiCommerceMembershipState {
     if (!credential) {
       return {
-        configuration: 'ready', connection: authorizing ? 'authorizing' : 'not-connected', productCode: this.configuration.productCode,
-        billingMode: this.configuration.billingMode, memberDisplayName: null, accountId: null,
-        accountAiTokenExpiresAt: null, ...dashboard
+        configuration: 'ready',
+        connection: authorizing ? 'authorizing' : 'not-connected',
+        productCode: this.configuration.productCode,
+        billingMode: this.configuration.billingMode,
+        memberDisplayName: null,
+        accountId: null,
+        accountAiTokenExpiresAt: null,
+        ...dashboard
       }
     }
     const reauthenticationRequired = Date.parse(credential.refreshTokenExpiresAt) <= this.now().getTime()
     return {
-      configuration: 'ready', connection: reauthenticationRequired ? 'reauthentication-required' : 'connected',
-      productCode: this.configuration.productCode, billingMode: this.configuration.billingMode,
-      memberDisplayName: credential.memberDisplayName, accountId: credential.accountId,
-      accountAiTokenExpiresAt: credential.accountAiTokenExpiresAt, ...dashboard
+      configuration: 'ready',
+      connection: reauthenticationRequired ? 'reauthentication-required' : 'connected',
+      productCode: this.configuration.productCode,
+      billingMode: this.configuration.billingMode,
+      memberDisplayName: credential.memberDisplayName,
+      accountId: credential.accountId,
+      accountAiTokenExpiresAt: credential.accountAiTokenExpiresAt,
+      ...dashboard
     }
   }
 
@@ -735,9 +823,16 @@ export class AiCommerceNativeClient {
       throw new AiCommerceRequestError('OAUTH_CODE_MISSING', 400, 'Member Center did not return a valid one-time code.')
     }
     await this.dependencies.pendingAuthorizationStore.clear()
-    const token = await this.requestJson<unknown>('POST', `${this.configuration.membersBaseUrl}/api/native/token`, {}, {
-      code, code_verifier: pending.codeVerifier, redirect_uri: pending.redirectUri
-    })
+    const token = await this.requestJson<unknown>(
+      'POST',
+      `${this.configuration.membersBaseUrl}/api/native/token`,
+      {},
+      {
+        code,
+        code_verifier: pending.codeVerifier,
+        redirect_uri: pending.redirectUri
+      }
+    )
     if (token.status !== 200) throw parseFailure(token.status, token.body, 'Member sign-in could not be completed.')
     const parsed = tokenExchangeSchema.safeParse(token.body)
     if (!parsed.success) throw new AiCommerceRequestError('TOKEN_RESPONSE_INVALID', 502, 'Member sign-in returned an invalid response.')
@@ -760,15 +855,21 @@ export class AiCommerceNativeClient {
     if (Date.parse(credential.accessTokenExpiresAt) > this.now().getTime() + 60_000) {
       return { credential, accessToken: credential.accessToken }
     }
-    const refreshed = await this.requestJson<unknown>('POST', `${this.configuration.membersBaseUrl}/api/native/refresh`, {}, {
-      refresh_token: credential.refreshToken
-    })
+    const refreshed = await this.requestJson<unknown>(
+      'POST',
+      `${this.configuration.membersBaseUrl}/api/native/refresh`,
+      {},
+      {
+        refresh_token: credential.refreshToken
+      }
+    )
     if (refreshed.status !== 200) {
       await this.dependencies.credentialStore.clear()
       throw parseFailure(refreshed.status, refreshed.body, 'Your Member Center session could not be refreshed.')
     }
     const parsed = refreshSchema.safeParse(refreshed.body)
-    if (!parsed.success) throw new AiCommerceRequestError('REFRESH_RESPONSE_INVALID', 502, 'Member Center returned an invalid refresh response.')
+    if (!parsed.success)
+      throw new AiCommerceRequestError('REFRESH_RESPONSE_INVALID', 502, 'Member Center returned an invalid refresh response.')
     credential = nativeCredentialSchema.parse({
       ...credential,
       accessToken: parsed.data.session.accessToken,
@@ -793,12 +894,18 @@ export class AiCommerceNativeClient {
 
   private async issueAiTokenReset(): Promise<AiCommerceNativeCredential> {
     const { credential, accessToken } = await this.currentAccessToken()
-    const reset = await this.requestJson<unknown>('POST', `${this.configuration.membersBaseUrl}/api/native/ai-token/reset`, {
-      authorization: `Bearer ${accessToken}`
-    }, {})
+    const reset = await this.requestJson<unknown>(
+      'POST',
+      `${this.configuration.membersBaseUrl}/api/native/ai-token/reset`,
+      {
+        authorization: `Bearer ${accessToken}`
+      },
+      {}
+    )
     if (reset.status !== 200) throw parseFailure(reset.status, reset.body, 'A new AI access token could not be issued.')
     const parsed = tokenResetSchema.safeParse(reset.body)
-    if (!parsed.success) throw new AiCommerceRequestError('AI_TOKEN_RESET_INVALID', 502, 'Member Center returned an invalid AI token response.')
+    if (!parsed.success)
+      throw new AiCommerceRequestError('AI_TOKEN_RESET_INVALID', 502, 'Member Center returned an invalid AI token response.')
     const updated = nativeCredentialSchema.parse({
       ...credential,
       accountAiToken: parsed.data.token.accountAiToken,
@@ -870,9 +977,13 @@ export class AiCommerceNativeClient {
   }
 
   private async loadCapabilities(): Promise<Array<z.infer<typeof capabilitySchema>>> {
-    const response = await this.requestAi<unknown>('GET', `${this.configuration.aiCommerceBaseUrl}/v1/ai/capabilities?${new URLSearchParams({
-      product_code: this.configuration.productCode, app_code: this.configuration.appCode
-    })}`)
+    const response = await this.requestAi<unknown>(
+      'GET',
+      `${this.configuration.aiCommerceBaseUrl}/v1/ai/capabilities?${new URLSearchParams({
+        product_code: this.configuration.productCode,
+        app_code: this.configuration.appCode
+      })}`
+    )
     if (response.status !== 200) throw parseFailure(response.status, response.body, 'AI capabilities could not be loaded.')
     const parsed = capabilitiesSchema.safeParse(response.body)
     if (!parsed.success) throw new AiCommerceRequestError('AI_CAPABILITIES_INVALID', 502, 'AICommerce returned invalid capability data.')
@@ -884,18 +995,14 @@ export class AiCommerceNativeClient {
   }
 
   static shouldFallbackToStandard(error: AiCommerceRequestError): boolean {
-    return [
-      'SUBSCRIPTION_QUOTA_POLICY_NOT_FOUND',
-      'SUBSCRIPTION_QUOTA_POLICY_NOT_CONFIGURED',
-      'SUBSCRIPTION_QUOTA_EXCEEDED'
-    ].includes(error.code)
+    return ['SUBSCRIPTION_QUOTA_POLICY_NOT_FOUND', 'SUBSCRIPTION_QUOTA_POLICY_NOT_CONFIGURED', 'SUBSCRIPTION_QUOTA_EXCEEDED'].includes(
+      error.code
+    )
   }
 
   async requestText(content: string, suppliedOperationId?: string): Promise<AiCommerceTextResult> {
     const capabilities = await this.loadCapabilities()
-    const capability = capabilities.find((item) =>
-      item.status === 'active' && (item.request_type === 'chat' || item.modality === 'text')
-    )
+    const capability = capabilities.find((item) => item.status === 'active' && (item.request_type === 'chat' || item.modality === 'text'))
     if (!capability) {
       throw new AiCommerceRequestError('NO_ACTIVE_CHAT_CAPABILITY', 409, 'This product has no active text AI capability.')
     }
@@ -923,12 +1030,17 @@ export class AiCommerceNativeClient {
         const initial = await this.requestAi<unknown>('POST', this.requestEndpoint, requestBody)
         return await this.resolveTextResponse(initial, requestId, billingMode)
       } catch (cause) {
-        const error = cause instanceof AiCommerceRequestError
-          ? cause
-          : new AiCommerceRequestError('AI_REQUEST_FAILED', 502, 'AICommerce could not process this request.')
+        const error =
+          cause instanceof AiCommerceRequestError
+            ? cause
+            : new AiCommerceRequestError('AI_REQUEST_FAILED', 502, 'AICommerce could not process this request.')
         lastError = error
-        if (this.configuration.billingMode === 'automatic' && billingMode === 'subscription' &&
-          AiCommerceNativeClient.shouldFallbackToStandard(error)) continue
+        if (
+          this.configuration.billingMode === 'automatic' &&
+          billingMode === 'subscription' &&
+          AiCommerceNativeClient.shouldFallbackToStandard(error)
+        )
+          continue
         throw error
       }
     }
@@ -987,14 +1099,19 @@ export class AiCommerceNativeClient {
       input.onClientRequestId?.(clientRequestId)
       let receivedStreamContent = false
       try {
-        const response = await this.requestAiStream(endpoint, {
-          'x-aicommerce-app-code': this.configuration.appCode,
-          'x-aicommerce-product-code': this.configuration.productCode,
-          'x-aicommerce-billing-mode': billingMode,
-          'X-Client-Request-ID': clientRequestId
-        }, requestBody, input.signal)
+        const response = await this.requestAiStream(
+          endpoint,
+          {
+            'x-aicommerce-app-code': this.configuration.appCode,
+            'x-aicommerce-product-code': this.configuration.productCode,
+            'x-aicommerce-billing-mode': billingMode,
+            'X-Client-Request-ID': clientRequestId
+          },
+          requestBody,
+          input.signal
+        )
         if (!response.ok) {
-          const payload = await response.json().catch(() => ({})) as unknown
+          const payload = (await response.json().catch(() => ({}))) as unknown
           throw parseFailure(response.status, payload, 'AICommerce could not start the event stream.')
         }
         const streamed = await parseNativeTextEventStream(response, protocol, input.onDelta, () => {
@@ -1007,14 +1124,20 @@ export class AiCommerceNativeClient {
           billingModeUsed: billingMode
         }
       } catch (cause) {
-        const error = cause instanceof AiCommerceRequestError
-          ? cause
-          : new AiCommerceRequestError('AI_STREAM_FAILED', 502, 'AICommerce could not stream the response.')
+        const error =
+          cause instanceof AiCommerceRequestError
+            ? cause
+            : new AiCommerceRequestError('AI_STREAM_FAILED', 502, 'AICommerce could not stream the response.')
         lastError = error
-        const attemptReceivedContent = receivedStreamContent ||
-          (cause instanceof AiCommerceStreamAttemptError && cause.receivedStreamContent)
-        if (this.configuration.billingMode === 'automatic' && billingMode === 'subscription' &&
-          !attemptReceivedContent && AiCommerceNativeClient.shouldFallbackToStandard(error)) continue
+        const attemptReceivedContent =
+          receivedStreamContent || (cause instanceof AiCommerceStreamAttemptError && cause.receivedStreamContent)
+        if (
+          this.configuration.billingMode === 'automatic' &&
+          billingMode === 'subscription' &&
+          !attemptReceivedContent &&
+          AiCommerceNativeClient.shouldFallbackToStandard(error)
+        )
+          continue
         throw error
       }
     }
@@ -1025,11 +1148,14 @@ export class AiCommerceNativeClient {
     if (!/^[A-Za-z0-9._-]{8,128}$/u.test(clientRequestId)) {
       throw new AiCommerceRequestError('REQUEST_ID_INVALID', 400, 'The AI client request id is invalid.')
     }
-    const result = await this.requestAi<unknown>('POST',
-      `${this.configuration.aiCommerceBaseUrl}/v1/ai/client-requests/${encodeURIComponent(clientRequestId)}/cancel`, {
+    const result = await this.requestAi<unknown>(
+      'POST',
+      `${this.configuration.aiCommerceBaseUrl}/v1/ai/client-requests/${encodeURIComponent(clientRequestId)}/cancel`,
+      {
         app_code: this.configuration.appCode,
         product_code: this.configuration.productCode
-      })
+      }
+    )
     if (result.status !== 200) throw parseFailure(result.status, result.body, 'The AI stop request could not be recorded.')
     const parsed = cancelResponseSchema.safeParse(result.body)
     if (!parsed.success) {
@@ -1053,7 +1179,10 @@ export class AiCommerceNativeClient {
     for (let attempt = 0; response.status === 202 && attempt < 60; attempt += 1) {
       if (!aiRequestId) throw new AiCommerceRequestError('AI_REQUEST_ID_MISSING', 502, 'AICommerce did not return an async request ID.')
       await (this.dependencies.wait?.(1_000) ?? new Promise<void>((resolve) => setTimeout(resolve, 1_000)))
-      response = await this.requestAi<unknown>('GET', `${this.configuration.aiCommerceBaseUrl}/v1/ai/requests/${encodeURIComponent(aiRequestId)}`)
+      response = await this.requestAi<unknown>(
+        'GET',
+        `${this.configuration.aiCommerceBaseUrl}/v1/ai/requests/${encodeURIComponent(aiRequestId)}`
+      )
       if (response.status !== 200 && response.status !== 202) {
         throw parseFailure(response.status, response.body, 'AICommerce could not finish this request.')
       }
@@ -1061,7 +1190,11 @@ export class AiCommerceNativeClient {
       if (!parsed.success) throw new AiCommerceRequestError('AI_RESPONSE_INVALID', 502, 'AICommerce returned an invalid AI response.')
     }
     if (response.status === 202) {
-      throw new AiCommerceRequestError('AI_REQUEST_STILL_PROCESSING', 202, 'The AI request is still processing. Please retry the same operation shortly.')
+      throw new AiCommerceRequestError(
+        'AI_REQUEST_STILL_PROCESSING',
+        202,
+        'The AI request is still processing. Please retry the same operation shortly.'
+      )
     }
     if (parsed.data.status === 'failed') {
       throw new AiCommerceRequestError('AI_REQUEST_FAILED', 502, 'The AI request failed without a usable response.')
@@ -1091,9 +1224,14 @@ export class AiCommerceNativeClient {
     const credential = await this.dependencies.credentialStore.load()
     try {
       if (credential) {
-        await this.requestJson<unknown>('POST', `${this.configuration.membersBaseUrl}/api/native/logout`, {}, {
-          refresh_token: credential.refreshToken
-        })
+        await this.requestJson<unknown>(
+          'POST',
+          `${this.configuration.membersBaseUrl}/api/native/logout`,
+          {},
+          {
+            refresh_token: credential.refreshToken
+          }
+        )
       }
     } finally {
       await this.dependencies.credentialStore.clear()

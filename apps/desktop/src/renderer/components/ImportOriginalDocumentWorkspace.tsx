@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import type {
-  CandidateFieldKey,
-  CandidateReviewFieldSnapshot,
-  OriginalDocumentPreview
-} from '@shared'
-import { localizedIpcError, useUiLocale, useUiText } from '../i18n'
+import type { CandidateFieldKey, CandidateReviewFieldSnapshot, OriginalDocumentPreview } from '@shared'
+import { localizedIpcError, useLocaleText } from '../i18n'
 import { summarizeSourceLabels } from '../source-evidence'
 import { Icon } from './Icon'
-import { SpreadsheetPreview } from './OriginalDocumentWorkspace'
+import { profileFieldLabelsZh, SpreadsheetPreview } from './OriginalDocumentWorkspace'
 
 interface ImportOriginalDocumentWorkspaceProps {
   documentId: string
@@ -29,11 +25,7 @@ interface ImportOriginalDocumentWorkspaceProps {
   onOpen(sourceDocumentId: string): Promise<unknown>
   onSelectField(key: CandidateFieldKey): void
   onChangeField(key: CandidateFieldKey, value: string): void
-  onChangeProject(
-    draftId: string,
-    key: 'title' | 'period' | 'role' | 'technologies' | 'summary',
-    value: string
-  ): void
+  onChangeProject(draftId: string, key: 'title' | 'period' | 'role' | 'technologies' | 'summary', value: string): void
 }
 
 interface ReviewMapping {
@@ -74,8 +66,8 @@ export function ImportOriginalDocumentWorkspace({
   onChangeField,
   onChangeProject
 }: ImportOriginalDocumentWorkspaceProps) {
-  const locale = useUiLocale()
-  const t = useUiText()
+  const { locale, zh, t } = useLocaleText()
+  const fieldLabel = (field: CandidateReviewFieldSnapshot) => (zh ? (profileFieldLabelsZh[field.key] ?? field.label) : field.label)
   const [preview, setPreview] = useState<OriginalDocumentPreview | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [error, setError] = useState<string | null>(null)
@@ -99,41 +91,51 @@ export function ImportOriginalDocumentWorkspace({
     let active = true
     setStatus('loading')
     setError(null)
-    void onLoad(documentId).then((result) => {
-      if (!active) return
-      setPreview(result)
-      setSelectedSheet(result.sheets[0]?.name ?? '')
-      setStatus('ready')
-    }).catch((cause) => {
-      if (!active) return
-      setError(localizedIpcError(locale, cause, '原始ファイルを読み込めませんでした。'))
-      setStatus('error')
-    })
-    return () => { active = false }
+    void onLoad(documentId)
+      .then((result) => {
+        if (!active) return
+        setPreview(result)
+        setSelectedSheet(result.sheets[0]?.name ?? '')
+        setStatus('ready')
+      })
+      .catch((cause) => {
+        if (!active) return
+        setError(localizedIpcError(locale, cause, t('无法读取原始文件。', '原始ファイルを読み込めませんでした。')))
+        setStatus('error')
+      })
+    return () => {
+      active = false
+    }
   }, [documentId, locale, onLoad])
 
-  useEffect(() => () => {
-    if (resizeFrameRef.current !== null) window.cancelAnimationFrame(resizeFrameRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (resizeFrameRef.current !== null) window.cancelAnimationFrame(resizeFrameRef.current)
+    },
+    []
+  )
 
-  const mappings = useMemo<ReviewMapping[]>(() => [
-    ...fields.map((field) => ({
-      id: `field:${field.key}`,
-      kind: 'field' as const,
-      label: field.label,
-      value: values[field.key] || null,
-      sourceLabels: field.sourceLabels,
-      fieldKey: field.key
-    })),
-    ...projects.map((project, index) => ({
-      id: `project:${project.draftId}`,
-      kind: 'project' as const,
-      label: project.title || `${t('プロジェクト')} ${index + 1}`,
-      value: [project.period, project.role, project.summary].filter(Boolean).join(' · ') || null,
-      sourceLabels: project.sourceLabels,
-      projectId: project.draftId
-    }))
-  ], [fields, projects, t, values])
+  const mappings = useMemo<ReviewMapping[]>(
+    () => [
+      ...fields.map((field) => ({
+        id: `field:${field.key}`,
+        kind: 'field' as const,
+        label: zh ? (profileFieldLabelsZh[field.key] ?? field.label) : field.label,
+        value: values[field.key] || null,
+        sourceLabels: field.sourceLabels,
+        fieldKey: field.key
+      })),
+      ...projects.map((project, index) => ({
+        id: `project:${project.draftId}`,
+        kind: 'project' as const,
+        label: project.title || `${t('项目', 'プロジェクト')} ${index + 1}`,
+        value: [project.period, project.role, project.summary].filter(Boolean).join(' · ') || null,
+        sourceLabels: project.sourceLabels,
+        projectId: project.draftId
+      }))
+    ],
+    [fields, projects, t, values, zh]
+  )
   const selectedMapping = mappings.find((mapping) => mapping.id === selectedMappingId) ?? mappings[0]
   const activeSheet = preview?.sheets.find((sheet) => sheet.name === selectedSheet) ?? preview?.sheets[0]
 
@@ -150,9 +152,9 @@ export function ImportOriginalDocumentWorkspace({
     setOpenNotice(null)
     try {
       await onOpen(documentId)
-      setOpenNotice(t('システムアプリで原始ファイルを開きました。'))
+      setOpenNotice(t('已使用系统应用打开原始文件。', 'システムアプリで原始ファイルを開きました。'))
     } catch (cause) {
-      setError(localizedIpcError(locale, cause, '原始ファイルをシステムアプリで開けませんでした。'))
+      setError(localizedIpcError(locale, cause, t('无法使用系统应用打开原始文件。', '原始ファイルをシステムアプリで開けませんでした。')))
     } finally {
       setOpening(false)
     }
@@ -166,10 +168,8 @@ export function ImportOriginalDocumentWorkspace({
     return Math.round(Math.min(maximumViewerWidth, Math.max(minimumViewerWidth, requestedWidth)))
   }
 
-  const defaultViewerWidth = (containerWidth: number) => clampViewerWidth(
-    (containerWidth - compareDividerWidth) * defaultViewerFraction,
-    containerWidth
-  )
+  const defaultViewerWidth = (containerWidth: number) =>
+    clampViewerWidth((containerWidth - compareDividerWidth) * defaultViewerFraction, containerWidth)
 
   const queueViewerWidth = (clientX: number) => {
     const bounds = compareRef.current?.getBoundingClientRect()
@@ -219,81 +219,323 @@ export function ImportOriginalDocumentWorkspace({
     setViewerWidth(clampViewerWidth(currentWidth + (event.key === 'ArrowRight' ? increment : -increment), bounds.width))
   }
 
-  const compareStyle = viewerWidth === null ? undefined : {
-    '--original-document-viewer-width': `${viewerWidth}px`
-  } as CSSProperties
+  const compareStyle =
+    viewerWidth === null
+      ? undefined
+      : ({
+          '--original-document-viewer-width': `${viewerWidth}px`
+        } as CSSProperties)
 
-  return <div className="original-document-workspace import-original-document-workspace">
-    <header className="original-document-toolbar">
-      <div className="original-document-file"><span><Icon name="file" size={17} /></span><div><strong>{preview?.fileName ?? t('原始ファイル')}</strong><small>{preview ? `${preview.format.toUpperCase()} · ${formatBytes(preview.size)}` : t('端末内暗号化ファイル')}</small></div></div>
-      <div className="original-document-tools">
-        {preview?.viewMode === 'spreadsheet' && preview.sheets.length > 1 ? <select aria-label={t('ワークシート')} onChange={(event) => setSelectedSheet(event.target.value)} value={activeSheet?.name ?? ''}>{preview.sheets.map((sheet) => <option key={sheet.name} value={sheet.name}>{sheet.name}</option>)}</select> : null}
-        {preview?.viewMode === 'spreadsheet' ? <label className="original-document-search"><Icon name="search" size={14} /><input aria-label={t('原始ファイル内を検索')} onChange={(event) => setSearch(event.target.value)} placeholder={t('原始ファイル内を検索')} value={search} /></label> : null}
-        <div className="original-document-zoom"><button aria-label={t('縮小')} disabled={zoom <= 60} onClick={() => setZoom((value) => Math.max(60, value - 10))} type="button">−</button><span>{zoom}%</span><button aria-label={t('拡大')} disabled={zoom >= 140} onClick={() => setZoom((value) => Math.min(140, value + 10))} type="button">＋</button></div>
-        <button className="original-document-open" disabled={opening || status !== 'ready'} onClick={() => void openOriginal()} type="button"><Icon name="external-link" size={14} />{opening ? t('開いています…') : t('システムアプリで開く')}</button>
-        <span className="original-document-local"><Icon name="lock" size={12} />{t('端末内のみ')}</span>
-      </div>
-    </header>
+  return (
+    <div className="original-document-workspace import-original-document-workspace">
+      <header className="original-document-toolbar">
+        <div className="original-document-file">
+          <span>
+            <Icon name="file" size={17} />
+          </span>
+          <div>
+            <strong>{preview?.fileName ?? t('原始文件', '原始ファイル')}</strong>
+            <small>
+              {preview ? `${preview.format.toUpperCase()} · ${formatBytes(preview.size)}` : t('本机加密文件', '端末内暗号化ファイル')}
+            </small>
+          </div>
+        </div>
+        <div className="original-document-tools">
+          {preview?.viewMode === 'spreadsheet' && preview.sheets.length > 1 ? (
+            <select
+              aria-label={t('工作表', 'ワークシート')}
+              onChange={(event) => setSelectedSheet(event.target.value)}
+              value={activeSheet?.name ?? ''}
+            >
+              {preview.sheets.map((sheet) => (
+                <option key={sheet.name} value={sheet.name}>
+                  {sheet.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {preview?.viewMode === 'spreadsheet' ? (
+            <label className="original-document-search">
+              <Icon name="search" size={14} />
+              <input
+                aria-label={t('在原始文件中搜索', '原始ファイル内を検索')}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t('在原始文件中搜索', '原始ファイル内を検索')}
+                value={search}
+              />
+            </label>
+          ) : null}
+          <div className="original-document-zoom">
+            <button
+              aria-label={t('缩小', '縮小')}
+              disabled={zoom <= 60}
+              onClick={() => setZoom((value) => Math.max(60, value - 10))}
+              type="button"
+            >
+              −
+            </button>
+            <span>{zoom}%</span>
+            <button
+              aria-label={t('放大', '拡大')}
+              disabled={zoom >= 140}
+              onClick={() => setZoom((value) => Math.min(140, value + 10))}
+              type="button"
+            >
+              ＋
+            </button>
+          </div>
+          <button
+            className="original-document-open"
+            disabled={opening || status !== 'ready'}
+            onClick={() => void openOriginal()}
+            type="button"
+          >
+            <Icon name="external-link" size={14} />
+            {opening ? t('正在打开……', '開いています…') : t('使用系统应用打开', 'システムアプリで開く')}
+          </button>
+          <span className="original-document-local">
+            <Icon name="lock" size={12} />
+            {t('仅本机', '端末内のみ')}
+          </span>
+        </div>
+      </header>
 
-    {openNotice ? <div className="original-document-notice"><Icon name="check" size={13} />{openNotice}</div> : null}
-    {status === 'loading' ? <div className="original-document-state"><span className="matching-spinner" />{t('暗号化した原始ファイルを読み込み中…')}</div> : null}
-    {status === 'error' ? <div className="original-document-state is-error"><Icon name="alert" size={17} />{error}</div> : null}
+      {openNotice ? (
+        <div className="original-document-notice">
+          <Icon name="check" size={13} />
+          {openNotice}
+        </div>
+      ) : null}
+      {status === 'loading' ? (
+        <div className="original-document-state">
+          <span className="matching-spinner" />
+          {t('正在读取加密的原始文件……', '暗号化した原始ファイルを読み込み中…')}
+        </div>
+      ) : null}
+      {status === 'error' ? (
+        <div className="original-document-state is-error">
+          <Icon name="alert" size={17} />
+          {error}
+        </div>
+      ) : null}
 
-    {status === 'ready' && preview ? <div className={`original-document-compare${viewerWidth === null ? '' : ' is-resized'}${isResizing ? ' is-resizing' : ''}`} ref={compareRef} style={compareStyle}>
-      <section className="original-document-viewer" aria-label={t('原始ファイルプレビュー')}>
-        <div className="original-document-viewer-heading"><div><span>LOCAL ORIGINAL</span><strong>{preview.viewMode === 'spreadsheet' ? activeSheet?.name : preview.fileName}</strong></div><small>{selectedMapping?.sourceLabels.length ? summarizeSourceLabels(selectedMapping.sourceLabels, locale) : t('選択項目の自動出典なし')}</small></div>
-        {preview.viewMode === 'pdf' && preview.previewUrl ? <iframe className="original-pdf-frame" src={preview.previewUrl} title={preview.fileName} /> : null}
-        {preview.viewMode === 'spreadsheet' && activeSheet ? <SpreadsheetPreview search={search} selectedSources={selectedMapping?.sourceLabels ?? []} sheet={activeSheet} zoom={zoom} /> : null}
-        {preview.viewMode === 'document' ? <div className="original-word-pages" style={{ fontSize: `${zoom / 100}em` }}>{preview.paragraphs.map((paragraph) => <p key={paragraph.paragraphNumber}>{paragraph.text}</p>)}</div> : null}
-        {preview.viewMode === 'pdf' && !preview.previewUrl ? <div className="original-pdf-fallback">{preview.pages.map((page) => <article key={page.pageNumber}><span>Page {page.pageNumber}</span>{page.blocks.map((block, index) => <p key={index}>{block.text}</p>)}</article>)}</div> : null}
-      </section>
-
-      <div
-        aria-label={t('原始ファイルと標準プロフィールの幅を調整')}
-        aria-orientation="vertical"
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={viewerWidth === null ? Math.round(defaultViewerFraction * 100) : Math.round(viewerWidth / Math.max(1, (compareRef.current?.getBoundingClientRect().width ?? viewerWidth)) * 100)}
-        className="original-document-divider"
-        onDoubleClick={() => setViewerWidth(null)}
-        onKeyDown={resizeWithKeyboard}
-        onPointerCancel={endResize}
-        onPointerDown={startResize}
-        onPointerMove={moveResize}
-        onPointerUp={endResize}
-        role="separator"
-        tabIndex={0}
-        title={t('左右にドラッグして幅を調整')}
-      />
-
-      <aside className="original-document-profile import-original-document-profile" aria-label={t('標準人材プロフィール')}>
-        <header><span>REVIEW PROFILE</span><h2>{t('原本とプロフィールを照合')}</h2><p>{t('登録前の確認値を編集できます。変更は候補者プロフィールを確認すると保存されます。')}</p></header>
-        <section><h3>{t('人材プロフィール項目')}</h3><div className="original-document-editable-list">{fields.map((field) => {
-          const mapping = mappings.find((item) => item.id === `field:${field.key}`)
-          const active = mapping?.id === selectedMapping?.id
-          return <label className={active ? 'is-active' : undefined} key={field.key} onClick={() => mapping && selectMapping(mapping)}>
-            <span><strong>{t(field.label)}</strong><em className={field.sourceLabels.length ? undefined : 'is-missing'}>{field.sourceLabels.length ? `${field.sourceLabels.length}${t('件')}` : t('出典なし')}</em></span>
-            <input aria-label={t(field.label)} disabled={disabled} maxLength={500} onChange={(event) => onChangeField(field.key, event.target.value)} onFocus={() => mapping && selectMapping(mapping)} value={values[field.key] ?? ''} />
-          </label>
-        })}</div></section>
-        {projects.length > 0 ? <section><h3>{t('プロジェクト経験')}</h3><div className="original-document-editable-projects">{projects.map((project, index) => {
-          const mapping = mappings.find((item) => item.id === `project:${project.draftId}`)
-          const active = mapping?.id === selectedMapping?.id
-          return <article className={active ? 'is-active' : undefined} key={project.draftId}>
-            <header><button onClick={() => mapping && selectMapping(mapping)} type="button"><span>PROJECT {String(index + 1).padStart(2, '0')}</span><em className={mapping?.sourceLabels.length ? undefined : 'is-missing'}>{mapping?.sourceLabels.length ? `${t('出典')} ${mapping.sourceLabels.length}${t('件')}` : t('出典なし')}</em></button></header>
-            <div className="original-document-project-form">
-              <label className="is-title">{t('案件・プロジェクト名')}<input aria-label={`${t('プロジェクト')} ${index + 1} ${t('の名称')}`} disabled={disabled} maxLength={160} onChange={(event) => onChangeProject(project.draftId, 'title', event.target.value)} onFocus={() => mapping && selectMapping(mapping)} value={project.title} /></label>
-              <label>{t('期間')}<input aria-label={`${t('プロジェクト')} ${index + 1} ${t('の期間')}`} disabled={disabled} maxLength={120} onChange={(event) => onChangeProject(project.draftId, 'period', event.target.value)} onFocus={() => mapping && selectMapping(mapping)} value={project.period ?? ''} /></label>
-              <label>{t('役割')}<input aria-label={`${t('プロジェクト')} ${index + 1} ${t('の役割')}`} disabled={disabled} maxLength={120} onChange={(event) => onChangeProject(project.draftId, 'role', event.target.value)} onFocus={() => mapping && selectMapping(mapping)} value={project.role ?? ''} /></label>
-              <label className="is-wide">{t('技術（カンマ区切り）')}<input aria-label={`${t('プロジェクト')} ${index + 1} ${t('の技術')}`} disabled={disabled} maxLength={500} onChange={(event) => onChangeProject(project.draftId, 'technologies', event.target.value)} onFocus={() => mapping && selectMapping(mapping)} value={project.technologies} /></label>
-              <label className="is-wide">{t('担当内容')}<textarea aria-label={`${t('プロジェクト')} ${index + 1} ${t('の担当内容')}`} disabled={disabled} maxLength={1500} onChange={(event) => onChangeProject(project.draftId, 'summary', event.target.value)} onFocus={() => mapping && selectMapping(mapping)} rows={6} value={project.summary} /></label>
+      {status === 'ready' && preview ? (
+        <div
+          className={`original-document-compare${viewerWidth === null ? '' : ' is-resized'}${isResizing ? ' is-resizing' : ''}`}
+          ref={compareRef}
+          style={compareStyle}
+        >
+          <section className="original-document-viewer" aria-label={t('原始文件预览', '原始ファイルプレビュー')}>
+            <div className="original-document-viewer-heading">
+              <div>
+                <span>LOCAL ORIGINAL</span>
+                <strong>{preview.viewMode === 'spreadsheet' ? activeSheet?.name : preview.fileName}</strong>
+              </div>
+              <small>
+                {selectedMapping?.sourceLabels.length
+                  ? summarizeSourceLabels(selectedMapping.sourceLabels, locale)
+                  : t('所选字段没有自动来源', '選択項目の自動出典なし')}
+              </small>
             </div>
-          </article>
-        })}</div></section> : null}
-        {selectedMapping ? <div className="original-document-selection"><span>{t('現在の確認項目')}</span><strong>{t(selectedMapping.label)}</strong><p>{selectedMapping.value || t('未設定')}</p><small>{selectedMapping.sourceLabels.length ? summarizeSourceLabels(selectedMapping.sourceLabels, locale) : t('原本で確認して必要に応じてプロフィールを編集してください。')}</small></div> : null}
-      </aside>
-    </div> : null}
+            {preview.viewMode === 'pdf' && preview.previewUrl ? (
+              <iframe className="original-pdf-frame" src={preview.previewUrl} title={preview.fileName} />
+            ) : null}
+            {preview.viewMode === 'spreadsheet' && activeSheet ? (
+              <SpreadsheetPreview search={search} selectedSources={selectedMapping?.sourceLabels ?? []} sheet={activeSheet} zoom={zoom} />
+            ) : null}
+            {preview.viewMode === 'document' ? (
+              <div className="original-word-pages" style={{ fontSize: `${zoom / 100}em` }}>
+                {preview.paragraphs.map((paragraph) => (
+                  <p key={paragraph.paragraphNumber}>{paragraph.text}</p>
+                ))}
+              </div>
+            ) : null}
+            {preview.viewMode === 'pdf' && !preview.previewUrl ? (
+              <div className="original-pdf-fallback">
+                {preview.pages.map((page) => (
+                  <article key={page.pageNumber}>
+                    <span>Page {page.pageNumber}</span>
+                    {page.blocks.map((block, index) => (
+                      <p key={index}>{block.text}</p>
+                    ))}
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
 
-    <footer className="original-document-security"><Icon name="shield" size={14} /><span><strong>{t('原始ファイルは端末内でのみ復号')}</strong>{t('Cloud AIには送信しません。システムアプリ用の一時コピーは自動削除します。')}</span></footer>
-  </div>
+          <div
+            aria-label={t('调整原始文件与标准人员档案的栏位宽度', '原始ファイルと標準プロフィールの幅を調整')}
+            aria-orientation="vertical"
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={
+              viewerWidth === null
+                ? Math.round(defaultViewerFraction * 100)
+                : Math.round((viewerWidth / Math.max(1, compareRef.current?.getBoundingClientRect().width ?? viewerWidth)) * 100)
+            }
+            className="original-document-divider"
+            onDoubleClick={() => setViewerWidth(null)}
+            onKeyDown={resizeWithKeyboard}
+            onPointerCancel={endResize}
+            onPointerDown={startResize}
+            onPointerMove={moveResize}
+            onPointerUp={endResize}
+            role="separator"
+            tabIndex={0}
+            title={t('左右拖动以调整宽度', '左右にドラッグして幅を調整')}
+          />
+
+          <aside
+            className="original-document-profile import-original-document-profile"
+            aria-label={t('标准人员档案', '標準人材プロフィール')}
+          >
+            <header>
+              <span>REVIEW PROFILE</span>
+              <h2>{t('核对原件与人员档案', '原本とプロフィールを照合')}</h2>
+              <p>
+                {t(
+                  '可以编辑确认前的字段；确认人员资料时会保存修改。',
+                  '登録前の確認値を編集できます。変更は候補者プロフィールを確認すると保存されます。'
+                )}
+              </p>
+            </header>
+            <section>
+              <h3>{t('人员档案字段', '人材プロフィール項目')}</h3>
+              <div className="original-document-editable-list">
+                {fields.map((field) => {
+                  const mapping = mappings.find((item) => item.id === `field:${field.key}`)
+                  const active = mapping?.id === selectedMapping?.id
+                  return (
+                    <label className={active ? 'is-active' : undefined} key={field.key} onClick={() => mapping && selectMapping(mapping)}>
+                      <span>
+                        <strong>{fieldLabel(field)}</strong>
+                        <em className={field.sourceLabels.length ? undefined : 'is-missing'}>
+                          {field.sourceLabels.length ? `${field.sourceLabels.length}${t('项', '件')}` : t('无来源', '出典なし')}
+                        </em>
+                      </span>
+                      <input
+                        aria-label={fieldLabel(field)}
+                        disabled={disabled}
+                        maxLength={500}
+                        onChange={(event) => onChangeField(field.key, event.target.value)}
+                        onFocus={() => mapping && selectMapping(mapping)}
+                        value={values[field.key] ?? ''}
+                      />
+                    </label>
+                  )
+                })}
+              </div>
+            </section>
+            {projects.length > 0 ? (
+              <section>
+                <h3>{t('项目经历', 'プロジェクト経験')}</h3>
+                <div className="original-document-editable-projects">
+                  {projects.map((project, index) => {
+                    const mapping = mappings.find((item) => item.id === `project:${project.draftId}`)
+                    const active = mapping?.id === selectedMapping?.id
+                    return (
+                      <article className={active ? 'is-active' : undefined} key={project.draftId}>
+                        <header>
+                          <button onClick={() => mapping && selectMapping(mapping)} type="button">
+                            <span>PROJECT {String(index + 1).padStart(2, '0')}</span>
+                            <em className={mapping?.sourceLabels.length ? undefined : 'is-missing'}>
+                              {mapping?.sourceLabels.length
+                                ? `${t('来源', '出典')} ${mapping.sourceLabels.length}${t('项', '件')}`
+                                : t('无来源', '出典なし')}
+                            </em>
+                          </button>
+                        </header>
+                        <div className="original-document-project-form">
+                          <label className="is-title">
+                            {t('案件/项目名称', '案件・プロジェクト名')}
+                            <input
+                              aria-label={`${t('项目', 'プロジェクト')} ${index + 1} ${t('的名称', 'の名称')}`}
+                              disabled={disabled}
+                              maxLength={160}
+                              onChange={(event) => onChangeProject(project.draftId, 'title', event.target.value)}
+                              onFocus={() => mapping && selectMapping(mapping)}
+                              value={project.title}
+                            />
+                          </label>
+                          <label>
+                            {t('期间', '期間')}
+                            <input
+                              aria-label={`${t('项目', 'プロジェクト')} ${index + 1} ${t('的期间', 'の期間')}`}
+                              disabled={disabled}
+                              maxLength={120}
+                              onChange={(event) => onChangeProject(project.draftId, 'period', event.target.value)}
+                              onFocus={() => mapping && selectMapping(mapping)}
+                              value={project.period ?? ''}
+                            />
+                          </label>
+                          <label>
+                            {t('角色', '役割')}
+                            <input
+                              aria-label={`${t('项目', 'プロジェクト')} ${index + 1} ${t('的角色', 'の役割')}`}
+                              disabled={disabled}
+                              maxLength={120}
+                              onChange={(event) => onChangeProject(project.draftId, 'role', event.target.value)}
+                              onFocus={() => mapping && selectMapping(mapping)}
+                              value={project.role ?? ''}
+                            />
+                          </label>
+                          <label className="is-wide">
+                            {t('技术（以逗号分隔）', '技術（カンマ区切り）')}
+                            <input
+                              aria-label={`${t('项目', 'プロジェクト')} ${index + 1} ${t('的技术', 'の技術')}`}
+                              disabled={disabled}
+                              maxLength={500}
+                              onChange={(event) => onChangeProject(project.draftId, 'technologies', event.target.value)}
+                              onFocus={() => mapping && selectMapping(mapping)}
+                              value={project.technologies}
+                            />
+                          </label>
+                          <label className="is-wide">
+                            {t('负责内容', '担当内容')}
+                            <textarea
+                              aria-label={`${t('项目', 'プロジェクト')} ${index + 1} ${t('的负责内容', 'の担当内容')}`}
+                              disabled={disabled}
+                              maxLength={1500}
+                              onChange={(event) => onChangeProject(project.draftId, 'summary', event.target.value)}
+                              onFocus={() => mapping && selectMapping(mapping)}
+                              rows={6}
+                              value={project.summary}
+                            />
+                          </label>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+            ) : null}
+            {selectedMapping ? (
+              <div className="original-document-selection">
+                <span>{t('当前核对字段', '現在の確認項目')}</span>
+                <strong>{selectedMapping.label}</strong>
+                <p>{selectedMapping.value || t('未设置', '未設定')}</p>
+                <small>
+                  {selectedMapping.sourceLabels.length
+                    ? summarizeSourceLabels(selectedMapping.sourceLabels, locale)
+                    : t('请在原件中核对，并根据需要编辑人员档案。', '原本で確認して必要に応じてプロフィールを編集してください。')}
+                </small>
+              </div>
+            ) : null}
+          </aside>
+        </div>
+      ) : null}
+
+      <footer className="original-document-security">
+        <Icon name="shield" size={14} />
+        <span>
+          <strong>{t('原始文件仅在本机解密', '原始ファイルは端末内でのみ復号')}</strong>
+          {t(
+            '不会发送给云端 AI；供系统应用使用的临时副本会自动删除。',
+            'Cloud AIには送信しません。システムアプリ用の一時コピーは自動削除します。'
+          )}
+        </span>
+      </footer>
+    </div>
+  )
 }

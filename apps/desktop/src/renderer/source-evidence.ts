@@ -1,4 +1,5 @@
 import type { ApplicationLocale } from '@shared'
+import { localeText } from './i18n'
 
 interface SourceEvidenceSummaryOptions {
   projectIndex?: number
@@ -12,15 +13,12 @@ function compactNumbers(values: number[]): string {
     if (current && value === current.end + 1) current.end = value
     else ranges.push({ start: value, end: value })
   }
-  return ranges.map((range) => range.start === range.end ? String(range.start) : `${range.start}–${range.end}`).join(', ')
+  return ranges.map((range) => (range.start === range.end ? String(range.start) : `${range.start}–${range.end}`)).join(', ')
 }
 
-export function summarizeSourceLabels(
-  labels: string[],
-  locale: ApplicationLocale,
-  options: SourceEvidenceSummaryOptions = {}
-): string {
-  if (labels.length === 0) return locale === 'zh-CN' ? '无自动来源' : '自動出典なし'
+export function summarizeSourceLabels(labels: string[], locale: ApplicationLocale, options: SourceEvidenceSummaryOptions = {}): string {
+  const t = localeText(locale === 'zh-CN')
+  if (labels.length === 0) return t('无自动来源', '自動出典なし')
   const spreadsheet = new Map<string, { rows: number[]; cells: number }>()
   const pages: number[] = []
   const paragraphs: number[] = []
@@ -50,22 +48,18 @@ export function summarizeSourceLabels(
   const parts: string[] = []
   for (const [sheet, group] of spreadsheet) {
     const rows = compactNumbers(group.rows)
-    if (locale === 'zh-CN') {
-      const project = options.projectIndex ? ` · 项目${options.projectIndex}区域` : ''
-      parts.push(`${sheet}${project} · 第${rows}行（${group.cells}个来源单元格）`)
-    } else {
-      const project = options.projectIndex ? ` · プロジェクト${options.projectIndex}範囲` : ''
-      parts.push(`${sheet}${project} · ${rows}行（出典セル${group.cells}件）`)
-    }
+    const project = options.projectIndex ? t(` · 项目${options.projectIndex}区域`, ` · プロジェクト${options.projectIndex}範囲`) : ''
+    parts.push(
+      t(`${sheet}${project} · 第${rows}行（${group.cells}个来源单元格）`, `${sheet}${project} · ${rows}行（出典セル${group.cells}件）`)
+    )
   }
   if (pages.length > 0) {
-    parts.push(locale === 'zh-CN' ? `PDF 第${compactNumbers(pages)}页` : `PDF ${compactNumbers(pages)}ページ`)
+    parts.push(t(`PDF 第${compactNumbers(pages)}页`, `PDF ${compactNumbers(pages)}ページ`))
   }
   if (paragraphs.length > 0) {
-    parts.push(locale === 'zh-CN' ? `Word 第${compactNumbers(paragraphs)}段` : `Word ${compactNumbers(paragraphs)}段落`)
+    parts.push(t(`Word 第${compactNumbers(paragraphs)}段`, `Word ${compactNumbers(paragraphs)}段落`))
   }
   parts.push(...other.slice(0, 2))
   const summary = parts.join(' / ')
-  return locale === 'zh-CN' ? `来源：${summary}` : `出典：${summary}`
+  return t(`来源：${summary}`, `出典：${summary}`)
 }
-

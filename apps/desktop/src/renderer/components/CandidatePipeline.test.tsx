@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { createWorkTaskPreview, materializeWorkTask } from '@application'
-import type { CandidateInterviewSnapshot, CandidateReviewSnapshot, MatchingHomeProjection, OriginalDocumentPreview, ResumeAnalysisSummary } from '@shared'
+import type {
+  CandidateInterviewSnapshot,
+  CandidateReviewSnapshot,
+  MatchingHomeProjection,
+  OriginalDocumentPreview,
+  ResumeAnalysisSummary
+} from '@shared'
 import { UiLocaleProvider } from '../i18n'
 import { CandidatePipeline } from './CandidatePipeline'
 
@@ -15,20 +21,120 @@ const review: CandidateReviewSnapshot = {
   status: 'completed',
   piiReviewed: true,
   localIdentity: {
-    displayName: '张伟', gender: null, birthDate: null, nationality: null, phone: null, email: null,
-    address: null, education: null, major: null, graduationDate: null, degree: null,
-    storage: 'encrypted-local-only', cloudEligible: false
+    displayName: '张伟',
+    gender: null,
+    birthDate: null,
+    nationality: null,
+    phone: null,
+    email: null,
+    address: null,
+    education: null,
+    major: null,
+    graduationDate: null,
+    degree: null,
+    storage: 'encrypted-local-only',
+    cloudEligible: false
   },
   fields: [
-    { key: 'skills', label: '技能', originalValue: 'Java, AWS', value: 'Java, AWS', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'experience_years', label: '经验', originalValue: '6年', value: '6年', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'availability', label: '可入场', originalValue: null, value: null, confidence: 0, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'rate', label: '单价', originalValue: null, value: null, confidence: 0, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'japanese_level', label: '日语', originalValue: 'N2', value: 'N2', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'work_style', label: '工作方式', originalValue: null, value: null, confidence: 0, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'role', label: '角色', originalValue: 'Java开发工程师', value: 'Java开发工程师', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'location', label: '所在地', originalValue: '东京', value: '东京', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'work_authorization', label: '工作资格', originalValue: null, value: null, confidence: 0, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null }
+    {
+      key: 'skills',
+      label: '技能',
+      originalValue: 'Java, AWS',
+      value: 'Java, AWS',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'experience_years',
+      label: '经验',
+      originalValue: '6年',
+      value: '6年',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'availability',
+      label: '可入场',
+      originalValue: null,
+      value: null,
+      confidence: 0,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'rate',
+      label: '单价',
+      originalValue: null,
+      value: null,
+      confidence: 0,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'japanese_level',
+      label: '日语',
+      originalValue: 'N2',
+      value: 'N2',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'work_style',
+      label: '工作方式',
+      originalValue: null,
+      value: null,
+      confidence: 0,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'role',
+      label: '角色',
+      originalValue: 'Java开发工程师',
+      value: 'Java开发工程师',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'location',
+      label: '所在地',
+      originalValue: '东京',
+      value: '东京',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'work_authorization',
+      label: '工作资格',
+      originalValue: null,
+      value: null,
+      confidence: 0,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    }
   ],
   projectExperiences: [],
   completedAt: '2026-07-21T00:00:00.000Z',
@@ -126,12 +232,21 @@ describe('CandidatePipeline recruiting workspace', () => {
       <UiLocaleProvider locale="zh-CN">
         <CandidatePipeline
           aiCommerce={{
-            configuration: 'required', connection: 'not-connected', productCode: null, billingMode: null,
-            memberDisplayName: null, accountId: null, accountAiTokenExpiresAt: null, wallet: null, capabilities: [], refreshedAt: null
+            configuration: 'required',
+            connection: 'not-connected',
+            productCode: null,
+            billingMode: null,
+            memberDisplayName: null,
+            accountId: null,
+            accountAiTokenExpiresAt: null,
+            wallet: null,
+            capabilities: [],
+            refreshedAt: null
           }}
           analyses={[analysis]}
           interviews={[]}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onLoadOriginalDocument={onLoadOriginalDocument}
           onOpenCandidateLibrary={vi.fn()}
@@ -155,8 +270,8 @@ describe('CandidatePipeline recruiting workspace', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '查看原始简历' }))
     await waitFor(() => expect(onLoadOriginalDocument).toHaveBeenCalledWith(documentId))
-    expect(await screen.findByRole('heading', { name: '核对原件与人才档案' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '确认候选人资料' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '核对原件与人员档案' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '确认人员资料' })).toBeInTheDocument()
   })
 
   it('opens a validated Zoom meeting from the focused interview record tab', async () => {
@@ -166,7 +281,8 @@ describe('CandidatePipeline recruiting workspace', () => {
         <CandidatePipeline
           analyses={[]}
           interviews={[interview]}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenIntegrationSettings={vi.fn()}
@@ -209,7 +325,8 @@ describe('CandidatePipeline recruiting workspace', () => {
           initialCandidateId={documentId}
           interviewKind="client"
           interviews={[clientInterview]}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenIntegrationSettings={vi.fn()}
@@ -256,14 +373,23 @@ describe('CandidatePipeline recruiting workspace', () => {
       <UiLocaleProvider locale="zh-CN">
         <CandidatePipeline
           aiCommerce={{
-            configuration: 'ready', connection: 'connected', productCode: 'sesAgent', billingMode: 'subscription',
-            memberDisplayName: 'HR', accountId: 'account-1', accountAiTokenExpiresAt: null, wallet: null, capabilities: [], refreshedAt: null
+            configuration: 'ready',
+            connection: 'connected',
+            productCode: 'sesAgent',
+            billingMode: 'subscription',
+            memberDisplayName: 'HR',
+            accountId: 'account-1',
+            accountAiTokenExpiresAt: null,
+            wallet: null,
+            capabilities: [],
+            refreshedAt: null
           }}
           analyses={[]}
           initialCandidateId={documentId}
           interviewKind="recruiting"
           interviews={[{ ...interview, stage: 'scheduled' }]}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenCloudSettings={vi.fn()}
@@ -308,10 +434,25 @@ describe('CandidatePipeline recruiting workspace', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     const matchingHome = {
-      state: 'current-results', eligibleCandidateCount: 1, selectedJobCaseId: '44444444-4444-4444-8444-444444444444', jobCases: [],
+      state: 'current-results',
+      eligibleCandidateCount: 1,
+      selectedJobCaseId: '44444444-4444-4444-8444-444444444444',
+      jobCases: [],
       currentRun: {
         validity: 'current',
-        results: [{ candidateProfileId: review.profile!.id, fit: { rank: 1, matchScore: 60, matchedTerms: ['Java'], hardFilterUnknownCount: 1, missing: ['勤務地:常駐', '尚可:Docker'], evidence: [] } }]
+        results: [
+          {
+            candidateProfileId: review.profile!.id,
+            fit: {
+              rank: 1,
+              matchScore: 60,
+              matchedTerms: ['Java'],
+              hardFilterUnknownCount: 1,
+              missing: ['勤務地:常駐', '尚可:Docker'],
+              evidence: []
+            }
+          }
+        ]
       }
     } as unknown as MatchingHomeProjection
     render(
@@ -322,7 +463,8 @@ describe('CandidatePipeline recruiting workspace', () => {
           interviewKind="recruiting"
           interviews={[{ ...interview, stage: 'scheduled' }]}
           matchingHome={matchingHome}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenIntegrationSettings={vi.fn()}
@@ -338,9 +480,9 @@ describe('CandidatePipeline recruiting workspace', () => {
       </UiLocaleProvider>
     )
 
-    expect(await screen.findByText('请确认候选人是否满足案件条件「勤務地:常駐」，并请其用具体经历说明。')).toBeInTheDocument()
+    expect(await screen.findByText('请确认本人是否满足案件条件「勤務地:常駐」，并请其用具体经历说明。')).toBeInTheDocument()
     // A 尚可 gap loses its prefix; the interviewer sees the plain requirement.
-    expect(screen.getByText('请确认候选人是否满足案件条件「Docker」，并请其用具体经历说明。')).toBeInTheDocument()
+    expect(screen.getByText('请确认本人是否满足案件条件「Docker」，并请其用具体经历说明。')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '复制面试准备表' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
     const sheet = writeText.mock.calls[0]?.[0] as string
@@ -351,17 +493,28 @@ describe('CandidatePipeline recruiting workspace', () => {
 
   it('asks about what the cloud review left open, after the local gaps', async () => {
     const matchingHome = {
-      state: 'current-results', eligibleCandidateCount: 1, selectedJobCaseId: '44444444-4444-4444-8444-444444444444', jobCases: [],
+      state: 'current-results',
+      eligibleCandidateCount: 1,
+      selectedJobCaseId: '44444444-4444-4444-8444-444444444444',
+      jobCases: [],
       currentRun: {
         validity: 'current',
-        results: [{
-          candidateProfileId: review.profile!.id,
-          fit: { rank: 1, matchScore: 60, matchedTerms: ['Java'], hardFilterUnknownCount: 0, missing: ['尚可:Docker'], evidence: [] },
-          assessment: {
-            version: 'match-assessment-v1', fit: 'possible', met: [], gaps: ['AWS 経験'], confirm: ['日本語での顧客折衝', 'Docker'],
-            reason: '', modelKey: 'gpt-5', assessedAt: '2026-08-26T00:00:00.000Z'
+        results: [
+          {
+            candidateProfileId: review.profile!.id,
+            fit: { rank: 1, matchScore: 60, matchedTerms: ['Java'], hardFilterUnknownCount: 0, missing: ['尚可:Docker'], evidence: [] },
+            assessment: {
+              version: 'match-assessment-v1',
+              fit: 'possible',
+              met: [],
+              gaps: ['AWS 経験'],
+              confirm: ['日本語での顧客折衝', 'Docker'],
+              reason: '',
+              modelKey: 'gpt-5',
+              assessedAt: '2026-08-26T00:00:00.000Z'
+            }
           }
-        }]
+        ]
       }
     } as unknown as MatchingHomeProjection
     render(
@@ -372,7 +525,8 @@ describe('CandidatePipeline recruiting workspace', () => {
           interviewKind="recruiting"
           interviews={[{ ...interview, stage: 'scheduled' }]}
           matchingHome={matchingHome}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenIntegrationSettings={vi.fn()}
@@ -388,9 +542,9 @@ describe('CandidatePipeline recruiting workspace', () => {
       </UiLocaleProvider>
     )
 
-    expect(await screen.findByText('请确认候选人是否满足案件条件「Docker」，并请其用具体经历说明。')).toBeInTheDocument()
-    expect(screen.getByText('请确认候选人是否满足案件条件「AWS 経験」，并请其用具体经历说明。')).toBeInTheDocument()
-    expect(screen.getByText('请确认候选人是否满足案件条件「日本語での顧客折衝」，并请其用具体经历说明。')).toBeInTheDocument()
+    expect(await screen.findByText('请确认本人是否满足案件条件「Docker」，并请其用具体经历说明。')).toBeInTheDocument()
+    expect(screen.getByText('请确认本人是否满足案件条件「AWS 経験」，并请其用具体经历说明。')).toBeInTheDocument()
+    expect(screen.getByText('请确认本人是否满足案件条件「日本語での顧客折衝」，并请其用具体经历说明。')).toBeInTheDocument()
     // Docker came from both sides and is asked once.
     expect(screen.getAllByText(/「Docker」/u)).toHaveLength(1)
   })
@@ -399,7 +553,8 @@ describe('CandidatePipeline recruiting workspace', () => {
     const onSendCloudPrompt = vi.fn().mockResolvedValue({
       requestId: 'request-joined',
       aiRequestId: 'ai-request-joined',
-      content: '以下是生成的8个面试问题：\n1.请说明微服务拆分的原则和通信方式？2.请说明选择PostgreSQL与Spring Boot的标准？3.你如何与日本客户确认需求？4.请说明缺陷管理和回归测试流程？5.你如何确保消息转换准确性和审计追踪？6.请举例说明如何协调团队技术分歧？7.你如何优化复杂查询性能？8.请说明你如何决定是否采用React？',
+      content:
+        '以下是生成的8个面试问题：\n1.请说明微服务拆分的原则和通信方式？2.请说明选择PostgreSQL与Spring Boot的标准？3.你如何与日本客户确认需求？4.请说明缺陷管理和回归测试流程？5.你如何确保消息转换准确性和审计追踪？6.请举例说明如何协调团队技术分歧？7.你如何优化复杂查询性能？8.请说明你如何决定是否采用React？',
       usageCredits: 2,
       wallet: null,
       removedIdentifierTypes: [],
@@ -410,14 +565,23 @@ describe('CandidatePipeline recruiting workspace', () => {
       <UiLocaleProvider locale="zh-CN">
         <CandidatePipeline
           aiCommerce={{
-            configuration: 'ready', connection: 'connected', productCode: 'sesAgent', billingMode: 'subscription',
-            memberDisplayName: 'HR', accountId: 'account-1', accountAiTokenExpiresAt: null, wallet: null, capabilities: [], refreshedAt: null
+            configuration: 'ready',
+            connection: 'connected',
+            productCode: 'sesAgent',
+            billingMode: 'subscription',
+            memberDisplayName: 'HR',
+            accountId: 'account-1',
+            accountAiTokenExpiresAt: null,
+            wallet: null,
+            capabilities: [],
+            refreshedAt: null
           }}
           analyses={[]}
           initialCandidateId={documentId}
           interviewKind="recruiting"
           interviews={[{ ...interview, stage: 'scheduled' }]}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenCloudSettings={vi.fn()}
@@ -457,7 +621,8 @@ describe('CandidatePipeline recruiting workspace', () => {
           initialCandidateId={documentId}
           interviewKind="recruiting"
           interviews={[{ ...interview, stage: 'scheduled' }]}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenCloudSettings={vi.fn()}
@@ -475,7 +640,9 @@ describe('CandidatePipeline recruiting workspace', () => {
     )
     fireEvent.change(await screen.findByLabelText('对 AI 的要求'), { target: { value: ' 加上团队管理的问题 ' } })
     fireEvent.click(screen.getByRole('button', { name: '按 AI 工作规则生成问题' }))
-    await waitFor(() => expect(generateRuleQuestions).toHaveBeenCalledWith({ documentId, interviewId: interview.id, request: '加上团队管理的问题' }))
+    await waitFor(() =>
+      expect(generateRuleQuestions).toHaveBeenCalledWith({ documentId, interviewId: interview.id, request: '加上团队管理的问题' })
+    )
   })
 
   it('lets HR append a local structured summary into the interview record', async () => {
@@ -484,7 +651,8 @@ describe('CandidatePipeline recruiting workspace', () => {
         <CandidatePipeline
           analyses={[]}
           interviews={[{ ...interview, interviewNotes: '候选人说明了 AWS 迁移经历。' }]}
-          onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
           onImportResume={vi.fn()}
           onOpenCandidateLibrary={vi.fn()}
           onOpenIntegrationSettings={vi.fn()}
@@ -531,7 +699,27 @@ describe('CandidatePipeline recruiting workspace', () => {
       decidedAt: null,
       decidedBy: null
     }
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[firstRound, secondRound]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review]} view="overview" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[firstRound, secondRound]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="overview"
+        />
+      </UiLocaleProvider>
+    )
 
     expect(await screen.findByRole('button', { name: '预约复试' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '预约初面' })).not.toBeInTheDocument()
@@ -553,9 +741,31 @@ describe('CandidatePipeline recruiting workspace', () => {
       roundNumber: 2,
       parentInterviewId: interviewId,
       stage: 'prepared',
-      questionPlan: [{ id: 'second-round', text: '请补充说明高并发设计。', source: 'inherited', sourceLabel: '上一轮待确认项', selected: true }]
+      questionPlan: [
+        { id: 'second-round', text: '请补充说明高并发设计。', source: 'inherited', sourceLabel: '上一轮待确认项', selected: true }
+      ]
     }
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[firstRound, secondRound]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review]} view="workbench" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[firstRound, secondRound]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="workbench"
+        />
+      </UiLocaleProvider>
+    )
 
     fireEvent.click(await screen.findByRole('button', { name: /初面.*已完成/ }))
     expect(screen.getByText('历史轮次 · 只读')).toBeInTheDocument()
@@ -565,14 +775,34 @@ describe('CandidatePipeline recruiting workspace', () => {
   })
 
   it('shows only the scheduling fields that apply to each meeting channel', async () => {
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review]} view="schedule" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="schedule"
+        />
+      </UiLocaleProvider>
+    )
 
     expect(await screen.findByLabelText('Zoom 会议链接')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('会议方式'), { target: { value: 'google-meet' } })
     expect(screen.getByLabelText('Google Meet 会议链接')).toBeInTheDocument()
     expect(screen.queryByLabelText('Zoom 会议链接')).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('会议方式'), { target: { value: 'phone' } })
-    expect(screen.getByLabelText('候选人本地联系电话')).toBeInTheDocument()
+    expect(screen.getByLabelText('人员本地联系电话')).toBeInTheDocument()
     expect(screen.getByLabelText('电话备注')).toBeInTheDocument()
     expect(screen.queryByLabelText('Google Meet 会议链接')).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('会议方式'), { target: { value: 'onsite' } })
@@ -589,7 +819,28 @@ describe('CandidatePipeline recruiting workspace', () => {
       meetingMethod: 'google-meet',
       meetingUrl: 'https://meet.google.com/abc-defg-hij'
     }
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[googleMeetInterview]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenInterviewMeeting={onOpenInterviewMeeting} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review]} view="workbench" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[googleMeetInterview]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenInterviewMeeting={onOpenInterviewMeeting}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="workbench"
+        />
+      </UiLocaleProvider>
+    )
 
     fireEvent.click(await screen.findByRole('button', { name: '进入 Google Meet' }))
     expect(onOpenInterviewMeeting).toHaveBeenCalledWith({ method: 'google-meet', url: 'https://meet.google.com/abc-defg-hij' })
@@ -616,7 +867,27 @@ describe('CandidatePipeline recruiting workspace', () => {
       unresolvedItems: ['高并发设计经验']
     }
     const onSavePreparation = vi.fn()
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[firstRound, secondRound]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={onSavePreparation} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review]} view="prepare" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[firstRound, secondRound]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={onSavePreparation}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="prepare"
+        />
+      </UiLocaleProvider>
+    )
 
     fireEvent.click(await screen.findByRole('button', { name: '生成本机结构化建议' }))
     const suggestion = await screen.findByLabelText(/上一轮仍待确认：高并发设计经验/)
@@ -637,7 +908,27 @@ describe('CandidatePipeline recruiting workspace', () => {
       stage: 'awaiting-decision',
       interviewNotes: '候选人已回答技术问题。'
     }
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[awaitingDecision]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review]} view="decision" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[awaitingDecision]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="decision"
+        />
+      </UiLocaleProvider>
+    )
 
     fireEvent.click(await screen.findByText('准备', { selector: 'button' }))
     expect(screen.getByText('准备已锁定')).toBeInTheDocument()
@@ -662,10 +953,31 @@ describe('CandidatePipeline recruiting workspace', () => {
       questionPlan: [],
       interviewNotes: null
     }
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} initialCandidateId={documentId} interviews={[interview, secondInterview]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review, secondReview]} view="workbench" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          initialCandidateId={documentId}
+          interviews={[interview, secondInterview]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review, secondReview]}
+          view="workbench"
+        />
+      </UiLocaleProvider>
+    )
 
     expect(await screen.findByRole('heading', { name: '面试记录' })).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('切换候选人'), { target: { value: secondDocumentId } })
+    fireEvent.change(screen.getByLabelText('切换人员'), { target: { value: secondDocumentId } })
     expect(await screen.findByRole('heading', { name: '准备面试问题' })).toBeInTheDocument()
     expect(screen.queryByText('面试记录已锁定')).not.toBeInTheDocument()
   })
@@ -684,7 +996,29 @@ describe('CandidatePipeline recruiting workspace', () => {
       parentInterviewId: firstRound.id,
       stage: 'prepared'
     }
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} initialCandidateId={documentId} initialInterviewId={firstRound.id} interviews={[secondRound, firstRound]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={vi.fn()} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[review]} view="workbench" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          initialCandidateId={documentId}
+          initialInterviewId={firstRound.id}
+          interviews={[secondRound, firstRound]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="workbench"
+        />
+      </UiLocaleProvider>
+    )
 
     expect(await screen.findByText('历史轮次 · 只读')).toBeInTheDocument()
     expect(screen.getByText('初面', { selector: 'button' })).toHaveClass('is-active')
@@ -700,7 +1034,27 @@ describe('CandidatePipeline recruiting workspace', () => {
     const passed = { ...awaitingDecision, stage: 'passed' as const, decision: 'passed' as const, decisionReason: '技术与沟通符合要求。' }
     const onRecordDecision = vi.fn().mockResolvedValue(passed)
     const onOpenCandidateLibrary = vi.fn()
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[awaitingDecision]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={onOpenCandidateLibrary} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={onRecordDecision} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[completedReview]} view="decision" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[awaitingDecision]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={onOpenCandidateLibrary}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={onRecordDecision}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[completedReview]}
+          view="decision"
+        />
+      </UiLocaleProvider>
+    )
 
     fireEvent.change(await screen.findByLabelText('人工判断理由'), { target: { value: '技术与沟通符合要求。' } })
     fireEvent.click(screen.getByRole('button', { name: '确认面试结论' }))
@@ -711,27 +1065,85 @@ describe('CandidatePipeline recruiting workspace', () => {
   it('opens the eligible talent list for an already-passed recruiting interview', async () => {
     const passed = { ...interview, stage: 'passed' as const, decision: 'passed' as const, decisionReason: '技术符合要求。' }
     const onOpenCandidateLibrary = vi.fn()
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline analyses={[]} interviews={[passed]} onConfirmCandidateProfile={vi.fn()} onCreateRound={vi.fn()} onImportResume={vi.fn()} onOpenCandidateLibrary={onOpenCandidateLibrary} onOpenIntegrationSettings={vi.fn()} onOpenZoomMeeting={vi.fn()} onRecordDecision={vi.fn()} onSaveNotes={vi.fn()} onSavePreparation={vi.fn()} onSaveSchedule={vi.fn()} onViewChange={vi.fn()} reviews={[{ ...review, talentPoolStatus: 'eligible' }]} view="overview" /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          interviews={[passed]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={onOpenCandidateLibrary}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[{ ...review, talentPoolStatus: 'eligible' }]}
+          view="overview"
+        />
+      </UiLocaleProvider>
+    )
 
-    fireEvent.click(await screen.findByRole('button', { name: '打开人才池' }))
+    fireEvent.click(await screen.findByRole('button', { name: '在人员列表中查看' }))
     expect(onOpenCandidateLibrary).toHaveBeenCalledOnce()
   })
 })
 
 const closeoutCallbacks = {
-  onConfirmCandidateProfile: vi.fn(), onCreateRound: vi.fn(), onImportResume: vi.fn(),
-  onOpenCandidateLibrary: vi.fn(), onOpenIntegrationSettings: vi.fn(), onOpenZoomMeeting: vi.fn(),
-  onRecordDecision: vi.fn(), onSaveNotes: vi.fn(), onSavePreparation: vi.fn(), onSaveSchedule: vi.fn(), onViewChange: vi.fn()
+  onConfirmCandidateProfile: vi.fn(),
+  onCreateRound: vi.fn(),
+  onImportResume: vi.fn(),
+  onOpenCandidateLibrary: vi.fn(),
+  onOpenIntegrationSettings: vi.fn(),
+  onOpenZoomMeeting: vi.fn(),
+  onRecordDecision: vi.fn(),
+  onSaveNotes: vi.fn(),
+  onSavePreparation: vi.fn(),
+  onSaveSchedule: vi.fn(),
+  onViewChange: vi.fn()
 }
 
-describe('interview conclusion evidence closeout',()=>{
-  it('uses the parent round concerns and recorded answers without inferring confirmation',async()=>{
-    const parent={...interview,decision:'next-round' as const,unresolvedItems:['上一轮：独立设计职责','上一轮：交付范围']}
-    const current:CandidateInterviewSnapshot={...interview,id:'44444444-4444-4444-8444-444444444444',parentInterviewId:interview.id,roundNumber:2,stage:'awaiting-decision',interviewNotes:'本人负责接口实现和单元测试。',unresolvedItems:['本轮：尚待核实的设计范围']}
-    Object.defineProperty(window,'sesAgent',{configurable:true,value:{listAiConversations:vi.fn(async()=>[]),getInterviewAnswers:vi.fn(async()=>({interviewId:current.id,answers:[{questionId:'standard-1',status:'answered',quote:current.interviewNotes,summary:'记录了实现职责',remaining:''}]}))}})
-    const {container}=render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline {...closeoutCallbacks} analyses={[]} reviews={[review]} interviews={[parent,current]} initialInterviewId={current.id} view="decision"/></UiLocaleProvider>)
+describe('interview conclusion evidence closeout', () => {
+  it('uses the parent round concerns and recorded answers without inferring confirmation', async () => {
+    const parent = { ...interview, decision: 'next-round' as const, unresolvedItems: ['上一轮：独立设计职责', '上一轮：交付范围'] }
+    const current: CandidateInterviewSnapshot = {
+      ...interview,
+      id: '44444444-4444-4444-8444-444444444444',
+      parentInterviewId: interview.id,
+      roundNumber: 2,
+      stage: 'awaiting-decision',
+      interviewNotes: '本人负责接口实现和单元测试。',
+      unresolvedItems: ['本轮：尚待核实的设计范围']
+    }
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: {
+        listAiConversations: vi.fn(async () => []),
+        getInterviewAnswers: vi.fn(async () => ({
+          interviewId: current.id,
+          answers: [
+            { questionId: 'standard-1', status: 'answered', quote: current.interviewNotes, summary: '记录了实现职责', remaining: '' }
+          ]
+        }))
+      }
+    })
+    const { container } = render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          {...closeoutCallbacks}
+          analyses={[]}
+          reviews={[review]}
+          interviews={[parent, current]}
+          initialInterviewId={current.id}
+          view="decision"
+        />
+      </UiLocaleProvider>
+    )
     await screen.findByText('已有回答记录，待核实')
-    const recap=container.querySelector('.recruiting-inherited-check')!
+    const recap = container.querySelector('.recruiting-inherited-check')!
     expect(recap).toHaveTextContent('上一轮：独立设计职责')
     expect(recap).toHaveTextContent('上一轮：交付范围')
     expect(recap).not.toHaveTextContent('本轮：尚待核实的设计范围')
@@ -742,18 +1154,35 @@ describe('interview conclusion evidence closeout',()=>{
     expect(screen.queryByText('优势')).not.toBeInTheDocument()
   })
 
-  it('does not fabricate recap topics or answers when no prior record exists',async()=>{
-    const current={...interview,roundNumber:2,stage:'awaiting-decision' as const}
-    Object.defineProperty(window,'sesAgent',{configurable:true,value:{listAiConversations:vi.fn(async()=>[]),getInterviewAnswers:vi.fn(async()=>null)}})
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline {...closeoutCallbacks} analyses={[]} reviews={[review]} interviews={[current]} view="decision"/></UiLocaleProvider>)
+  it('does not fabricate recap topics or answers when no prior record exists', async () => {
+    const current = { ...interview, roundNumber: 2, stage: 'awaiting-decision' as const }
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: { listAiConversations: vi.fn(async () => []), getInterviewAnswers: vi.fn(async () => null) }
+    })
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline {...closeoutCallbacks} analyses={[]} reviews={[review]} interviews={[current]} view="decision" />
+      </UiLocaleProvider>
+    )
     await screen.findByText('本轮尚未保存回答记录。')
     expect(screen.getByText('上一轮没有保存待确认事项。')).toBeInTheDocument()
     expect(screen.queryByText('技术方案深度')).not.toBeInTheDocument()
     expect(screen.queryByText('团队协作经验')).not.toBeInTheDocument()
   })
 
-  it('does not claim an unregistered interviewer is confirmed',async()=>{
-    render(<UiLocaleProvider locale="zh-CN"><CandidatePipeline {...closeoutCallbacks} analyses={[]} reviews={[review]} interviews={[{...interview,stage:'scheduled',questionPlan:[],interviewer:null}]} view="prepare"/></UiLocaleProvider>)
+  it('does not claim an unregistered interviewer is confirmed', async () => {
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          {...closeoutCallbacks}
+          analyses={[]}
+          reviews={[review]}
+          interviews={[{ ...interview, stage: 'scheduled', questionPlan: [], interviewer: null }]}
+          view="prepare"
+        />
+      </UiLocaleProvider>
+    )
     await screen.findByText('面试官未登记')
     expect(screen.queryByText('已确认面试官')).not.toBeInTheDocument()
   })

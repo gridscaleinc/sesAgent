@@ -13,20 +13,43 @@ const digest: NewJobCaseDigest = {
   unseenCount: 1,
   groups: [
     {
-      day: 'today', count: 1, unseenCount: 1,
-      entries: [{
-        reviewId: todayReviewId, jobCaseId, title: 'Java 決済基盤', sourceType: 'gmail',
-        arrivedAt: '2026-08-26T01:00:00.000Z', unseen: true, status: 'ready', missingFieldKeys: [],
-        highlights: [{ key: 'required_skills', value: 'Java、Spring Boot' }, { key: 'rate', value: '65万円' }]
-      }]
+      day: 'today',
+      count: 1,
+      unseenCount: 1,
+      entries: [
+        {
+          reviewId: todayReviewId,
+          jobCaseId,
+          title: 'Java 決済基盤',
+          sourceType: 'gmail',
+          arrivedAt: '2026-08-26T01:00:00.000Z',
+          unseen: true,
+          status: 'ready',
+          missingFieldKeys: [],
+          highlights: [
+            { key: 'required_skills', value: 'Java、Spring Boot' },
+            { key: 'rate', value: '65万円' }
+          ]
+        }
+      ]
     },
     {
-      day: 'yesterday', count: 1, unseenCount: 0,
-      entries: [{
-        reviewId: yesterdayReviewId, jobCaseId: null, title: 'VC++ 開発', sourceType: 'chat-paste',
-        arrivedAt: '2026-08-25T04:00:00.000Z', unseen: false, status: 'needs-completion',
-        missingFieldKeys: ['rate', 'location'], highlights: []
-      }]
+      day: 'yesterday',
+      count: 1,
+      unseenCount: 0,
+      entries: [
+        {
+          reviewId: yesterdayReviewId,
+          jobCaseId: null,
+          title: 'VC++ 開発',
+          sourceType: 'chat-paste',
+          arrivedAt: '2026-08-25T04:00:00.000Z',
+          unseen: false,
+          status: 'needs-completion',
+          missingFieldKeys: ['rate', 'location'],
+          highlights: []
+        }
+      ]
     }
   ]
 }
@@ -91,8 +114,11 @@ describe('NewCaseDigestCard', () => {
 
 describe('AgentSystemRail', () => {
   const railProps = {
-    onAgent: vi.fn(), onCandidates: vi.fn(), onInterviews: vi.fn(),
-    onCases: vi.fn(), onReviews: vi.fn(), onSettings: vi.fn()
+    businessKind: 'case' as const,
+    onBusinessCases: vi.fn(),
+    onBusinessPeople: vi.fn(),
+    onAgent: vi.fn(),
+    onSettings: vi.fn()
   }
 
   it('badges the case button with the unread count', () => {

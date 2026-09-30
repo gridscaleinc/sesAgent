@@ -78,9 +78,12 @@ async function respondStdio(): Promise<void> {
       id: request?.id ?? 'invalid',
       kind: request?.kind ?? 'invalid',
       ok: false,
-      errorCode: error instanceof DocumentParserError || error instanceof EmlParserError
-        ? error.code
-        : error instanceof Error && error.message === 'INVALID_REQUEST' ? 'INVALID_REQUEST' : 'PARSE_FAILED',
+      errorCode:
+        error instanceof DocumentParserError || error instanceof EmlParserError
+          ? error.code
+          : error instanceof Error && error.message === 'INVALID_REQUEST'
+            ? 'INVALID_REQUEST'
+            : 'PARSE_FAILED',
       message: error instanceof Error ? error.message : 'The isolated parser failed.'
     }
   } finally {
@@ -95,7 +98,13 @@ if (process.argv.includes('--stdio')) {
   process.once('message', (rawRequest: unknown) => {
     if (!isParserWorkerRequest(rawRequest)) {
       process.send?.(
-        { id: 'invalid', kind: 'invalid', ok: false, errorCode: 'INVALID_REQUEST', message: 'Invalid parser worker request.' } satisfies ParserWorkerResponse,
+        {
+          id: 'invalid',
+          kind: 'invalid',
+          ok: false,
+          errorCode: 'INVALID_REQUEST',
+          message: 'Invalid parser worker request.'
+        } satisfies ParserWorkerResponse,
         () => process.disconnect()
       )
       return

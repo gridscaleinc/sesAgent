@@ -1,4 +1,10 @@
-export const interviewQuestionDimensions = ['authenticity', 'core-capability', 'problem-solving', 'ownership-collaboration', 'case-readiness'] as const
+export const interviewQuestionDimensions = [
+  'authenticity',
+  'core-capability',
+  'problem-solving',
+  'ownership-collaboration',
+  'case-readiness'
+] as const
 export type InterviewQuestionDimension = (typeof interviewQuestionDimensions)[number]
 
 export const interviewDimensionLabels = {
@@ -9,7 +15,19 @@ export const interviewDimensionLabels = {
   'case-readiness': { zh: '项目适应与快速上手能力', ja: '案件適応と立ち上がりの速さ' }
 } as const
 
-export const interviewAskTypes = ['role-scope', 'design-decision', 'end-to-end', 'deliverable-quality', 'incident-chain', 'change-response', 'coordination', 'ambiguity-handling', 'experience-transfer', 'onboarding', 'gap-closing'] as const
+export const interviewAskTypes = [
+  'role-scope',
+  'design-decision',
+  'end-to-end',
+  'deliverable-quality',
+  'incident-chain',
+  'change-response',
+  'coordination',
+  'ambiguity-handling',
+  'experience-transfer',
+  'onboarding',
+  'gap-closing'
+] as const
 export type InterviewAskType = (typeof interviewAskTypes)[number]
 /** Each dimension owns its ask shapes, so two dimensions can never produce the same kind of question. */
 export const interviewDimensionAsks: Record<(typeof interviewQuestionDimensions)[number], readonly InterviewAskType[]> = {
@@ -42,30 +60,48 @@ Use BOTH case and resume when a case is supplied, and include exactly one case-r
 Case title tags, location, rate/pay, availability/start date, attendance/remote arrangements and other sales conditions are not capabilities and never become interview questions. Skip unclear, meaningless, corrupted or placeholder fields. Do not re-confirm explicit resume facts merely to reach a count; return fewer than four questions when material is thin or the important points are already answered.
 Previous planned/selected questions are NOT proof of being asked. Use actual recorded answers to skip answered points and keep only specific unresolved follow-ups, within the same dimension and count limits. Templates and learned methods must follow this policy; they cannot add dimensions, duplicate questions, unsupported facts or requirements.`
 
-const commercialCondition = /勤務地|勤務場所|最寄[り駅]*|単価|单价|給与|报酬|稼働(?:開始|日)|入[场場](?:時期|时间|日)|出社|出勤|在宅|リモート|遠隔勤務|远程办公|工作地点|工作方式|勤務形態|勤務時間|週\s*[0-7０-７一二三四五六七]\s*日|応相談|万円|availability|daily rate|work location|start date/iu
+const commercialCondition =
+  /勤務地|勤務場所|最寄[り駅]*|単価|单价|給与|报酬|稼働(?:開始|日)|入[场場](?:時期|时间|日)|出社|出勤|在宅|リモート|遠隔勤務|远程办公|工作地点|工作方式|勤務形態|勤務時間|週\s*[0-7０-７一二三四五六七]\s*日|応相談|万円|availability|daily rate|work location|start date/iu
 export function isInterviewCapabilityText(text: string): boolean {
   const value = text.normalize('NFKC').trim()
-  return !!value && /[\p{L}]/u.test(value) && !commercialCondition.test(value) &&
+  return (
+    !!value &&
+    /[\p{L}]/u.test(value) &&
+    !commercialCondition.test(value) &&
     !/^(?:[-?？—\s]+|n\/?a|null|undefined|unknown|要確認|未確認|待确认|不明|なし|無|未記載|tbd)$/iu.test(value) &&
-    !/[\uFFFD\u0000-\u0008]/u.test(value) && !/^\s*[\[{]/u.test(value)
+    !/[\uFFFD\u0000-\u0008]/u.test(value) &&
+    !/^\s*[\[{]/u.test(value)
+  )
 }
 
 /** A question that tells the candidate to pick the example skipped STEP 1: the preparation must name the example itself. */
-const delegatedChoice = /(?:一(?:つ|件|例|点)?[^。？?、,，]{0,10}?|1(?:つ|件|例|点)[^。？?、]{0,6}?|ひとつ[^。？?、]{0,6}?|何か[^。？?、]{0,8}?|いずれか[^。？?、]{0,6}?)(?:選び|選んで|選択し|取り上げ|挙げ)|(?:任选|任意选|挑选|选择|选取|举出|列举|自选|选|挑|举)(?:一个|一项|一例|一件|1个|任一|其中一)|\b(?:pick|choose|select)\s+(?:one|any|a)\b/iu
+const delegatedChoice =
+  /(?:一(?:つ|件|例|点)?[^。？?、,，]{0,10}?|1(?:つ|件|例|点)[^。？?、]{0,6}?|ひとつ[^。？?、]{0,6}?|何か[^。？?、]{0,8}?|いずれか[^。？?、]{0,6}?)(?:選び|選んで|選択し|取り上げ|挙げ)|(?:任选|任意选|挑选|选择|选取|举出|列举|自选|选|挑|举)(?:一个|一项|一例|一件|1个|任一|其中一)|\b(?:pick|choose|select)\s+(?:one|any|a)\b/iu
 export function asksCandidateToChooseExample(text: string): boolean {
   return delegatedChoice.test(text.normalize('NFKC'))
 }
 
 /** "How do you usually…" tests interview skill, not work; every question asks for one real case. */
-const generalPractice = /^[\s「『（(]*(?:一般|通常|普段|いつも|日頃|平时|平常|一般来说|一般情况|通常情况|一般的に)|(?:一般的に|普段は|通常は|いつもは|日頃から|平时是|平时都|一般都|通常会|一般会|通常怎么|一般怎么|平时怎么|通常如何|一般如何|平时如何)|\b(?:usually|generally|typically|in general|normally)\b/iu
+const generalPractice =
+  /^[\s「『（(]*(?:一般|通常|普段|いつも|日頃|平时|平常|一般来说|一般情况|通常情况|一般的に)|(?:一般的に|普段は|通常は|いつもは|日頃から|平时是|平时都|一般都|通常会|一般会|通常怎么|一般怎么|平时怎么|通常如何|一般如何|平时如何)|\b(?:usually|generally|typically|in general|normally)\b/iu
 export function asksAboutGeneralPractice(text: string): boolean {
   return generalPractice.test(text.normalize('NFKC').trim())
 }
 
 /** Bracketed title tags (test numbers, 急募, locations) label the case; they are not capabilities. */
 const titleTag = /[【\[［〔《〈][^】\]］〕》〉]*[】\]］〕》〉]/gu
-export function interviewCapabilityRequirements(fields: ReadonlyArray<{key: string; value: string | null}>): string[] {
+export function interviewCapabilityRequirements(fields: ReadonlyArray<{ key: string; value: string | null }>): string[] {
   const keys = new Set(['title', 'required_skills', 'preferred_skills', 'role', 'industry', 'japanese_level', 'notes'])
-  return [...new Set(fields.filter(field => keys.has(field.key)).flatMap(field =>
-    (field.key === 'title' ? (field.value ?? '').replace(titleTag, ' ') : field.value ?? '').split(/[\n；;]/u).map(value => value.trim()).filter(isInterviewCapabilityText)))]
+  return [
+    ...new Set(
+      fields
+        .filter((field) => keys.has(field.key))
+        .flatMap((field) =>
+          (field.key === 'title' ? (field.value ?? '').replace(titleTag, ' ') : (field.value ?? ''))
+            .split(/[\n；;]/u)
+            .map((value) => value.trim())
+            .filter(isInterviewCapabilityText)
+        )
+    )
+  ]
 }

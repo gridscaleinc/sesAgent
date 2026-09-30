@@ -38,15 +38,19 @@ async function verifyResources(tessdataPath: string, manifestPath: string): Prom
     parsed.engine !== 'windows-tesseract-wasm' ||
     parsed.networkAccess !== false ||
     JSON.stringify(parsed.languages) !== JSON.stringify(['jpn', 'eng']) ||
-    !Array.isArray(parsed.files) || parsed.files.length !== 2
-  ) throw new Error('Windows offline OCR resource manifest is invalid.')
+    !Array.isArray(parsed.files) ||
+    parsed.files.length !== 2
+  )
+    throw new Error('Windows offline OCR resource manifest is invalid.')
   for (const file of parsed.files) {
     if (
       !file ||
       !['jpn', 'eng'].includes(file.language) ||
-      !Number.isInteger(file.bytes) || file.bytes <= 0 ||
+      !Number.isInteger(file.bytes) ||
+      file.bytes <= 0 ||
       !/^[a-f0-9]{64}$/u.test(file.sha256)
-    ) throw new Error('Windows offline OCR resource manifest contains an invalid file entry.')
+    )
+      throw new Error('Windows offline OCR resource manifest contains an invalid file entry.')
     const bytes = await readFile(resolve(tessdataPath, `${file.language}.traineddata.gz`))
     const hash = createHash('sha256').update(bytes).digest('hex')
     if (bytes.length !== file.bytes || hash !== file.sha256) {
@@ -119,18 +123,15 @@ async function recognizePdf(bytes: Buffer): Promise<WindowsOfflineOcrResult> {
       const context = canvas.getContext('2d')
       await page.render({ canvas: canvas as never, canvasContext: context as never, viewport }).promise
       const png = canvas.toBuffer('image/png')
-      const recognition = await worker.recognize(
-        png,
-        { rotateAuto: true },
-        { text: true, blocks: true }
-      )
-      const textBlocks = (recognition.data.blocks ?? []).flatMap((block) =>
-        block.paragraphs.flatMap((paragraph) => paragraph.lines)
-      ).map((line) => ({
-        text: line.text.normalize('NFKC').trim(),
-        confidence: Math.max(0, Math.min(1, line.confidence / 100)),
-        boundingBox: normalizedBox(line.bbox, width, height)
-      })).filter((line) => line.text.length > 0)
+      const recognition = await worker.recognize(png, { rotateAuto: true }, { text: true, blocks: true })
+      const textBlocks = (recognition.data.blocks ?? [])
+        .flatMap((block) => block.paragraphs.flatMap((paragraph) => paragraph.lines))
+        .map((line) => ({
+          text: line.text.normalize('NFKC').trim(),
+          confidence: Math.max(0, Math.min(1, line.confidence / 100)),
+          boundingBox: normalizedBox(line.bbox, width, height)
+        }))
+        .filter((line) => line.text.length > 0)
       if (textBlocks.length === 0 && recognition.data.text?.trim()) {
         textBlocks.push({
           text: recognition.data.text.normalize('NFKC').trim(),
@@ -146,10 +147,7 @@ async function recognizePdf(bytes: Buffer): Promise<WindowsOfflineOcrResult> {
       engine: 'windows-tesseract-wasm',
       networkAccess: false,
       pages,
-      warnings: [
-        'FACE_DETECTION_REQUIRES_HUMAN_REVIEW',
-        'QR_CODE_DETECTION_REQUIRES_HUMAN_REVIEW'
-      ],
+      warnings: ['FACE_DETECTION_REQUIRES_HUMAN_REVIEW', 'QR_CODE_DETECTION_REQUIRES_HUMAN_REVIEW'],
       coverage: {
         textRecognition: 'tesseract-wasm-7.0.0-jpn-eng',
         faceDetection: 'human-review-required',
@@ -210,13 +208,16 @@ if (process.argv.includes('--stdio')) {
 } else {
   process.once('message', (rawRequest: unknown) => {
     if (!isRequest(rawRequest)) {
-      process.send?.({
-        id: 'invalid',
-        kind: 'invalid',
-        ok: false,
-        errorCode: 'INVALID_REQUEST',
-        message: 'Invalid Windows OCR worker request.'
-      } satisfies WindowsOfflineOcrWorkerResponse, () => process.disconnect())
+      process.send?.(
+        {
+          id: 'invalid',
+          kind: 'invalid',
+          ok: false,
+          errorCode: 'INVALID_REQUEST',
+          message: 'Invalid Windows OCR worker request.'
+        } satisfies WindowsOfflineOcrWorkerResponse,
+        () => process.disconnect()
+      )
       return
     }
     void respond(rawRequest)

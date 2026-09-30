@@ -10,112 +10,126 @@ const primaryWechatBundleIdentifier = 'com.tencent.xinWeChat'
 const helperSandboxProfile = '(version 1) (allow default) (deny network*)'
 const maximumHelperOutputBytes = 180_000
 
-const processIdentitySchema = z.object({
-  bundleIdentifier: z.string().min(1).max(200),
-  processIdentifier: z.number().int().positive(),
-  launchDate: z.string().min(1).max(80),
-  version: z.string().min(1).max(80),
-  buildVersion: z.string().min(1).max(80),
-  active: z.boolean(),
-  signatureIdentifier: z.string().min(1).max(200),
-  teamIdentifier: z.string().min(1).max(80),
-  signatureValid: z.boolean()
-}).strict()
+const processIdentitySchema = z
+  .object({
+    bundleIdentifier: z.string().min(1).max(200),
+    processIdentifier: z.number().int().positive(),
+    launchDate: z.string().min(1).max(80),
+    version: z.string().min(1).max(80),
+    buildVersion: z.string().min(1).max(80),
+    active: z.boolean(),
+    signatureIdentifier: z.string().min(1).max(200),
+    teamIdentifier: z.string().min(1).max(80),
+    signatureValid: z.boolean()
+  })
+  .strict()
 
-const preflightOutputSchema = z.object({
-  version: z.literal(helperVersion),
-  platform: z.literal('darwin'),
-  accessibilityTrusted: z.boolean(),
-  screenCaptureTrusted: z.boolean(),
-  windowCaptureAvailable: z.boolean(),
-  helperNetworkAccess: z.literal(false),
-  supportedBundleIdentifiers: z.array(z.string().min(1).max(200)).min(1).max(8),
-  processes: z.array(processIdentitySchema).max(8)
-}).strict()
+const preflightOutputSchema = z
+  .object({
+    version: z.literal(helperVersion),
+    platform: z.literal('darwin'),
+    accessibilityTrusted: z.boolean(),
+    screenCaptureTrusted: z.boolean(),
+    windowCaptureAvailable: z.boolean(),
+    helperNetworkAccess: z.literal(false),
+    supportedBundleIdentifiers: z.array(z.string().min(1).max(200)).min(1).max(8),
+    processes: z.array(processIdentitySchema).max(8)
+  })
+  .strict()
 
-const rectSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
-  width: z.number().positive().finite(),
-  height: z.number().positive().finite()
-}).strict()
+const rectSchema = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().positive().finite(),
+    height: z.number().positive().finite()
+  })
+  .strict()
 
-const readOutputSchema = z.object({
-  version: z.literal('wechat-visible-message-read-v1'),
-  bundleIdentifier: z.literal(primaryWechatBundleIdentifier),
-  processIdentifier: z.number().int().positive(),
-  launchDate: z.string().min(1).max(80),
-  focusedWindowFrame: rectSchema,
-  selectedContainerFrame: rectSchema,
-  nodes: z.array(z.object({
-    role: z.enum(['AXStaticText', 'AXHeading', 'VisionText']),
-    text: z.string().min(1).max(100_000),
-    frame: rectSchema
-  }).strict()).min(1).max(300),
-  rawUtf8Bytes: z.number().int().positive().max(100_000),
-  truncated: z.boolean(),
-  helperNetworkAccess: z.literal(false),
-  scope: z.enum([
-    'frontmost-focused-window-visible-message-container',
-    'frontmost-focused-wechat-window-visible-conversation-crop'
-  ]),
-  captureMethod: z.enum(['accessibility-tree', 'screen-capture-kit-vision-ocr'])
-}).strict().superRefine((value, context) => {
-  const measured = Buffer.byteLength(value.nodes.map((node) => node.text).join('\n'), 'utf8')
-  if (measured !== value.rawUtf8Bytes) {
-    context.addIssue({ code: 'custom', message: 'Helper byte count does not match the visible text payload.' })
-  }
-})
+const readOutputSchema = z
+  .object({
+    version: z.literal('wechat-visible-message-read-v1'),
+    bundleIdentifier: z.literal(primaryWechatBundleIdentifier),
+    processIdentifier: z.number().int().positive(),
+    launchDate: z.string().min(1).max(80),
+    focusedWindowFrame: rectSchema,
+    selectedContainerFrame: rectSchema,
+    nodes: z
+      .array(
+        z
+          .object({
+            role: z.enum(['AXStaticText', 'AXHeading', 'VisionText']),
+            text: z.string().min(1).max(100_000),
+            frame: rectSchema
+          })
+          .strict()
+      )
+      .min(1)
+      .max(300),
+    rawUtf8Bytes: z.number().int().positive().max(100_000),
+    truncated: z.boolean(),
+    helperNetworkAccess: z.literal(false),
+    scope: z.enum(['frontmost-focused-window-visible-message-container', 'frontmost-focused-wechat-window-visible-conversation-crop']),
+    captureMethod: z.enum(['accessibility-tree', 'screen-capture-kit-vision-ocr'])
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const measured = Buffer.byteLength(value.nodes.map((node) => node.text).join('\n'), 'utf8')
+    if (measured !== value.rawUtf8Bytes) {
+      context.addIssue({ code: 'custom', message: 'Helper byte count does not match the visible text payload.' })
+    }
+  })
 
-const helperErrorSchema = z.object({
-  errorCode: z.string().regex(/^[A-Z0-9_]{3,120}$/u),
-  message: z.string().max(500)
-}).strict()
+const helperErrorSchema = z
+  .object({
+    errorCode: z.string().regex(/^[A-Z0-9_]{3,120}$/u),
+    message: z.string().max(500)
+  })
+  .strict()
 
-const activationOutputSchema = z.object({
-  version: z.literal('wechat-macos-target-activation-v1'),
-  bundleIdentifier: z.literal(primaryWechatBundleIdentifier),
-  processIdentifier: z.number().int().positive(),
-  launchDate: z.string().min(1).max(80),
-  activated: z.literal(true),
-  helperNetworkAccess: z.literal(false)
-}).strict()
+const activationOutputSchema = z
+  .object({
+    version: z.literal('wechat-macos-target-activation-v1'),
+    bundleIdentifier: z.literal(primaryWechatBundleIdentifier),
+    processIdentifier: z.number().int().positive(),
+    launchDate: z.string().min(1).max(80),
+    activated: z.literal(true),
+    helperNetworkAccess: z.literal(false)
+  })
+  .strict()
 
-const networkProbeOutputSchema = z.object({
-  version: z.literal('wechat-helper-network-probe-v1'),
-  loopbackDeniedBySandbox: z.literal(true),
-  externalDeniedBySandbox: z.literal(true),
-  loopbackErrno: z.number().int(),
-  externalErrno: z.number().int(),
-  helperNetworkAccess: z.literal(false)
-}).strict()
+const networkProbeOutputSchema = z
+  .object({
+    version: z.literal('wechat-helper-network-probe-v1'),
+    loopbackDeniedBySandbox: z.literal(true),
+    externalDeniedBySandbox: z.literal(true),
+    loopbackErrno: z.number().int(),
+    externalErrno: z.number().int(),
+    helperNetworkAccess: z.literal(false)
+  })
+  .strict()
 
 export type WechatProcessIdentity = z.infer<typeof processIdentitySchema>
 export type WechatHelperPreflight = z.infer<typeof preflightOutputSchema>
 export type WechatVisibleReadOutput = z.infer<typeof readOutputSchema>
 
 export class WechatVisibleReadError extends Error {
-  constructor(readonly code: string, message = '当前可见微信消息读取失败。') {
+  constructor(
+    readonly code: string,
+    message = '当前可见微信消息读取失败。'
+  ) {
     super(message)
     this.name = 'WechatVisibleReadError'
   }
 }
 
-export function resolveWechatAccessibilityHelperPath(input: {
-  packaged: boolean
-  resourcesPath: string
-  appPath: string
-}): string {
+export function resolveWechatAccessibilityHelperPath(input: { packaged: boolean; resourcesPath: string; appPath: string }): string {
   return input.packaged
     ? join(input.resourcesPath, 'native', 'macos', 'ses-wechat-accessibility')
     : join(input.appPath, 'build', 'native', 'macos', 'ses-wechat-accessibility')
 }
 
-export type WechatHelperRunner = (input: {
-  helperPath: string
-  arguments: string[]
-  timeoutMs: number
-}) => Promise<unknown>
+export type WechatHelperRunner = (input: { helperPath: string; arguments: string[]; timeoutMs: number }) => Promise<unknown>
 
 export const runSandboxedWechatHelper: WechatHelperRunner = ({ helperPath, arguments: helperArguments, timeoutMs }) =>
   new Promise((resolve, reject) => {
@@ -131,9 +145,7 @@ export const runSandboxedWechatHelper: WechatHelperRunner = ({ helperPath, argum
     let stdoutBytes = 0
     let stderrBytes = 0
     let settled = false
-    const child = spawn('/usr/bin/sandbox-exec', [
-      '-p', helperSandboxProfile, helperPath, ...helperArguments
-    ], {
+    const child = spawn('/usr/bin/sandbox-exec', ['-p', helperSandboxProfile, helperPath, ...helperArguments], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         HOME: process.env.HOME ?? '',
@@ -191,17 +203,17 @@ export const runSandboxedWechatHelper: WechatHelperRunner = ({ helperPath, argum
         wipe()
         if (code !== 0) {
           const helperError = helperErrorSchema.safeParse(parsed)
-          throw new WechatVisibleReadError(
-            helperError.success ? helperError.data.errorCode : 'WECHAT_HELPER_FAILED'
-          )
+          throw new WechatVisibleReadError(helperError.success ? helperError.data.errorCode : 'WECHAT_HELPER_FAILED')
         }
         finish(undefined, parsed)
       } catch (cause) {
         output.fill(0)
         wipe()
-        finish(cause instanceof WechatVisibleReadError
-          ? cause
-          : new WechatVisibleReadError('WECHAT_HELPER_INVALID_OUTPUT', '微信 Helper 返回了无效结果。'))
+        finish(
+          cause instanceof WechatVisibleReadError
+            ? cause
+            : new WechatVisibleReadError('WECHAT_HELPER_INVALID_OUTPUT', '微信 Helper 返回了无效结果。')
+        )
       }
     })
   })
@@ -213,7 +225,9 @@ export class MacWechatVisibleReader {
     private readonly enabled = process.env.SES_WECHAT_VISIBLE_READ_DISABLED !== '1'
   ) {}
 
-  isEnabled(): boolean { return this.enabled && process.platform === 'darwin' }
+  isEnabled(): boolean {
+    return this.enabled && process.platform === 'darwin'
+  }
 
   async preflight(promptForPermissions = false): Promise<WechatHelperPreflight> {
     const raw = await this.runner({
@@ -225,23 +239,22 @@ export class MacWechatVisibleReader {
   }
 
   primaryTarget(preflight: WechatHelperPreflight): WechatProcessIdentity | null {
-    return preflight.processes.find((process) =>
-      process.bundleIdentifier === primaryWechatBundleIdentifier &&
-      process.signatureIdentifier === primaryWechatBundleIdentifier &&
-      process.teamIdentifier === '5A4RE8SF68' &&
-      process.signatureValid &&
-      process.launchDate !== 'unknown'
-    ) ?? null
+    return (
+      preflight.processes.find(
+        (process) =>
+          process.bundleIdentifier === primaryWechatBundleIdentifier &&
+          process.signatureIdentifier === primaryWechatBundleIdentifier &&
+          process.teamIdentifier === '5A4RE8SF68' &&
+          process.signatureValid &&
+          process.launchDate !== 'unknown'
+      ) ?? null
+    )
   }
 
   async activate(target: WechatProcessIdentity): Promise<void> {
     const raw = await this.runner({
       helperPath: this.helperPath,
-      arguments: [
-        '--activate-target',
-        '--expected-pid', String(target.processIdentifier),
-        '--expected-launch-date', target.launchDate
-      ],
+      arguments: ['--activate-target', '--expected-pid', String(target.processIdentifier), '--expected-launch-date', target.launchDate],
       timeoutMs: 5_000
     })
     const activated = activationOutputSchema.parse(raw)
@@ -263,9 +276,12 @@ export class MacWechatVisibleReader {
     const raw = await this.runner({
       helperPath: this.helperPath,
       arguments: [
-        '--read-visible', '--allow-local-window-ocr',
-        '--expected-pid', String(target.processIdentifier),
-        '--expected-launch-date', target.launchDate
+        '--read-visible',
+        '--allow-local-window-ocr',
+        '--expected-pid',
+        String(target.processIdentifier),
+        '--expected-launch-date',
+        target.launchDate
       ],
       timeoutMs: 30_000
     })
@@ -283,10 +299,7 @@ export class MacWechatVisibleReader {
       return unavailableWechatFeasibility(['WECHAT_HELPER_UNAVAILABLE'])
     }
     try {
-      const [preflight] = await Promise.all([
-        this.preflight(false),
-        this.verifyNetworkIsolation()
-      ])
+      const [preflight] = await Promise.all([this.preflight(false), this.verifyNetworkIsolation()])
       const target = this.primaryTarget(preflight)
       const failureCodes = [
         ...(!preflight.accessibilityTrusted ? ['MACOS_ACCESSIBILITY_PERMISSION_REQUIRED'] : []),
@@ -312,14 +325,15 @@ export class MacWechatVisibleReader {
         failureCodes
       }
     } catch (cause) {
-      return unavailableWechatFeasibility([
-        cause instanceof WechatVisibleReadError ? cause.code : 'WECHAT_PREFLIGHT_FAILED'
-      ])
+      return unavailableWechatFeasibility([cause instanceof WechatVisibleReadError ? cause.code : 'WECHAT_PREFLIGHT_FAILED'])
     }
   }
 }
 
-function unavailableWechatFeasibility(failureCodes: string[], featureFlagEnabled = process.platform === 'darwin'): WechatVisibleMessageFeasibility {
+function unavailableWechatFeasibility(
+  failureCodes: string[],
+  featureFlagEnabled = process.platform === 'darwin'
+): WechatVisibleMessageFeasibility {
   return {
     phase: 'B-03-1',
     gateStatus: 'no-go',
@@ -347,13 +361,10 @@ interface StoredScopeToken {
 export class WechatVisibleScopeTokenStore {
   private current: StoredScopeToken | null = null
 
-  issue(input: {
-    webContentsId: number
-    actorId: string
-    target: WechatProcessIdentity
-    actionRunId: string
-    now?: Date
-  }): { scopeToken: string; expiresAt: string } {
+  issue(input: { webContentsId: number; actorId: string; target: WechatProcessIdentity; actionRunId: string; now?: Date }): {
+    scopeToken: string
+    expiresAt: string
+  } {
     this.clear()
     const token = randomBytes(32).toString('base64url')
     const now = input.now ?? new Date()
@@ -369,12 +380,10 @@ export class WechatVisibleScopeTokenStore {
     return { scopeToken: token, expiresAt: new Date(expiresAt).toISOString() }
   }
 
-  consume(input: {
-    scopeToken: string
-    webContentsId: number
-    actorId: string
-    now?: Date
-  }): { target: WechatProcessIdentity; actionRunId: string } {
+  consume(input: { scopeToken: string; webContentsId: number; actorId: string; now?: Date }): {
+    target: WechatProcessIdentity
+    actionRunId: string
+  } {
     const current = this.current
     this.current = null
     if (!current) throw new WechatVisibleReadError('WECHAT_SCOPE_TOKEN_MISSING', '本次微信读取授权不存在或已使用。')

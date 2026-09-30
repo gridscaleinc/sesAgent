@@ -29,13 +29,15 @@ const draft: ProposalDraftSnapshot = {
     sourceDocumentIncluded: false,
     anonymousCandidateLabel: '候補者 8055BE48',
     fields: [{ key: 'skills', label: 'スキル', value: 'Java / AWS', sourceLabels: ['Page 1'] }],
-    projectExperiences: [{
-      title: '決済基盤クラウド刷新',
-      period: '2024/01–2025/06',
-      role: 'バックエンドリード',
-      technologies: ['Java', 'AWS'],
-      summary: '決済APIの再設計とクラウド移行を担当。'
-    }],
+    projectExperiences: [
+      {
+        title: '決済基盤クラウド刷新',
+        period: '2024/01–2025/06',
+        role: 'バックエンドリード',
+        technologies: ['Java', 'AWS'],
+        summary: '決済APIの再設計とクラウド移行を担当。'
+      }
+    ],
     contentHash: 'a'.repeat(64)
   },
   tone: 'standard',
@@ -60,41 +62,53 @@ const draft: ProposalDraftSnapshot = {
 }
 
 const options: ProposalWorkspaceSnapshot['options'] = {
-  jobCases: [{
-    id: draft.jobCaseId,
-    reviewId: 'ee6b5a0f-ecc2-4f6c-8f71-5f6e89f0fd09',
-    version: 1,
-    title: '決済基盤刷新',
-    role: 'バックエンド',
-    requiredSkills: 'Java / AWS',
-    rate: '90万円/月',
-    fields: [{ key: 'title', label: '案件名', value: '決済基盤刷新', sourceLabels: ['Manual Subject'] }]
-  }],
-  candidates: [{
-    id: draft.candidateProfileId,
-    version: 1,
-    anonymousLabel: '候補者 8055BE48',
-    skills: 'Java / AWS',
-    experienceYears: '8年',
-    availability: '8月',
-    rate: '80万円/月',
-    japaneseLevel: 'N1',
-    workStyle: 'リモート可',
-    role: 'バックエンド',
-    fields: [{ key: 'skills', label: 'スキル', value: 'Java / AWS', sourceLabels: ['Page 1'] }],
-    projectExperiences: [{
-      id: 'edbb8a75-19cc-4c4d-8d87-4b8c9eed69e2', title: '決済基盤クラウド刷新',
-      period: '2024/01–2025/06', role: 'バックエンドリード', technologies: ['Java', 'AWS'],
-      summary: '決済APIの再設計とクラウド移行を担当。', sourceLabels: ['Page 2']
-    }]
-  }]
+  jobCases: [
+    {
+      id: draft.jobCaseId,
+      reviewId: 'ee6b5a0f-ecc2-4f6c-8f71-5f6e89f0fd09',
+      version: 1,
+      title: '決済基盤刷新',
+      role: 'バックエンド',
+      requiredSkills: 'Java / AWS',
+      rate: '90万円/月',
+      fields: [{ key: 'title', label: '案件名', value: '決済基盤刷新', sourceLabels: ['Manual Subject'] }]
+    }
+  ],
+  candidates: [
+    {
+      id: draft.candidateProfileId,
+      version: 1,
+      anonymousLabel: '候補者 8055BE48',
+      skills: 'Java / AWS',
+      experienceYears: '8年',
+      availability: '8月',
+      rate: '80万円/月',
+      japaneseLevel: 'N1',
+      workStyle: 'リモート可',
+      role: 'バックエンド',
+      fields: [{ key: 'skills', label: 'スキル', value: 'Java / AWS', sourceLabels: ['Page 1'] }],
+      projectExperiences: [
+        {
+          id: 'edbb8a75-19cc-4c4d-8d87-4b8c9eed69e2',
+          title: '決済基盤クラウド刷新',
+          period: '2024/01–2025/06',
+          role: 'バックエンドリード',
+          technologies: ['Java', 'AWS'],
+          summary: '決済APIの再設計とクラウド移行を担当。',
+          sourceLabels: ['Page 2']
+        }
+      ]
+    }
+  ]
 }
 
-const evidence: ProposalWorkspaceSnapshot['evidence'] = [{
-  draftId: draft.id,
-  jobCase: options.jobCases[0]!,
-  candidate: options.candidates[0]!
-}]
+const evidence: ProposalWorkspaceSnapshot['evidence'] = [
+  {
+    draftId: draft.id,
+    jobCase: options.jobCases[0]!,
+    candidate: options.candidates[0]!
+  }
+]
 
 const defaultProps = {
   taskId: task.id,
@@ -148,14 +162,31 @@ describe('ProposalWorkbench', () => {
   })
 
   it('exports approved content as exported-not-sent', async () => {
-    const approved = { ...draft, status: 'approved' as const, approvedContentHash: draft.contentHash, approvedAt: '2026-07-17T00:01:00.000Z', approvedBy: '山田 太郎' }
+    const approved = {
+      ...draft,
+      status: 'approved' as const,
+      approvedContentHash: draft.contentHash,
+      approvedAt: '2026-07-17T00:01:00.000Z',
+      approvedBy: '山田 太郎'
+    }
     const onExport = vi.fn().mockResolvedValue({
       draft: { ...approved, status: 'exported' },
       task,
       cancelled: false,
-      export: { fileName: 'proposal.zip', packageHash: 'c'.repeat(64), exportedAt: '2026-07-17T00:02:00.000Z', deliveryState: 'exported-not-sent' }
+      export: {
+        fileName: 'proposal.zip',
+        packageHash: 'c'.repeat(64),
+        exportedAt: '2026-07-17T00:02:00.000Z',
+        deliveryState: 'exported-not-sent'
+      }
     })
-    render(<ProposalWorkbench {...defaultProps} onExport={onExport} workspace={{ options, drafts: [approved], evidence: [{ ...evidence[0]!, draftId: approved.id }] }} />)
+    render(
+      <ProposalWorkbench
+        {...defaultProps}
+        onExport={onExport}
+        workspace={{ options, drafts: [approved], evidence: [{ ...evidence[0]!, draftId: approved.id }] }}
+      />
+    )
 
     fireEvent.click(screen.getByRole('button', { name: '承認済みパッケージを書き出す' }))
     expect(onExport).toHaveBeenCalledWith({ draftId: draft.id, revision: 1, contentHash: draft.contentHash })
@@ -178,17 +209,31 @@ describe('ProposalWorkbench', () => {
         followUp: {
           revision: 1,
           stage: 'sent',
-          events: [{
-            id: '5cac741a-205c-4c3b-a1d0-2ef90be74475', draftId: draft.id, revision: 1,
-            stage: 'sent', occurredOn: '2026-07-20', note: '翌営業日に状況確認',
-            recordedBy: '営業担当', recordedAt: '2026-07-20T01:00:00.000Z', cloudEligible: false
-          }],
+          events: [
+            {
+              id: '5cac741a-205c-4c3b-a1d0-2ef90be74475',
+              draftId: draft.id,
+              revision: 1,
+              stage: 'sent',
+              occurredOn: '2026-07-20',
+              note: '翌営業日に状況確認',
+              recordedBy: '営業担当',
+              recordedAt: '2026-07-20T01:00:00.000Z',
+              cloudEligible: false
+            }
+          ],
           cloudEligible: false
         }
       },
       task
     })
-    render(<ProposalWorkbench {...defaultProps} onRecordFollowUp={onRecordFollowUp} workspace={{ options, drafts: [exported], evidence: [{ ...evidence[0]!, draftId: exported.id }] }} />)
+    render(
+      <ProposalWorkbench
+        {...defaultProps}
+        onRecordFollowUp={onRecordFollowUp}
+        workspace={{ options, drafts: [exported], evidence: [{ ...evidence[0]!, draftId: exported.id }] }}
+      />
+    )
 
     expect(screen.getByText('手動記録 · Google Workspaceへの書込なし')).toBeInTheDocument()
     expect(screen.queryByText(/書き出しただけでは送信済みになりません/)).not.toBeInTheDocument()
@@ -219,15 +264,28 @@ describe('ProposalWorkbench', () => {
       followUp: {
         revision: 1,
         stage: 'sent',
-        events: [{
-          id: '5cac741a-205c-4c3b-a1d0-2ef90be74475', draftId: draft.id, revision: 1,
-          stage: 'sent', occurredOn: '2026-07-20', note: '翌営業日に状況確認',
-          recordedBy: '営業担当', recordedAt: '2026-07-20T01:00:00.000Z', cloudEligible: false
-        }],
+        events: [
+          {
+            id: '5cac741a-205c-4c3b-a1d0-2ef90be74475',
+            draftId: draft.id,
+            revision: 1,
+            stage: 'sent',
+            occurredOn: '2026-07-20',
+            note: '翌営業日に状況確認',
+            recordedBy: '営業担当',
+            recordedAt: '2026-07-20T01:00:00.000Z',
+            cloudEligible: false
+          }
+        ],
         cloudEligible: false
       }
     }
-    render(<ProposalWorkbench {...defaultProps} workspace={{ options, drafts: [sentDraft], evidence: [{ ...evidence[0]!, draftId: sentDraft.id }] }} />)
+    render(
+      <ProposalWorkbench
+        {...defaultProps}
+        workspace={{ options, drafts: [sentDraft], evidence: [{ ...evidence[0]!, draftId: sentDraft.id }] }}
+      />
+    )
 
     expect(screen.getByText('送信後履歴あり · 内容固定')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '提案件名' })).toHaveAttribute('readonly')

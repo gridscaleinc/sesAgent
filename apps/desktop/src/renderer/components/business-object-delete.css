@@ -1,12 +1,44 @@
-button.business-delete-button { color: var(--danger, #b43d49); }
-.business-delete-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: #14203266; padding: 24px; cursor: default; }
-.business-delete-dialog { width: min(100%, 440px); max-height: 85vh; overflow: auto; padding: 24px; background: var(--surface, #fff); color: var(--text, #243047); border-radius: 14px; box-shadow: 0 20px 70px #14203240; text-align: left; }
-.business-delete-dialog h3 { margin: 0 0 16px; }
-.business-delete-dialog p, .business-delete-dialog li { line-height: 1.6; overflow-wrap: anywhere; }
-.business-delete-dialog [role=alert] { color: var(--danger, #b43d49); }
-.business-delete-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.business-delete-actions button { padding: 8px 16px; }
-
-.job-case-list-item { display: grid; }
-.job-case-list-item > .business-delete-button { justify-self: end; margin: 0 8px 8px; }
-.personnel-list article > button.business-delete-button { width: auto; flex: 0 0 auto; padding: 5px 8px; }
+button.business-delete-button {
+  color: var(--danger);
+}
+.business-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: #14203266;
+  padding: 24px;
+  cursor: default;
+}
+.business-delete-dialog {
+  width: min(100%, 440px);
+  max-height: 85vh;
+  overflow: auto;
+  padding: 24px;
+  background: var(--surface, var(--surface));
+  color: var(--text);
+  border-radius: 14px;
+  box-shadow: 0 20px 70px #14203240;
+  text-align: left;
+}
+.business-delete-dialog h3 {
+  margin: 0 0 16px;
+}
+.business-delete-dialog p,
+.business-delete-dialog li {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.business-delete-dialog [role='alert'] {
+  color: var(--danger);
+}
+.business-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+.business-delete-actions button {
+  padding: 8px 16px;
+}

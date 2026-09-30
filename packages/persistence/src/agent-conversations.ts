@@ -12,15 +12,16 @@ import {
 import type { AiConversationRow } from './rows'
 
 export function aiConversationContextKey(context: AiConversationContext): string {
-  const immutableContext = context.assistant === 'sales-agent'
-    ? { assistant: 'sales-agent' as const, ...(context.businessObject ? { businessObject: context.businessObject } : {}) }
-    : {
-        assistant: context.assistant,
-        candidateDocumentId: context.candidateDocumentId,
-        interviewId: context.interviewId,
-        interviewKind: context.interviewKind,
-        roundNumber: context.roundNumber
-      }
+  const immutableContext =
+    context.assistant === 'sales-agent'
+      ? { assistant: 'sales-agent' as const, ...(context.businessObject ? { businessObject: context.businessObject } : {}) }
+      : {
+          assistant: context.assistant,
+          candidateDocumentId: context.candidateDocumentId,
+          interviewId: context.interviewId,
+          interviewKind: context.interviewKind,
+          roundNumber: context.roundNumber
+        }
   return createHash('sha256').update(JSON.stringify(immutableContext)).digest('hex')
 }
 
@@ -33,14 +34,17 @@ export function aiConversationTitle(messages: SaveAiConversationInput['messages'
 export function aiConversationFromRow(row: AiConversationRow): AiConversationSnapshot {
   const snapshot = aiConversationSnapshotSchema.parse(JSON.parse(row.payload_json))
   if (
-    snapshot.id !== row.id || snapshot.revision !== row.revision || snapshot.title !== row.title ||
+    snapshot.id !== row.id ||
+    snapshot.revision !== row.revision ||
+    snapshot.title !== row.title ||
     aiConversationContextKey(snapshot.context) !== row.context_key ||
     snapshot.context.assistant !== row.assistant_type ||
     snapshot.context.candidateDocumentId !== row.candidate_document_id ||
     snapshot.context.interviewId !== row.interview_id ||
     snapshot.context.interviewKind !== row.interview_kind ||
     snapshot.context.roundNumber !== row.round_number
-  ) throw new Error('保存済みAI会話の整合性を確認できませんでした。')
+  )
+    throw new Error('保存済みAI会話の整合性を確認できませんでした。')
   return snapshot
 }
 
@@ -57,10 +61,7 @@ function jobCaseDraftIsTargeted(card: { reviewId: string; jobCase: { id: string 
   return Boolean(targets.jobCaseReviewIds?.has(card.reviewId)) || Boolean(card.jobCase && targets.jobCaseIds.has(card.jobCase.id))
 }
 
-function broadcastCardIsTargeted(
-  card: { reviewId: string; jobCaseId: string },
-  targets: AgentReferenceTargets
-): boolean {
+function broadcastCardIsTargeted(card: { reviewId: string; jobCaseId: string }, targets: AgentReferenceTargets): boolean {
   return Boolean(targets.jobCaseReviewIds?.has(card.reviewId)) || targets.jobCaseIds.has(card.jobCaseId)
 }
 
@@ -70,9 +71,11 @@ function broadcastCardIsTargeted(
  * sweep alone would leave them behind.
  */
 export function agentMessageHasIntakeDraftTarget(message: AiConversationMessage, targets: AgentReferenceTargets): boolean {
-  return (message.blocks ?? []).some((block) =>
-    (block.type === 'job-case-draft-cards' && block.cards.some((card) => jobCaseDraftIsTargeted(card, targets))) ||
-    (block.type === 'job-case-broadcast-cards' && block.cards.some((card) => broadcastCardIsTargeted(card, targets))))
+  return (message.blocks ?? []).some(
+    (block) =>
+      (block.type === 'job-case-draft-cards' && block.cards.some((card) => jobCaseDraftIsTargeted(card, targets))) ||
+      (block.type === 'job-case-broadcast-cards' && block.cards.some((card) => broadcastCardIsTargeted(card, targets)))
+  )
 }
 
 /** Drops deleted drafts from the conversation's intake batch pointer. */
@@ -107,21 +110,24 @@ export function agentErrorBlock(entityKind: 'job-case' | 'match-run' | 'match-re
   }
 }
 
-export function sanitizeAgentBlock(block: AiConversationBlock, targets: AgentReferenceTargets): { blocks: AiConversationBlock[]; affected: boolean } {
+export function sanitizeAgentBlock(
+  block: AiConversationBlock,
+  targets: AgentReferenceTargets
+): { blocks: AiConversationBlock[]; affected: boolean } {
   if (block.type === 'job-case-cards') {
     const cards = block.cards.filter((card) => !agentReferenceIsTargeted(card.reference, targets))
     if (cards.length === block.cards.length) return { blocks: [block], affected: false }
-    return cards.length > 0
-      ? { blocks: [{ ...block, cards }], affected: true }
-      : { blocks: [agentErrorBlock('job-case')], affected: true }
+    return cards.length > 0 ? { blocks: [{ ...block, cards }], affected: true } : { blocks: [agentErrorBlock('job-case')], affected: true }
   }
   if (block.type === 'candidate-match-cards') {
     const runDeleted = targets.matchRunIds.has(block.runId)
     const cards = runDeleted
       ? []
-      : block.cards.filter((card) =>
-          !agentReferenceIsTargeted(card.reference, targets) &&
-          (!card.sourceDocumentId || !targets.candidateDocumentIds.has(card.sourceDocumentId)))
+      : block.cards.filter(
+          (card) =>
+            !agentReferenceIsTargeted(card.reference, targets) &&
+            (!card.sourceDocumentId || !targets.candidateDocumentIds.has(card.sourceDocumentId))
+        )
     if (!runDeleted && cards.length === block.cards.length) return { blocks: [block], affected: false }
     return cards.length > 0
       ? { blocks: [{ ...block, cards }], affected: true }
@@ -136,9 +142,7 @@ export function sanitizeAgentBlock(block: AiConversationBlock, targets: AgentRef
   }
   if (block.type === 'match-run-explanation') {
     const runAffected = targets.matchRunIds.has(block.facts.runId)
-    const resultAffected = block.facts.candidate
-      ? agentReferenceIsTargeted(block.facts.candidate.reference, targets)
-      : false
+    const resultAffected = block.facts.candidate ? agentReferenceIsTargeted(block.facts.candidate.reference, targets) : false
     return runAffected || resultAffected
       ? { blocks: [agentErrorBlock(runAffected ? 'match-run' : 'match-result')], affected: true }
       : { blocks: [block], affected: false }
@@ -185,11 +189,8 @@ export function sanitizeAgentBlock(block: AiConversationBlock, targets: AgentRef
       : { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联候选人已删除，历史导入记录和文件入口已移除。' }], affected: true }
   }
   if (block.type === 'system-access') {
-    const candidateDeleted = block.destination === 'candidate' &&
-      targets.candidateDocumentIds.has(block.sourceDocumentId)
-    const jobCaseDeleted = block.destination === 'matching' && block.jobCaseId
-      ? targets.jobCaseIds.has(block.jobCaseId)
-      : false
+    const candidateDeleted = block.destination === 'candidate' && targets.candidateDocumentIds.has(block.sourceDocumentId)
+    const jobCaseDeleted = block.destination === 'matching' && block.jobCaseId ? targets.jobCaseIds.has(block.jobCaseId) : false
     return candidateDeleted || jobCaseDeleted
       ? { blocks: [{ type: 'error', code: 'ENTITY_DELETED', message: '关联业务对象已删除，历史系统入口已移除。' }], affected: true }
       : { blocks: [block], affected: false }
@@ -198,8 +199,10 @@ export function sanitizeAgentBlock(block: AiConversationBlock, targets: AgentRef
 }
 
 export function agentMessageHasTarget(message: AiConversationMessage, targets: AgentReferenceTargets): boolean {
-  return (message.references ?? []).some((reference) => agentReferenceIsTargeted(reference, targets)) ||
+  return (
+    (message.references ?? []).some((reference) => agentReferenceIsTargeted(reference, targets)) ||
     (message.blocks ?? []).some((block) => sanitizeAgentBlock(block, targets).affected)
+  )
 }
 
 export function agentMessageHasDirectIdentifier(message: AiConversationMessage, knownPersonNames: string[]): boolean {

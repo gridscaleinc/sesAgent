@@ -79,7 +79,9 @@ describe('createGmailSyncScheduler', () => {
       scheduler.stop()
       await vi.advanceTimersByTimeAsync(minute)
       expect(deps.runSync).toHaveBeenCalledTimes(2)
-    } finally { vi.useRealTimers() }
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('skips the tick while another sync - manual or scheduled - is running', async () => {
@@ -101,7 +103,10 @@ describe('createGmailSyncScheduler', () => {
 
   it('does not start a sync if stopped while checking the connection', async () => {
     const { deps, scheduler, timers, runNextTimer } = harness({
-      isReadonlyConnected: vi.fn(async () => { scheduler.stop(); return true })
+      isReadonlyConnected: vi.fn(async () => {
+        scheduler.stop()
+        return true
+      })
     })
     scheduler.start()
     await runNextTimer()
@@ -110,7 +115,8 @@ describe('createGmailSyncScheduler', () => {
   })
 
   it('doubles the wait after a failure up to 60 minutes and resets after success', async () => {
-    const runSync = vi.fn()
+    const runSync = vi
+      .fn()
       .mockRejectedValueOnce(new Error('GMAIL_SYNC_FAILED'))
       .mockRejectedValueOnce(new Error('GMAIL_SYNC_FAILED'))
       .mockRejectedValueOnce(new Error('GMAIL_SYNC_FAILED'))
@@ -136,7 +142,8 @@ describe('createGmailSyncScheduler', () => {
   })
 
   it('notifies counts only, and only when a run imported at least one message', async () => {
-    const runSync = vi.fn()
+    const runSync = vi
+      .fn()
       .mockResolvedValueOnce(outcome())
       .mockResolvedValueOnce(outcome({ lastRun: { imported: 3, duplicates: 1, filtered: 2, failed: 0 } }))
     const { deps, scheduler, runNextTimer } = harness({ runSync })
@@ -160,9 +167,12 @@ describe('createGmailSyncScheduler', () => {
 
   it('continues a backlog promptly, refreshes empty/error results, and backs off intake failures', async () => {
     const onCompleted = vi.fn()
-    const runSync = vi.fn()
+    const runSync = vi
+      .fn()
       .mockResolvedValueOnce(outcome({ lastRun: { imported: 0, duplicates: 2, filtered: 0, failed: 0, moreAvailable: true } }))
-      .mockResolvedValueOnce(outcome({ lastRun: { imported: 0, duplicates: 0, filtered: 0, failed: 0, intake: { casesFailed: 1 } } as any }))
+      .mockResolvedValueOnce(
+        outcome({ lastRun: { imported: 0, duplicates: 0, filtered: 0, failed: 0, intake: { casesFailed: 1 } } as any })
+      )
       .mockResolvedValueOnce(outcome({ status: 'error', lastRun: null }))
     const { scheduler, timers, runNextTimer } = harness({ runSync, onCompleted })
     scheduler.start()

@@ -24,14 +24,18 @@ async function createDocx(): Promise<Buffer> {
     '[Content_Types].xml',
     '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
   )
-  zip.folder('_rels')?.file(
-    '.rels',
-    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
-  )
-  zip.folder('word')?.file(
-    'document.xml',
-    '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Java Engineer</w:t></w:r></w:p><w:p><w:r><w:t>AWS 5 years</w:t></w:r></w:p></w:body></w:document>'
-  )
+  zip
+    .folder('_rels')
+    ?.file(
+      '.rels',
+      '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+    )
+  zip
+    .folder('word')
+    ?.file(
+      'document.xml',
+      '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Java Engineer</w:t></w:r></w:p><w:p><w:r><w:t>AWS 5 years</w:t></w:r></w:p></w:body></w:document>'
+    )
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
@@ -54,10 +58,7 @@ describe('parseStagedDocument', () => {
   })
 
   it('preserves spreadsheet merge and print-area context for structural resume extraction', async () => {
-    const sheet = XLSX.utils.aoa_to_sheet([
-      ['Header', null, null, null, null, 'Helper'],
-      ['Merged value']
-    ])
+    const sheet = XLSX.utils.aoa_to_sheet([['Header', null, null, null, null, 'Helper'], ['Merged value']])
     sheet['!merges'] = [XLSX.utils.decode_range('A2:B3')]
     sheet['!ref'] = 'A1:F3'
     const workbook = XLSX.utils.book_new()

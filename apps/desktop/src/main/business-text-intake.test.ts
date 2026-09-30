@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { EncryptedFileVault, type StagedFileRecord } from '@files'
 import type { EncryptedApplicationRepository } from '@persistence'
 import { resumeAnalysisSummarySchema, type CandidateReviewSnapshot, type JobCaseReviewSnapshot } from '@shared'
-import { autoConfirmJobCaseDraft, importChatPastedJobCaseText, importPastedCandidateText } from './business-text-intake'
+import {
+  autoConfirmJobCaseDraft,
+  importChatPastedJobCaseText,
+  importPastedCandidateText,
+  withoutRedactionTokens
+} from './business-text-intake'
 
 const anonymizedCaseText = [
   '案件概要：物流系Webシステムの追加開発',
@@ -29,13 +34,13 @@ function jobCaseRepository(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     findJobCaseReviewByBusinessFingerprint: vi.fn(() => null),
     saveRedactedJobCaseSourceAndDraft: vi.fn(() => true),
-    getJobCaseReview: vi.fn(() => ({ reviewId: 'review-1' } as unknown as JobCaseReviewSnapshot)),
+    getJobCaseReview: vi.fn(() => ({ reviewId: 'review-1' }) as unknown as JobCaseReviewSnapshot),
     ...overrides
   } as unknown as EncryptedApplicationRepository
 }
 
 describe('importChatPastedJobCaseText', () => {
-  it('clears only placeholder-only extracted fields and leaves mixed business content for normal validation', () => {
+  it('drops redaction placeholders from extracted fields while keeping the business content around them', () => {
     const fields = [
       { key: 'title', value: 'COBOL 案件' },
       { key: 'notes', value: ' <NATIONALITY_001>\n<PERSON_NAME_002> ' },
@@ -43,13 +48,21 @@ describe('importChatPastedJobCaseText', () => {
       { key: 'preferred_skills', value: 'Java、<PERSON_NAME_003>' }
     ]
     const draft = { reviewId: 'review-1', reviewRevision: 1, fields } as JobCaseReviewSnapshot
-    const confirmJobCaseReview = vi.fn<EncryptedApplicationRepository['confirmJobCaseReview']>(() => ({ ...draft, status: 'completed' as const }))
+    const confirmJobCaseReview = vi.fn<EncryptedApplicationRepository['confirmJobCaseReview']>(() => ({
+      ...draft,
+      status: 'completed' as const
+    }))
     autoConfirmJobCaseDraft({ confirmJobCaseReview }, draft, { operatorId: 'op-1', displayName: 'HR' })
     expect(confirmJobCaseReview.mock.calls[0]![0].fields).toEqual([
       { key: 'title', value: 'COBOL 案件', confirmed: true },
       { key: 'notes', value: null, confirmed: true, changeReason: 'Remove placeholder-only field after local redaction' },
       { key: 'required_skills', value: 'ホストCOBOL開発経験3年以上', confirmed: true },
-      { key: 'preferred_skills', value: 'Java、<PERSON_NAME_003>', confirmed: true }
+      {
+        key: 'preferred_skills',
+        value: 'Java',
+        confirmed: true,
+        changeReason: 'Remove redaction placeholders from a structured field after local redaction'
+      }
     ])
     expect(draft.fields).toEqual(fields)
   })
@@ -62,7 +75,12 @@ describe('importChatPastedJobCaseText', () => {
   })
 
   it('makes a new draft a valid case on the spot when an operator is known, and keeps what the store refuses for attention', async () => {
-    const draft = { reviewId: 'review-1', reviewRevision: 1, status: 'awaiting-review', fields: [{ key: 'title', value: 'Java 案件' }] } as unknown as JobCaseReviewSnapshot
+    const draft = {
+      reviewId: 'review-1',
+      reviewRevision: 1,
+      status: 'awaiting-review',
+      fields: [{ key: 'title', value: 'Java 案件' }]
+    } as unknown as JobCaseReviewSnapshot
     const operator = { operatorId: 'op-1', displayName: 'HR' }
     const confirmed = { ...draft, status: 'completed' }
     const accepting = jobCaseRepository({ getJobCaseReview: vi.fn(() => draft), confirmJobCaseReview: vi.fn(() => confirmed) })
@@ -70,15 +88,30 @@ describe('importChatPastedJobCaseText', () => {
     expect(valid).toMatchObject({ outcome: 'created', validity: 'valid', attentionReason: null, review: { status: 'completed' } })
     expect(accepting.confirmJobCaseReview).toHaveBeenCalledWith(
       { reviewId: 'review-1', reviewRevision: 1, privacyReviewed: true, fields: [{ key: 'title', value: 'Java 案件', confirmed: true }] },
-      'op-1', 'HR', expect.any(Date)
+      'op-1',
+      'HR',
+      expect.any(Date)
     )
 
-    const refusing = jobCaseRepository({ getJobCaseReview: vi.fn(() => draft), confirmJobCaseReview: vi.fn(() => { throw new Error('案件名は必須です。') }) })
+    const refusing = jobCaseRepository({
+      getJobCaseReview: vi.fn(() => draft),
+      confirmJobCaseReview: vi.fn(() => {
+        throw new Error('案件名は必須です。')
+      })
+    })
     const attention = await importChatPastedJobCaseText({ repository: refusing, localNer: null, operator }, anonymizedCaseText)
-    expect(attention).toMatchObject({ outcome: 'created', validity: 'needs-attention', attentionReason: '案件名は必須です。', review: { status: 'awaiting-review' } })
+    expect(attention).toMatchObject({
+      outcome: 'created',
+      validity: 'needs-attention',
+      attentionReason: '案件名は必須です。',
+      review: { status: 'awaiting-review' }
+    })
 
     // No operator: the draft is left as it was, for callers that review elsewhere.
-    const silent = await importChatPastedJobCaseText({ repository: jobCaseRepository({ getJobCaseReview: vi.fn(() => draft) }), localNer: null }, anonymizedCaseText)
+    const silent = await importChatPastedJobCaseText(
+      { repository: jobCaseRepository({ getJobCaseReview: vi.fn(() => draft) }), localNer: null },
+      anonymizedCaseText
+    )
     expect(silent).toMatchObject({ validity: 'unknown' })
   })
 
@@ -110,7 +143,9 @@ describe('importChatPastedJobCaseText', () => {
   it('lets verified cloud field values win over label-based ones and marks the draft as cloud-assisted', async () => {
     const repository = jobCaseRepository()
     await importChatPastedJobCaseText({ repository, localNer: null }, anonymizedCaseText, new Date(), {
-      rate: '～60万円', location: '大阪', role: 'PM'
+      rate: '～60万円',
+      location: '大阪',
+      role: 'PM'
     })
     const draft = (vi.mocked(repository.saveRedactedJobCaseSourceAndDraft).mock.calls[0] as unknown[])[3] as {
       fields: Array<{ key: string; value: string | null; status: string; confidence: number }>
@@ -138,9 +173,14 @@ function candidateRepository(overrides: Partial<Record<string, unknown>> = {}) {
   const repository = {
     findStagedTextSourceBySha256: vi.fn(() => null),
     findCandidateByDocumentContent: vi.fn(() => null),
-    getCandidateReview: vi.fn(() => ({
-      documentId: 'document-1', status: 'awaiting-review', recordStatus: 'active'
-    } as unknown as CandidateReviewSnapshot)),
+    getCandidateReview: vi.fn(
+      () =>
+        ({
+          documentId: 'document-1',
+          status: 'awaiting-review',
+          recordStatus: 'active'
+        }) as unknown as CandidateReviewSnapshot
+    ),
     saveStagedFiles: vi.fn((files: StagedFileRecord[]) => {
       stagedRecords.push(...files)
     }),
@@ -181,7 +221,14 @@ describe('importPastedCandidateText', () => {
     const { repository } = candidateRepository()
     await importPastedCandidateText(
       { repository, fileVault: candidateVault(), localNer: null },
-      ['職種: Laravel エンジニア', '経験年数: 4年', 'スキル: Laravel, PostgreSQL', '稼働: 2026年8月から稼働可', '勤務地条件: 大森常駐可', '日本語: 顧客定例、設計レビュー、課題整理に対応可能'].join('\n')
+      [
+        '職種: Laravel エンジニア',
+        '経験年数: 4年',
+        'スキル: Laravel, PostgreSQL',
+        '稼働: 2026年8月から稼働可',
+        '勤務地条件: 大森常駐可',
+        '日本語: 顧客定例、設計レビュー、課題整理に対応可能'
+      ].join('\n')
     )
     const extraction = (vi.mocked(repository.saveParsedDocument).mock.calls[0] as unknown[])[3] as {
       fields: Array<{ key: string; value: string | null }>
@@ -213,7 +260,7 @@ describe('importPastedCandidateText', () => {
   it('returns the existing review for identical text without staging again', async () => {
     const vault = candidateVault()
     const first = await candidateRepository()
-    const record = (await vault.stageTrustedText('agent-paste-00000000.txt', anonymizedCandidateText))
+    const record = await vault.stageTrustedText('agent-paste-00000000.txt', anonymizedCandidateText)
     const review = { documentId: record.token, status: 'awaiting-review', recordStatus: 'active' } as unknown as CandidateReviewSnapshot
     const { repository, stagedRecords } = candidateRepository({
       findStagedTextSourceBySha256: vi.fn(() => record),
@@ -236,7 +283,8 @@ describe('importPastedCandidateText', () => {
       getCandidateReview: vi.fn((token: string) =>
         token === orphan.token
           ? null
-          : ({ documentId: token, status: 'awaiting-review', recordStatus: 'active' } as unknown as CandidateReviewSnapshot))
+          : ({ documentId: token, status: 'awaiting-review', recordStatus: 'active' } as unknown as CandidateReviewSnapshot)
+      )
     })
 
     const result = await importPastedCandidateText({ repository, fileVault: vault, localNer: null }, anonymizedCandidateText)
@@ -290,11 +338,26 @@ describe('importPastedCandidateText', () => {
       })
     })
 
-    await expect(
-      importPastedCandidateText({ repository, fileVault: vault, localNer: null }, anonymizedCandidateText)
-    ).rejects.toThrow('disk full')
+    await expect(importPastedCandidateText({ repository, fileVault: vault, localNer: null }, anonymizedCandidateText)).rejects.toThrow(
+      'disk full'
+    )
     expect(stagedRecords).toHaveLength(1)
     expect(repository.removeStagedFiles).toHaveBeenCalledWith([stagedRecords[0]!.token])
     expect(existsSync(stagedRecords[0]!.encryptedPath)).toBe(false)
+  })
+})
+
+describe('withoutRedactionTokens', () => {
+  it.each([
+    ['Java 3年以上、<PERSON_NAME_001>、Spring Boot', 'Java 3年以上、Spring Boot'],
+    ['<PERSON_NAME_001>、Java', 'Java'],
+    ['Java / <PHONE_002>', 'Java'],
+    ['Java（<PERSON_NAME_004>）', 'Java'],
+    ['Java\n<PERSON_NAME_001>\nAWS', 'Java\nAWS'],
+    [' <NATIONALITY_001>\n<PERSON_NAME_002> ', null],
+    ['Java、Spring Boot', 'Java、Spring Boot'],
+    [null, null]
+  ])('%j -> %j', (value, expected) => {
+    expect(withoutRedactionTokens(value)).toBe(expected)
   })
 })

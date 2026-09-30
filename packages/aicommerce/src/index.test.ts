@@ -68,25 +68,42 @@ function observableClosedSseResponse(payload: string): { response: Response; can
 
 class MemoryCredentialStore implements AiCommerceCredentialStore {
   value: AiCommerceNativeCredential | null = null
-  async load(): Promise<AiCommerceNativeCredential | null> { return this.value }
-  async save(credential: AiCommerceNativeCredential): Promise<void> { this.value = credential }
-  async clear(): Promise<void> { this.value = null }
+  async load(): Promise<AiCommerceNativeCredential | null> {
+    return this.value
+  }
+  async save(credential: AiCommerceNativeCredential): Promise<void> {
+    this.value = credential
+  }
+  async clear(): Promise<void> {
+    this.value = null
+  }
 }
 
 class MemoryPendingStore implements AiCommercePendingAuthorizationStore {
   value: AiCommercePendingAuthorization | null = null
-  async load(): Promise<AiCommercePendingAuthorization | null> { return this.value }
-  async save(pending: AiCommercePendingAuthorization): Promise<void> { this.value = pending }
-  async clear(): Promise<void> { this.value = null }
+  async load(): Promise<AiCommercePendingAuthorization | null> {
+    return this.value
+  }
+  async save(pending: AiCommercePendingAuthorization): Promise<void> {
+    this.value = pending
+  }
+  async clear(): Promise<void> {
+    this.value = null
+  }
 }
 
 function connectedCredential(): AiCommerceNativeCredential {
   return {
     version: 'aicommerce-native-credential-v1',
-    memberId: 'member-1', memberDisplayName: '営業担当', accountId: 'acct-1',
-    accessToken: 'a'.repeat(32), accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
-    refreshToken: 'b'.repeat(32), refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z',
-    accountAiToken: 'secret-account-ai-token-123456789', accountAiTokenExpiresAt: '2026-12-21T00:00:00.000Z',
+    memberId: 'member-1',
+    memberDisplayName: '営業担当',
+    accountId: 'acct-1',
+    accessToken: 'a'.repeat(32),
+    accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
+    refreshToken: 'b'.repeat(32),
+    refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z',
+    accountAiToken: 'secret-account-ai-token-123456789',
+    accountAiTokenExpiresAt: '2026-12-21T00:00:00.000Z',
     updatedAt: now.toISOString()
   }
 }
@@ -122,19 +139,25 @@ describe('AICommerce Native client', () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
       calls.push({ url: String(input), init })
-      return sseResponse([
-        'event: response.output_text.delta\r\n',
-        'data: {"type":"response.output_text.delta",\r\n',
-        'data: "delta":"案"}\r\n\r\n',
-        'data: {"type":"response.output_text.delta","delta":"件です。"}\r\n\r\n',
-        'data: {"type":"response.completed","response":{"id":"resp_123"}}\r\n\r\n'
-      ].join(''))
+      return sseResponse(
+        [
+          'event: response.output_text.delta\r\n',
+          'data: {"type":"response.output_text.delta",\r\n',
+          'data: "delta":"案"}\r\n\r\n',
+          'data: {"type":"response.output_text.delta","delta":"件です。"}\r\n\r\n',
+          'data: {"type":"response.completed","response":{"id":"resp_123"}}\r\n\r\n'
+        ].join('')
+      )
     })
     const deltas: string[] = []
     const client = streamingClient(fetch)
     const result = await client.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{"cases":[]}', maxOutputTokens: 512,
-      operationId: 'operation-12345678', onDelta: (delta) => deltas.push(delta)
+      model: 'gpt-5.6-luna',
+      instructions: '固定指示',
+      input: '{"cases":[]}',
+      maxOutputTokens: 512,
+      operationId: 'operation-12345678',
+      onDelta: (delta) => deltas.push(delta)
     })
 
     expect(deltas).toEqual(['案', '件です。'])
@@ -153,19 +176,27 @@ describe('AICommerce Native client', () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
       calls.push({ url: String(input), init })
-      return sseResponse([
-        'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[{"delta":{"reasoning_content":"internal"},"finish_reason":null}]}\n\n',
-        'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[{"delta":{"content":"候補"},"finish_reason":null}]}\n\n',
-        'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[{"delta":{"content":"です。"},"finish_reason":"stop"}]}\n\n',
-        'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":4}}\n\n',
-        'data: [DONE]\n\n'
-      ].join(''), [2, 1, 7, 3, 11])
+      return sseResponse(
+        [
+          'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[{"delta":{"reasoning_content":"internal"},"finish_reason":null}]}\n\n',
+          'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[{"delta":{"content":"候補"},"finish_reason":null}]}\n\n',
+          'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[{"delta":{"content":"です。"},"finish_reason":"stop"}]}\n\n',
+          'data: {"id":"chatcmpl_ds","model":"deepseek-v4-flash","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":4}}\n\n',
+          'data: [DONE]\n\n'
+        ].join(''),
+        [2, 1, 7, 3, 11]
+      )
     })
     const deltas: string[] = []
     const client = streamingClient(fetch)
     const result = await client.streamChatCompletions({
-      provider: 'deepseek', model: 'deepseek-v4-flash', instructions: '固定指示', input: '{"cases":[]}',
-      maxOutputTokens: 4_096, operationId: 'deepseek-operation', onDelta: (delta) => deltas.push(delta)
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      instructions: '固定指示',
+      input: '{"cases":[]}',
+      maxOutputTokens: 4_096,
+      operationId: 'deepseek-operation',
+      onDelta: (delta) => deltas.push(delta)
     })
 
     expect(deltas).toEqual(['候補', 'です。'])
@@ -177,7 +208,9 @@ describe('AICommerce Native client', () => {
     expect(headers.get('x-aicommerce-product-code')).toBe('ses-agent-pro')
     const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
     expect(body).toMatchObject({
-      model: 'deepseek-v4-flash', stream: true, max_tokens: 4_096,
+      model: 'deepseek-v4-flash',
+      stream: true,
+      max_tokens: 4_096,
       stream_options: { include_usage: true }
     })
     expect(body).not.toHaveProperty('api_key')
@@ -186,75 +219,124 @@ describe('AICommerce Native client', () => {
   })
 
   it('rejects incomplete DeepSeek streams instead of presenting partial text as complete', async () => {
-    const client = streamingClient(async () => sseResponse(
-      'data: {"id":"chatcmpl_partial","choices":[{"delta":{"content":"半截"},"finish_reason":"length"}]}\n\n'
-    ))
-    await expect(client.streamChatCompletions({
-      provider: 'deepseek', model: 'deepseek-v4-flash', instructions: '固定指示', input: '{}',
-      maxOutputTokens: 4_096, onDelta: vi.fn()
-    })).rejects.toMatchObject({ code: 'AI_RESPONSE_INCOMPLETE' })
+    const client = streamingClient(async () =>
+      sseResponse('data: {"id":"chatcmpl_partial","choices":[{"delta":{"content":"半截"},"finish_reason":"length"}]}\n\n')
+    )
+    await expect(
+      client.streamChatCompletions({
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 4_096,
+        onDelta: vi.fn()
+      })
+    ).rejects.toMatchObject({ code: 'AI_RESPONSE_INCOMPLETE' })
   })
 
   it('waits for natural EOF after completed and does not cancel a normal Responses stream', async () => {
-    const normal = observableClosedSseResponse([
-      'data: {"type":"response.output_text.delta","delta":"正常"}\n\n',
-      'data: {"type":"response.completed","response":{"id":"resp_natural_eof"}}\n\n',
-      ': settlement may finish before close\n\n',
-      'data: [DONE]\n\n'
-    ].join(''))
+    const normal = observableClosedSseResponse(
+      [
+        'data: {"type":"response.output_text.delta","delta":"正常"}\n\n',
+        'data: {"type":"response.completed","response":{"id":"resp_natural_eof"}}\n\n',
+        ': settlement may finish before close\n\n',
+        'data: [DONE]\n\n'
+      ].join('')
+    )
     const client = streamingClient(async () => normal.response)
 
-    await expect(client.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      onDelta: vi.fn()
-    })).resolves.toMatchObject({ responseId: 'resp_natural_eof', content: '正常' })
+    await expect(
+      client.streamResponses({
+        model: 'gpt-5.6-luna',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 512,
+        onDelta: vi.fn()
+      })
+    ).resolves.toMatchObject({ responseId: 'resp_natural_eof', content: '正常' })
     expect(normal.cancel).not.toHaveBeenCalled()
   })
 
   it('rejects non-SSE success responses and does not reveal response payloads', async () => {
     const client = streamingClient(async () => response({ output: 'pretend stream', token: 'do-not-log' }))
-    await expect(client.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      onDelta: vi.fn()
-    })).rejects.toMatchObject({ code: 'AI_STREAM_CONTENT_TYPE_INVALID' })
+    await expect(
+      client.streamResponses({
+        model: 'gpt-5.6-luna',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 512,
+        onDelta: vi.fn()
+      })
+    ).rejects.toMatchObject({ code: 'AI_STREAM_CONTENT_TYPE_INVALID' })
 
-    const lookalike = streamingClient(async () => new Response('{}', {
-      status: 200, headers: { 'content-type': 'text/event-stream-json; charset=utf-8' }
-    }))
-    await expect(lookalike.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      onDelta: vi.fn()
-    })).rejects.toMatchObject({ code: 'AI_STREAM_CONTENT_TYPE_INVALID' })
+    const lookalike = streamingClient(
+      async () =>
+        new Response('{}', {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream-json; charset=utf-8' }
+        })
+    )
+    await expect(
+      lookalike.streamResponses({
+        model: 'gpt-5.6-luna',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 512,
+        onDelta: vi.fn()
+      })
+    ).rejects.toMatchObject({ code: 'AI_STREAM_CONTENT_TYPE_INVALID' })
   })
 
   it('cancels a non-ending response body before rethrowing parser or delta consumer errors', async () => {
     const invalid = nonEndingSseResponse('data: {invalid-json}\n\n')
     const invalidClient = streamingClient(async () => invalid.response)
-    await expect(invalidClient.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      onDelta: vi.fn()
-    })).rejects.toMatchObject({ code: 'AI_STREAM_EVENT_INVALID' })
+    await expect(
+      invalidClient.streamResponses({
+        model: 'gpt-5.6-luna',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 512,
+        onDelta: vi.fn()
+      })
+    ).rejects.toMatchObject({ code: 'AI_STREAM_EVENT_INVALID' })
     expect(invalid.cancel).toHaveBeenCalledTimes(1)
 
     const consumerFailure = nonEndingSseResponse('data: {"type":"response.output_text.delta","delta":"overflow"}\n\n')
     const consumerClient = streamingClient(async () => consumerFailure.response)
-    await expect(consumerClient.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      onDelta: () => { throw new Error('consumer limit') }
-    })).rejects.toMatchObject({ code: 'AI_STREAM_READ_FAILED' })
+    await expect(
+      consumerClient.streamResponses({
+        model: 'gpt-5.6-luna',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 512,
+        onDelta: () => {
+          throw new Error('consumer limit')
+        }
+      })
+    ).rejects.toMatchObject({ code: 'AI_STREAM_READ_FAILED' })
     expect(consumerFailure.cancel).toHaveBeenCalledTimes(1)
   })
 
   it('fails closed on data after a completed terminal event', async () => {
-    const client = streamingClient(async () => sseResponse([
-      'data: {"type":"response.output_text.delta","delta":"ok"}\n\n',
-      'data: {"type":"response.completed","response":{"id":"resp_terminal"}}\n\n',
-      'data: {"type":"response.output_text.delta","delta":"late"}\n\n'
-    ].join(''), [10_000]))
-    await expect(client.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      onDelta: vi.fn()
-    })).rejects.toMatchObject({ code: 'AI_STREAM_EVENT_AFTER_TERMINAL' })
+    const client = streamingClient(async () =>
+      sseResponse(
+        [
+          'data: {"type":"response.output_text.delta","delta":"ok"}\n\n',
+          'data: {"type":"response.completed","response":{"id":"resp_terminal"}}\n\n',
+          'data: {"type":"response.output_text.delta","delta":"late"}\n\n'
+        ].join(''),
+        [10_000]
+      )
+    )
+    await expect(
+      client.streamResponses({
+        model: 'gpt-5.6-luna',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 512,
+        onDelta: vi.fn()
+      })
+    ).rejects.toMatchObject({ code: 'AI_STREAM_EVENT_AFTER_TERMINAL' })
   })
 
   it('falls back with a fresh client request id only before an SSE stream starts', async () => {
@@ -265,11 +347,17 @@ describe('AICommerce Native client', () => {
       requestIds.push(headers.get('x-client-request-id') ?? '')
       modes.push(headers.get('x-aicommerce-billing-mode') ?? '')
       if (modes.length === 1) return response({ error: { code: 'SUBSCRIPTION_QUOTA_EXCEEDED' } }, 429)
-      return sseResponse('data: {"type":"response.output_text.delta","delta":"ok"}\n\ndata: {"type":"response.completed","response":{"id":"resp_ok"}}\n\n')
+      return sseResponse(
+        'data: {"type":"response.output_text.delta","delta":"ok"}\n\ndata: {"type":"response.completed","response":{"id":"resp_ok"}}\n\n'
+      )
     })
     const result = await client.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      operationId: 'fallback-operation', onDelta: vi.fn()
+      model: 'gpt-5.6-luna',
+      instructions: '固定指示',
+      input: '{}',
+      maxOutputTokens: 512,
+      operationId: 'fallback-operation',
+      onDelta: vi.fn()
     })
     expect(modes).toEqual(['subscription', 'standard'])
     expect(new Set(requestIds).size).toBe(2)
@@ -280,10 +368,15 @@ describe('AICommerce Native client', () => {
       streamedModes.push(new Headers(init?.headers).get('x-aicommerce-billing-mode') ?? '')
       return sseResponse('data: {"type":"error","code":"SUBSCRIPTION_QUOTA_EXCEEDED"}\n\n')
     })
-    await expect(streamedErrorClient.streamResponses({
-      model: 'gpt-5.6-luna', instructions: '固定指示', input: '{}', maxOutputTokens: 512,
-      onDelta: vi.fn()
-    })).rejects.toMatchObject({ code: 'SUBSCRIPTION_QUOTA_EXCEEDED' })
+    await expect(
+      streamedErrorClient.streamResponses({
+        model: 'gpt-5.6-luna',
+        instructions: '固定指示',
+        input: '{}',
+        maxOutputTokens: 512,
+        onDelta: vi.fn()
+      })
+    ).rejects.toMatchObject({ code: 'SUBSCRIPTION_QUOTA_EXCEEDED' })
     expect(streamedModes).toEqual(['subscription'])
   })
 
@@ -295,7 +388,8 @@ describe('AICommerce Native client', () => {
       return response({ cancel_status: status })
     })
     await expect(client.cancelClientRequest('client-request-123')).resolves.toEqual({
-      clientRequestId: 'client-request-123', status
+      clientRequestId: 'client-request-123',
+      status
     })
     expect(body).toEqual({ app_code: 'ses-agent', product_code: 'ses-agent-pro' })
   })
@@ -324,24 +418,36 @@ describe('AICommerce Native client', () => {
           ok: true,
           member: { id: 'member-1', displayName: '営業担当' },
           session: {
-            accessToken: 'a'.repeat(32), accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
-            refreshToken: 'b'.repeat(32), refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z'
+            accessToken: 'a'.repeat(32),
+            accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
+            refreshToken: 'b'.repeat(32),
+            refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z'
           },
           token: { accountId: 'acct-1', accountAiToken: 'c'.repeat(32), expiresAt: '2026-12-21T00:00:00.000Z' }
         })
       }
       if (url.endsWith('/v1/wallet')) return response({ balance_credits: 1200, reserved_credits: 200 })
       if (url.includes('/v1/ai/capabilities?')) {
-        return response({ capabilities: [{
-          capability_alias: 'openai-chat', request_type: 'chat', display_name: 'OpenAI Chat', modality: 'text', status: 'active'
-        }] })
+        return response({
+          capabilities: [
+            {
+              capability_alias: 'openai-chat',
+              request_type: 'chat',
+              display_name: 'OpenAI Chat',
+              modality: 'text',
+              status: 'active'
+            }
+          ]
+        })
       }
       throw new Error(`Unexpected request: ${url}`)
     })
     const dependencies = {
       credentialStore,
       pendingAuthorizationStore,
-      openExternal: async (url: string) => { openedUrls.push(url) },
+      openExternal: async (url: string) => {
+        openedUrls.push(url)
+      },
       fetch,
       now: () => now
     }
@@ -364,7 +470,8 @@ describe('AICommerce Native client', () => {
     )
     expect(pendingAuthorizationStore.value).toBeNull()
     expect(state).toMatchObject({
-      connection: 'connected', memberDisplayName: '営業担当',
+      connection: 'connected',
+      memberDisplayName: '営業担当',
       wallet: { balanceCredits: 1200, reservedCredits: 200 },
       capabilities: [{ alias: 'openai-chat', displayName: 'OpenAI Chat', modality: 'text' }]
     })
@@ -375,10 +482,15 @@ describe('AICommerce Native client', () => {
     const pendingAuthorizationStore = new MemoryPendingStore()
     credentialStore.value = {
       version: 'aicommerce-native-credential-v1',
-      memberId: 'member-1', memberDisplayName: '営業担当', accountId: 'acct-1',
-      accessToken: 'a'.repeat(32), accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
-      refreshToken: 'b'.repeat(32), refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z',
-      accountAiToken: 'old-account-token-value-123456789', accountAiTokenExpiresAt: '2026-12-21T00:00:00.000Z',
+      memberId: 'member-1',
+      memberDisplayName: '営業担当',
+      accountId: 'acct-1',
+      accessToken: 'a'.repeat(32),
+      accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
+      refreshToken: 'b'.repeat(32),
+      refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z',
+      accountAiToken: 'old-account-token-value-123456789',
+      accountAiTokenExpiresAt: '2026-12-21T00:00:00.000Z',
       updatedAt: now.toISOString()
     }
     const requestBodies: Array<Record<string, unknown>> = []
@@ -392,9 +504,17 @@ describe('AICommerce Native client', () => {
         capabilityAttempts += 1
         return capabilityAttempts === 1
           ? response({ error: { code: 'TOKEN_REVOKED' } }, 401)
-          : response({ capabilities: [{
-              capability_alias: 'openai-chat', request_type: 'chat', display_name: 'OpenAI Chat', modality: 'text', status: 'active'
-            }] })
+          : response({
+              capabilities: [
+                {
+                  capability_alias: 'openai-chat',
+                  request_type: 'chat',
+                  display_name: 'OpenAI Chat',
+                  modality: 'text',
+                  status: 'active'
+                }
+              ]
+            })
       }
       if (url.endsWith('/v1/ai/requests')) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>
@@ -406,9 +526,11 @@ describe('AICommerce Native client', () => {
       if (url.endsWith('/v1/ai/requests/air-1')) {
         return response({
           request_id: requestBodies.at(-1)?.request_id,
-          ai_request_id: 'air-1', status: 'succeeded',
+          ai_request_id: 'air-1',
+          status: 'succeeded',
           output: { message: { content: '脱敏済みの応答です。' } },
-          usage: { amount_credits: 12 }, wallet: { balance_credits: 1188, reserved_credits: 0 }
+          usage: { amount_credits: 12 },
+          wallet: { balance_credits: 1188, reserved_credits: 0 }
         })
       }
       throw new Error(`Unexpected request: ${url}`)
@@ -431,8 +553,11 @@ describe('AICommerce Native client', () => {
     ])
     expect(result).toEqual({
       requestId: 'sesai-operation-12345678-standard',
-      aiRequestId: 'air-1', content: '脱敏済みの応答です。', usageCredits: 12,
-      wallet: { balanceCredits: 1188, reservedCredits: 0 }, billingModeUsed: 'standard'
+      aiRequestId: 'air-1',
+      content: '脱敏済みの応答です。',
+      usageCredits: 12,
+      wallet: { balanceCredits: 1188, reservedCredits: 0 },
+      billingModeUsed: 'standard'
     })
     expect(credentialStore.value?.accountAiToken).toBe('new-account-token-value-123456789')
   })
@@ -441,10 +566,15 @@ describe('AICommerce Native client', () => {
     const credentialStore = new MemoryCredentialStore()
     credentialStore.value = {
       version: 'aicommerce-native-credential-v1',
-      memberId: 'member-1', memberDisplayName: '営業担当', accountId: 'acct-1',
-      accessToken: 'a'.repeat(32), accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
-      refreshToken: 'b'.repeat(32), refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z',
-      accountAiToken: 'old-account-token-value-123456789', accountAiTokenExpiresAt: '2026-12-21T00:00:00.000Z',
+      memberId: 'member-1',
+      memberDisplayName: '営業担当',
+      accountId: 'acct-1',
+      accessToken: 'a'.repeat(32),
+      accessTokenExpiresAt: '2026-07-21T02:00:00.000Z',
+      refreshToken: 'b'.repeat(32),
+      refreshTokenExpiresAt: '2026-10-21T00:00:00.000Z',
+      accountAiToken: 'old-account-token-value-123456789',
+      accountAiTokenExpiresAt: '2026-12-21T00:00:00.000Z',
       updatedAt: now.toISOString()
     }
     const attemptedBillingModes: string[] = []
@@ -456,12 +586,23 @@ describe('AICommerce Native client', () => {
       fetch: vi.fn(async (input: string | URL, init?: RequestInit) => {
         const url = String(input)
         if (url.includes('/v1/ai/capabilities?')) {
-          return response({ capabilities: [{
-            capability_alias: 'openai-chat', request_type: 'chat', display_name: 'OpenAI Chat', modality: 'text', status: 'active'
-          }] })
+          return response({
+            capabilities: [
+              {
+                capability_alias: 'openai-chat',
+                request_type: 'chat',
+                display_name: 'OpenAI Chat',
+                modality: 'text',
+                status: 'active'
+              }
+            ]
+          })
         }
         if (url.endsWith('/api/native/ai-token/reset')) {
-          return response({ ok: true, token: { accountAiToken: 'new-account-token-value-123456789', expiresAt: '2026-12-22T00:00:00.000Z' } })
+          return response({
+            ok: true,
+            token: { accountAiToken: 'new-account-token-value-123456789', expiresAt: '2026-12-22T00:00:00.000Z' }
+          })
         }
         if (url.endsWith('/v1/ai/requests')) {
           const body = JSON.parse(String(init?.body)) as { billing_mode: string }
@@ -474,7 +615,8 @@ describe('AICommerce Native client', () => {
 
     expect(AiCommerceNativeClient.billingAttempts('automatic')).toEqual(['subscription', 'standard'])
     await expect(client.requestText('脱敏済み', 'sesai-operation-87654321')).rejects.toMatchObject({
-      code: 'TOKEN_REVOKED', status: 401
+      code: 'TOKEN_REVOKED',
+      status: 401
     })
     expect(attemptedBillingModes).toEqual(['subscription', 'subscription'])
     expect(AiCommerceNativeClient.shouldFallbackToStandard(new AiCommerceRequestError('TOKEN_REVOKED', 401, 'token'))).toBe(false)

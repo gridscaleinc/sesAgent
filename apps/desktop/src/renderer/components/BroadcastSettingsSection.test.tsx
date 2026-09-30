@@ -26,7 +26,11 @@ async function previewText(): Promise<string> {
 }
 
 function renderSection(actions: BroadcastSettingsActions) {
-  render(<UiLocaleProvider locale="zh-CN"><BroadcastSettingsSection actions={actions} /></UiLocaleProvider>)
+  render(
+    <UiLocaleProvider locale="zh-CN">
+      <BroadcastSettingsSection actions={actions} />
+    </UiLocaleProvider>
+  )
 }
 
 describe('BroadcastSettingsSection', () => {
@@ -59,8 +63,12 @@ describe('BroadcastSettingsSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '保存模板' }))
     await waitFor(() => expect(actions.updateTemplate).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(actions.updateTemplate).mock.calls[0][0].lines.at(-1))
-      .toEqual({ kind: 'text', textJa: '※弊社プロパー限定', textZh: '', on: true })
+    expect(vi.mocked(actions.updateTemplate).mock.calls[0][0].lines.at(-1)).toEqual({
+      kind: 'text',
+      textJa: '※弊社プロパー限定',
+      textZh: '',
+      on: true
+    })
   })
 
   it('drops a switched-off line out of the preview without deleting it', async () => {
@@ -93,7 +101,7 @@ describe('BroadcastSettingsSection', () => {
     expect(options).not.toContain('payment_terms')
   })
 
-  it('offers nothing about where a message goes - that is the operator\'s own business', async () => {
+  it("offers nothing about where a message goes - that is the operator's own business", async () => {
     renderSection(actionsWith([builtInBroadcastTemplate()]))
     await screen.findByRole('button', { name: '保存模板' })
     expect(screen.queryByText('营业群')).toBeNull()

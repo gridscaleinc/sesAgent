@@ -20,9 +20,7 @@ export class WorkTaskStore extends DomainStore {
   }
 
   countWorkTasks(): number {
-    const row = this.database
-      .prepare<[], { count: number }>('SELECT count(*) AS count FROM work_tasks WHERE tombstone = 0')
-      .get()
+    const row = this.database.prepare<[], { count: number }>('SELECT count(*) AS count FROM work_tasks WHERE tombstone = 0').get()
     return row?.count ?? 0
   }
 
@@ -55,9 +53,7 @@ export class WorkTaskStore extends DomainStore {
         .prepare<[string], { revision: number }>('SELECT revision FROM work_tasks WHERE id = ?')
         .get(validated.id)?.revision
       this.database
-        .prepare(
-          'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'work_task', validated.id, revision ?? 1, 'upsert', new Date().toISOString())
     })
     save()

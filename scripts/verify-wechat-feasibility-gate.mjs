@@ -7,11 +7,16 @@ const contracts = read('packages/shared/src/contracts.ts')
 const actionRuntime = read('packages/action-runtime/src/index.ts')
 // Read the whole main-process tree: these checks assert that the implementation
 // exists somewhere in the main process, not that it lives in one particular file.
-const readMainProcessSources = (directory = 'apps/desktop/src/main') => readdirSync(resolve(root, directory), { withFileTypes: true })
-  .flatMap((entry) => entry.isDirectory()
-    ? [readMainProcessSources(`${directory}/${entry.name}`)]
-    : entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [read(`${directory}/${entry.name}`)] : [])
-  .join('\n')
+const readMainProcessSources = (directory = 'apps/desktop/src/main') =>
+  readdirSync(resolve(root, directory), { withFileTypes: true })
+    .flatMap((entry) =>
+      entry.isDirectory()
+        ? [readMainProcessSources(`${directory}/${entry.name}`)]
+        : entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')
+          ? [read(`${directory}/${entry.name}`)]
+          : []
+    )
+    .join('\n')
 const main = readMainProcessSources()
 const reader = read('apps/desktop/src/main/wechat-visible-reader.ts')
 const helper = read('native/macos/wechat-accessibility/main.swift')
@@ -107,12 +112,14 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log(JSON.stringify({
-  phase: 'B-03-1',
-  status: evidenceStatus === 'release-go-eligible' ? 'release-go-eligible' : 'implemented-release-no-go',
-  evidenceStatus,
-  featureFlagEnabled: true,
-  formalToolRegistered: true,
-  rawTextReadImplemented: true,
-  releaseEvidenceVerified: evidenceStatus === 'release-go-eligible'
-}))
+console.log(
+  JSON.stringify({
+    phase: 'B-03-1',
+    status: evidenceStatus === 'release-go-eligible' ? 'release-go-eligible' : 'implemented-release-no-go',
+    evidenceStatus,
+    featureFlagEnabled: true,
+    formalToolRegistered: true,
+    rawTextReadImplemented: true,
+    releaseEvidenceVerified: evidenceStatus === 'release-go-eligible'
+  })
+)

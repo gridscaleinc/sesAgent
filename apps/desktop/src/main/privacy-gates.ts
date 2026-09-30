@@ -81,11 +81,7 @@ async function readEvidenceFile(path: string, label: string): Promise<EvidenceFi
   }
 }
 
-function qualityGateFailures(
-  report: Record<string, unknown> | null,
-  platform: NodeJS.Platform,
-  arch: string
-): string[] {
+function qualityGateFailures(report: Record<string, unknown> | null, platform: NodeJS.Platform, arch: string): string[] {
   if (!report) return ['quality:not-an-object']
   const failures: string[] = []
   if (report.version !== 'ses-privacy-quality-report-v1') failures.push('quality:version')
@@ -95,9 +91,14 @@ function qualityGateFailures(
   if (report.syntheticOnly !== true || report.humanLabeledDataset !== false) failures.push('quality:dataset-mode')
   if (report.platform !== platform || report.arch !== arch) failures.push('quality:platform-arch')
   if (
-    report.caseCount !== 28 || report.safeCaseCount !== 6 || report.blockedCaseCount !== 4 ||
-    report.expectedIdentifiers !== 30 || report.detectedIdentifiers !== 30 || report.failedClosedCases !== 4
-  ) failures.push('quality:coverage')
+    report.caseCount !== 28 ||
+    report.safeCaseCount !== 6 ||
+    report.blockedCaseCount !== 4 ||
+    report.expectedIdentifiers !== 30 ||
+    report.detectedIdentifiers !== 30 ||
+    report.failedClosedCases !== 4
+  )
+    failures.push('quality:coverage')
   if (report.identifierRecall !== 1) failures.push('quality:identifier-recall')
   if (report.redactionPrecision !== 1) failures.push('quality:redaction-precision')
   if (report.residualLeakCount !== 0) failures.push('quality:residual-leaks')
@@ -110,10 +111,7 @@ function qualityGateFailures(
   return failures
 }
 
-function qualityGateResult(
-  evidence: EvidenceFile,
-  failures: string[]
-): BootstrapPayload['privacy']['qualityGate'] {
+function qualityGateResult(evidence: EvidenceFile, failures: string[]): BootstrapPayload['privacy']['qualityGate'] {
   const report = evidence.value
   const passed = failures.length === 0 && report !== null
   const appleNer = report?.appleNer as Record<string, unknown> | undefined
@@ -145,23 +143,16 @@ function expertGateResult(
     humanLabeledDataset: true,
     sourceDocumentCount: passed && typeof report?.sourceDocumentCount === 'number' ? report.sourceDocumentCount : 0,
     caseCount: passed && typeof report?.caseCount === 'number' ? report.caseCount : 0,
-    automaticPersonNameRecall: passed && typeof report?.automaticPersonNameRecall === 'number'
-      ? report.automaticPersonNameRecall
-      : null,
-    postReviewIdentifierRecall: passed && typeof report?.postReviewIdentifierRecall === 'number'
-      ? report.postReviewIdentifierRecall
-      : null,
+    automaticPersonNameRecall: passed && typeof report?.automaticPersonNameRecall === 'number' ? report.automaticPersonNameRecall : null,
+    postReviewIdentifierRecall: passed && typeof report?.postReviewIdentifierRecall === 'number' ? report.postReviewIdentifierRecall : null,
     redactionPrecision: passed && typeof report?.redactionPrecision === 'number' ? report.redactionPrecision : null,
     reviewedAt: safeReportTimestamp(report?.reviewedAt),
     evaluatedAt: safeReportTimestamp(report?.evaluatedAt),
     reportHash: evidence.hash,
     attestationHash: passed ? attestationHash : null,
-    privacyImplementationSha256: passed && typeof report?.privacyImplementationSha256 === 'string'
-      ? report.privacyImplementationSha256
-      : null,
-    cloudEnforcementSha256: passed && typeof report?.cloudEnforcementSha256 === 'string'
-      ? report.cloudEnforcementSha256
-      : null,
+    privacyImplementationSha256:
+      passed && typeof report?.privacyImplementationSha256 === 'string' ? report.privacyImplementationSha256 : null,
+    cloudEnforcementSha256: passed && typeof report?.cloudEnforcementSha256 === 'string' ? report.cloudEnforcementSha256 : null,
     failureCodes: [...new Set(failures)]
   }
 }
@@ -176,11 +167,7 @@ function parseCloudEnforcementManifest(
   if (!value) return { manifest: null, failures: [evidence.failureCode ?? 'package-manifest:not-an-object'] }
   if (value.version !== 'ses-cloud-enforcement-manifest-v2') failures.push('package-manifest:version')
   if (value.platform !== platform || value.arch !== arch) failures.push('package-manifest:platform-arch')
-  for (const field of [
-    'runtimeBundleSetSha256',
-    'privacyImplementationSha256',
-    'cloudEnforcementSourceSha256'
-  ] as const) {
+  for (const field of ['runtimeBundleSetSha256', 'privacyImplementationSha256', 'cloudEnforcementSourceSha256'] as const) {
     if (!sha256Pattern.test(typeof value[field] === 'string' ? value[field] : '')) {
       failures.push('package-manifest:' + field)
     }
@@ -202,9 +189,15 @@ function parseCloudEnforcementManifest(
     const path = typeof file.path === 'string' ? file.path : ''
     if (
       (!path.startsWith('out/main/') && !path.startsWith('out/preload/')) ||
-      !path.endsWith('.js') || isAbsolute(path) || path.includes('\\') || path.includes('//') ||
-      path.split('/').includes('..') || path.split('/').includes('.') || runtimeBundlePaths.has(path)
-    ) failures.push('package-manifest:runtime-bundle-path')
+      !path.endsWith('.js') ||
+      isAbsolute(path) ||
+      path.includes('\\') ||
+      path.includes('//') ||
+      path.split('/').includes('..') ||
+      path.split('/').includes('.') ||
+      runtimeBundlePaths.has(path)
+    )
+      failures.push('package-manifest:runtime-bundle-path')
     if (!sha256Pattern.test(typeof file.sha256 === 'string' ? file.sha256 : '')) {
       failures.push('package-manifest:runtime-bundle-hash')
     }
@@ -214,7 +207,7 @@ function parseCloudEnforcementManifest(
     failures.push('package-manifest:runtime-entrypoints')
   }
   return {
-    manifest: failures.length === 0 ? value as unknown as CloudEnforcementManifest : null,
+    manifest: failures.length === 0 ? (value as unknown as CloudEnforcementManifest) : null,
     failures
   }
 }
@@ -228,9 +221,7 @@ function resolvePackagedRuntimeBundle(appPath: string, relativePath: string): st
   return candidate
 }
 
-export async function loadCloudPrivacyGates(
-  options: CloudPrivacyGateLoadOptions
-): Promise<CloudPrivacyGateSnapshot> {
+export async function loadCloudPrivacyGates(options: CloudPrivacyGateLoadOptions): Promise<CloudPrivacyGateSnapshot> {
   const platform = options.platform ?? process.platform
   const arch = options.arch ?? process.arch
   const now = options.now ?? new Date()
@@ -316,40 +307,42 @@ export async function loadCloudPrivacyGates(
     ...expertPackageFailures
   ]
   if (expertEvidence.value) {
-    expertFailures.push(...privacyExpertReportFailures(expertEvidence.value, {
-      platform,
-      arch,
-      privacyImplementationSha256: privacyImplementationSha256 ?? undefined,
-      cloudEnforcementSha256: cloudEnforcementSha256 ?? undefined,
-      now
-    }))
+    expertFailures.push(
+      ...privacyExpertReportFailures(expertEvidence.value, {
+        platform,
+        arch,
+        privacyImplementationSha256: privacyImplementationSha256 ?? undefined,
+        cloudEnforcementSha256: cloudEnforcementSha256 ?? undefined,
+        now
+      })
+    )
   } else {
     expertFailures.push('expert:not-an-object')
   }
 
-  const attestationHash = expertFailures.length === 0 && expertEvidence.bytes &&
-    privacyImplementationSha256 && cloudEnforcementSha256
-    ? createHash('sha256')
-        .update(expertEvidence.bytes)
-        .update('\0')
-        .update(privacyImplementationSha256)
-        .update('\0')
-        .update(cloudEnforcementSha256)
-        .update('\0')
-        .update(runtimeBundleSetSha256 ?? 'development-source')
-        .digest('hex')
-    : null
+  const attestationHash =
+    expertFailures.length === 0 && expertEvidence.bytes && privacyImplementationSha256 && cloudEnforcementSha256
+      ? createHash('sha256')
+          .update(expertEvidence.bytes)
+          .update('\0')
+          .update(privacyImplementationSha256)
+          .update('\0')
+          .update(cloudEnforcementSha256)
+          .update('\0')
+          .update(runtimeBundleSetSha256 ?? 'development-source')
+          .digest('hex')
+      : null
   const qualityGate = qualityGateResult(qualityEvidence, qualityFailures)
   const expertGate = expertGateResult(expertEvidence, expertFailures, attestationHash)
-  const binding = qualityGate.status === 'passed' && qualityGate.reportHash &&
-    privacyImplementationSha256 && cloudEnforcementSha256
-    ? {
-        qualityReportHash: qualityGate.reportHash,
-        expertAttestationHash: expertGate.attestationHash,
-        privacyImplementationSha256,
-        cloudEnforcementSha256
-      }
-    : null
+  const binding =
+    qualityGate.status === 'passed' && qualityGate.reportHash && privacyImplementationSha256 && cloudEnforcementSha256
+      ? {
+          qualityReportHash: qualityGate.reportHash,
+          expertAttestationHash: expertGate.attestationHash,
+          privacyImplementationSha256,
+          cloudEnforcementSha256
+        }
+      : null
 
   return { qualityGate, expertGate, binding }
 }

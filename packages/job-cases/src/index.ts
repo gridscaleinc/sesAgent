@@ -11,11 +11,7 @@ import {
 } from '@shared/contracts'
 import { canonicalizeJobCaseLabelLine } from '@shared'
 import type { ParsedEmlMessage } from '@mail'
-import {
-  applyLocalPiiMappings,
-  redactTextForCloud,
-  type LocalRedactionResult
-} from '@privacy'
+import { applyLocalPiiMappings, redactTextForCloud, type LocalRedactionResult } from '@privacy'
 
 export interface JobCaseFieldSource {
   sourceLabel:
@@ -129,9 +125,16 @@ export type ConfirmedJobCase = ConfirmedJobCaseV1 | ConfirmedJobCaseV2
 
 const fieldSourceSchema = z.object({
   sourceLabel: z.enum([
-    'Gmail Subject', 'Gmail Body', 'EML Subject', 'EML Body',
-    'Manual Subject', 'Manual Body', 'Chat Subject', 'Chat Body',
-    'WeChat Subject', 'WeChat Body'
+    'Gmail Subject',
+    'Gmail Body',
+    'EML Subject',
+    'EML Body',
+    'Manual Subject',
+    'Manual Body',
+    'Chat Subject',
+    'Chat Body',
+    'WeChat Subject',
+    'WeChat Body'
   ]),
   excerpt: z.string().min(1).max(240)
 })
@@ -150,8 +153,11 @@ function completeStoredJobCaseFields<Field extends { key: JobCaseFieldKey }>(
   if (!Array.isArray(value)) return value
   const present = new Set(value.map((field: unknown) => (field as { key?: unknown } | null)?.key))
   const completed = [...value, ...jobCaseFieldKeys.filter((key) => !present.has(key)).map(empty)]
-  return completed.toSorted((left, right) =>
-    (jobCaseFieldOrder.get((left as { key: JobCaseFieldKey }).key) ?? 99) - (jobCaseFieldOrder.get((right as { key: JobCaseFieldKey }).key) ?? 99))
+  return completed.toSorted(
+    (left, right) =>
+      (jobCaseFieldOrder.get((left as { key: JobCaseFieldKey }).key) ?? 99) -
+      (jobCaseFieldOrder.get((right as { key: JobCaseFieldKey }).key) ?? 99)
+  )
 }
 
 function fieldLabelFor(key: JobCaseFieldKey): string {
@@ -159,51 +165,66 @@ function fieldLabelFor(key: JobCaseFieldKey): string {
 }
 
 const extractionFieldsSchema = z.preprocess(
-  (value) => completeStoredJobCaseFields(value, (key) => ({
-    key, label: fieldLabelFor(key), value: null, confidence: 0, status: 'missing' as const, sources: []
-  })),
-  z.array(z.object({
-    key: z.enum(jobCaseFieldKeys),
-    label: z.string().min(1).max(80),
-    value: z.string().max(500).nullable(),
-    confidence: z.number().min(0).max(1),
-    status: z.enum(['needs_review', 'missing']),
-    sources: z.array(fieldSourceSchema).max(10)
-  })).length(jobCaseFieldKeys.length)
+  (value) =>
+    completeStoredJobCaseFields(value, (key) => ({
+      key,
+      label: fieldLabelFor(key),
+      value: null,
+      confidence: 0,
+      status: 'missing' as const,
+      sources: []
+    })),
+  z
+    .array(
+      z.object({
+        key: z.enum(jobCaseFieldKeys),
+        label: z.string().min(1).max(80),
+        value: z.string().max(500).nullable(),
+        confidence: z.number().min(0).max(1),
+        status: z.enum(['needs_review', 'missing']),
+        sources: z.array(fieldSourceSchema).max(10)
+      })
+    )
+    .length(jobCaseFieldKeys.length)
 )
 
-export const jobCaseSourceSchema: z.ZodType<JobCaseSource> = z.object({
-  version: z.literal('job-case-source-v1'),
-  id: z.string().uuid(),
-  sourceType: z.enum(jobCaseSourceTypes),
-  providerAccount: z.string().email().max(320).nullable(),
-  providerMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable(),
-  threadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
-  fromDomain: z.string().max(253).nullable(),
-  messageDate: z.string().datetime(),
-  redactedSubject: z.string().min(1).max(2_000),
-  redactedBody: z.string().min(1).max(500_000),
-  redactionSessionId: z.string().uuid(),
-  warningCodes: z.array(z.string().min(1).max(120)).max(100),
-  createdAt: z.string().datetime()
-}).superRefine((source, context) => {
-  const hasGmailIdentity = Boolean(source.providerAccount && source.providerMessageId)
-  if (source.sourceType === 'gmail' && !hasGmailIdentity) {
-    context.addIssue({ code: 'custom', message: 'Gmail sources require a provider account and message ID.' })
-  }
-  if (source.sourceType === 'manual' && (source.providerAccount !== null || source.providerMessageId !== null)) {
-    context.addIssue({ code: 'custom', message: 'Manual sources cannot contain provider identifiers.' })
-  }
-  if (source.sourceType === 'eml' && (source.providerAccount !== null || source.providerMessageId === null)) {
-    context.addIssue({ code: 'custom', message: 'EML sources require a local message fingerprint and no provider account.' })
-  }
-  if (source.sourceType === 'chat-paste' && (source.providerAccount !== null || source.providerMessageId !== null)) {
-    context.addIssue({ code: 'custom', message: 'Chat paste sources cannot contain provider identifiers.' })
-  }
-  if (source.sourceType === 'wechat-visible' && (source.providerAccount !== null || source.providerMessageId !== null)) {
-    context.addIssue({ code: 'custom', message: 'WeChat visible sources cannot contain provider identifiers.' })
-  }
-})
+export const jobCaseSourceSchema: z.ZodType<JobCaseSource> = z
+  .object({
+    version: z.literal('job-case-source-v1'),
+    id: z.string().uuid(),
+    sourceType: z.enum(jobCaseSourceTypes),
+    providerAccount: z.string().email().max(320).nullable(),
+    providerMessageId: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,128}$/)
+      .nullable(),
+    threadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+    fromDomain: z.string().max(253).nullable(),
+    messageDate: z.string().datetime(),
+    redactedSubject: z.string().min(1).max(2_000),
+    redactedBody: z.string().min(1).max(500_000),
+    redactionSessionId: z.string().uuid(),
+    warningCodes: z.array(z.string().min(1).max(120)).max(100),
+    createdAt: z.string().datetime()
+  })
+  .superRefine((source, context) => {
+    const hasGmailIdentity = Boolean(source.providerAccount && source.providerMessageId)
+    if (source.sourceType === 'gmail' && !hasGmailIdentity) {
+      context.addIssue({ code: 'custom', message: 'Gmail sources require a provider account and message ID.' })
+    }
+    if (source.sourceType === 'manual' && (source.providerAccount !== null || source.providerMessageId !== null)) {
+      context.addIssue({ code: 'custom', message: 'Manual sources cannot contain provider identifiers.' })
+    }
+    if (source.sourceType === 'eml' && (source.providerAccount !== null || source.providerMessageId === null)) {
+      context.addIssue({ code: 'custom', message: 'EML sources require a local message fingerprint and no provider account.' })
+    }
+    if (source.sourceType === 'chat-paste' && (source.providerAccount !== null || source.providerMessageId !== null)) {
+      context.addIssue({ code: 'custom', message: 'Chat paste sources cannot contain provider identifiers.' })
+    }
+    if (source.sourceType === 'wechat-visible' && (source.providerAccount !== null || source.providerMessageId !== null)) {
+      context.addIssue({ code: 'custom', message: 'WeChat visible sources cannot contain provider identifiers.' })
+    }
+  })
 
 const jobCaseExtractionDraftV1Schema: z.ZodType<JobCaseExtractionDraftV1> = z.object({
   version: z.literal('job-case-extraction-v1'),
@@ -237,12 +258,16 @@ export const jobCaseExtractionDraftSchema: z.ZodType<JobCaseExtractionDraft> = z
 
 const confirmedFieldsSchema = z.preprocess(
   (value) => completeStoredJobCaseFields(value, (key) => ({ key, label: fieldLabelFor(key), value: null, sourceLabels: [] })),
-  z.array(z.object({
-    key: z.enum(jobCaseFieldKeys),
-    label: z.string().min(1).max(80),
-    value: z.string().max(500).nullable(),
-    sourceLabels: z.array(z.string().min(1).max(180)).max(10)
-  })).length(jobCaseFieldKeys.length)
+  z
+    .array(
+      z.object({
+        key: z.enum(jobCaseFieldKeys),
+        label: z.string().min(1).max(80),
+        value: z.string().max(500).nullable(),
+        sourceLabels: z.array(z.string().min(1).max(180)).max(10)
+      })
+    )
+    .length(jobCaseFieldKeys.length)
 )
 
 const confirmedJobCaseV1Schema: z.ZodType<ConfirmedJobCaseV1> = z.object({
@@ -265,7 +290,10 @@ const confirmedJobCaseV2Schema: z.ZodType<ConfirmedJobCaseV2> = z.object({
   sourceReviewId: z.string().uuid(),
   sourceId: z.string().uuid(),
   sourceType: z.enum(jobCaseSourceTypes),
-  sourceProviderMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable(),
+  sourceProviderMessageId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,128}$/)
+    .nullable(),
   sourceThreadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
   version: z.number().int().positive(),
   reviewRevision: z.number().int().positive(),
@@ -275,10 +303,7 @@ const confirmedJobCaseV2Schema: z.ZodType<ConfirmedJobCaseV2> = z.object({
   containsDirectIdentifiers: z.literal(false)
 })
 
-export const confirmedJobCaseSchema: z.ZodType<ConfirmedJobCase> = z.union([
-  confirmedJobCaseV1Schema,
-  confirmedJobCaseV2Schema
-])
+export const confirmedJobCaseSchema: z.ZodType<ConfirmedJobCase> = z.union([confirmedJobCaseV1Schema, confirmedJobCaseV2Schema])
 
 const candidateBenchmarkQueryFieldOrder: JobCaseFieldKey[] = [
   'required_skills',
@@ -298,8 +323,9 @@ const candidateBenchmarkQueryFieldOrder: JobCaseFieldKey[] = [
  * flagged at extraction. 外国籍可 is an inclusion and stays allowed.
  */
 export function statesNationalityRestriction(text: string): boolean {
-  return /(?:外国籍不可|日本国籍(?:のみ|限定)|日本人(?:のみ|限定|希望|優先|が望ましい)|(?:最好|仅限|只限|只要|限定)\s*日本人)/u
-    .test(text.normalize('NFKC'))
+  return /(?:外国籍不可|日本国籍(?:のみ|限定)|日本人(?:のみ|限定|希望|優先|が望ましい)|(?:最好|仅限|只限|只要|限定)\s*日本人)/u.test(
+    text.normalize('NFKC')
+  )
 }
 
 /**
@@ -308,15 +334,16 @@ export function statesNationalityRestriction(text: string): boolean {
  * draft is reviewed before anyone acts on it.
  */
 export function statesAgeLimitRequirement(text: string): boolean {
-  return /(?:[0-9]{1,2}\s*代まで|(?:[0-9]{1,2}|[~〜～][0-9]{0,2})\s*歳まで|年齢.{0,4}まで|若手不可)/u
-    .test(text.normalize('NFKC'))
+  return /(?:[0-9]{1,2}\s*代まで|(?:[0-9]{1,2}|[~〜～][0-9]{0,2})\s*歳まで|年齢.{0,4}まで|若手不可)/u.test(text.normalize('NFKC'))
 }
 
 function normalizedJobCaseWorkAuthorizationRequirement(value: string): string | null {
   if (/(?:国籍|外国籍|日本人限定|日本国籍)/u.test(value)) return null
-  return value.normalize('NFKC').match(
-    /(?:日本で就労可能|就労資格必須|就労資格あり|就労制限なし|ビザサポートなし|資格外活動不可|週28時間制限不可)/u
-  )?.[0] ?? null
+  return (
+    value
+      .normalize('NFKC')
+      .match(/(?:日本で就労可能|就労資格必須|就労資格あり|就労制限なし|ビザサポートなし|資格外活動不可|週28時間制限不可)/u)?.[0] ?? null
+  )
 }
 
 export function candidateBenchmarkQueryFromJobCase(jobCase: ConfirmedJobCase): string {
@@ -347,7 +374,8 @@ export function candidateBenchmarkQueryFromJobCase(jobCase: ConfirmedJobCase): s
   return [...new Set([...(ownOnly ? ['自社限定'] : []), ...values, ...preferred])].join(' ').slice(0, 500)
 }
 
-const piiPlaceholderPattern = /<(?:PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/gu
+const piiPlaceholderPattern =
+  /<(?:PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/gu
 
 const fieldDefinitions: ReadonlyArray<{
   key: JobCaseFieldKey
@@ -358,7 +386,11 @@ const fieldDefinitions: ReadonlyArray<{
   { key: 'role', label: '募集ロール', labels: /(?:募集(?:職種|枠|ロール)?|ポジション|役割|ロール)/iu },
   { key: 'industry', label: '業界', labels: /(?:業界|業種|クライアント業種|案件業種|業務領域|ドメイン)/iu },
   { key: 'required_skills', label: '必須スキル', labels: /(?:必須(?:スキル|要件|経験)?|必要(?:スキル|要件|経験)|技術要件|スキル)/iu },
-  { key: 'preferred_skills', label: '尚可スキル', labels: /(?:尚可(?:スキル|要件|条件)?|歓迎(?:スキル|要件|条件)?|あれば尚可|優遇|プラス(?:スキル)?)/iu },
+  {
+    key: 'preferred_skills',
+    label: '尚可スキル',
+    labels: /(?:尚可(?:スキル|要件|条件)?|歓迎(?:スキル|要件|条件)?|あれば尚可|優遇|プラス(?:スキル)?)/iu
+  },
   { key: 'rate', label: '単価', labels: /(?:単価|月額|金額)/iu },
   { key: 'settlement', label: '精算', labels: /(?:精算(?:幅|条件)?)/iu },
   { key: 'location', label: '勤務地', labels: /(?:勤務地|場所|現場|最寄(?:駅)?)/iu },
@@ -375,24 +407,56 @@ const fieldDefinitions: ReadonlyArray<{
 ]
 
 const skillVocabulary = [
-  'Java', 'Spring Boot', 'AWS', 'Azure', 'GCP', 'TypeScript', 'JavaScript', 'React', 'Vue',
-  'Angular', 'Node.js', 'Python', 'Go', 'C#', '.NET', 'Kotlin', 'Swift', 'SQL', 'PL/SQL',
-  'Oracle', 'PostgreSQL', 'MySQL', 'Snowflake', 'Power BI', 'Docker', 'Kubernetes',
-  'Terraform', 'Linux', 'SAP', 'Salesforce', 'UiPath', 'LangChain'
+  'Java',
+  'Spring Boot',
+  'AWS',
+  'Azure',
+  'GCP',
+  'TypeScript',
+  'JavaScript',
+  'React',
+  'Vue',
+  'Angular',
+  'Node.js',
+  'Python',
+  'Go',
+  'C#',
+  '.NET',
+  'Kotlin',
+  'Swift',
+  'SQL',
+  'PL/SQL',
+  'Oracle',
+  'PostgreSQL',
+  'MySQL',
+  'Snowflake',
+  'Power BI',
+  'Docker',
+  'Kubernetes',
+  'Terraform',
+  'Linux',
+  'SAP',
+  'Salesforce',
+  'UiPath',
+  'LangChain'
 ] as const
 
-const nextLabelPattern = /\s+(?=(?:募集(?:職種|枠|ロール)?|ポジション|役割|ロール|業界|業種|必須(?:スキル|要件|経験)?|必要(?:スキル|要件|経験)|技術要件|スキル|尚可(?:スキル|要件|条件)?|歓迎(?:スキル|要件|条件)?|単価|月額|金額|精算(?:幅|条件)?|勤務地|場所|現場|最寄(?:駅)?|リモート|テレワーク|在宅|出社(?:頻度)?|勤務形態|開始(?:時期|日)?|参画(?:時期)?|稼働開始|作業期間|勤務時間|就業時間|工数|稼働時間|日本語(?:レベル)?|語学|面談(?:回数)?|面接|募集人数|人数|商流|契約(?:形態)?|所属制限|支払(?:サイト|条件)?|支払い|就労資格|就労可否|就労制限|ビザサポート|備考|特記(?:事項)?|その他(?:条件)?|注意事項|補足)\s*[:：])/iu
-const piiPlaceholderPresencePattern = /<(?:PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/u
-const sourceInstructionPattern = /(?:ignore previous instructions|system prompt|tool call|execute command|指示を無視|命令を実行|ファイルを削除|全候補者.*(?:出力|送信))/iu
+const nextLabelPattern =
+  /\s+(?=(?:募集(?:職種|枠|ロール)?|ポジション|役割|ロール|業界|業種|必須(?:スキル|要件|経験)?|必要(?:スキル|要件|経験)|技術要件|スキル|尚可(?:スキル|要件|条件)?|歓迎(?:スキル|要件|条件)?|単価|月額|金額|精算(?:幅|条件)?|勤務地|場所|現場|最寄(?:駅)?|リモート|テレワーク|在宅|出社(?:頻度)?|勤務形態|開始(?:時期|日)?|参画(?:時期)?|稼働開始|作業期間|勤務時間|就業時間|工数|稼働時間|日本語(?:レベル)?|語学|面談(?:回数)?|面接|募集人数|人数|商流|契約(?:形態)?|所属制限|支払(?:サイト|条件)?|支払い|就労資格|就労可否|就労制限|ビザサポート|備考|特記(?:事項)?|その他(?:条件)?|注意事項|補足)\s*[:：])/iu
+const piiPlaceholderPresencePattern =
+  /<(?:PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/u
+const sourceInstructionPattern =
+  /(?:ignore previous instructions|system prompt|tool call|execute command|指示を無視|命令を実行|ファイルを削除|全候補者.*(?:出力|送信))/iu
 
 function cleanBusinessValue(value: string): string | null {
-  let cleaned = value
-    .replace(piiPlaceholderPattern, ' ')
-    .split(nextLabelPattern, 1)[0]
-    ?.replace(/^[\s:：・／/|｜\-–—、,，]+|[\s|｜／/、,，・:：\-–—]+$/gu, '')
-    .replace(/\s+/gu, ' ')
-    .trim()
-    .slice(0, 500) ?? ''
+  let cleaned =
+    value
+      .replace(piiPlaceholderPattern, ' ')
+      .split(nextLabelPattern, 1)[0]
+      ?.replace(/^[\s:：・／/|｜\-–—、,，]+|[\s|｜／/、,，・:：\-–—]+$/gu, '')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, 500) ?? ''
   // An inline label opened inside brackets - 単価：60万円（精算：140-180h） -
   // leaves the closing bracket dangling on the value. Strip closers only while
   // they are unbalanced, so a value that carries its own （…） note keeps it.
@@ -601,12 +665,10 @@ const shorthandTokenLabelPattern = /^【[^】]{1,10}】[\s]*/u
  * Experience clould経験（常駐） - belongs to リモート, and the token keeps the
  * rest as what it always was.
  */
-const shorthandWorkStylePattern =
-  /[（(]([^（()）]*(?:常駐|常驻|在宅|リモート|テレワーク|出社|出勤|フルリモ|ハイブリッド)[^（()）]*)[）)]/u
+const shorthandWorkStylePattern = /[（(]([^（()）]*(?:常駐|常驻|在宅|リモート|テレワーク|出社|出勤|フルリモ|ハイブリッド)[^（()）]*)[）)]/u
 
 type ShorthandTokenKey =
-  | 'required_skills' | 'role' | 'japanese_level' | 'location' | 'remote'
-  | 'headcount' | 'interview' | 'rate' | 'start_date' | 'notes'
+  'required_skills' | 'role' | 'japanese_level' | 'location' | 'remote' | 'headcount' | 'interview' | 'rate' | 'start_date' | 'notes'
 
 /**
  * What a bare shorthand token can only mean. Conditions are recognised by
@@ -621,18 +683,21 @@ function classifyShorthandToken(token: string): ShorthandTokenKey {
     return bareLanguageNamePattern.test(token) ? 'notes' : 'required_skills'
   }
   if (/(?:日本語|日语|JLPT|(?<![A-Za-z])N[1-5](?![A-Za-z0-9])|ネイティブ|ビジネスレベル|流暢|流畅)/u.test(token)) return 'japanese_level'
-  if (/(?:都内|東京|大阪|名古屋|福岡|神奈川|埼玉|千葉|横浜|関西|関東|勤務地|[^\s、]{1,6}駅|[^\s、]{1,4}区(?![A-Za-z]))/u.test(token)) return 'location'
+  if (/(?:都内|東京|大阪|名古屋|福岡|神奈川|埼玉|千葉|横浜|関西|関東|勤務地|[^\s、]{1,6}駅|[^\s、]{1,4}区(?![A-Za-z]))/u.test(token))
+    return 'location'
   if (/(?:在宅|リモート|テレワーク|常駐|常驻|出社|出勤|フルリモ|ハイブリッド)/u.test(token)) return 'remote'
   if (/^(?:[0-9０-９]{1,3}|[一二三四五六七八九十]|数)[\s]*(?:名|人)(?![A-Za-z])/u.test(token)) return 'headcount'
   if (/(?:面談|面接)/u.test(token)) return 'interview'
   if (/(?:[0-9０-９]+[\s]*(?:万円?|k|K)(?![A-Za-z])|単価|単金|￥|¥)/u.test(token)) return 'rate'
-  if (/^(?:[0-9０-９]{1,2}月|[0-9０-９]{4}[\/年]|即日|ASAP|asap|長期|超長期|来月|今月|翌月)|(?:開始|参画|稼働|スタート)/u.test(token)) return 'start_date'
+  if (/^(?:[0-9０-９]{1,2}月|[0-9０-９]{4}[\/年]|即日|ASAP|asap|長期|超長期|来月|今月|翌月)|(?:開始|参画|稼働|スタート)/u.test(token))
+    return 'start_date'
   if (requirementLikeTitlePattern.test(token)) return 'required_skills'
   if (/^(?:PM|PL|PMO|SE|PG|TL|BSE|BrSE)$/iu.test(token)) return 'role'
   if (/[A-Za-z]/u.test(token)) return 'required_skills'
   // A process range - 設計から～, 要件定義～ - names the work, not a condition.
   if (workPhaseRangePattern.test(token)) return 'role'
-  if (/(?:開発|設計|テスト|試験|運用|保守|構築|支援|管理|担当|リーダー|エンジニア|コンサル|ディレクター|マネージャー)$/u.test(token)) return 'role'
+  if (/(?:開発|設計|テスト|試験|運用|保守|構築|支援|管理|担当|リーダー|エンジニア|コンサル|ディレクター|マネージャー)$/u.test(token))
+    return 'role'
   return 'notes'
 }
 
@@ -682,7 +747,10 @@ export function parseShorthandCaseLine(line: string): ShorthandCase | null {
       // the work style is its own value and the requirement keeps the rest.
       const workStyle = shorthandWorkStylePattern.exec(cleaned)?.[1]?.trim()
       const token = workStyle
-        ? cleaned.replace(shorthandWorkStylePattern, '').replace(/[\s・、，]+$/u, '').trim()
+        ? cleaned
+            .replace(shorthandWorkStylePattern, '')
+            .replace(/[\s・、，]+$/u, '')
+            .trim()
         : cleaned
       if (workStyle) values.set('remote', [...(values.get('remote') ?? []), workStyle])
       if (!token) continue
@@ -719,75 +787,92 @@ export function extractJobCaseDraft(
 ): JobCaseExtractionDraftV2 {
   const source = jobCaseSourceSchema.parse(rawSource)
   let appliedOverrides = 0
-  const subjectLabel: JobCaseFieldSource['sourceLabel'] = source.sourceType === 'gmail'
-    ? 'Gmail Subject'
-    : source.sourceType === 'eml'
-      ? 'EML Subject'
-      : source.sourceType === 'chat-paste'
-        ? 'Chat Subject'
-        : source.sourceType === 'wechat-visible' ? 'WeChat Subject' : 'Manual Subject'
-  const bodyLabel: JobCaseFieldSource['sourceLabel'] = source.sourceType === 'gmail'
-    ? 'Gmail Body'
-    : source.sourceType === 'eml'
-      ? 'EML Body'
-      : source.sourceType === 'chat-paste'
-        ? 'Chat Body'
-        : source.sourceType === 'wechat-visible' ? 'WeChat Body' : 'Manual Body'
+  const subjectLabel: JobCaseFieldSource['sourceLabel'] =
+    source.sourceType === 'gmail'
+      ? 'Gmail Subject'
+      : source.sourceType === 'eml'
+        ? 'EML Subject'
+        : source.sourceType === 'chat-paste'
+          ? 'Chat Subject'
+          : source.sourceType === 'wechat-visible'
+            ? 'WeChat Subject'
+            : 'Manual Subject'
+  const bodyLabel: JobCaseFieldSource['sourceLabel'] =
+    source.sourceType === 'gmail'
+      ? 'Gmail Body'
+      : source.sourceType === 'eml'
+        ? 'EML Body'
+        : source.sourceType === 'chat-paste'
+          ? 'Chat Body'
+          : source.sourceType === 'wechat-visible'
+            ? 'WeChat Body'
+            : 'Manual Body'
   // A partner's own labels are rewritten to the built-in ones before the
   // label parser runs, so an alias behaves exactly like the label it maps to.
   const lines = bodyLines(source.redactedBody).map((line) => canonicalizeJobCaseLabelLine(line, aliases))
   // A record that is one chat line is a shorthand: its fields are bare tokens.
   // A leading 案件N line and the dotted rules around it open and separate the
   // record without stating anything, so the record's own lines are what is read.
-  const businessLines = source.redactedBody.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean)
-  const recordLines = businessLines.filter(
-    (line) => !recordRootOnlyLinePattern.test(line) && !separatorOnlyLinePattern.test(line)
-  )
-  const shorthand = recordLines.length === 1
-    ? parseShorthandCaseLine(canonicalizeJobCaseLabelLine(recordLines[0]!, aliases))
-    : null
+  const businessLines = source.redactedBody
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const recordLines = businessLines.filter((line) => !recordRootOnlyLinePattern.test(line) && !separatorOnlyLinePattern.test(line))
+  const shorthand = recordLines.length === 1 ? parseShorthandCaseLine(canonicalizeJobCaseLabelLine(recordLines[0]!, aliases)) : null
   const shorthandSource = (): JobCaseFieldSource[] => [{ sourceLabel: bodyLabel, excerpt: excerpt(recordLines[0] ?? '') }]
   // The line the record is named from: its subject, unless the subject is only
   // the record's number, in which case its first business line is.
   const heading = recordRootOnlyLinePattern.test(source.redactedSubject.trim())
-    ? recordLines[0] ?? source.redactedSubject
+    ? (recordLines[0] ?? source.redactedSubject)
     : source.redactedSubject
   const bullet = bulletPeriodAndPlace(lines)
   const shorthandValue = (key: JobCaseFieldKey): string | null =>
-    shorthand && key !== 'title' && key in shorthand.fields ? shorthand.fields[key as ShorthandTokenKey] ?? null : null
+    shorthand && key !== 'title' && key in shorthand.fields ? (shorthand.fields[key as ShorthandTokenKey] ?? null) : null
   const fields = fieldDefinitions.map((definition) => {
     const rawOverride = fieldOverrides[definition.key]
     const cleanedOverride = rawOverride ? cleanBusinessValue(rawOverride) : null
-    const normalizedOverride = cleanedOverride && definition.key === 'work_authorization'
-      ? normalizedJobCaseWorkAuthorizationRequirement(cleanedOverride)
-      : cleanedOverride
+    const normalizedOverride =
+      cleanedOverride && definition.key === 'work_authorization'
+        ? normalizedJobCaseWorkAuthorizationRequirement(cleanedOverride)
+        : cleanedOverride
     // An override that is the whole shorthand line - the model copied the
     // line into 備考 or 必須スキル instead of a value - is not a field value.
-    const override = normalizedOverride && shorthand && definition.key !== 'title'
-      && normalizedOverride.length >= Math.ceil(shorthand.line.length * 0.9)
-      ? null
-      : normalizedOverride
+    const override =
+      normalizedOverride && shorthand && definition.key !== 'title' && normalizedOverride.length >= Math.ceil(shorthand.line.length * 0.9)
+        ? null
+        : normalizedOverride
     if (override) {
       if (definition.key === 'title' && shorthand && shorthand.title !== override && shorthand.title.includes(override)) {
         // The cloud lane named the case after one technology cut out of the
         // list; the shorthand's own technical description is the name.
-        return makeField(definition, shorthand.title, shorthandFieldConfidence, [{ sourceLabel: subjectLabel, excerpt: excerpt(source.redactedSubject) }])
+        return makeField(definition, shorthand.title, shorthandFieldConfidence, [
+          { sourceLabel: subjectLabel, excerpt: excerpt(source.redactedSubject) }
+        ])
       }
       appliedOverrides += 1
       if (definition.key === 'required_skills' && shorthand && shorthand.skills.length > 0) {
         // Every technology the line names is a requirement, whether or not
         // the cloud lane listed it.
         const missing = shorthand.skills
-          .flatMap((skill) => skill.split(/[／/]/u).map((part) => part.trim()).filter(Boolean))
+          .flatMap((skill) =>
+            skill
+              .split(/[／/]/u)
+              .map((part) => part.trim())
+              .filter(Boolean)
+          )
           .filter((part) => !containsSkill(override, part))
         if (missing.length > 0) {
-          return makeField(definition, `${override}、${missing.join('、')}`.slice(0, 500), overrideFieldConfidence, [{ sourceLabel: bodyLabel, excerpt: excerpt(rawOverride!) }, ...shorthandSource()])
+          return makeField(definition, `${override}、${missing.join('、')}`.slice(0, 500), overrideFieldConfidence, [
+            { sourceLabel: bodyLabel, excerpt: excerpt(rawOverride!) },
+            ...shorthandSource()
+          ])
         }
       }
       return makeField(definition, override, overrideFieldConfidence, [{ sourceLabel: bodyLabel, excerpt: excerpt(rawOverride!) }])
     }
     if (definition.key === 'title') {
-      if (shorthand) return makeField(definition, shorthand.title, shorthandFieldConfidence, [{ sourceLabel: subjectLabel, excerpt: excerpt(heading) }])
+      if (shorthand)
+        return makeField(definition, shorthand.title, shorthandFieldConfidence, [{ sourceLabel: subjectLabel, excerpt: excerpt(heading) }])
       // A pasted heading often carries its own label - 案件名: X, 案件1： -
       // which is not part of the name.
       const subject = heading.replace(caseNumberPrefixPattern, '')
@@ -853,12 +938,9 @@ export function extractJobCaseDraft(
   const skillsIndex = fields.findIndex((field) => field.key === 'required_skills')
   const titleValue = fields.find((field) => field.key === 'title')?.value ?? null
   if (skillsIndex >= 0 && titleValue && !fields[skillsIndex]!.value && requirementLikeTitlePattern.test(titleValue)) {
-    fields[skillsIndex] = makeField(
-      fieldDefinitions[skillsIndex]!,
-      titleValue,
-      0.6,
-      [{ sourceLabel: subjectLabel, excerpt: excerpt(titleValue) }]
-    )
+    fields[skillsIndex] = makeField(fieldDefinitions[skillsIndex]!, titleValue, 0.6, [
+      { sourceLabel: subjectLabel, excerpt: excerpt(titleValue) }
+    ])
   }
   const warnings = new Set(source.warningCodes)
   warnings.add('DETERMINISTIC_EXTRACTION_REQUIRES_REVIEW')
@@ -917,10 +999,7 @@ export interface RedactedGmailJobCaseSourceInput {
   createdAt: string
 }
 
-export function createGmailJobCaseSource(
-  input: RedactedGmailJobCaseSourceInput,
-  sourceId: string
-): JobCaseSource {
+export function createGmailJobCaseSource(input: RedactedGmailJobCaseSourceInput, sourceId: string): JobCaseSource {
   return jobCaseSourceSchema.parse({
     version: 'job-case-source-v1',
     id: sourceId,
@@ -933,13 +1012,16 @@ export function createGmailJobCaseSource(
     redactedSubject: input.redactedSubject,
     redactedBody: input.redactedBody,
     redactionSessionId: input.redactionSessionId,
-    warningCodes: [...new Set([
-      'UNTRUSTED_SOURCE_CONTENT',
-      ...input.warningCodes,
-      ...(input.warningCodes.includes('PROMPT_INJECTION_PATTERN') || sourceInstructionPattern.test(`${input.redactedSubject}\n${input.redactedBody}`)
-        ? ['PROMPT_INJECTION_CONTENT_IGNORED']
-        : [])
-    ])],
+    warningCodes: [
+      ...new Set([
+        'UNTRUSTED_SOURCE_CONTENT',
+        ...input.warningCodes,
+        ...(input.warningCodes.includes('PROMPT_INJECTION_PATTERN') ||
+        sourceInstructionPattern.test(`${input.redactedSubject}\n${input.redactedBody}`)
+          ? ['PROMPT_INJECTION_CONTENT_IGNORED']
+          : [])
+      ])
+    ],
     createdAt: input.createdAt
   })
 }
@@ -985,15 +1067,17 @@ export function createRedactedManualJobCaseSource(
     redactedSubject,
     redactedBody,
     redactionSessionId: redaction.session.id,
-    warningCodes: [...new Set([
-      'MANUAL_SOURCE_LOCAL_REDACTION',
-      'UNTRUSTED_SOURCE_CONTENT',
-      ...(sourceInstructionPattern.test(localText) ? ['PROMPT_INJECTION_CONTENT_IGNORED'] : []),
-      ...redaction.blockedReasons,
-      ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
-        ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
-        : [])
-    ])],
+    warningCodes: [
+      ...new Set([
+        'MANUAL_SOURCE_LOCAL_REDACTION',
+        'UNTRUSTED_SOURCE_CONTENT',
+        ...(sourceInstructionPattern.test(localText) ? ['PROMPT_INJECTION_CONTENT_IGNORED'] : []),
+        ...redaction.blockedReasons,
+        ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
+          ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
+          : [])
+      ])
+    ],
     createdAt: now.toISOString()
   })
   return { source, redaction }
@@ -1028,16 +1112,18 @@ export function createRedactedEmlJobCaseSource(
     redactedSubject: applyLocalPiiMappings(input.subject, redaction.mappings).trim(),
     redactedBody: applyLocalPiiMappings(input.body, redaction.mappings).trim(),
     redactionSessionId: redaction.session.id,
-    warningCodes: [...new Set([
-      'EML_SOURCE_LOCAL_REDACTION',
-      'UNTRUSTED_SOURCE_CONTENT',
-      ...(sourceInstructionPattern.test(localText) ? ['PROMPT_INJECTION_CONTENT_IGNORED'] : []),
-      ...input.warningCodes,
-      ...redaction.blockedReasons,
-      ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
-        ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
-        : [])
-    ])],
+    warningCodes: [
+      ...new Set([
+        'EML_SOURCE_LOCAL_REDACTION',
+        'UNTRUSTED_SOURCE_CONTENT',
+        ...(sourceInstructionPattern.test(localText) ? ['PROMPT_INJECTION_CONTENT_IGNORED'] : []),
+        ...input.warningCodes,
+        ...redaction.blockedReasons,
+        ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
+          ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
+          : [])
+      ])
+    ],
     createdAt: now.toISOString()
   })
   return { source, redaction }
@@ -1060,11 +1146,12 @@ export function createRedactedChatPasteJobCaseSource(
     throw new Error('Residual direct identifier remained after local chat-paste redaction.')
   }
   const redactedBody = applyLocalPiiMappings(text, redaction.mappings).trim()
-  const firstBusinessLine = redactedBody
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find(Boolean)
-    ?.slice(0, 160) ?? 'チャット貼り付け案件'
+  const firstBusinessLine =
+    redactedBody
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find(Boolean)
+      ?.slice(0, 160) ?? 'チャット貼り付け案件'
   const source = jobCaseSourceSchema.parse({
     version: 'job-case-source-v1',
     id: sourceId,
@@ -1077,15 +1164,17 @@ export function createRedactedChatPasteJobCaseSource(
     redactedSubject: firstBusinessLine,
     redactedBody,
     redactionSessionId: redaction.session.id,
-    warningCodes: [...new Set([
-      'CHAT_PASTE_ONE_TIME_LOCAL_REDACTION',
-      'UNTRUSTED_SOURCE_CONTENT',
-      'PROMPT_INJECTION_CONTENT_IGNORED',
-      ...redaction.blockedReasons,
-      ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
-        ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
-        : [])
-    ])],
+    warningCodes: [
+      ...new Set([
+        'CHAT_PASTE_ONE_TIME_LOCAL_REDACTION',
+        'UNTRUSTED_SOURCE_CONTENT',
+        'PROMPT_INJECTION_CONTENT_IGNORED',
+        ...redaction.blockedReasons,
+        ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
+          ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
+          : [])
+      ])
+    ],
     createdAt: now.toISOString()
   })
   return { source, redaction }
@@ -1112,11 +1201,12 @@ export function createRedactedWechatVisibleJobCaseSource(
     throw new Error('Residual direct identifier remained after local WeChat visible-message redaction.')
   }
   const redactedBody = applyLocalPiiMappings(text, redaction.mappings).trim()
-  const firstBusinessLine = redactedBody
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find(Boolean)
-    ?.slice(0, 160) ?? '微信可視メッセージ案件'
+  const firstBusinessLine =
+    redactedBody
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find(Boolean)
+      ?.slice(0, 160) ?? '微信可視メッセージ案件'
   const source = jobCaseSourceSchema.parse({
     version: 'job-case-source-v1',
     id: sourceId,
@@ -1129,21 +1219,21 @@ export function createRedactedWechatVisibleJobCaseSource(
     redactedSubject: firstBusinessLine,
     redactedBody,
     redactionSessionId: redaction.session.id,
-    warningCodes: [...new Set([
-      'WECHAT_VISIBLE_ONE_TIME_LOCAL_REDACTION',
-      input.captureMethod === 'accessibility-tree'
-        ? 'WECHAT_CAPTURE_ACCESSIBILITY_TREE'
-        : 'WECHAT_CAPTURE_SCREEN_CAPTURE_KIT_VISION_OCR',
-      ...(input.truncated ? ['WECHAT_VISIBLE_TEXT_TRUNCATED'] : []),
-      'WECHAT_RAW_TEXT_NOT_PERSISTED',
-      'WECHAT_RAW_IMAGE_NOT_PERSISTED',
-      'UNTRUSTED_SOURCE_CONTENT',
-      'PROMPT_INJECTION_CONTENT_IGNORED',
-      ...redaction.blockedReasons,
-      ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
-        ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
-        : [])
-    ])],
+    warningCodes: [
+      ...new Set([
+        'WECHAT_VISIBLE_ONE_TIME_LOCAL_REDACTION',
+        input.captureMethod === 'accessibility-tree' ? 'WECHAT_CAPTURE_ACCESSIBILITY_TREE' : 'WECHAT_CAPTURE_SCREEN_CAPTURE_KIT_VISION_OCR',
+        ...(input.truncated ? ['WECHAT_VISIBLE_TEXT_TRUNCATED'] : []),
+        'WECHAT_RAW_TEXT_NOT_PERSISTED',
+        'WECHAT_RAW_IMAGE_NOT_PERSISTED',
+        'UNTRUSTED_SOURCE_CONTENT',
+        'PROMPT_INJECTION_CONTENT_IGNORED',
+        ...redaction.blockedReasons,
+        ...(redaction.mappings.some((mapping) => mapping.identifierType === 'nationality')
+          ? ['NATIONALITY_REQUIREMENT_BLOCKED_USE_WORK_AUTHORIZATION']
+          : [])
+      ])
+    ],
     createdAt: now.toISOString()
   })
   return { source, redaction }

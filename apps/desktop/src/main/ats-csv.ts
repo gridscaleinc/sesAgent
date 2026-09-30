@@ -15,17 +15,36 @@ export function parseCsv(text: string): string[][] {
     const char = text[index]!
     if (quoted) {
       if (char === '"') {
-        if (text[index + 1] === '"') { cell += '"'; index += 1 } else quoted = false
+        if (text[index + 1] === '"') {
+          cell += '"'
+          index += 1
+        } else quoted = false
       } else cell += char
       continue
     }
-    if (char === '"') { quoted = true; continue }
-    if (char === ',') { row.push(cell); cell = ''; continue }
+    if (char === '"') {
+      quoted = true
+      continue
+    }
+    if (char === ',') {
+      row.push(cell)
+      cell = ''
+      continue
+    }
     if (char === '\r') continue
-    if (char === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; continue }
+    if (char === '\n') {
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ''
+      continue
+    }
     cell += char
   }
-  if (cell.length > 0 || row.length > 0) { row.push(cell); rows.push(row) }
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell)
+    rows.push(row)
+  }
   return rows.filter((line) => line.some((value) => value.trim().length > 0))
 }
 
@@ -53,7 +72,10 @@ const headerLabels: ReadonlyArray<readonly [label: string, names: ReadonlyArray<
 ]
 
 function normalizedHeader(header: string): string {
-  return header.normalize('NFKC').replace(/[\s_\-()（）]/gu, '').toLocaleLowerCase('en-US')
+  return header
+    .normalize('NFKC')
+    .replace(/[\s_\-()（）]/gu, '')
+    .toLocaleLowerCase('en-US')
 }
 
 function labelForHeader(header: string): string {
@@ -84,8 +106,14 @@ export function atsCsvToCandidateTexts(csvText: string, maxRows = 200): { rows: 
       return label && value ? [`${label}: ${value}`] : []
     })
     const hasIdentity = lines.some((line) => /^(?:氏名|スキル|職種):/u.test(line))
-    if (!hasIdentity) { skipped += 1; continue }
-    if (rows.length >= maxRows) { skipped += 1; continue }
+    if (!hasIdentity) {
+      skipped += 1
+      continue
+    }
+    if (rows.length >= maxRows) {
+      skipped += 1
+      continue
+    }
     rows.push({ row: index + 2, text: lines.join('\n') })
   }
   return { rows, skipped }

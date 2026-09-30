@@ -16,7 +16,11 @@ const electronMock = vi.hoisted(() => {
   const handlers = new Map<string, Handler>()
   return {
     handlers,
-    ipcMain: { handle: vi.fn((channel: string, handler: Handler) => { handlers.set(channel, handler) }) }
+    ipcMain: {
+      handle: vi.fn((channel: string, handler: Handler) => {
+        handlers.set(channel, handler)
+      })
+    }
   }
 })
 
@@ -50,14 +54,28 @@ function review(overrides: Partial<JobCaseReviewSnapshot> = {}): JobCaseReviewSn
     status: 'completed',
     privacyReviewed: true,
     fields: jobCaseFieldKeys.map((key) => ({
-      key, label: key, originalValue: caseValues[key] ?? null, value: caseValues[key] ?? null,
-      confidence: 1, status: caseValues[key] ? 'confirmed' as const : 'missing' as const,
-      sourceLabels: [], changed: false, changeReason: null
+      key,
+      label: key,
+      originalValue: caseValues[key] ?? null,
+      value: caseValues[key] ?? null,
+      confidence: 1,
+      status: caseValues[key] ? ('confirmed' as const) : ('missing' as const),
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
     })),
     warningCodes: [],
     completedAt: '2026-08-25T01:00:00.000Z',
     reviewerDisplayName: 'HR',
-    jobCase: { id: jobCaseId, sourceReviewId: reviewId, version: 1, status: 'active', confirmedAt: '2026-08-25T01:00:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false },
+    jobCase: {
+      id: jobCaseId,
+      sourceReviewId: reviewId,
+      version: 1,
+      status: 'active',
+      confirmedAt: '2026-08-25T01:00:00.000Z',
+      confirmedBy: 'HR',
+      containsDirectIdentifiers: false
+    },
     lifecycle: 'active',
     cloudEligible: false,
     ...overrides
@@ -78,7 +96,10 @@ function dependencies(overrides: Partial<Record<string, unknown>> = {}): Broadca
     getJobCaseHistory: vi.fn(() => []),
     listBroadcastTemplates: vi.fn(() => [builtInBroadcastTemplate()]),
     appendCaseBroadcastCopy: vi.fn((entry: object) => ({
-      ...entry, id: 'copy-1', textSha256: 'a'.repeat(64), createdAt: '2026-08-25T04:00:00.000Z'
+      ...entry,
+      id: 'copy-1',
+      textSha256: 'a'.repeat(64),
+      createdAt: '2026-08-25T04:00:00.000Z'
     })),
     ...overrides
   }
@@ -102,17 +123,28 @@ describe('broadcast IPC handlers', () => {
   })
 
   it('prepares an old Gmail draft with a placeholder-only note and does not change meaningful fields', () => {
-    const draft = review({ status: 'awaiting-review', jobCase: null, fields: review().fields.map(field => field.key === 'notes' ? { ...field, value: '<NATIONALITY_001>' } : field) })
+    const draft = review({
+      status: 'awaiting-review',
+      jobCase: null,
+      fields: review().fields.map((field) => (field.key === 'notes' ? { ...field, value: '<NATIONALITY_001>' } : field))
+    })
     const saved = review()
     const deps = dependencies({ getJobCaseReview: vi.fn(() => draft), confirmJobCaseReview: vi.fn(() => saved) })
     registerBroadcastHandlers(deps)
     expect(invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toEqual(saved)
-    expect(deps.repository.confirmJobCaseReview).toHaveBeenCalledWith(expect.objectContaining({
-      reviewId, reviewRevision: 1, fields: expect.arrayContaining([
-        { key: 'notes', value: null, confirmed: true, changeReason: 'Remove placeholder-only field after local redaction' },
-        { key: 'required_skills', value: 'Java、Spring Boot', confirmed: true }
-      ])
-    }), 'operator-1', 'HR', expect.any(Date))
+    expect(deps.repository.confirmJobCaseReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewId,
+        reviewRevision: 1,
+        fields: expect.arrayContaining([
+          { key: 'notes', value: null, confirmed: true, changeReason: 'Remove placeholder-only field after local redaction' },
+          { key: 'required_skills', value: 'Java、Spring Boot', confirmed: true }
+        ])
+      }),
+      'operator-1',
+      'HR',
+      expect.any(Date)
+    )
     expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
     expect(deps.openExternal).not.toHaveBeenCalled()
     vi.mocked(deps.repository.getJobCaseReview).mockReturnValue(saved)
@@ -133,8 +165,12 @@ describe('broadcast IPC handlers', () => {
   })
 
   it('propagates preparation failures instead of returning a draft as a ready case', () => {
-    const deps = dependencies({ getJobCaseReview: vi.fn(() => review({ status: 'awaiting-review', jobCase: null })),
-      confirmJobCaseReview: vi.fn(() => { throw new Error('案件名は必須です。') }) })
+    const deps = dependencies({
+      getJobCaseReview: vi.fn(() => review({ status: 'awaiting-review', jobCase: null })),
+      confirmJobCaseReview: vi.fn(() => {
+        throw new Error('案件名は必須です。')
+      })
+    })
     registerBroadcastHandlers(deps)
     expect(() => invoke(ipcChannels.prepareCaseIntroduction, { reviewId, expectedReviewRevision: 1 })).toThrow('案件名は必須です。')
   })
@@ -143,10 +179,18 @@ describe('broadcast IPC handlers', () => {
     registerBroadcastHandlers(dependencies())
     const workspace = invoke(ipcChannels.listBroadcastWorkspace) as { queue: unknown[]; templates: unknown[] }
     expect(workspace).toEqual({
-      queue: [{
-        reviewId, jobCaseId, jobCaseVersion: 1, title: 'Java 案件', sourceType: 'gmail',
-        status: 'new', lastCopy: null, hasUpdateSinceLastCopy: false
-      }],
+      queue: [
+        {
+          reviewId,
+          jobCaseId,
+          jobCaseVersion: 1,
+          title: 'Java 案件',
+          sourceType: 'gmail',
+          status: 'new',
+          lastCopy: null,
+          hasUpdateSinceLastCopy: false
+        }
+      ],
       templates: [expect.objectContaining({ name: '標準' })]
     })
     expect(JSON.stringify(workspace)).not.toContain('group')
@@ -155,7 +199,10 @@ describe('broadcast IPC handlers', () => {
   it('drafts both languages and never puts the chain or the payment terms in either', () => {
     registerBroadcastHandlers(dependencies())
     const draft = invoke(ipcChannels.draftCaseBroadcast, { reviewId }) as {
-      textJa: string; textZh: string; forbiddenJa: string[]; forbiddenZh: string[]
+      textJa: string
+      textZh: string
+      forbiddenJa: string[]
+      forbiddenZh: string[]
     }
     expect(draft.textJa).toContain('【案件】Java 案件')
     expect(draft.textJa).toContain('単価：～65万円')
@@ -171,12 +218,21 @@ describe('broadcast IPC handlers', () => {
   it('reports the identifier types it found rather than blocking silently', () => {
     const withPlaceholder: Record<string, string> = { ...caseValues, title: '<PERSON_NAME_001> 案件' }
     const deps = dependencies({
-      getJobCaseReview: vi.fn(() => review({
-        fields: jobCaseFieldKeys.map((key) => ({
-          key, label: key, originalValue: withPlaceholder[key] ?? null, value: withPlaceholder[key] ?? null,
-          confidence: 1, status: 'confirmed' as const, sourceLabels: [], changed: false, changeReason: null
-        }))
-      }))
+      getJobCaseReview: vi.fn(() =>
+        review({
+          fields: jobCaseFieldKeys.map((key) => ({
+            key,
+            label: key,
+            originalValue: withPlaceholder[key] ?? null,
+            value: withPlaceholder[key] ?? null,
+            confidence: 1,
+            status: 'confirmed' as const,
+            sourceLabels: [],
+            changed: false,
+            changeReason: null
+          }))
+        })
+      )
     })
     registerBroadcastHandlers(deps)
     const draft = invoke(ipcChannels.draftCaseBroadcast, { reviewId }) as { forbiddenJa: string[] }
@@ -195,7 +251,15 @@ describe('broadcast IPC handlers', () => {
   it('validates before clipboard writing and rejects stale case or template versions without recording', () => {
     const deps = dependencies()
     registerBroadcastHandlers(deps)
-    const input = { reviewId, lang: 'ja', kind: 'new', templateId: builtInBroadcastTemplate().id, text: 'Java project', expectedJobCaseVersion: 1, expectedTemplateRevision: 1 }
+    const input = {
+      reviewId,
+      lang: 'ja',
+      kind: 'new',
+      templateId: builtInBroadcastTemplate().id,
+      text: 'Java project',
+      expectedJobCaseVersion: 1,
+      expectedTemplateRevision: 1
+    }
     expect(invoke(ipcChannels.validateCaseBroadcastMessage, input)).toEqual(input)
     expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
     expect(deps.openExternal).not.toHaveBeenCalled()
@@ -211,24 +275,38 @@ describe('broadcast IPC handlers', () => {
     const deps = dependencies()
     registerBroadcastHandlers(deps)
     const result = invoke(ipcChannels.recordCaseBroadcastCopy, {
-      reviewId, lang: 'zh', kind: 'new',
-      templateId: builtInBroadcastTemplate().id, text: '【案件】Java 案件'
+      reviewId,
+      lang: 'zh',
+      kind: 'new',
+      templateId: builtInBroadcastTemplate().id,
+      text: '【案件】Java 案件'
     }) as { copy: { id: string } }
     expect(result.copy.id).toBe('copy-1')
     expect(deps.repository.appendCaseBroadcastCopy).toHaveBeenCalledWith({
-      reviewId, jobCaseId, jobCaseVersion: 1,
-      templateId: builtInBroadcastTemplate().id, templateRevision: 1,
-      lang: 'zh', kind: 'new', text: '【案件】Java 案件', actorId: 'operator-1'
+      reviewId,
+      jobCaseId,
+      jobCaseVersion: 1,
+      templateId: builtInBroadcastTemplate().id,
+      templateRevision: 1,
+      lang: 'zh',
+      kind: 'new',
+      text: '【案件】Java 案件',
+      actorId: 'operator-1'
     })
   })
 
   it('rejects text that still carries an identifier placeholder, naming the types', () => {
     const deps = dependencies()
     registerBroadcastHandlers(deps)
-    expect(() => invoke(ipcChannels.recordCaseBroadcastCopy, {
-      reviewId, lang: 'ja', kind: 'new',
-      templateId: builtInBroadcastTemplate().id, text: '【案件】<PERSON_NAME_001> 様の案件'
-    })).toThrow(/person_name/u)
+    expect(() =>
+      invoke(ipcChannels.recordCaseBroadcastCopy, {
+        reviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId: builtInBroadcastTemplate().id,
+        text: '【案件】<PERSON_NAME_001> 様の案件'
+      })
+    ).toThrow(/person_name/u)
     expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
   })
 
@@ -237,11 +315,18 @@ describe('broadcast IPC handlers', () => {
     registerBroadcastHandlers(deps)
     const body = '【案件】Java 案件\n必須：Java & Spring Boot\nbcc=本文の一部'
 
-    await expect(invoke(ipcChannels.openCaseBroadcastEmail, {
-      reviewId, lang: 'ja', kind: 'new',
-      templateId: builtInBroadcastTemplate().id, text: body,
-      recipient: 'untrusted@example.invalid', bcc: 'hidden@example.invalid', url: 'https://example.invalid/'
-    })).resolves.toEqual({ opened: true })
+    await expect(
+      invoke(ipcChannels.openCaseBroadcastEmail, {
+        reviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId: builtInBroadcastTemplate().id,
+        text: body,
+        recipient: 'untrusted@example.invalid',
+        bcc: 'hidden@example.invalid',
+        url: 'https://example.invalid/'
+      })
+    ).resolves.toEqual({ opened: true })
 
     expect(deps.openExternal).toHaveBeenCalledTimes(1)
     const openedUrl = String(deps.openExternal.mock.calls[0]![0])
@@ -260,19 +345,30 @@ describe('broadcast IPC handlers', () => {
     const deps = dependencies()
     registerBroadcastHandlers(deps)
 
-    await expect(invoke(ipcChannels.openCaseBroadcastEmail, {
-      reviewId, lang: 'ja', kind: 'new',
-      templateId: builtInBroadcastTemplate().id, text: '【案件】<PERSON_NAME_001> 様の案件'
-    })).rejects.toThrow(/person_name/u)
+    await expect(
+      invoke(ipcChannels.openCaseBroadcastEmail, {
+        reviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId: builtInBroadcastTemplate().id,
+        text: '【案件】<PERSON_NAME_001> 様の案件'
+      })
+    ).rejects.toThrow(/person_name/u)
     expect(deps.openExternal).not.toHaveBeenCalled()
   })
 
   it('refuses to record a copy of an unconfirmed case', () => {
     const deps = dependencies({ getJobCaseReview: vi.fn(() => review({ status: 'awaiting-review', jobCase: null })) })
     registerBroadcastHandlers(deps)
-    expect(() => invoke(ipcChannels.recordCaseBroadcastCopy, {
-      reviewId, lang: 'ja', kind: 'new', templateId: builtInBroadcastTemplate().id, text: '案件'
-    })).toThrow(/確認待ち/u)
+    expect(() =>
+      invoke(ipcChannels.recordCaseBroadcastCopy, {
+        reviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId: builtInBroadcastTemplate().id,
+        text: '案件'
+      })
+    ).toThrow(/確認待ち/u)
     expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
   })
 
@@ -284,20 +380,45 @@ describe('broadcast IPC handlers', () => {
   })
 
   it('merges the copies and the pre-v43 ledger into one history that carries no text', () => {
-    registerBroadcastHandlers(dependencies({
-      listCaseBroadcastCopies: vi.fn(() => [{
-        id: 'copy-1', reviewId, jobCaseId, jobCaseVersion: 2,
-        templateId: builtInBroadcastTemplate().id, templateRevision: 1, lang: 'zh', kind: 'update' as const,
-        text: '【更新】Java 案件', textSha256: 'a'.repeat(64), actorId: 'operator-1',
-        createdAt: '2026-08-26T02:00:00.000Z'
-      }]),
-      listCaseBroadcasts: vi.fn(() => [{
-        id: 'legacy-1', reviewId, jobCaseId, jobCaseVersion: 1, groupId: 'group-1', groupName: '関東Javaグループ',
-        templateId: builtInBroadcastTemplate().id, templateRevision: 1, lang: 'ja', kind: 'new' as const,
-        action: 'marked_sent' as const, text: '【案件】Java 案件', textSha256: 'b'.repeat(64),
-        actorId: 'operator-1', createdAt: '2026-08-25T02:00:00.000Z'
-      }])
-    }))
+    registerBroadcastHandlers(
+      dependencies({
+        listCaseBroadcastCopies: vi.fn(() => [
+          {
+            id: 'copy-1',
+            reviewId,
+            jobCaseId,
+            jobCaseVersion: 2,
+            templateId: builtInBroadcastTemplate().id,
+            templateRevision: 1,
+            lang: 'zh',
+            kind: 'update' as const,
+            text: '【更新】Java 案件',
+            textSha256: 'a'.repeat(64),
+            actorId: 'operator-1',
+            createdAt: '2026-08-26T02:00:00.000Z'
+          }
+        ]),
+        listCaseBroadcasts: vi.fn(() => [
+          {
+            id: 'legacy-1',
+            reviewId,
+            jobCaseId,
+            jobCaseVersion: 1,
+            groupId: 'group-1',
+            groupName: '関東Javaグループ',
+            templateId: builtInBroadcastTemplate().id,
+            templateRevision: 1,
+            lang: 'ja',
+            kind: 'new' as const,
+            action: 'marked_sent' as const,
+            text: '【案件】Java 案件',
+            textSha256: 'b'.repeat(64),
+            actorId: 'operator-1',
+            createdAt: '2026-08-25T02:00:00.000Z'
+          }
+        ])
+      })
+    )
     const history = invoke(ipcChannels.listCaseBroadcasts, reviewId) as Array<Record<string, unknown>>
     expect(history.map((entry) => [entry.id, entry.source, entry.jobCaseVersion])).toEqual([
       ['copy-1', 'copy', 2],
@@ -314,26 +435,52 @@ describe('broadcast IPC handlers', () => {
 
   it('writes the update notice from the newest version ever copied', () => {
     const historyVersion = (version: number, values: Record<string, string>) => ({
-      id: jobCaseId, sourceReviewId: reviewId, sourceId: 'source-1', sourceType: 'gmail' as const,
-      version, reviewRevision: version, status: 'active' as const,
+      id: jobCaseId,
+      sourceReviewId: reviewId,
+      sourceId: 'source-1',
+      sourceType: 'gmail' as const,
+      version,
+      reviewRevision: version,
+      status: 'active' as const,
       fields: jobCaseFieldKeys.map((key) => ({ key, label: key, value: values[key] ?? null, sourceLabels: [] })),
-      confirmedAt: '2026-08-25T00:00:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false as const
+      confirmedAt: '2026-08-25T00:00:00.000Z',
+      confirmedBy: 'HR',
+      containsDirectIdentifiers: false as const
     })
-    registerBroadcastHandlers(dependencies({
-      getJobCaseReview: vi.fn(() => review({
-        jobCase: { id: jobCaseId, sourceReviewId: reviewId, version: 2, status: 'active', confirmedAt: '2026-08-26T00:00:00.000Z', confirmedBy: 'HR', containsDirectIdentifiers: false }
-      })),
-      listCaseBroadcastCopies: vi.fn(() => [{
-        id: 'copy-1', reviewId, jobCaseId, jobCaseVersion: 1,
-        templateId: builtInBroadcastTemplate().id, templateRevision: 1, lang: 'zh', kind: 'new',
-        text: '', textSha256: 'a'.repeat(64), actorId: 'operator-1',
-        createdAt: '2026-08-25T02:00:00.000Z'
-      }]),
-      getJobCaseHistory: vi.fn(() => [
-        historyVersion(2, { rate: '65万円' }),
-        historyVersion(1, { rate: '60万円' })
-      ])
-    }))
+    registerBroadcastHandlers(
+      dependencies({
+        getJobCaseReview: vi.fn(() =>
+          review({
+            jobCase: {
+              id: jobCaseId,
+              sourceReviewId: reviewId,
+              version: 2,
+              status: 'active',
+              confirmedAt: '2026-08-26T00:00:00.000Z',
+              confirmedBy: 'HR',
+              containsDirectIdentifiers: false
+            }
+          })
+        ),
+        listCaseBroadcastCopies: vi.fn(() => [
+          {
+            id: 'copy-1',
+            reviewId,
+            jobCaseId,
+            jobCaseVersion: 1,
+            templateId: builtInBroadcastTemplate().id,
+            templateRevision: 1,
+            lang: 'zh',
+            kind: 'new',
+            text: '',
+            textSha256: 'a'.repeat(64),
+            actorId: 'operator-1',
+            createdAt: '2026-08-25T02:00:00.000Z'
+          }
+        ]),
+        getJobCaseHistory: vi.fn(() => [historyVersion(2, { rate: '65万円' }), historyVersion(1, { rate: '60万円' })])
+      })
+    )
     expect(invoke(ipcChannels.draftCaseUpdateNotice, { reviewId })).toMatchObject({
       status: 'ready',
       textJa: '【更新】Java 案件\n・単価：～60万円 → ～65万円',
@@ -343,9 +490,75 @@ describe('broadcast IPC handlers', () => {
 
   it('checks the sender before doing anything', () => {
     const deps = dependencies()
-    const blocked = { ...deps, assertTrustedSender: vi.fn(() => { throw new Error('Blocked IPC request from an untrusted renderer.') }) }
+    const blocked = {
+      ...deps,
+      assertTrustedSender: vi.fn(() => {
+        throw new Error('Blocked IPC request from an untrusted renderer.')
+      })
+    }
     registerBroadcastHandlers(blocked)
     expect(() => invoke(ipcChannels.listBroadcastWorkspace)).toThrow(/untrusted renderer/u)
     expect(() => invoke(ipcChannels.recordCaseBroadcastCopy, {})).toThrow(/untrusted renderer/u)
+  })
+
+  it('saves an AI case introduction only for the current, valid case version and without personal contact details', () => {
+    const saved = [
+      {
+        reviewId,
+        jobCaseVersion: 1,
+        lang: 'ja',
+        style: 'standard',
+        text: '紹介文',
+        request: null,
+        experienceRunId: null,
+        generatedAt: 'now'
+      }
+    ]
+    const deps = dependencies({ saveCaseIntroductionDrafts: vi.fn(() => saved) })
+    registerBroadcastHandlers(deps)
+    const input = {
+      reviewId,
+      jobCaseVersion: 1,
+      style: 'standard',
+      request: null,
+      drafts: [{ lang: 'ja', text: 'Java案件のご紹介です。', experienceRunId: null }]
+    }
+    expect(invoke(ipcChannels.saveCaseIntroductionDrafts, input)).toEqual(saved)
+    expect(deps.repository.saveCaseIntroductionDrafts).toHaveBeenCalledWith(input)
+    expect(() => invoke(ipcChannels.saveCaseIntroductionDrafts, { ...input, jobCaseVersion: 2 })).toThrow(/案件资料已更新/)
+    expect(() =>
+      invoke(ipcChannels.saveCaseIntroductionDrafts, {
+        ...input,
+        drafts: [{ lang: 'ja', text: '担当 taro@example.co.jp までご連絡ください。', experienceRunId: null }]
+      })
+    ).toThrow(/个人信息/)
+    expect(deps.repository.saveCaseIntroductionDrafts).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers stored introductions only for the current case version', () => {
+    const stored = [
+      {
+        reviewId,
+        jobCaseVersion: 1,
+        lang: 'ja',
+        style: 'standard',
+        text: '現行',
+        request: null,
+        experienceRunId: null,
+        generatedAt: 'now'
+      },
+      {
+        reviewId,
+        jobCaseVersion: 0,
+        lang: 'zh',
+        style: 'standard',
+        text: '旧版',
+        request: null,
+        experienceRunId: null,
+        generatedAt: 'then'
+      }
+    ]
+    registerBroadcastHandlers(dependencies({ listCaseIntroductionDrafts: vi.fn(() => stored) }))
+    expect(invoke(ipcChannels.listCaseIntroductionDrafts, reviewId)).toEqual([stored[0]])
   })
 })

@@ -7,9 +7,7 @@ import {
   type RedactedPayload,
   type RedactionSessionEvidence
 } from '@privacy'
-import type {
-  PrepareAiCommerceCloudPromptResult
-} from '@shared/contracts'
+import type { PrepareAiCommerceCloudPromptResult } from '@shared/contracts'
 import { requireCloudAiPrivacyRuntime } from './cloud-ai-privacy'
 import type { CloudPrivacyGateBinding, CloudPrivacyGateSnapshot } from './privacy-gates'
 
@@ -57,11 +55,7 @@ export interface CloudAiReviewServiceOptions<TProviderResponse> {
   policyVersion: string
   loadGates(): Promise<CloudPrivacyGateSnapshot>
   confirm(review: CloudPromptNativeReview): Promise<boolean>
-  invoke(
-    payload: RedactedPayload,
-    operationId: string,
-    auditContext: CloudCallAuditContext
-  ): Promise<TProviderResponse>
+  invoke(payload: RedactedPayload, operationId: string, auditContext: CloudCallAuditContext): Promise<TProviderResponse>
   now?: () => Date
   idFactory?: () => string
 }
@@ -76,9 +70,11 @@ function hash(value: string | Buffer): string {
 }
 
 function sameGateBinding(left: CloudPrivacyGateBinding, right: CloudPrivacyGateBinding): boolean {
-  return left.qualityReportHash === right.qualityReportHash &&
+  return (
+    left.qualityReportHash === right.qualityReportHash &&
     left.privacyImplementationSha256 === right.privacyImplementationSha256 &&
     left.cloudEnforcementSha256 === right.cloudEnforcementSha256
+  )
 }
 
 function detectionSummaryHash(

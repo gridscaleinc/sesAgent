@@ -26,9 +26,21 @@ function clearManagedConfiguration(): void {
 afterEach(() => vi.unstubAllEnvs())
 
 it('exposes batch progress and intake counts without sending provider pagination tokens to the renderer', () => {
-  const lastRun = { mode: 'baseline', imported: 2, discovered: 2, duplicates: 0, filtered: 0, failed: 0, moreAvailable: true,
-    continuation: { pageToken: 'PRIVATE-PAGE-TOKEN', historyId: '100', startedAt: '2026-09-11T00:00:00Z', mode: 'baseline' } }
-  const repository = { getGmailSyncCheckpoint: () => ({ status: 'idle', historyId: '100', lastRun }), getGmailPersonnelIntakeStatus: () => ({ failed: 0, warnings: 0 }), countGmailMessages: () => 2 }
+  const lastRun = {
+    mode: 'baseline',
+    imported: 2,
+    discovered: 2,
+    duplicates: 0,
+    filtered: 0,
+    failed: 0,
+    moreAvailable: true,
+    continuation: { pageToken: 'PRIVATE-PAGE-TOKEN', historyId: '100', startedAt: '2026-09-11T00:00:00Z', mode: 'baseline' }
+  }
+  const repository = {
+    getGmailSyncCheckpoint: () => ({ status: 'idle', historyId: '100', lastRun }),
+    getGmailPersonnelIntakeStatus: () => ({ failed: 0, warnings: 0 }),
+    countGmailMessages: () => 2
+  }
   vi.stubEnv('SES_GMAIL_SYNC_INTERVAL_MINUTES', '7')
   const state = gmailSyncState(repository as any, { accountEmail: 'hr@example.com' } as any, null)
   expect(state.intervalMinutes).toBe(7)
@@ -48,7 +60,8 @@ describe('loadManagedGoogleWorkspaceConfiguration', () => {
       clientId: '1234567890-product.apps.googleusercontent.com',
       workspaceDomain: null,
       labelIds: ['INBOX'],
-      query: '案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画 OR 要員 OR 人材 OR スキルシート OR 経歴書 OR 履歴書 OR 人员 OR 简历 OR 面談 OR 面接 OR 日程調整 OR 入場 OR 面试 OR 进场',
+      query:
+        '案件 OR 募集 OR 要件 OR 単価 OR 商流 OR 稼働 OR 参画 OR 要員 OR 人材 OR スキルシート OR 経歴書 OR 履歴書 OR 人员 OR 简历 OR 面談 OR 面接 OR 日程調整 OR 入場 OR 面试 OR 进场',
       lookbackDays: 30,
       maxMessagesPerRun: 200
     })

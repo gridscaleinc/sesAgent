@@ -6,7 +6,12 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3-multiple-ciphers'
 import { createWorkTaskPreview, materializeWorkTask, recordCandidateMatchExecution } from '@application'
 import { currentSchemaVersion, EncryptedApplicationRepository } from '@persistence'
-import { createGmailJobCaseSource, createRedactedEmlJobCaseSource, createRedactedManualJobCaseSource, extractJobCaseDraft } from '@job-cases'
+import {
+  createGmailJobCaseSource,
+  createRedactedEmlJobCaseSource,
+  createRedactedManualJobCaseSource,
+  extractJobCaseDraft
+} from '@job-cases'
 import { redactTextForCloud } from '@privacy'
 import { evaluateSesCandidateBenchmark, extractCandidateDraft, searchConfirmedCandidateProfiles } from '@resume'
 import type { DocumentIR } from '@parsers'
@@ -29,43 +34,66 @@ try {
   const repository = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
   assert.equal(repository.getLocalOperatorProfile(), null)
   assert.equal(repository.getLocalApplicationPreferences(), null)
-  let operatorProfile = repository.saveLocalOperatorProfile({
-    displayName: operatorNameSentinel,
-    roleLabel: 'SES営業担当',
-    expectedRevision: null
-  }, new Date('2026-07-17T00:00:00.000Z'))
+  let operatorProfile = repository.saveLocalOperatorProfile(
+    {
+      displayName: operatorNameSentinel,
+      roleLabel: 'SES営業担当',
+      expectedRevision: null
+    },
+    new Date('2026-07-17T00:00:00.000Z')
+  )
   const stableOperatorId = operatorProfile.operatorId
   assert.equal(operatorProfile.revision, 1)
   assert.equal(operatorProfile.cloudEligible, false)
-  assert.throws(() => repository.saveLocalOperatorProfile({
-    displayName: '古い更新', roleLabel: '営業担当', expectedRevision: null
-  }), /更新されました/, 'stale operator profile revision was accepted')
-  operatorProfile = repository.saveLocalOperatorProfile({
-    displayName: operatorNameSentinel,
-    roleLabel: '採用・SES営業',
-    expectedRevision: operatorProfile.revision
-  }, new Date('2026-07-17T00:00:00.500Z'))
+  assert.throws(
+    () =>
+      repository.saveLocalOperatorProfile({
+        displayName: '古い更新',
+        roleLabel: '営業担当',
+        expectedRevision: null
+      }),
+    /更新されました/,
+    'stale operator profile revision was accepted'
+  )
+  operatorProfile = repository.saveLocalOperatorProfile(
+    {
+      displayName: operatorNameSentinel,
+      roleLabel: '採用・SES営業',
+      expectedRevision: operatorProfile.revision
+    },
+    new Date('2026-07-17T00:00:00.500Z')
+  )
   assert.equal(operatorProfile.operatorId, stableOperatorId)
   assert.equal(operatorProfile.revision, 2)
-  let applicationPreferences = repository.saveLocalApplicationPreferences({
-    locale: 'zh-CN', expectedRevision: null
-  }, new Date('2026-07-17T00:00:00.750Z'))
+  let applicationPreferences = repository.saveLocalApplicationPreferences(
+    {
+      locale: 'zh-CN',
+      expectedRevision: null
+    },
+    new Date('2026-07-17T00:00:00.750Z')
+  )
   assert.equal(applicationPreferences.locale, 'zh-CN')
   assert.equal(applicationPreferences.revision, 1)
   assert.equal(applicationPreferences.cloudEligible, false)
-  assert.throws(() => repository.saveLocalApplicationPreferences({
-    locale: 'ja-JP', expectedRevision: null
-  }), /更新されました/, 'stale application preferences revision was accepted')
-  applicationPreferences = repository.saveLocalApplicationPreferences({
-    locale: 'ja-JP', expectedRevision: applicationPreferences.revision
-  }, new Date('2026-07-17T00:00:00.900Z'))
+  assert.throws(
+    () =>
+      repository.saveLocalApplicationPreferences({
+        locale: 'ja-JP',
+        expectedRevision: null
+      }),
+    /更新されました/,
+    'stale application preferences revision was accepted'
+  )
+  applicationPreferences = repository.saveLocalApplicationPreferences(
+    {
+      locale: 'ja-JP',
+      expectedRevision: applicationPreferences.revision
+    },
+    new Date('2026-07-17T00:00:00.900Z')
+  )
   assert.equal(applicationPreferences.revision, 2)
   const task = recordCandidateMatchExecution(
-    materializeWorkTask(
-      createWorkTaskPreview(taskSentinel),
-      'verification-task-001',
-      '2026-07-17T00:00:00.000Z'
-    ),
+    materializeWorkTask(createWorkTaskPreview(taskSentinel), 'verification-task-001', '2026-07-17T00:00:00.000Z'),
     true,
     4,
     new Date('2026-07-17T00:00:01.000Z'),
@@ -90,11 +118,19 @@ try {
     maxAttempts: 3
   }
   const queuedCandidateJob = repository.enqueueProcessingJob(candidateJobInput, new Date('2026-07-17T00:00:02.000Z'))
-  assert.deepEqual(repository.getProcessingJobDispatchReference(queuedCandidateJob.id), {
-    requestFingerprint: candidateJobInput.requestFingerprint,
-    payloadRef: candidateJobInput.payloadRef
-  }, 'processing job dispatch reference was not recovered')
-  assert.equal(repository.enqueueProcessingJob(candidateJobInput).id, queuedCandidateJob.id, 'processing job idempotency did not reuse the existing job')
+  assert.deepEqual(
+    repository.getProcessingJobDispatchReference(queuedCandidateJob.id),
+    {
+      requestFingerprint: candidateJobInput.requestFingerprint,
+      payloadRef: candidateJobInput.payloadRef
+    },
+    'processing job dispatch reference was not recovered'
+  )
+  assert.equal(
+    repository.enqueueProcessingJob(candidateJobInput).id,
+    queuedCandidateJob.id,
+    'processing job idempotency did not reuse the existing job'
+  )
   const candidateLease = repository.acquireProcessingJob(queuedCandidateJob.id, 60_000, new Date('2026-07-17T00:00:03.000Z'))
   assert.ok(candidateLease, 'queued processing job could not be leased')
   assert.equal(candidateLease.job.attemptCount, 1)
@@ -108,14 +144,18 @@ try {
   assert.equal(candidateCompletion.accepted, true)
   assert.equal(candidateCompletion.job.status, 'succeeded')
   assert.deepEqual(repository.getProcessingJobResult(candidateCompletion.job.id), {
-    version: 'candidate-match-job-result-v1', runId: 'verification-run'
+    version: 'candidate-match-job-result-v1',
+    runId: 'verification-run'
   })
 
-  const retryJob = repository.enqueueProcessingJob({
-    ...candidateJobInput,
-    idempotencyKey: '3'.repeat(64),
-    requestFingerprint: '4'.repeat(64)
-  }, new Date('2026-07-17T00:00:05.000Z'))
+  const retryJob = repository.enqueueProcessingJob(
+    {
+      ...candidateJobInput,
+      idempotencyKey: '3'.repeat(64),
+      requestFingerprint: '4'.repeat(64)
+    },
+    new Date('2026-07-17T00:00:05.000Z')
+  )
   const retryLease = repository.acquireProcessingJob(retryJob.id, 60_000, new Date('2026-07-17T00:00:06.000Z'))
   assert.ok(retryLease)
   const retryWait = repository.failProcessingJob(
@@ -144,29 +184,39 @@ try {
   const abandonedLease = repository.acquireProcessingJob(retryJob.id, 1_000, new Date('2026-07-17T00:00:16.000Z'))
   assert.ok(abandonedLease)
   assert.deepEqual(repository.recoverExpiredProcessingJobs(new Date('2026-07-17T00:00:18.000Z')), {
-    requeued: 1, reviewRequired: 0, cancelled: 0
+    requeued: 1,
+    reviewRequired: 0,
+    cancelled: 0
   })
 
-  const manualReviewJob = repository.enqueueProcessingJob({
-    type: 'proposal-export',
-    workTaskId: proposalTask.id,
-    taskStepId: proposalTask.steps[3]!.id,
-    idempotencyKey: '5'.repeat(64),
-    requestFingerprint: '6'.repeat(64),
-    payloadRef: `work-task:${proposalTask.id}:proposal-export`,
-    replayPolicy: 'manual-review',
-    maxAttempts: 1
-  }, new Date('2026-07-17T00:00:19.000Z'))
+  const manualReviewJob = repository.enqueueProcessingJob(
+    {
+      type: 'proposal-export',
+      workTaskId: proposalTask.id,
+      taskStepId: proposalTask.steps[3]!.id,
+      idempotencyKey: '5'.repeat(64),
+      requestFingerprint: '6'.repeat(64),
+      payloadRef: `work-task:${proposalTask.id}:proposal-export`,
+      replayPolicy: 'manual-review',
+      maxAttempts: 1
+    },
+    new Date('2026-07-17T00:00:19.000Z')
+  )
   assert.ok(repository.acquireProcessingJob(manualReviewJob.id, 1_000, new Date('2026-07-17T00:00:20.000Z')))
   assert.deepEqual(repository.recoverExpiredProcessingJobs(new Date('2026-07-17T00:00:22.000Z')), {
-    requeued: 0, reviewRequired: 1, cancelled: 0
+    requeued: 0,
+    reviewRequired: 1,
+    cancelled: 0
   })
 
-  const backoffJob = repository.enqueueProcessingJob({
-    ...candidateJobInput,
-    idempotencyKey: 'a'.repeat(64),
-    requestFingerprint: 'b'.repeat(64)
-  }, new Date('2026-07-17T00:00:23.000Z'))
+  const backoffJob = repository.enqueueProcessingJob(
+    {
+      ...candidateJobInput,
+      idempotencyKey: 'a'.repeat(64),
+      requestFingerprint: 'b'.repeat(64)
+    },
+    new Date('2026-07-17T00:00:23.000Z')
+  )
   const firstBackoffLease = repository.acquireProcessingJob(backoffJob.id, 60_000, new Date('2026-07-17T00:00:24.000Z'))
   assert.ok(firstBackoffLease)
   const firstBackoff = repository.failProcessingJob(
@@ -298,12 +348,17 @@ try {
     }))
   }
   assert.throws(
-    () => repository.confirmCandidateReview({
-      ...reviewSubmission,
-      fields: reviewSubmission.fields.map((field) => field.key === 'work_authorization'
-        ? { ...field, value: '日本国籍', changeReason: '検証用変更' }
-        : field)
-    }, 'verification-user', '検証担当者'),
+    () =>
+      repository.confirmCandidateReview(
+        {
+          ...reviewSubmission,
+          fields: reviewSubmission.fields.map((field) =>
+            field.key === 'work_authorization' ? { ...field, value: '日本国籍', changeReason: '検証用変更' } : field
+          )
+        },
+        'verification-user',
+        '検証担当者'
+      ),
     /compliance category/,
     'nationality was accepted as a candidate work-authorization value'
   )
@@ -352,68 +407,106 @@ try {
     now: new Date('2026-07-17T00:01:10.500Z')
   })
   repository.saveRedactionSession(rejectedRedaction.session, rejectedRedaction.mappings)
-  repository.saveParsedDocument(rejectedDocument, {
-    ...summary,
-    fileToken: rejectedDocumentId,
-    fileName: 'rejected-candidate.pdf',
-    analyzedAt: '2026-07-17T00:01:11.000Z'
-  }, rejectedRedaction.session.id, rejectedExtraction)
+  repository.saveParsedDocument(
+    rejectedDocument,
+    {
+      ...summary,
+      fileToken: rejectedDocumentId,
+      fileName: 'rejected-candidate.pdf',
+      analyzedAt: '2026-07-17T00:01:11.000Z'
+    },
+    rejectedRedaction.session.id,
+    rejectedExtraction
+  )
   const rejectedReview = repository.getCandidateReview(rejectedDocumentId)
   assert.ok(rejectedReview)
-  const preConfirmationInterview = repository.saveCandidateInterviewSchedule({
-    sourceDocumentId: rejectedDocumentId,
-    scheduledAt: '2026-07-18T02:00:00.000Z',
-    durationMinutes: 30,
-    meetingMethod: 'phone',
-    interviewer: '検証担当者'
-  }, '検証担当者', new Date('2026-07-17T00:02:00.050Z'))
+  const preConfirmationInterview = repository.saveCandidateInterviewSchedule(
+    {
+      sourceDocumentId: rejectedDocumentId,
+      scheduledAt: '2026-07-18T02:00:00.000Z',
+      durationMinutes: 30,
+      meetingMethod: 'phone',
+      interviewer: '検証担当者'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:00.050Z')
+  )
   assert.equal(preConfirmationInterview.stage, 'scheduled', 'imported candidate could not enter recruiting before profile confirmation')
   assert.equal(rejectedReview.profile?.confirmedBy, '本机导入', 'imported profile must not be attributed to an HR reviewer')
-  repository.confirmCandidateReview({
-    documentId: rejectedDocumentId,
-    reviewRevision: rejectedReview.reviewRevision,
-    piiReviewed: false,
-    fields: rejectedExtraction.fields.map((field) => ({ key: field.key, value: field.value, confirmed: true as const })),
-    projectExperiences: rejectedExtraction.projectExperiences.map((project) => ({
-      draftId: project.draftId,
-      title: project.title,
-      period: project.period,
-      role: project.role,
-      technologies: project.technologies,
-      summary: project.summary,
-      confirmed: true as const
-    }))
-  }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:00.100Z'))
-  const rejectedInterview = repository.saveCandidateInterviewSchedule({
-    sourceDocumentId: rejectedDocumentId,
-    scheduledAt: '2026-07-18T02:00:00.000Z',
-    durationMinutes: 30,
-    meetingMethod: 'phone',
-    interviewer: '検証担当者'
-  }, '検証担当者', new Date('2026-07-17T00:02:00.200Z'))
-  repository.saveCandidateInterviewPreparation({
-    interviewId: rejectedInterview.id,
-    questions: [{ id: 'rejection-check', text: '採用基準を確認します。', source: 'standard', sourceLabel: '採用基準', selected: true }]
-  }, '検証担当者', new Date('2026-07-17T00:02:00.300Z'))
-  repository.saveCandidateInterviewNotes({
-    interviewId: rejectedInterview.id,
-    sourceDocumentId: rejectedDocumentId,
-    interviewNotes: '採用基準との不一致を確認。',
-    stage: 'awaiting-decision'
-  }, '検証担当者', new Date('2026-07-17T00:02:00.400Z'))
-  repository.recordCandidateInterviewDecision({
-    interviewId: rejectedInterview.id,
-    sourceDocumentId: rejectedDocumentId,
-    decision: 'failed',
-    decisionReason: '今回の採用基準を満たさない。'
-  }, '検証担当者', new Date('2026-07-17T00:02:00.500Z'))
+  repository.confirmCandidateReview(
+    {
+      documentId: rejectedDocumentId,
+      reviewRevision: rejectedReview.reviewRevision,
+      piiReviewed: false,
+      fields: rejectedExtraction.fields.map((field) => ({ key: field.key, value: field.value, confirmed: true as const })),
+      projectExperiences: rejectedExtraction.projectExperiences.map((project) => ({
+        draftId: project.draftId,
+        title: project.title,
+        period: project.period,
+        role: project.role,
+        technologies: project.technologies,
+        summary: project.summary,
+        confirmed: true as const
+      }))
+    },
+    'verification-user',
+    '検証担当者',
+    new Date('2026-07-17T00:02:00.100Z')
+  )
+  const rejectedInterview = repository.saveCandidateInterviewSchedule(
+    {
+      sourceDocumentId: rejectedDocumentId,
+      scheduledAt: '2026-07-18T02:00:00.000Z',
+      durationMinutes: 30,
+      meetingMethod: 'phone',
+      interviewer: '検証担当者'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:00.200Z')
+  )
+  repository.saveCandidateInterviewPreparation(
+    {
+      interviewId: rejectedInterview.id,
+      questions: [{ id: 'rejection-check', text: '採用基準を確認します。', source: 'standard', sourceLabel: '採用基準', selected: true }]
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:00.300Z')
+  )
+  repository.saveCandidateInterviewNotes(
+    {
+      interviewId: rejectedInterview.id,
+      sourceDocumentId: rejectedDocumentId,
+      interviewNotes: '採用基準との不一致を確認。',
+      stage: 'awaiting-decision'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:00.400Z')
+  )
+  repository.recordCandidateInterviewDecision(
+    {
+      interviewId: rejectedInterview.id,
+      sourceDocumentId: rejectedDocumentId,
+      decision: 'failed',
+      decisionReason: '今回の採用基準を満たさない。'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:00.500Z')
+  )
   const retainedRejectedCandidate = repository.getCandidateReview(rejectedDocumentId)
   assert.equal(retainedRejectedCandidate?.recruitingStatus, 'rejected', 'failed recruiting decision did not enter candidate history')
   assert.equal(retainedRejectedCandidate?.talentPoolStatus, 'eligible', 'a recruiting result must not add a separate promotion gate')
   assert.equal(retainedRejectedCandidate?.profile?.status, 'current', 'failed recruiting decision discarded the candidate profile')
   assert.equal(repository.listEligibleTalentProfiles().length, 2, 'both active personnel remain available for business')
-  repository.setCandidateBusinessState({ documentId: rejectedDocumentId, profileVersion: retainedRejectedCandidate!.profile!.version,
-    reviewRevision: retainedRejectedCandidate!.reviewRevision, status: 'paused', confirmed: true }, 'verification-user')
+  repository.setCandidateBusinessState(
+    {
+      documentId: rejectedDocumentId,
+      profileVersion: retainedRejectedCandidate!.profile!.version,
+      reviewRevision: retainedRejectedCandidate!.reviewRevision,
+      status: 'paused',
+      confirmed: true
+    },
+    'verification-user'
+  )
   assert.equal(repository.listEligibleTalentProfiles().length, 1, 'an explicit pause excludes personnel from matching')
 
   assert.throws(
@@ -424,36 +517,41 @@ try {
   const initialCandidateVersion = repository.getCandidateProfileHistory(documentId)[0]
   assert.ok(initialCandidateVersion)
   assert.equal(initialCandidateVersion.isOwnCompany, null, 'imported personnel must default to unset affiliation')
-  const updatedCandidateProfile = repository.updateCandidateProfile({
-    sourceDocumentId: documentId,
-    expectedVersion: initialCandidateVersion.version,
-    isOwnCompany: true,
-    identity: {
-      displayName: '山田 更新後',
-      gender: '女性',
-      birthDate: '1990年4月',
-      nationality: '日本',
-      phone: '080-2222-3333',
-      email: 'candidate@example.jp',
-      address: '東京都新宿区1-2-3',
-      education: '東京工科大学',
-      major: '情報工学',
-      graduationDate: '2013年3月',
-      degree: '学士'
+  const updatedCandidateProfile = repository.updateCandidateProfile(
+    {
+      sourceDocumentId: documentId,
+      expectedVersion: initialCandidateVersion.version,
+      isOwnCompany: true,
+      identity: {
+        displayName: '山田 更新後',
+        gender: '女性',
+        birthDate: '1990年4月',
+        nationality: '日本',
+        phone: '080-2222-3333',
+        email: 'candidate@example.jp',
+        address: '東京都新宿区1-2-3',
+        education: '東京工科大学',
+        major: '情報工学',
+        graduationDate: '2013年3月',
+        degree: '学士'
+      },
+      fields: initialCandidateVersion.fields.map((field) => ({
+        key: field.key,
+        value: field.key === 'skills' ? 'Java, AWS, Spring Boot, PostgreSQL' : field.value
+      })),
+      projectExperiences: initialCandidateVersion.projectExperiences.map((project) => ({
+        id: project.id,
+        title: project.title,
+        period: project.period,
+        role: project.role,
+        technologies: project.technologies,
+        summary: `${project.summary}。性能改善も担当`
+      }))
     },
-    fields: initialCandidateVersion.fields.map((field) => ({
-      key: field.key,
-      value: field.key === 'skills' ? 'Java, AWS, Spring Boot, PostgreSQL' : field.value
-    })),
-    projectExperiences: initialCandidateVersion.projectExperiences.map((project) => ({
-      id: project.id,
-      title: project.title,
-      period: project.period,
-      role: project.role,
-      technologies: project.technologies,
-      summary: `${project.summary}。性能改善も担当`
-    }))
-  }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:10.000Z'))
+    'verification-user',
+    '検証担当者',
+    new Date('2026-07-17T00:02:10.000Z')
+  )
   assert.equal(updatedCandidateProfile.isOwnCompany, true)
   assert.equal(repository.getCandidateReview(documentId)?.isOwnCompany, true)
   assert.equal(repository.getCandidateProfileHistory(documentId)[0]?.isOwnCompany, true)
@@ -471,27 +569,35 @@ try {
   assert.equal(repository.getCandidateLocalIdentity(documentId).graduationDate, '2013年3月')
   assert.equal(repository.getCandidateLocalIdentity(documentId).degree, '学士')
   assert.equal(repository.getCandidateProfileHistory(documentId).length, 3)
-  assert.equal(repository.getCandidateReview(documentId)?.fields.find((field) => field.key === 'skills')?.value, 'Java, AWS, Spring Boot, PostgreSQL')
+  assert.equal(
+    repository.getCandidateReview(documentId)?.fields.find((field) => field.key === 'skills')?.value,
+    'Java, AWS, Spring Boot, PostgreSQL'
+  )
   assert.throws(
-    () => repository.updateCandidateProfile({
-      sourceDocumentId: documentId,
-      expectedVersion: 1,
-      identity: {
-        displayName: null,
-        gender: null,
-        birthDate: null,
-        nationality: null,
-        phone: null,
-        email: null,
-        address: null,
-        education: null,
-        major: null,
-        graduationDate: null,
-        degree: null
-      },
-      fields: initialCandidateVersion.fields.map((field) => ({ key: field.key, value: field.value })),
-      projectExperiences: initialCandidateVersion.projectExperiences
-    }, 'verification-user', '検証担当者'),
+    () =>
+      repository.updateCandidateProfile(
+        {
+          sourceDocumentId: documentId,
+          expectedVersion: 1,
+          identity: {
+            displayName: null,
+            gender: null,
+            birthDate: null,
+            nationality: null,
+            phone: null,
+            email: null,
+            address: null,
+            education: null,
+            major: null,
+            graduationDate: null,
+            degree: null
+          },
+          fields: initialCandidateVersion.fields.map((field) => ({ key: field.key, value: field.value })),
+          projectExperiences: initialCandidateVersion.projectExperiences
+        },
+        'verification-user',
+        '検証担当者'
+      ),
     /更新されました/,
     'stale candidate profile edits were accepted'
   )
@@ -504,61 +610,72 @@ try {
     now: new Date('2026-07-17T00:02:00.000Z')
   })
   repository.saveRedactionSession(gmailRedaction.session, gmailRedaction.mappings)
-  assert.equal(repository.saveGmailMessage({
-    accountEmail: 'hr@example.co.jp',
-    gmailMessageId: 'gmail_msg_001',
-    threadId: 'gmail_thread_001',
-    historyId: '120',
-    internalDate: '2026-07-17T00:02:00.000Z',
-    labelIds: ['INBOX', 'Label_SES'],
-    rfcMessageId: 'f'.repeat(64),
-    fromDomain: 'partner.example.jp',
-    redactedSubject: 'Java案件 <PERSON_NAME_001>',
-    redactedBody: '必須スキル：Java / AWS\n単価：80万円/月\n連絡先 <PHONE_001>',
-    redactionSessionId: gmailRedaction.session.id,
-    classification: 'job-case',
-    businessFingerprint: gmailFingerprint,
-    duplicateOfMessageId: null,
-    warningCodes: ['coverage:person_name_review_required'],
-    attachmentCount: 0,
-    importedAt: '2026-07-17T00:02:00.000Z'
-  }), true)
-  assert.equal(repository.saveGmailMessage({
-    accountEmail: 'hr@example.co.jp',
-    gmailMessageId: 'gmail_msg_001',
-    threadId: 'gmail_thread_001',
-    historyId: '120',
-    internalDate: '2026-07-17T00:02:00.000Z',
-    labelIds: ['INBOX', 'Label_SES'],
-    rfcMessageId: 'f'.repeat(64),
-    fromDomain: 'partner.example.jp',
-    redactedSubject: 'Java案件 <PERSON_NAME_001>',
-    redactedBody: '必須スキル：Java / AWS\n単価：80万円/月\n連絡先 <PHONE_001>',
-    redactionSessionId: gmailRedaction.session.id,
-    classification: 'job-case',
-    businessFingerprint: gmailFingerprint,
-    duplicateOfMessageId: null,
-    warningCodes: [],
-    attachmentCount: 0,
-    importedAt: '2026-07-17T00:02:00.000Z'
-  }), false)
+  assert.equal(
+    repository.saveGmailMessage({
+      accountEmail: 'hr@example.co.jp',
+      gmailMessageId: 'gmail_msg_001',
+      threadId: 'gmail_thread_001',
+      historyId: '120',
+      internalDate: '2026-07-17T00:02:00.000Z',
+      labelIds: ['INBOX', 'Label_SES'],
+      rfcMessageId: 'f'.repeat(64),
+      fromDomain: 'partner.example.jp',
+      redactedSubject: 'Java案件 <PERSON_NAME_001>',
+      redactedBody: '必須スキル：Java / AWS\n単価：80万円/月\n連絡先 <PHONE_001>',
+      redactionSessionId: gmailRedaction.session.id,
+      classification: 'job-case',
+      businessFingerprint: gmailFingerprint,
+      duplicateOfMessageId: null,
+      warningCodes: ['coverage:person_name_review_required'],
+      attachmentCount: 0,
+      importedAt: '2026-07-17T00:02:00.000Z'
+    }),
+    true
+  )
+  assert.equal(
+    repository.saveGmailMessage({
+      accountEmail: 'hr@example.co.jp',
+      gmailMessageId: 'gmail_msg_001',
+      threadId: 'gmail_thread_001',
+      historyId: '120',
+      internalDate: '2026-07-17T00:02:00.000Z',
+      labelIds: ['INBOX', 'Label_SES'],
+      rfcMessageId: 'f'.repeat(64),
+      fromDomain: 'partner.example.jp',
+      redactedSubject: 'Java案件 <PERSON_NAME_001>',
+      redactedBody: '必須スキル：Java / AWS\n単価：80万円/月\n連絡先 <PHONE_001>',
+      redactionSessionId: gmailRedaction.session.id,
+      classification: 'job-case',
+      businessFingerprint: gmailFingerprint,
+      duplicateOfMessageId: null,
+      warningCodes: [],
+      attachmentCount: 0,
+      importedAt: '2026-07-17T00:02:00.000Z'
+    }),
+    false
+  )
   const pendingCaseMessages = repository.listGmailMessagesPendingJobCaseDrafts('hr@example.co.jp')
   assert.equal(pendingCaseMessages.length, 1)
   const pendingCaseMessage = pendingCaseMessages[0]
   assert.ok(pendingCaseMessage)
   const jobCaseReviewId = 'ee6b5a0f-ecc2-4f6c-8f71-5f6e89f0fd09'
-  const gmailJobCaseSource = repository.ensureGmailJobCaseSource(createGmailJobCaseSource({
-    accountEmail: pendingCaseMessage.accountEmail,
-    gmailMessageId: pendingCaseMessage.gmailMessageId,
-    threadId: pendingCaseMessage.threadId,
-    fromDomain: pendingCaseMessage.fromDomain,
-    messageDate: pendingCaseMessage.internalDate,
-    redactedSubject: pendingCaseMessage.redactedSubject,
-    redactedBody: pendingCaseMessage.redactedBody,
-    redactionSessionId: pendingCaseMessage.redactionSessionId,
-    warningCodes: pendingCaseMessage.warningCodes,
-    createdAt: pendingCaseMessage.importedAt
-  }, '3cfbcd8b-d812-4d5a-92be-6250fc81f99e'))
+  const gmailJobCaseSource = repository.ensureGmailJobCaseSource(
+    createGmailJobCaseSource(
+      {
+        accountEmail: pendingCaseMessage.accountEmail,
+        gmailMessageId: pendingCaseMessage.gmailMessageId,
+        threadId: pendingCaseMessage.threadId,
+        fromDomain: pendingCaseMessage.fromDomain,
+        messageDate: pendingCaseMessage.internalDate,
+        redactedSubject: pendingCaseMessage.redactedSubject,
+        redactedBody: pendingCaseMessage.redactedBody,
+        redactionSessionId: pendingCaseMessage.redactionSessionId,
+        warningCodes: pendingCaseMessage.warningCodes,
+        createdAt: pendingCaseMessage.importedAt
+      },
+      '3cfbcd8b-d812-4d5a-92be-6250fc81f99e'
+    )
+  )
   const jobCaseDraft = extractJobCaseDraft(gmailJobCaseSource, jobCaseReviewId, new Date('2026-07-17T00:02:30.000Z'))
   assert.equal(repository.saveJobCaseDraft(jobCaseDraft), true)
   assert.equal(repository.saveJobCaseDraft(jobCaseDraft), false)
@@ -575,22 +692,32 @@ try {
     }))
   }
   assert.throws(
-    () => repository.confirmJobCaseReview({
-      ...jobCaseSubmission,
-      fields: jobCaseSubmission.fields.map((field) => field.key === 'title'
-        ? { ...field, value: 'Java案件 090-1234-5678', changeReason: '検証用変更' }
-        : field)
-    }, 'verification-user', '検証担当者'),
+    () =>
+      repository.confirmJobCaseReview(
+        {
+          ...jobCaseSubmission,
+          fields: jobCaseSubmission.fields.map((field) =>
+            field.key === 'title' ? { ...field, value: 'Java案件 090-1234-5678', changeReason: '検証用変更' } : field
+          )
+        },
+        'verification-user',
+        '検証担当者'
+      ),
     /直接識別子/,
     'a direct identifier was accepted into a job case field'
   )
   assert.throws(
-    () => repository.confirmJobCaseReview({
-      ...jobCaseSubmission,
-      fields: jobCaseSubmission.fields.map((field) => field.key === 'work_authorization'
-        ? { ...field, value: '外国籍不可', changeReason: '検証用変更' }
-        : field)
-    }, 'verification-user', '検証担当者'),
+    () =>
+      repository.confirmJobCaseReview(
+        {
+          ...jobCaseSubmission,
+          fields: jobCaseSubmission.fields.map((field) =>
+            field.key === 'work_authorization' ? { ...field, value: '外国籍不可', changeReason: '検証用変更' } : field
+          )
+        },
+        'verification-user',
+        '検証担当者'
+      ),
     /国籍条件/,
     'a nationality restriction was accepted into a job case'
   )
@@ -598,12 +725,17 @@ try {
   // refused just as flatly as 外国籍不可.
   for (const phrase of ['最好日本人', '日本人希望', '日本人優先']) {
     assert.throws(
-      () => repository.confirmJobCaseReview({
-        ...jobCaseSubmission,
-        fields: jobCaseSubmission.fields.map((field) => field.key === 'notes'
-          ? { ...field, value: phrase, changeReason: '検証用変更' }
-          : field)
-      }, 'verification-user', '検証担当者'),
+      () =>
+        repository.confirmJobCaseReview(
+          {
+            ...jobCaseSubmission,
+            fields: jobCaseSubmission.fields.map((field) =>
+              field.key === 'notes' ? { ...field, value: phrase, changeReason: '検証用変更' } : field
+            )
+          },
+          'verification-user',
+          '検証担当者'
+        ),
       /国籍条件/,
       `a nationality preference (${phrase}) was accepted into a job case`
     )
@@ -615,23 +747,31 @@ try {
     new Date('2026-07-17T00:02:45.000Z')
   )
   assert.equal(confirmedJobCase.status, 'completed')
-  assert.equal(repository.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'created', 'initial confirmation is a new case, not a lifecycle change')
+  assert.equal(
+    repository.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event,
+    'created',
+    'initial confirmation is a new case, not a lifecycle change'
+  )
   assert.equal(confirmedJobCase.jobCase?.containsDirectIdentifiers, false)
-  const manualSource = createRedactedManualJobCaseSource({
-    subject: `${manualCaseNameSentinel}様 Python案件`,
-    body: `担当：${manualCaseNameSentinel}\n電話：${manualCasePhoneSentinel}\n必須スキル：Python / AWS\n単価：90万円/月`
-  }, '21053d42-f2de-4e20-a479-a95d7c70ec4b', [manualCaseNameSentinel], new Date('2026-07-17T00:02:50.000Z'))
-  const manualDraft = extractJobCaseDraft(
-    manualSource.source,
-    'c13f1590-5723-4248-a8c7-1f8669a78b19',
+  const manualSource = createRedactedManualJobCaseSource(
+    {
+      subject: `${manualCaseNameSentinel}様 Python案件`,
+      body: `担当：${manualCaseNameSentinel}\n電話：${manualCasePhoneSentinel}\n必須スキル：Python / AWS\n単価：90万円/月`
+    },
+    '21053d42-f2de-4e20-a479-a95d7c70ec4b',
+    [manualCaseNameSentinel],
     new Date('2026-07-17T00:02:50.000Z')
   )
-  assert.equal(repository.saveRedactedJobCaseSourceAndDraft(
-    manualSource.redaction.session,
-    manualSource.redaction.mappings,
-    manualSource.source,
-    manualDraft
-  ), true)
+  const manualDraft = extractJobCaseDraft(manualSource.source, 'c13f1590-5723-4248-a8c7-1f8669a78b19', new Date('2026-07-17T00:02:50.000Z'))
+  assert.equal(
+    repository.saveRedactedJobCaseSourceAndDraft(
+      manualSource.redaction.session,
+      manualSource.redaction.mappings,
+      manualSource.source,
+      manualDraft
+    ),
+    true
+  )
   const manualReview = repository.getJobCaseReview(manualDraft.reviewId)
   assert.equal(manualReview?.sourceType, 'manual')
   assert.equal(manualReview?.providerMessageId, null)
@@ -641,55 +781,67 @@ try {
   assert.equal(manualReview?.redactedPreview.includes('<PHONE_001>'), true)
   // An age limit is reviewed, never blocked: it is what the client stated and
   // the operator has to see it on the case.
-  const confirmedManualCase = repository.confirmJobCaseReview({
-    reviewId: manualDraft.reviewId,
-    reviewRevision: manualReview?.reviewRevision ?? 0,
-    privacyReviewed: true,
-    fields: manualDraft.fields.map((field) => field.key === 'notes'
-      ? { key: field.key, value: '40代まで', confirmed: true as const, changeReason: '検証用変更' }
-      : { key: field.key, value: field.value, confirmed: true as const })
-  }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:55.000Z'))
+  const confirmedManualCase = repository.confirmJobCaseReview(
+    {
+      reviewId: manualDraft.reviewId,
+      reviewRevision: manualReview?.reviewRevision ?? 0,
+      privacyReviewed: true,
+      fields: manualDraft.fields.map((field) =>
+        field.key === 'notes'
+          ? { key: field.key, value: '40代まで', confirmed: true as const, changeReason: '検証用変更' }
+          : { key: field.key, value: field.value, confirmed: true as const }
+      )
+    },
+    'verification-user',
+    '検証担当者',
+    new Date('2026-07-17T00:02:55.000Z')
+  )
   assert.equal(confirmedManualCase.status, 'completed', 'an age-limit condition blocked a job case confirmation')
   assert.equal(
     confirmedManualCase.fields.find((field) => field.key === 'notes')?.value,
     '40代まで',
     'the age-limit condition was not kept on the confirmed case'
   )
-  const emlSource = createRedactedEmlJobCaseSource({
-    version: 'parsed-eml-v1',
-    file: { name: 'verification-case.eml', size: 2048, sha256: 'd'.repeat(64) },
-    sourceMessageKey: `eml_${'e'.repeat(64)}`,
-    threadKey: `emlt_${'f'.repeat(64)}`,
-    subject: `${emlCaseNameSentinel}様 Go案件`,
-    body: `担当：${emlCaseNameSentinel}\n電話：${emlCasePhoneSentinel}\n必須スキル：Go / AWS\n単価：95万円/月`,
-    senderDisplayName: emlCaseNameSentinel,
-    fromDomain: 'partner.example.jp',
-    messageDate: '2026-07-17T00:02:56.000Z',
-    attachmentCount: 1,
-    classification: 'job-case',
-    warningCodes: ['EML_SOURCE_LOCAL_PARSE', 'EML_ATTACHMENTS_IGNORED'],
-    security: { externalContentLoaded: false, attachmentsPersisted: false, rawFileCloudEligible: false }
-  }, 'db3ea2b5-675c-4423-8a56-2da2f56ff92f', [emlCaseNameSentinel], new Date('2026-07-17T00:02:56.000Z'))
-  const emlDraft = extractJobCaseDraft(
-    emlSource.source,
-    'b7e31154-8d84-4d2a-a2cf-51370fc13d12',
+  const emlSource = createRedactedEmlJobCaseSource(
+    {
+      version: 'parsed-eml-v1',
+      file: { name: 'verification-case.eml', size: 2048, sha256: 'd'.repeat(64) },
+      sourceMessageKey: `eml_${'e'.repeat(64)}`,
+      threadKey: `emlt_${'f'.repeat(64)}`,
+      subject: `${emlCaseNameSentinel}様 Go案件`,
+      body: `担当：${emlCaseNameSentinel}\n電話：${emlCasePhoneSentinel}\n必須スキル：Go / AWS\n単価：95万円/月`,
+      senderDisplayName: emlCaseNameSentinel,
+      fromDomain: 'partner.example.jp',
+      messageDate: '2026-07-17T00:02:56.000Z',
+      attachmentCount: 1,
+      classification: 'job-case',
+      warningCodes: ['EML_SOURCE_LOCAL_PARSE', 'EML_ATTACHMENTS_IGNORED'],
+      security: { externalContentLoaded: false, attachmentsPersisted: false, rawFileCloudEligible: false }
+    },
+    'db3ea2b5-675c-4423-8a56-2da2f56ff92f',
+    [emlCaseNameSentinel],
     new Date('2026-07-17T00:02:56.000Z')
   )
-  assert.equal(repository.saveRedactedJobCaseSourceAndDraft(
-    emlSource.redaction.session,
-    emlSource.redaction.mappings,
-    emlSource.source,
-    emlDraft
-  ), true)
+  const emlDraft = extractJobCaseDraft(emlSource.source, 'b7e31154-8d84-4d2a-a2cf-51370fc13d12', new Date('2026-07-17T00:02:56.000Z'))
+  assert.equal(
+    repository.saveRedactedJobCaseSourceAndDraft(emlSource.redaction.session, emlSource.redaction.mappings, emlSource.source, emlDraft),
+    true
+  )
   assert.equal(repository.getEmlJobCaseReview(emlSource.source.providerMessageId ?? '')?.reviewId, emlDraft.reviewId)
-  repository.saveGmailSyncSuccess('hr@example.co.jp', '1'.repeat(64), '120', {
-    mode: 'baseline',
-    discovered: 1,
-    imported: 1,
-    duplicates: 0,
-    filtered: 0,
-    failed: 0
-  }, '2026-07-17T00:02:00.000Z')
+  repository.saveGmailSyncSuccess(
+    'hr@example.co.jp',
+    '1'.repeat(64),
+    '120',
+    {
+      mode: 'baseline',
+      discovered: 1,
+      imported: 1,
+      duplicates: 0,
+      filtered: 0,
+      failed: 0
+    },
+    '2026-07-17T00:02:00.000Z'
+  )
   repository.checkpoint()
   repository.close()
 
@@ -708,7 +860,11 @@ try {
 
   let reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
   assert.equal(reopened.getCurrentCandidateProfile(documentId)?.isOwnCompany, true, 'HR affiliation did not survive reopening')
-  assert.equal(reopened.listWorkTasks().some((item) => item.instruction === taskSentinel), true, 'task did not recover after reopening')
+  assert.equal(
+    reopened.listWorkTasks().some((item) => item.instruction === taskSentinel),
+    true,
+    'task did not recover after reopening'
+  )
   const recoveredWorkTask = reopened.getWorkTask(task.id)
   assert.equal(recoveredWorkTask?.messages.length, 3, 'work task messages did not recover after reopening')
   assert.equal(recoveredWorkTask?.approvalGates[0]?.status, 'required', 'work task approval gate did not recover')
@@ -721,78 +877,153 @@ try {
   )
   assert.equal(reopened.getSchemaVersion(), currentSchemaVersion, `schema v${currentSchemaVersion} migration did not apply`)
   const actionRun = reopened.createActionRun({
-    toolName: 'proposal.export', workTaskId: task.id, origin: 'system', scopeId: 'selected-case',
-    scopeFingerprint: 'a'.repeat(64), inputHash: 'b'.repeat(64), contentRevision: '1:b'.repeat(1),
-    status: 'queued', idempotencyKey: 'action-runtime-persistence-verification'
+    toolName: 'proposal.export',
+    workTaskId: task.id,
+    origin: 'system',
+    scopeId: 'selected-case',
+    scopeFingerprint: 'a'.repeat(64),
+    inputHash: 'b'.repeat(64),
+    contentRevision: '1:b'.repeat(1),
+    status: 'queued',
+    idempotencyKey: 'action-runtime-persistence-verification'
   })
-  assert.equal(reopened.createActionRun({
-    toolName: 'proposal.export', workTaskId: task.id, origin: 'system', scopeId: 'selected-case',
-    scopeFingerprint: 'a'.repeat(64), inputHash: 'b'.repeat(64), contentRevision: '1:b',
-    status: 'queued', idempotencyKey: 'action-runtime-persistence-verification'
-  }).id, actionRun.id, 'same action invocation did not reuse its idempotency key')
-  assert.throws(() => reopened.createActionRun({
-    toolName: 'proposal.export', workTaskId: task.id, origin: 'system', scopeId: 'selected-case',
-    scopeFingerprint: 'a'.repeat(64), inputHash: 'c'.repeat(64), contentRevision: '1:b',
-    status: 'queued', idempotencyKey: 'action-runtime-persistence-verification'
-  }), /collides/u, 'different action invocation aliased an idempotency key')
+  assert.equal(
+    reopened.createActionRun({
+      toolName: 'proposal.export',
+      workTaskId: task.id,
+      origin: 'system',
+      scopeId: 'selected-case',
+      scopeFingerprint: 'a'.repeat(64),
+      inputHash: 'b'.repeat(64),
+      contentRevision: '1:b',
+      status: 'queued',
+      idempotencyKey: 'action-runtime-persistence-verification'
+    }).id,
+    actionRun.id,
+    'same action invocation did not reuse its idempotency key'
+  )
+  assert.throws(
+    () =>
+      reopened.createActionRun({
+        toolName: 'proposal.export',
+        workTaskId: task.id,
+        origin: 'system',
+        scopeId: 'selected-case',
+        scopeFingerprint: 'a'.repeat(64),
+        inputHash: 'c'.repeat(64),
+        contentRevision: '1:b',
+        status: 'queued',
+        idempotencyKey: 'action-runtime-persistence-verification'
+      }),
+    /collides/u,
+    'different action invocation aliased an idempotency key'
+  )
   const approval = reopened.requestActionApproval({
     actionRunId: actionRun.id,
     reason: '外部副作用を伴うため確認が必要です。',
     safeSummary: '承認済み提案をネイティブ保存確認へ進めます。',
     expiresAt: '2099-01-01T00:00:00.000Z'
   })
-  assert.equal(reopened.requestActionApproval({
-    actionRunId: actionRun.id,
-    reason: '外部副作用を伴うため確認が必要です。',
-    safeSummary: '承認済み提案をネイティブ保存確認へ進めます。',
-    expiresAt: '2099-01-01T00:00:00.000Z'
-  }).id, approval.id, 'reused action run created a duplicate approval')
-  assert.equal(reopened.listActionApprovals().some((item) => item.id === approval.id), true, 'pending action approval was not listed')
+  assert.equal(
+    reopened.requestActionApproval({
+      actionRunId: actionRun.id,
+      reason: '外部副作用を伴うため確認が必要です。',
+      safeSummary: '承認済み提案をネイティブ保存確認へ進めます。',
+      expiresAt: '2099-01-01T00:00:00.000Z'
+    }).id,
+    approval.id,
+    'reused action run created a duplicate approval'
+  )
+  assert.equal(
+    reopened.listActionApprovals().some((item) => item.id === approval.id),
+    true,
+    'pending action approval was not listed'
+  )
   const resolvedApproval = reopened.resolveActionApproval({ approvalId: approval.id, decision: 'deny' }, '検証担当者')
   assert.equal(resolvedApproval.status, 'denied', 'action approval did not resolve atomically')
-  assert.equal(reopened.listActionApprovals().some((item) => item.id === approval.id), false, 'resolved action approval remained in inbox')
+  assert.equal(
+    reopened.listActionApprovals().some((item) => item.id === approval.id),
+    false,
+    'resolved action approval remained in inbox'
+  )
   const foregroundRun = reopened.createActionRun({
-    toolName: 'proposal.export', workTaskId: task.id, origin: 'system', scopeId: 'selected-case',
-    scopeFingerprint: 'd'.repeat(64), inputHash: 'e'.repeat(64), contentRevision: '2',
-    status: 'queued', idempotencyKey: 'action-runtime-foreground-confirmation'
+    toolName: 'proposal.export',
+    workTaskId: task.id,
+    origin: 'system',
+    scopeId: 'selected-case',
+    scopeFingerprint: 'd'.repeat(64),
+    inputHash: 'e'.repeat(64),
+    contentRevision: '2',
+    status: 'queued',
+    idempotencyKey: 'action-runtime-foreground-confirmation'
   })
   const foregroundApproval = reopened.requestActionApproval({
-    actionRunId: foregroundRun.id, reason: '外部副作用を伴うため確認が必要です。',
-    safeSummary: '保存先の選択を待っています。', expiresAt: '2099-01-01T00:00:00.000Z'
+    actionRunId: foregroundRun.id,
+    reason: '外部副作用を伴うため確認が必要です。',
+    safeSummary: '保存先の選択を待っています。',
+    expiresAt: '2099-01-01T00:00:00.000Z'
   })
   reopened.resolveActionApproval({ approvalId: foregroundApproval.id, decision: 'approve' }, '検証担当者')
   assert.equal(reopened.getActionRunStatus(foregroundRun.id), 'awaiting_foreground_confirmation', 'approval implied a silent export')
   const expiredRun = reopened.createActionRun({
-    toolName: 'proposal.export', workTaskId: task.id, origin: 'system', scopeId: 'selected-case',
-    scopeFingerprint: 'f'.repeat(64), inputHash: '0'.repeat(64), contentRevision: '3',
-    status: 'queued', idempotencyKey: 'action-runtime-expiry'
+    toolName: 'proposal.export',
+    workTaskId: task.id,
+    origin: 'system',
+    scopeId: 'selected-case',
+    scopeFingerprint: 'f'.repeat(64),
+    inputHash: '0'.repeat(64),
+    contentRevision: '3',
+    status: 'queued',
+    idempotencyKey: 'action-runtime-expiry'
   })
   reopened.requestActionApproval({
-    actionRunId: expiredRun.id, reason: '外部副作用を伴うため確認が必要です。',
-    safeSummary: '期限切れを検証します。', expiresAt: '2020-01-01T00:00:00.000Z'
+    actionRunId: expiredRun.id,
+    reason: '外部副作用を伴うため確認が必要です。',
+    safeSummary: '期限切れを検証します。',
+    expiresAt: '2020-01-01T00:00:00.000Z'
   })
   reopened.listActionApprovals(new Date('2021-01-01T00:00:00.000Z'))
   assert.equal(reopened.getActionRunStatus(expiredRun.id), 'blocked', 'expired approval left an executable action run')
-  assert.throws(() => reopened.saveCandidateInterviewNotes({
-    interviewId: '99999999-9999-4999-8999-999999999999',
-    sourceDocumentId: documentId,
-    interviewNotes: '予約なしで面談記録を作成してはならない。'
-  }, '検証担当者'), /not found/iu, 'interview notes bypassed scheduling and preparation')
-  assert.throws(() => reopened.recordCandidateInterviewDecision({
-    interviewId: '99999999-9999-4999-8999-999999999999',
-    sourceDocumentId: documentId,
-    decision: 'passed',
-    decisionReason: '予約なしの結論'
-  }, '検証担当者'), /not found/iu, 'interview decision bypassed the interview record')
-  const scheduledInterview = reopened.saveCandidateInterviewSchedule({
-    sourceDocumentId: documentId,
-    scheduledAt: '2026-07-18T01:00:00.000Z',
-    durationMinutes: 60,
-    meetingMethod: 'zoom',
-    meetingUrl: 'https://company.zoom.us/j/1234567890?pwd=example',
-    interviewer: '検証担当者',
-    contactNote: '端末内で候補者へ確認済み'
-  }, '検証担当者', new Date('2026-07-17T00:02:20.000Z'))
+  assert.throws(
+    () =>
+      reopened.saveCandidateInterviewNotes(
+        {
+          interviewId: '99999999-9999-4999-8999-999999999999',
+          sourceDocumentId: documentId,
+          interviewNotes: '予約なしで面談記録を作成してはならない。'
+        },
+        '検証担当者'
+      ),
+    /not found/iu,
+    'interview notes bypassed scheduling and preparation'
+  )
+  assert.throws(
+    () =>
+      reopened.recordCandidateInterviewDecision(
+        {
+          interviewId: '99999999-9999-4999-8999-999999999999',
+          sourceDocumentId: documentId,
+          decision: 'passed',
+          decisionReason: '予約なしの結論'
+        },
+        '検証担当者'
+      ),
+    /not found/iu,
+    'interview decision bypassed the interview record'
+  )
+  const scheduledInterview = reopened.saveCandidateInterviewSchedule(
+    {
+      sourceDocumentId: documentId,
+      scheduledAt: '2026-07-18T01:00:00.000Z',
+      durationMinutes: 60,
+      meetingMethod: 'zoom',
+      meetingUrl: 'https://company.zoom.us/j/1234567890?pwd=example',
+      interviewer: '検証担当者',
+      contactNote: '端末内で候補者へ確認済み'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:20.000Z')
+  )
   assert.equal(scheduledInterview.stage, 'scheduled')
   assert.equal(scheduledInterview.meetingUrl, 'https://company.zoom.us/j/1234567890?pwd=example')
   assert.equal(scheduledInterview.cloudEligible, false, 'interview schedule became cloud eligible')
@@ -812,161 +1043,282 @@ try {
   }
   const candidateConversationId = '1f22cbd7-87e1-4f40-a947-1a73ba0f5931'
   const interviewConversationId = '38087bdc-a8c2-4918-8d1b-5636920bcf7b'
-  const candidateConversation = reopened.saveAiConversation({
-    conversationId: candidateConversationId,
-    context: candidateConversationContext,
-    messages: [
-      { id: 'candidate-user-1', role: 'user', content: '主要能力は？', mode: 'local', createdAt: '2026-07-17T00:02:20.100Z' },
-      { id: 'candidate-assistant-1', role: 'assistant', content: 'JavaとAWSです。', mode: 'local', references: [{ label: 'スキル', target: 'skills' }], createdAt: '2026-07-17T00:02:20.200Z' }
-    ],
-    expectedRevision: null
-  }, new Date('2026-07-17T00:02:20.200Z'))
-  const updatedCandidateConversation = reopened.saveAiConversation({
-    conversationId: candidateConversation.id,
-    context: candidateConversationContext,
-    messages: [...candidateConversation.messages,
-      { id: 'candidate-user-2', role: 'user', content: '案件適性は？', mode: 'local', createdAt: '2026-07-17T00:02:20.300Z' },
-      { id: 'candidate-assistant-2', role: 'assistant', content: '金融案件との適性があります。', mode: 'local', createdAt: '2026-07-17T00:02:20.400Z' }
-    ],
-    expectedRevision: candidateConversation.revision
-  }, new Date('2026-07-17T00:02:20.400Z'))
+  const candidateConversation = reopened.saveAiConversation(
+    {
+      conversationId: candidateConversationId,
+      context: candidateConversationContext,
+      messages: [
+        { id: 'candidate-user-1', role: 'user', content: '主要能力は？', mode: 'local', createdAt: '2026-07-17T00:02:20.100Z' },
+        {
+          id: 'candidate-assistant-1',
+          role: 'assistant',
+          content: 'JavaとAWSです。',
+          mode: 'local',
+          references: [{ label: 'スキル', target: 'skills' }],
+          createdAt: '2026-07-17T00:02:20.200Z'
+        }
+      ],
+      expectedRevision: null
+    },
+    new Date('2026-07-17T00:02:20.200Z')
+  )
+  const updatedCandidateConversation = reopened.saveAiConversation(
+    {
+      conversationId: candidateConversation.id,
+      context: candidateConversationContext,
+      messages: [
+        ...candidateConversation.messages,
+        { id: 'candidate-user-2', role: 'user', content: '案件適性は？', mode: 'local', createdAt: '2026-07-17T00:02:20.300Z' },
+        {
+          id: 'candidate-assistant-2',
+          role: 'assistant',
+          content: '金融案件との適性があります。',
+          mode: 'local',
+          createdAt: '2026-07-17T00:02:20.400Z'
+        }
+      ],
+      expectedRevision: candidateConversation.revision
+    },
+    new Date('2026-07-17T00:02:20.400Z')
+  )
   assert.equal(updatedCandidateConversation.revision, 2)
-  assert.throws(() => reopened.saveAiConversation({
-    conversationId: candidateConversation.id,
-    context: candidateConversationContext,
-    messages: candidateConversation.messages,
-    expectedRevision: candidateConversation.revision
-  }), /更新されました/u, 'stale AI conversation revision was accepted')
-  reopened.saveAiConversation({
-    conversationId: interviewConversationId,
-    context: interviewConversationContext,
-    messages: [
-      { id: 'interview-user-1', role: 'user', content: '次の質問は？', mode: 'local', createdAt: '2026-07-17T00:02:20.500Z' },
-      { id: 'interview-assistant-1', role: 'assistant', content: '担当範囲を確認してください。', mode: 'local', action: 'questions', createdAt: '2026-07-17T00:02:20.600Z' }
-    ],
-    expectedRevision: null
-  }, new Date('2026-07-17T00:02:20.600Z'))
+  assert.throws(
+    () =>
+      reopened.saveAiConversation({
+        conversationId: candidateConversation.id,
+        context: candidateConversationContext,
+        messages: candidateConversation.messages,
+        expectedRevision: candidateConversation.revision
+      }),
+    /更新されました/u,
+    'stale AI conversation revision was accepted'
+  )
+  reopened.saveAiConversation(
+    {
+      conversationId: interviewConversationId,
+      context: interviewConversationContext,
+      messages: [
+        { id: 'interview-user-1', role: 'user', content: '次の質問は？', mode: 'local', createdAt: '2026-07-17T00:02:20.500Z' },
+        {
+          id: 'interview-assistant-1',
+          role: 'assistant',
+          content: '担当範囲を確認してください。',
+          mode: 'local',
+          action: 'questions',
+          createdAt: '2026-07-17T00:02:20.600Z'
+        }
+      ],
+      expectedRevision: null
+    },
+    new Date('2026-07-17T00:02:20.600Z')
+  )
   assert.equal(reopened.listAiConversations(candidateConversationContext).length, 1)
   assert.equal(reopened.listAiConversations(interviewConversationContext).length, 1)
   assert.deepEqual(reopened.deleteAiConversations([candidateConversationId]), [candidateConversationId])
   assert.equal(reopened.listAiConversations(candidateConversationContext).length, 0)
-  assert.equal(reopened.listAiConversations(interviewConversationContext).length, 1, 'deleting profile conversation removed interview history')
-  const preparedInterview = reopened.saveCandidateInterviewPreparation({
-    interviewId: scheduledInterview.id,
-    interviewGoal: '技術基礎と案件での役割を確認する。',
-    questions: [{ id: 'standard-1', text: '担当案件と役割を教えてください。', source: 'standard', sourceLabel: '会社固定質問', selected: true }],
-    unresolvedItems: ['顧客説明経験']
-  }, '検証担当者', new Date('2026-07-17T00:02:20.500Z'))
+  assert.equal(
+    reopened.listAiConversations(interviewConversationContext).length,
+    1,
+    'deleting profile conversation removed interview history'
+  )
+  const preparedInterview = reopened.saveCandidateInterviewPreparation(
+    {
+      interviewId: scheduledInterview.id,
+      interviewGoal: '技術基礎と案件での役割を確認する。',
+      questions: [
+        { id: 'standard-1', text: '担当案件と役割を教えてください。', source: 'standard', sourceLabel: '会社固定質問', selected: true }
+      ],
+      unresolvedItems: ['顧客説明経験']
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:20.500Z')
+  )
   assert.equal(preparedInterview.stage, 'prepared', 'preparation did not advance the explicit prepared stage')
   assert.equal(preparedInterview.questionPlan.length, 1)
-  const interviewNotes = reopened.saveCandidateInterviewNotes({
-    interviewId: scheduledInterview.id,
-    sourceDocumentId: documentId,
-    interviewNotes: 'Java と AWS の設計経験を具体例で確認。',
-    stage: 'awaiting-decision'
-  }, '検証担当者', new Date('2026-07-17T00:02:21.000Z'))
+  const interviewNotes = reopened.saveCandidateInterviewNotes(
+    {
+      interviewId: scheduledInterview.id,
+      sourceDocumentId: documentId,
+      interviewNotes: 'Java と AWS の設計経験を具体例で確認。',
+      stage: 'awaiting-decision'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:21.000Z')
+  )
   assert.equal(interviewNotes.stage, 'awaiting-decision')
-  assert.throws(() => reopened.saveCandidateInterviewSchedule({
-    interviewId: scheduledInterview.id,
-    sourceDocumentId: documentId,
-    scheduledAt: '2026-07-18T02:00:00.000Z',
-    durationMinutes: 60,
-    meetingMethod: 'zoom',
-    meetingUrl: 'https://company.zoom.us/j/1234567890?pwd=changed',
-    interviewer: '検証担当者'
-  }, '検証担当者'), /schedule is locked/iu, 'IPC could change a schedule after the interview reached a decision state')
-  assert.throws(() => reopened.saveCandidateInterviewPreparation({
-    interviewId: scheduledInterview.id,
-    questions: [{ id: 'late-edit', text: '結論待ちの質問変更', source: 'custom', sourceLabel: null, selected: true }]
-  }, '検証担当者'), /only be edited before the interview starts/iu, 'IPC could edit questions after the interview started')
-  assert.throws(() => reopened.saveCandidateInterviewNotes({
-    interviewId: scheduledInterview.id,
-    sourceDocumentId: documentId,
-    interviewNotes: '結論待ちの追記',
-    stage: 'awaiting-decision'
-  }, '検証担当者'), /only be edited while the interview is in progress/iu, 'IPC could edit notes while a decision was pending')
-  const interviewDecision = reopened.recordCandidateInterviewDecision({
-    interviewId: scheduledInterview.id,
-    sourceDocumentId: documentId,
-    decision: 'next-round',
-    decisionReason: '次回は日本語での顧客説明経験を確認する。'
-  }, '検証担当者', new Date('2026-07-17T00:02:22.000Z'))
+  assert.throws(
+    () =>
+      reopened.saveCandidateInterviewSchedule(
+        {
+          interviewId: scheduledInterview.id,
+          sourceDocumentId: documentId,
+          scheduledAt: '2026-07-18T02:00:00.000Z',
+          durationMinutes: 60,
+          meetingMethod: 'zoom',
+          meetingUrl: 'https://company.zoom.us/j/1234567890?pwd=changed',
+          interviewer: '検証担当者'
+        },
+        '検証担当者'
+      ),
+    /schedule is locked/iu,
+    'IPC could change a schedule after the interview reached a decision state'
+  )
+  assert.throws(
+    () =>
+      reopened.saveCandidateInterviewPreparation(
+        {
+          interviewId: scheduledInterview.id,
+          questions: [{ id: 'late-edit', text: '結論待ちの質問変更', source: 'custom', sourceLabel: null, selected: true }]
+        },
+        '検証担当者'
+      ),
+    /only be edited before the interview starts/iu,
+    'IPC could edit questions after the interview started'
+  )
+  assert.throws(
+    () =>
+      reopened.saveCandidateInterviewNotes(
+        {
+          interviewId: scheduledInterview.id,
+          sourceDocumentId: documentId,
+          interviewNotes: '結論待ちの追記',
+          stage: 'awaiting-decision'
+        },
+        '検証担当者'
+      ),
+    /only be edited while the interview is in progress/iu,
+    'IPC could edit notes while a decision was pending'
+  )
+  const interviewDecision = reopened.recordCandidateInterviewDecision(
+    {
+      interviewId: scheduledInterview.id,
+      sourceDocumentId: documentId,
+      decision: 'next-round',
+      decisionReason: '次回は日本語での顧客説明経験を確認する。'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:22.000Z')
+  )
   assert.equal(interviewDecision.stage, 'on-hold')
   assert.equal(interviewDecision.decision, 'next-round')
-  const followUpInterview = reopened.createCandidateInterviewRound({
-    sourceDocumentId: documentId,
-    parentInterviewId: interviewDecision.id
-  }, '検証担当者', new Date('2026-07-17T00:02:23.000Z'))
+  const followUpInterview = reopened.createCandidateInterviewRound(
+    {
+      sourceDocumentId: documentId,
+      parentInterviewId: interviewDecision.id
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:23.000Z')
+  )
   assert.equal(followUpInterview.roundNumber, 2)
   assert.equal(followUpInterview.parentInterviewId, interviewDecision.id)
-  assert.deepEqual(followUpInterview.questionPlan.map((question) => ({ text: question.text, source: question.source, selected: question.selected })), [
-    { text: '顧客説明経験', source: 'inherited', selected: false }
-  ], 'follow-up copied already asked questions instead of only inheriting unresolved items')
-  const googleMeetFollowUp = reopened.saveCandidateInterviewSchedule({
-    interviewId: followUpInterview.id,
-    sourceDocumentId: documentId,
-    scheduledAt: '2026-07-19T01:00:00.000Z',
-    durationMinutes: 45,
-    meetingMethod: 'google-meet',
-    meetingUrl: 'https://meet.google.com/abc-defg-hij',
-    interviewer: '検証担当者'
-  }, '検証担当者', new Date('2026-07-17T00:02:23.500Z'))
+  assert.deepEqual(
+    followUpInterview.questionPlan.map((question) => ({ text: question.text, source: question.source, selected: question.selected })),
+    [{ text: '顧客説明経験', source: 'inherited', selected: false }],
+    'follow-up copied already asked questions instead of only inheriting unresolved items'
+  )
+  const googleMeetFollowUp = reopened.saveCandidateInterviewSchedule(
+    {
+      interviewId: followUpInterview.id,
+      sourceDocumentId: documentId,
+      scheduledAt: '2026-07-19T01:00:00.000Z',
+      durationMinutes: 45,
+      meetingMethod: 'google-meet',
+      meetingUrl: 'https://meet.google.com/abc-defg-hij',
+      interviewer: '検証担当者'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:23.500Z')
+  )
   assert.equal(googleMeetFollowUp.meetingUrl, 'https://meet.google.com/abc-defg-hij', 'Google Meet URL was not retained')
-  const phoneFollowUp = reopened.saveCandidateInterviewSchedule({
-    interviewId: followUpInterview.id,
-    sourceDocumentId: documentId,
-    scheduledAt: '2026-07-19T02:00:00.000Z',
-    durationMinutes: 30,
-    meetingMethod: 'phone',
-    interviewer: '検証担当者',
-    meetingDetails: { phoneNumber: '090-0000-0000', phoneNote: '午後に発信' }
-  }, '検証担当者', new Date('2026-07-17T00:02:23.800Z'))
+  const phoneFollowUp = reopened.saveCandidateInterviewSchedule(
+    {
+      interviewId: followUpInterview.id,
+      sourceDocumentId: documentId,
+      scheduledAt: '2026-07-19T02:00:00.000Z',
+      durationMinutes: 30,
+      meetingMethod: 'phone',
+      interviewer: '検証担当者',
+      meetingDetails: { phoneNumber: '090-0000-0000', phoneNote: '午後に発信' }
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:23.800Z')
+  )
   assert.equal(phoneFollowUp.meetingUrl, null, 'switching to telephone retained an unrelated meeting URL')
   assert.equal(phoneFollowUp.meetingDetails?.phoneNumber, '090-0000-0000')
-  const preparedFollowUp = reopened.saveCandidateInterviewPreparation({
-    interviewId: followUpInterview.id,
-    questions: [{ id: 'standard-2', text: '顧客説明経験を教えてください。', source: 'standard', sourceLabel: '会社固定質問', selected: true }]
-  }, '検証担当者')
-  const followUpNotes = reopened.saveCandidateInterviewNotes({
-    interviewId: preparedFollowUp.id,
-    sourceDocumentId: documentId,
-    interviewNotes: '採用面談を完了。',
-    stage: 'awaiting-decision'
-  }, '検証担当者')
-  reopened.recordCandidateInterviewDecision({
-    interviewId: followUpNotes.id,
-    sourceDocumentId: documentId,
-    decision: 'passed',
-    decisionReason: '技術・顧客説明ともに採用基準を満たす。'
-  }, '検証担当者')
-  assert.equal(reopened.getCandidateReview(documentId)?.talentPoolStatus, 'eligible', 'recruiting pass did not admit candidate to talent pool')
-  const clientInterview = reopened.saveCandidateInterviewSchedule({
-    sourceDocumentId: documentId,
-    kind: 'client',
-    scheduledAt: '2026-07-20T01:00:00.000Z',
-    durationMinutes: 30,
-    meetingMethod: 'phone',
-    interviewer: '営業担当者'
-  }, '検証担当者')
-  reopened.saveCandidateInterviewPreparation({
-    interviewId: clientInterview.id,
-    questions: [{ id: 'client-1', text: '案件経験を説明してください。', source: 'standard', sourceLabel: '顧客面談', selected: true }]
-  }, '検証担当者')
-  reopened.saveCandidateInterviewNotes({
-    interviewId: clientInterview.id,
-    sourceDocumentId: documentId,
-    interviewNotes: '顧客面談記録。',
-    stage: 'awaiting-decision'
-  }, '検証担当者')
-  reopened.recordCandidateInterviewDecision({
-    interviewId: clientInterview.id,
-    sourceDocumentId: documentId,
-    decision: 'failed',
-    decisionReason: '今回の案件条件とは合わない。'
-  }, '検証担当者')
+  const preparedFollowUp = reopened.saveCandidateInterviewPreparation(
+    {
+      interviewId: followUpInterview.id,
+      questions: [
+        { id: 'standard-2', text: '顧客説明経験を教えてください。', source: 'standard', sourceLabel: '会社固定質問', selected: true }
+      ]
+    },
+    '検証担当者'
+  )
+  const followUpNotes = reopened.saveCandidateInterviewNotes(
+    {
+      interviewId: preparedFollowUp.id,
+      sourceDocumentId: documentId,
+      interviewNotes: '採用面談を完了。',
+      stage: 'awaiting-decision'
+    },
+    '検証担当者'
+  )
+  reopened.recordCandidateInterviewDecision(
+    {
+      interviewId: followUpNotes.id,
+      sourceDocumentId: documentId,
+      decision: 'passed',
+      decisionReason: '技術・顧客説明ともに採用基準を満たす。'
+    },
+    '検証担当者'
+  )
+  assert.equal(
+    reopened.getCandidateReview(documentId)?.talentPoolStatus,
+    'eligible',
+    'recruiting pass did not admit candidate to talent pool'
+  )
+  const clientInterview = reopened.saveCandidateInterviewSchedule(
+    {
+      sourceDocumentId: documentId,
+      kind: 'client',
+      scheduledAt: '2026-07-20T01:00:00.000Z',
+      durationMinutes: 30,
+      meetingMethod: 'phone',
+      interviewer: '営業担当者'
+    },
+    '検証担当者'
+  )
+  reopened.saveCandidateInterviewPreparation(
+    {
+      interviewId: clientInterview.id,
+      questions: [{ id: 'client-1', text: '案件経験を説明してください。', source: 'standard', sourceLabel: '顧客面談', selected: true }]
+    },
+    '検証担当者'
+  )
+  reopened.saveCandidateInterviewNotes(
+    {
+      interviewId: clientInterview.id,
+      sourceDocumentId: documentId,
+      interviewNotes: '顧客面談記録。',
+      stage: 'awaiting-decision'
+    },
+    '検証担当者'
+  )
+  reopened.recordCandidateInterviewDecision(
+    {
+      interviewId: clientInterview.id,
+      sourceDocumentId: documentId,
+      decision: 'failed',
+      decisionReason: '今回の案件条件とは合わない。'
+    },
+    '検証担当者'
+  )
   assert.equal(reopened.listEligibleTalentProfiles().length, 1, 'client interview rejection removed talent-pool eligibility')
   assert.equal(reopened.listCandidateInterviews().filter((item) => item.sourceDocumentId === documentId).length, 3)
-  assert.equal(reopened.listCandidateInterviews().find((item) => item.id === scheduledInterview.id)?.interviewNotes, 'Java と AWS の設計経験を具体例で確認。')
+  assert.equal(
+    reopened.listCandidateInterviews().find((item) => item.id === scheduledInterview.id)?.interviewNotes,
+    'Java と AWS の設計経験を具体例で確認。'
+  )
   assert.equal(reopened.getLocalOperatorProfile()?.displayName, operatorNameSentinel, 'local operator profile did not recover')
   assert.equal(reopened.getLocalOperatorProfile()?.operatorId, stableOperatorId, 'local operator ID changed after restart')
   assert.equal(reopened.getLocalOperatorProfile()?.revision, 2, 'local operator revision did not recover')
@@ -976,39 +1328,55 @@ try {
   assert.equal(reopened.getProcessingJob(backoffJob.id)?.nextRetryAt, '2026-07-17T00:00:41.000Z')
   assert.equal(reopened.getProcessingJob(manualReviewJob.id)?.errorCode, 'INTERRUPTED_REVIEW_REQUIRED')
   assert.equal(reopened.getGoogleWorkspaceAdminConfiguration(), null)
-  let googleConfiguration = reopened.saveGoogleWorkspaceAdminConfiguration({
-    clientId: '1234567890-abcdefghijklmnop.apps.googleusercontent.com',
-    workspaceDomain: 'Company.CO.JP',
-    labelIds: ['INBOX', 'Label_SES'],
-    query: '案件 OR 要員',
-    lookbackDays: 30,
-    maxMessagesPerRun: 200,
-    expectedRevision: null,
-    readonlyAcknowledged: true
-  }, 'ローカル管理者', new Date('2026-07-17T00:02:44.000Z'))
+  let googleConfiguration = reopened.saveGoogleWorkspaceAdminConfiguration(
+    {
+      clientId: '1234567890-abcdefghijklmnop.apps.googleusercontent.com',
+      workspaceDomain: 'Company.CO.JP',
+      labelIds: ['INBOX', 'Label_SES'],
+      query: '案件 OR 要員',
+      lookbackDays: 30,
+      maxMessagesPerRun: 200,
+      expectedRevision: null,
+      readonlyAcknowledged: true
+    },
+    'ローカル管理者',
+    new Date('2026-07-17T00:02:44.000Z')
+  )
   assert.equal(googleConfiguration.workspaceDomain, 'company.co.jp')
   assert.equal(googleConfiguration.revision, 1)
   assert.equal(googleConfiguration.source, 'local-admin')
-  assert.throws(() => reopened.saveGoogleWorkspaceAdminConfiguration({
-    clientId: googleConfiguration.clientId,
-    workspaceDomain: googleConfiguration.workspaceDomain,
-    labelIds: googleConfiguration.labelIds,
-    query: googleConfiguration.query,
-    lookbackDays: 60,
-    maxMessagesPerRun: 200,
-    expectedRevision: null,
-    readonlyAcknowledged: true
-  }, 'ローカル管理者'), /更新されました/, 'stale Google Workspace configuration revision was accepted')
-  googleConfiguration = reopened.saveGoogleWorkspaceAdminConfiguration({
-    clientId: googleConfiguration.clientId,
-    workspaceDomain: googleConfiguration.workspaceDomain,
-    labelIds: googleConfiguration.labelIds,
-    query: googleConfiguration.query,
-    lookbackDays: 60,
-    maxMessagesPerRun: 200,
-    expectedRevision: googleConfiguration.revision,
-    readonlyAcknowledged: true
-  }, 'ローカル管理者', new Date('2026-07-17T00:02:44.500Z'))
+  assert.throws(
+    () =>
+      reopened.saveGoogleWorkspaceAdminConfiguration(
+        {
+          clientId: googleConfiguration.clientId,
+          workspaceDomain: googleConfiguration.workspaceDomain,
+          labelIds: googleConfiguration.labelIds,
+          query: googleConfiguration.query,
+          lookbackDays: 60,
+          maxMessagesPerRun: 200,
+          expectedRevision: null,
+          readonlyAcknowledged: true
+        },
+        'ローカル管理者'
+      ),
+    /更新されました/,
+    'stale Google Workspace configuration revision was accepted'
+  )
+  googleConfiguration = reopened.saveGoogleWorkspaceAdminConfiguration(
+    {
+      clientId: googleConfiguration.clientId,
+      workspaceDomain: googleConfiguration.workspaceDomain,
+      labelIds: googleConfiguration.labelIds,
+      query: googleConfiguration.query,
+      lookbackDays: 60,
+      maxMessagesPerRun: 200,
+      expectedRevision: googleConfiguration.revision,
+      readonlyAcknowledged: true
+    },
+    'ローカル管理者',
+    new Date('2026-07-17T00:02:44.500Z')
+  )
   assert.equal(googleConfiguration.revision, 2)
   assert.equal(googleConfiguration.lookbackDays, 60)
   const gmailRedactionEvidence = reopened.summarizeGmailRedactionEvidence('hr@example.co.jp')
@@ -1032,7 +1400,12 @@ try {
     checks: [
       { id: 'live-profile', status: 'passed', label: 'Live profile', detail: 'Profile metadata only.' },
       { id: 'readonly-scope', status: 'passed', label: 'Readonly scope', detail: 'gmail.readonly only.' },
-      { id: 'account-identity', status: 'passed', label: 'Google account identity', detail: 'Account verified without storing the address.' },
+      {
+        id: 'account-identity',
+        status: 'passed',
+        label: 'Google account identity',
+        detail: 'Account verified without storing the address.'
+      },
       { id: 'credential-protection', status: 'passed', label: 'Credential protection', detail: 'Protected by Keychain.' },
       { id: 'bounded-sync', status: 'passed', label: 'Bounded sync', detail: 'Configuration fingerprint matched.' },
       { id: 'successful-sync', status: 'passed', label: 'Successful sync', detail: 'One bounded record.' },
@@ -1042,7 +1415,16 @@ try {
     ],
     evidence: {
       grantedScopeCount: 1,
-      sync: { status: 'idle', lastSyncedAt: '2026-07-17T00:02:44.700Z', mode: 'baseline', discovered: 1, imported: 1, duplicates: 0, filtered: 0, failed: 0 },
+      sync: {
+        status: 'idle',
+        lastSyncedAt: '2026-07-17T00:02:44.700Z',
+        mode: 'baseline',
+        discovered: 1,
+        imported: 1,
+        duplicates: 0,
+        filtered: 0,
+        failed: 0
+      },
       redaction: gmailRedactionEvidence
     }
   })
@@ -1056,31 +1438,42 @@ try {
   assert.ok(cachedProjectId, 'confirmed project experience was unavailable for embedding cache verification')
   const originalEvaluationJobCaseId = confirmedJobCase.jobCase?.id
   assert.ok(originalEvaluationJobCaseId, 'confirmed job case was unavailable for evaluation authoring verification')
-  let authoringDraft = reopened.createCandidateEvaluationDraft(
-    { name: 'Tokyo SES Expert Pilot' },
-    new Date('2026-07-17T00:02:45.100Z')
+  let authoringDraft = reopened.createCandidateEvaluationDraft({ name: 'Tokyo SES Expert Pilot' }, new Date('2026-07-17T00:02:45.100Z'))
+  authoringDraft = reopened.saveCandidateEvaluationDraftCase(
+    {
+      draftId: authoringDraft.id,
+      expectedRevision: authoringDraft.revision,
+      jobCaseId: originalEvaluationJobCaseId,
+      relevantCandidateProfileIds: [cachedProfileId],
+      expectedProjectEvidenceProfileIds: [cachedProfileId],
+      poolReviewed: true
+    },
+    'verification-user',
+    '検証担当者',
+    new Date('2026-07-17T00:02:45.200Z')
   )
-  authoringDraft = reopened.saveCandidateEvaluationDraftCase({
-    draftId: authoringDraft.id,
-    expectedRevision: authoringDraft.revision,
-    jobCaseId: originalEvaluationJobCaseId,
-    relevantCandidateProfileIds: [cachedProfileId],
-    expectedProjectEvidenceProfileIds: [cachedProfileId],
-    poolReviewed: true
-  }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:45.200Z'))
   assert.equal(authoringDraft.caseCount, 1)
   assert.equal(authoringDraft.readyCaseCount, 1)
   assert.equal(authoringDraft.cases[0]?.relevantCandidates[0]?.expectedProjectEvidence, true)
   assert.equal(authoringDraft.cases[0]?.query.includes('40日'), false, 'payment terms entered the evaluation query')
   assert.equal(authoringDraft.cases[0]?.query.includes('<PERSON_NAME'), false, 'redacted contact placeholder entered the evaluation query')
-  assert.throws(() => reopened.saveCandidateEvaluationDraftCase({
-    draftId: authoringDraft.id,
-    expectedRevision: 1,
-    jobCaseId: originalEvaluationJobCaseId,
-    relevantCandidateProfileIds: [cachedProfileId],
-    expectedProjectEvidenceProfileIds: [],
-    poolReviewed: true
-  }, 'verification-user', '検証担当者'), /更新されました/, 'stale evaluation draft revision was accepted')
+  assert.throws(
+    () =>
+      reopened.saveCandidateEvaluationDraftCase(
+        {
+          draftId: authoringDraft.id,
+          expectedRevision: 1,
+          jobCaseId: originalEvaluationJobCaseId,
+          relevantCandidateProfileIds: [cachedProfileId],
+          expectedProjectEvidenceProfileIds: [],
+          poolReviewed: true
+        },
+        'verification-user',
+        '検証担当者'
+      ),
+    /更新されました/,
+    'stale evaluation draft revision was accepted'
+  )
   const authoredBenchmark = reopened.buildCandidateEvaluationBenchmark(
     authoringDraft.id,
     authoringDraft.revision,
@@ -1091,21 +1484,11 @@ try {
   assert.equal(authoredBenchmark.privacy.directIdentifiersRemoved, true)
   assert.equal(authoredBenchmark.thresholds.minimumCases, 30)
   const persistedMatches = searchConfirmedCandidateProfiles(reopened.listEligibleTalentProfiles(), 'Java AWS', 20)
-  const persistedMatchRun = reopened.saveCandidateMatchRun(
-    task.id,
-    'Java AWS',
-    persistedMatches,
-    new Date('2026-07-17T00:02:46.000Z')
-  )
+  const persistedMatchRun = reopened.saveCandidateMatchRun(task.id, 'Java AWS', persistedMatches, new Date('2026-07-17T00:02:46.000Z'))
   assert.equal(persistedMatchRun.matches.length, 1, 'candidate match result was not persisted')
   assert.equal(persistedMatchRun.run.hardFilterPolicyVersion, 'tri-state-v3', 'hard-filter policy was not versioned on the match run')
   assert.equal(persistedMatchRun.run.evaluation.recallAt20, null, 'Recall@20 was claimed without a known relevant total')
-  const repeatedMatchRun = reopened.saveCandidateMatchRun(
-    task.id,
-    'Java AWS',
-    persistedMatches,
-    new Date('2026-07-17T00:02:46.500Z')
-  )
+  const repeatedMatchRun = reopened.saveCandidateMatchRun(task.id, 'Java AWS', persistedMatches, new Date('2026-07-17T00:02:46.500Z'))
   assert.equal(repeatedMatchRun.run.id, persistedMatchRun.run.id, 'identical candidate match execution created a duplicate run')
   assert.ok(originalEvaluationJobCaseId)
   const boundMatchTask = materializeWorkTask(
@@ -1119,7 +1502,13 @@ try {
   )
   boundMatchTask.contextBindings.push({ objectType: 'candidate-profile', objectId: documentId, version: '1' })
   reopened.saveWorkTask(boundMatchTask)
-  assert.ok(reopened.getWorkTask(boundMatchTask.id)?.contextBindings.some((binding) => binding.objectType === 'candidate-profile' && binding.objectId === documentId && binding.version === '1'))
+  assert.ok(
+    reopened
+      .getWorkTask(boundMatchTask.id)
+      ?.contextBindings.some(
+        (binding) => binding.objectType === 'candidate-profile' && binding.objectId === documentId && binding.version === '1'
+      )
+  )
   const runtimeIdentity = {
     algorithmVersion: 'hard-filter-bm25-v1' as const,
     hardFilterPolicyVersion: 'tri-state-v3' as const,
@@ -1143,14 +1532,19 @@ try {
   const homeResult = matchingHome.currentRun?.results[0]
   assert.ok(homeResult)
   assert.equal(homeResult.businessPriority.ruleVersion, 'business-priority-v1')
-  reopened.setBusinessPriorityOverride({
-    matchResultId: homeResult.matchResultId,
-    level: 'high',
-    reason: '本日中の営業確認',
-    expiresAt: '2026-07-18T00:00:00.000Z'
-  }, '検証担当者', new Date('2026-07-17T00:02:46.710Z'))
+  reopened.setBusinessPriorityOverride(
+    {
+      matchResultId: homeResult.matchResultId,
+      level: 'high',
+      reason: '本日中の営業確認',
+      expiresAt: '2026-07-18T00:00:00.000Z'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:46.710Z')
+  )
   assert.equal(
-    reopened.getMatchingHomeProjection(runtimeIdentity, new Date('2026-07-17T00:02:46.720Z')).currentRun?.results[0]?.businessPriority.effectiveLevel,
+    reopened.getMatchingHomeProjection(runtimeIdentity, new Date('2026-07-17T00:02:46.720Z')).currentRun?.results[0]?.businessPriority
+      .effectiveLevel,
     'high',
     'reason-bound business-priority override was not applied'
   )
@@ -1162,32 +1556,52 @@ try {
   assert.equal(staleModelHome.currentRun, null, 'stale Match Run results were exposed on the home projection')
   const matchResult = persistedMatchRun.matches[0]
   assert.ok(matchResult)
-  assert.throws(() => reopened.submitCandidateMatchFeedback({
-    matchResultId: matchResult.matchResultId,
-    matchResultHash: matchResult.matchResultHash,
-    expectedRevision: 0,
-    decision: 'suitable',
-    reasonCode: 'rate_mismatch'
-  }, '検証担当者'), /組み合わせ/, 'an unsuitable reason was accepted for a suitable decision')
-  const savedFeedback = reopened.submitCandidateMatchFeedback({
-    matchResultId: matchResult.matchResultId,
-    matchResultHash: matchResult.matchResultHash,
-    expectedRevision: 0,
-    decision: 'suitable',
-    reasonCode: 'strong_project_fit',
-    note: '案件要件と確認済みプロジェクトが一致'
-  }, '検証担当者', new Date('2026-07-17T00:02:46.750Z'))
+  assert.throws(
+    () =>
+      reopened.submitCandidateMatchFeedback(
+        {
+          matchResultId: matchResult.matchResultId,
+          matchResultHash: matchResult.matchResultHash,
+          expectedRevision: 0,
+          decision: 'suitable',
+          reasonCode: 'rate_mismatch'
+        },
+        '検証担当者'
+      ),
+    /組み合わせ/,
+    'an unsuitable reason was accepted for a suitable decision'
+  )
+  const savedFeedback = reopened.submitCandidateMatchFeedback(
+    {
+      matchResultId: matchResult.matchResultId,
+      matchResultHash: matchResult.matchResultHash,
+      expectedRevision: 0,
+      decision: 'suitable',
+      reasonCode: 'strong_project_fit',
+      note: '案件要件と確認済みプロジェクトが一致'
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:46.750Z')
+  )
   assert.equal(savedFeedback.feedback.revision, 1)
   assert.equal(savedFeedback.run.evaluation.coveragePercent, 100)
   assert.equal(savedFeedback.run.evaluation.judgedNdcgAt20, 1)
   assert.equal(savedFeedback.run.evaluation.recallAt20, null)
-  assert.throws(() => reopened.submitCandidateMatchFeedback({
-    matchResultId: matchResult.matchResultId,
-    matchResultHash: matchResult.matchResultHash,
-    expectedRevision: 0,
-    decision: 'unsuitable',
-    reasonCode: 'rate_mismatch'
-  }, '検証担当者'), /changed/, 'stale match feedback revision was accepted')
+  assert.throws(
+    () =>
+      reopened.submitCandidateMatchFeedback(
+        {
+          matchResultId: matchResult.matchResultId,
+          matchResultHash: matchResult.matchResultHash,
+          expectedRevision: 0,
+          decision: 'unsuitable',
+          reasonCode: 'rate_mismatch'
+        },
+        '検証担当者'
+      ),
+    /changed/,
+    'stale match feedback revision was accepted'
+  )
   const benchmark: SesCandidateBenchmark = {
     version: 'ses-candidate-benchmark-v1',
     id: 'd5a8372a-f701-4862-8f5d-4278c116fe3c',
@@ -1217,29 +1631,41 @@ try {
   assert.equal(evaluationState.latestReport?.metrics.recallAt20, 1)
   assert.equal(JSON.stringify(evaluationState.latestReport).includes('Java AWS'), false, 'evaluation report persisted raw query text')
   const revisionBeforeDerivedCache = reopened.getLocalDataRevision().revision
-  reopened.saveCandidateProfileEmbeddings([{
-    profileId: cachedProfileId,
-    modelId: 'Xenova/multilingual-e5-small',
-    modelRevision: '761b726dd34fb83930e26aab4e9ac3899aa1fa78',
-    contentHash: 'e'.repeat(64),
-    vector: Array.from({ length: 384 }, (_, index) => index === 0 ? 1 : 0)
-  }], new Date('2026-07-17T00:02:47.000Z'))
-  reopened.saveCandidateProjectEmbeddings([{
-    profileId: cachedProfileId,
-    projectId: cachedProjectId,
-    modelId: 'Xenova/multilingual-e5-small',
-    modelRevision: '761b726dd34fb83930e26aab4e9ac3899aa1fa78',
-    contentHash: 'f'.repeat(64),
-    vector: Array.from({ length: 384 }, (_, index) => index === 1 ? 1 : 0)
-  }], new Date('2026-07-17T00:02:47.000Z'))
-  assert.equal(reopened.listCandidateProfileEmbeddings(
-    'Xenova/multilingual-e5-small',
-    '761b726dd34fb83930e26aab4e9ac3899aa1fa78'
-  )[0]?.vector.length, 384, 'candidate embedding cache did not round-trip')
-  assert.equal(reopened.listCandidateProjectEmbeddings(
-    'Xenova/multilingual-e5-small',
-    '761b726dd34fb83930e26aab4e9ac3899aa1fa78'
-  )[0]?.projectId, cachedProjectId, 'project embedding cache did not round-trip')
+  reopened.saveCandidateProfileEmbeddings(
+    [
+      {
+        profileId: cachedProfileId,
+        modelId: 'Xenova/multilingual-e5-small',
+        modelRevision: '761b726dd34fb83930e26aab4e9ac3899aa1fa78',
+        contentHash: 'e'.repeat(64),
+        vector: Array.from({ length: 384 }, (_, index) => (index === 0 ? 1 : 0))
+      }
+    ],
+    new Date('2026-07-17T00:02:47.000Z')
+  )
+  reopened.saveCandidateProjectEmbeddings(
+    [
+      {
+        profileId: cachedProfileId,
+        projectId: cachedProjectId,
+        modelId: 'Xenova/multilingual-e5-small',
+        modelRevision: '761b726dd34fb83930e26aab4e9ac3899aa1fa78',
+        contentHash: 'f'.repeat(64),
+        vector: Array.from({ length: 384 }, (_, index) => (index === 1 ? 1 : 0))
+      }
+    ],
+    new Date('2026-07-17T00:02:47.000Z')
+  )
+  assert.equal(
+    reopened.listCandidateProfileEmbeddings('Xenova/multilingual-e5-small', '761b726dd34fb83930e26aab4e9ac3899aa1fa78')[0]?.vector.length,
+    384,
+    'candidate embedding cache did not round-trip'
+  )
+  assert.equal(
+    reopened.listCandidateProjectEmbeddings('Xenova/multilingual-e5-small', '761b726dd34fb83930e26aab4e9ac3899aa1fa78')[0]?.projectId,
+    cachedProjectId,
+    'project embedding cache did not round-trip'
+  )
   assert.equal(
     reopened.getLocalDataRevision().revision,
     revisionBeforeDerivedCache,
@@ -1255,34 +1681,74 @@ try {
     databaseKey,
     mappingKey
   })
-  assert.equal(snapshotRepository.listWorkTasks().some((item) => item.instruction === taskSentinel), true, 'consistent snapshot missed committed work')
+  assert.equal(
+    snapshotRepository.listWorkTasks().some((item) => item.instruction === taskSentinel),
+    true,
+    'consistent snapshot missed committed work'
+  )
   assert.equal(snapshotRepository.getWorkTask(task.id)?.messages.length, 3, 'consistent snapshot missed work task messages')
   assert.equal(snapshotRepository.getWorkTask(task.id)?.artifacts.length, 1, 'consistent snapshot missed work task artifacts')
   assert.equal(snapshotRepository.listProcessingJobs().length, 4, 'consistent snapshot missed processing jobs')
   assert.equal(snapshotRepository.getLocalDataRevision().revision, capturedSnapshot.dataRevision, 'snapshot revision marker drifted')
-  assert.equal(snapshotRepository.listCandidateProfileEmbeddings(
-    'Xenova/multilingual-e5-small',
-    '761b726dd34fb83930e26aab4e9ac3899aa1fa78'
-  ).length, 1, 'consistent snapshot missed the encrypted embedding cache')
-  assert.equal(snapshotRepository.listCandidateProjectEmbeddings(
-    'Xenova/multilingual-e5-small',
-    '761b726dd34fb83930e26aab4e9ac3899aa1fa78'
-  ).length, 1, 'consistent snapshot missed the encrypted project embedding cache')
-  assert.equal(snapshotRepository.getCandidateMatchRunSummary(persistedMatchRun.run.id).evaluation.feedbackCount, 1, 'consistent snapshot missed candidate match feedback')
-  assert.equal(snapshotRepository.getCandidateMatchRunSummary(persistedMatchRun.run.id).hardFilterPolicyVersion, 'tri-state-v3', 'snapshot lost hard-filter policy version')
-  assert.equal(snapshotRepository.getCandidateEvaluationState().latestReport?.status, 'passed', 'consistent snapshot missed candidate evaluation report')
-  assert.equal(snapshotRepository.getCandidateEvaluationDraft()?.caseCount, 1, 'consistent snapshot missed the encrypted evaluation authoring draft')
-  assert.equal(snapshotRepository.getGoogleWorkspaceAdminConfiguration()?.revision, 2, 'consistent snapshot missed Google Workspace admin configuration')
-  assert.equal(snapshotRepository.getLocalOperatorProfile()?.operatorId, stableOperatorId, 'consistent snapshot missed the local operator profile')
-  assert.equal(snapshotRepository.getLocalOperatorProfile()?.displayName, operatorNameSentinel, 'snapshot changed the local operator display name')
+  assert.equal(
+    snapshotRepository.listCandidateProfileEmbeddings('Xenova/multilingual-e5-small', '761b726dd34fb83930e26aab4e9ac3899aa1fa78').length,
+    1,
+    'consistent snapshot missed the encrypted embedding cache'
+  )
+  assert.equal(
+    snapshotRepository.listCandidateProjectEmbeddings('Xenova/multilingual-e5-small', '761b726dd34fb83930e26aab4e9ac3899aa1fa78').length,
+    1,
+    'consistent snapshot missed the encrypted project embedding cache'
+  )
+  assert.equal(
+    snapshotRepository.getCandidateMatchRunSummary(persistedMatchRun.run.id).evaluation.feedbackCount,
+    1,
+    'consistent snapshot missed candidate match feedback'
+  )
+  assert.equal(
+    snapshotRepository.getCandidateMatchRunSummary(persistedMatchRun.run.id).hardFilterPolicyVersion,
+    'tri-state-v3',
+    'snapshot lost hard-filter policy version'
+  )
+  assert.equal(
+    snapshotRepository.getCandidateEvaluationState().latestReport?.status,
+    'passed',
+    'consistent snapshot missed candidate evaluation report'
+  )
+  assert.equal(
+    snapshotRepository.getCandidateEvaluationDraft()?.caseCount,
+    1,
+    'consistent snapshot missed the encrypted evaluation authoring draft'
+  )
+  assert.equal(
+    snapshotRepository.getGoogleWorkspaceAdminConfiguration()?.revision,
+    2,
+    'consistent snapshot missed Google Workspace admin configuration'
+  )
+  assert.equal(
+    snapshotRepository.getLocalOperatorProfile()?.operatorId,
+    stableOperatorId,
+    'consistent snapshot missed the local operator profile'
+  )
+  assert.equal(
+    snapshotRepository.getLocalOperatorProfile()?.displayName,
+    operatorNameSentinel,
+    'snapshot changed the local operator display name'
+  )
   assert.equal(snapshotRepository.getLocalApplicationPreferences()?.locale, 'ja-JP', 'consistent snapshot missed application preferences')
-  assert.equal(snapshotRepository.getLatestGoogleWorkspaceAcceptanceReport()?.id, googleAcceptanceReport.id, 'consistent snapshot missed Google Workspace acceptance evidence')
+  assert.equal(
+    snapshotRepository.getLatestGoogleWorkspaceAcceptanceReport()?.id,
+    googleAcceptanceReport.id,
+    'consistent snapshot missed Google Workspace acceptance evidence'
+  )
   const snapshotRevisionBeforeMutation = snapshotRepository.getLocalDataRevision().revision
-  snapshotRepository.saveWorkTask(materializeWorkTask(
-    createWorkTaskPreview('スナップショットのトリガーを検証する'),
-    'snapshot-trigger-verification',
-    '2026-07-17T00:02:48.000Z'
-  ))
+  snapshotRepository.saveWorkTask(
+    materializeWorkTask(
+      createWorkTaskPreview('スナップショットのトリガーを検証する'),
+      'snapshot-trigger-verification',
+      '2026-07-17T00:02:48.000Z'
+    )
+  )
   assert.ok(
     snapshotRepository.getLocalDataRevision().revision > snapshotRevisionBeforeMutation,
     'consistent snapshot did not preserve data revision triggers'
@@ -1322,76 +1788,105 @@ try {
     1,
     'confirmed active profile did not enter local BM25 retrieval'
   )
-  reopened.saveWorkTask(materializeWorkTask(
-    createWorkTaskPreview('バックアップ後の変更を検証する'),
-    'post-backup-change-verification',
-    '2026-07-17T00:02:50.500Z'
-  ))
+  reopened.saveWorkTask(
+    materializeWorkTask(
+      createWorkTaskPreview('バックアップ後の変更を検証する'),
+      'post-backup-change-verification',
+      '2026-07-17T00:02:50.500Z'
+    )
+  )
   reopened.snoozeRecoveryReminder(1, new Date('2026-07-17T00:02:51.000Z'))
   assert.equal(
     reopened.getRecoveryState(false, new Date('2026-07-17T00:02:52.000Z')).reminder.status,
     'snoozed',
     'explicit one-day reminder deferral was not stored'
   )
-  reopened.saveWorkTask(materializeWorkTask(
-    createWorkTaskPreview('延期後の新しい変更を検証する'),
-    'post-snooze-change-verification',
-    '2026-07-17T00:02:53.000Z'
-  ))
+  reopened.saveWorkTask(
+    materializeWorkTask(
+      createWorkTaskPreview('延期後の新しい変更を検証する'),
+      'post-snooze-change-verification',
+      '2026-07-17T00:02:53.000Z'
+    )
+  )
   assert.equal(
     reopened.getRecoveryState(false, new Date('2026-07-17T00:02:54.000Z')).reminder.status,
     'due',
     'a newer local change did not override the stale reminder deferral'
   )
   assert.equal(reopened.listEligibleTalentProfiles().length, 1, 'passed candidate did not remain in the eligible talent pool')
-  assert.equal(searchConfirmedCandidateProfiles(reopened.listEligibleTalentProfiles(), 'Java AWS').length, 1, 'eligible candidate did not remain in BM25 retrieval')
+  assert.equal(
+    searchConfirmedCandidateProfiles(reopened.listEligibleTalentProfiles(), 'Java AWS').length,
+    1,
+    'eligible candidate did not remain in BM25 retrieval'
+  )
   assert.equal(reopened.countGmailMessages('hr@example.co.jp'), 1, 'Gmail message deduplication did not persist')
   assert.equal(reopened.findGmailMessageByFingerprint('hr@example.co.jp', gmailFingerprint), 'gmail_msg_001')
   assert.equal(reopened.getGmailSyncCheckpoint('hr@example.co.jp')?.historyId, '120')
   assert.equal(reopened.getJobCaseReview(jobCaseReviewId)?.status, 'completed', 'job case review did not recover')
   assert.equal(reopened.getJobCaseReview(manualDraft.reviewId)?.sourceType, 'manual', 'manual job case did not recover')
   assert.equal(reopened.getJobCaseReview(emlDraft.reviewId)?.sourceType, 'eml', 'EML job case did not recover')
-  assert.equal(reopened.getEmlJobCaseReview(emlSource.source.providerMessageId ?? '')?.reviewId, emlDraft.reviewId, 'EML deduplication key did not recover')
+  assert.equal(
+    reopened.getEmlJobCaseReview(emlSource.source.providerMessageId ?? '')?.reviewId,
+    emlDraft.reviewId,
+    'EML deduplication key did not recover'
+  )
   assert.equal(reopened.getJobCaseReview(emlDraft.reviewId)?.redactedPreview.includes(emlCaseNameSentinel), false)
   assert.equal(reopened.getJobCaseReview(emlDraft.reviewId)?.redactedPreview.includes(emlCasePhoneSentinel), false)
   assert.equal(reopened.listActiveJobCases().length, 2, 'confirmed job cases did not recover')
   assert.equal(reopened.listGmailMessagesPendingJobCaseDrafts('hr@example.co.jp').length, 0)
-  const archivedCase = reopened.setJobCaseLifecycle({
-    reviewId: jobCaseReviewId,
-    state: 'archived',
-    reason: '検証用案件アーカイブ'
-  }, 'verification-user', new Date('2026-07-17T00:02:56.000Z'))
+  const archivedCase = reopened.setJobCaseLifecycle(
+    {
+      reviewId: jobCaseReviewId,
+      state: 'archived',
+      reason: '検証用案件アーカイブ'
+    },
+    'verification-user',
+    new Date('2026-07-17T00:02:56.000Z')
+  )
   assert.equal(archivedCase.lifecycle, 'archived')
   assert.equal(reopened.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'archived')
   assert.equal(reopened.listActiveJobCases().length, 1, 'archived job case remained active')
   assert.equal(reopened.getJobCaseHistory(jobCaseReviewId)[0]?.status, 'archived')
-  const restoredCase = reopened.setJobCaseLifecycle({
-    reviewId: jobCaseReviewId,
-    state: 'active',
-    reason: '検証後に案件を復元'
-  }, 'verification-user', new Date('2026-07-17T00:02:57.000Z'))
+  const restoredCase = reopened.setJobCaseLifecycle(
+    {
+      reviewId: jobCaseReviewId,
+      state: 'active',
+      reason: '検証後に案件を復元'
+    },
+    'verification-user',
+    new Date('2026-07-17T00:02:57.000Z')
+  )
   assert.equal(restoredCase.lifecycle, 'active')
   assert.equal(reopened.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'status-changed')
   assert.equal(reopened.listActiveJobCases().length, 2, 'restored job case did not become active')
-  const reopenedCaseReview = reopened.reopenJobCaseReview({
-    reviewId: jobCaseReviewId,
-    reason: '単価条件を更新するため'
-  }, 'verification-user', new Date('2026-07-17T00:02:58.000Z'))
+  const reopenedCaseReview = reopened.reopenJobCaseReview(
+    {
+      reviewId: jobCaseReviewId,
+      reason: '単価条件を更新するため'
+    },
+    'verification-user',
+    new Date('2026-07-17T00:02:58.000Z')
+  )
   assert.equal(reopenedCaseReview.status, 'awaiting-review')
   assert.equal(reopened.getBusinessFeed().find((entry) => entry.objectId === jobCaseReviewId)?.event, 'updated')
   assert.equal(reopenedCaseReview.reviewRevision, 2)
   assert.equal(reopenedCaseReview.fields.find((field) => field.key === 'rate')?.value, '80万円/月')
-  const revisedCase = reopened.confirmJobCaseReview({
-    reviewId: jobCaseReviewId,
-    reviewRevision: reopenedCaseReview.reviewRevision,
-    privacyReviewed: true,
-    fields: reopenedCaseReview.fields.map((field) => ({
-      key: field.key,
-      value: field.key === 'rate' ? '85万円/月' : field.value,
-      confirmed: true as const,
-      ...(field.key === 'rate' ? { changeReason: '顧客から更新連絡' } : {})
-    }))
-  }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:59.000Z'))
+  const revisedCase = reopened.confirmJobCaseReview(
+    {
+      reviewId: jobCaseReviewId,
+      reviewRevision: reopenedCaseReview.reviewRevision,
+      privacyReviewed: true,
+      fields: reopenedCaseReview.fields.map((field) => ({
+        key: field.key,
+        value: field.key === 'rate' ? '85万円/月' : field.value,
+        confirmed: true as const,
+        ...(field.key === 'rate' ? { changeReason: '顧客から更新連絡' } : {})
+      }))
+    },
+    'verification-user',
+    '検証担当者',
+    new Date('2026-07-17T00:02:59.000Z')
+  )
   assert.equal(revisedCase.jobCase?.version, 2)
   assert.equal(reopened.getJobCaseHistory(jobCaseReviewId).length, 2)
   assert.equal(reopened.getJobCaseHistory(jobCaseReviewId)[1]?.status, 'superseded')
@@ -1399,11 +1894,14 @@ try {
   assert.equal(authoringDraft.cases[0]?.status, 'job-case-stale', 'a superseded job case did not invalidate its expert label')
   const staleEvaluationCaseId = authoringDraft.cases[0]?.id
   assert.ok(staleEvaluationCaseId)
-  authoringDraft = reopened.deleteCandidateEvaluationDraftCase({
-    draftId: authoringDraft.id,
-    caseId: staleEvaluationCaseId,
-    expectedRevision: authoringDraft.revision
-  }, new Date('2026-07-17T00:02:59.010Z'))
+  authoringDraft = reopened.deleteCandidateEvaluationDraftCase(
+    {
+      draftId: authoringDraft.id,
+      caseId: staleEvaluationCaseId,
+      expectedRevision: authoringDraft.revision
+    },
+    new Date('2026-07-17T00:02:59.010Z')
+  )
   assert.equal(authoringDraft.caseCount, 0)
   const proposalOptions = reopened.getProposalPreparationOptions()
   assert.equal(proposalOptions.jobCases.length, 2)
@@ -1412,24 +1910,34 @@ try {
   const revisedJobCaseId = revisedCase.jobCase?.id
   assert.ok(candidateProfileId)
   assert.ok(revisedJobCaseId)
-  authoringDraft = reopened.saveCandidateEvaluationDraftCase({
-    draftId: authoringDraft.id,
-    expectedRevision: authoringDraft.revision,
-    jobCaseId: revisedJobCaseId,
-    relevantCandidateProfileIds: [candidateProfileId],
-    expectedProjectEvidenceProfileIds: [candidateProfileId],
-    poolReviewed: true
-  }, 'verification-user', '検証担当者', new Date('2026-07-17T00:02:59.050Z'))
+  authoringDraft = reopened.saveCandidateEvaluationDraftCase(
+    {
+      draftId: authoringDraft.id,
+      expectedRevision: authoringDraft.revision,
+      jobCaseId: revisedJobCaseId,
+      relevantCandidateProfileIds: [candidateProfileId],
+      expectedProjectEvidenceProfileIds: [candidateProfileId],
+      poolReviewed: true
+    },
+    'verification-user',
+    '検証担当者',
+    new Date('2026-07-17T00:02:59.050Z')
+  )
   assert.equal(authoringDraft.cases[0]?.status, 'ready')
-  const proposalDraft = reopened.createProposalDraft({
-    taskId: proposalTask.id,
-    jobCaseId: revisedJobCaseId,
-    candidateProfileId,
-    recipientTo: 'bp@example.co.jp',
-    recipientCc: ['sales@example.co.jp'],
-    candidateDisplayName: '候補者A',
-    tone: 'standard'
-  }, 'f3973f54-35a5-48fb-a2f7-1507b85dac80', '検証担当者', new Date('2026-07-17T00:02:59.100Z'))
+  const proposalDraft = reopened.createProposalDraft(
+    {
+      taskId: proposalTask.id,
+      jobCaseId: revisedJobCaseId,
+      candidateProfileId,
+      recipientTo: 'bp@example.co.jp',
+      recipientCc: ['sales@example.co.jp'],
+      candidateDisplayName: '候補者A',
+      tone: 'standard'
+    },
+    'f3973f54-35a5-48fb-a2f7-1507b85dac80',
+    '検証担当者',
+    new Date('2026-07-17T00:02:59.100Z')
+  )
   assert.equal(proposalDraft.generation.cloudUsed, false)
   assert.equal(proposalDraft.attachment.sourceDocumentIncluded, false)
   const salesAgentConversationId = '8cf7a1ad-89ec-4f96-9b4f-6f2be6a3c8da'
@@ -1454,75 +1962,170 @@ try {
     label: persistedAgentResult.anonymousLabel,
     target: `match-result:${persistedAgentResult.matchResultId}`
   }
-  const savedSalesAgentConversation = reopened.saveAiConversation({
-    conversationId: salesAgentConversationId,
-    context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
-    messages: [
-      { id: 'sales-agent-user-1', role: 'user', content: '最近有什么案件？', mode: 'local', turnId: salesAgentTurnId, createdAt: '2026-07-17T00:02:59.700Z' },
-      {
-        id: 'sales-agent-assistant-1', role: 'assistant', content: '已找到案件。', mode: 'cloud',
-        modelKey: 'gpt-5.6-luna', modelDisplayName: 'GPT-5.6 Luna', narrativeStatus: 'completed',
-        turnId: salesAgentTurnId, createdAt: '2026-07-17T00:02:59.800Z',
-        references: [salesAgentJobCaseReference, salesAgentResultReference],
-        blocks: [{
-          type: 'job-case-cards', query: '', dataAsOf: '2026-07-17T00:02:59.700Z',
-          normalizedFilters: { updatedAfter: '2026-06-18T15:00:00.000Z', updatedBefore: '2026-07-17T15:00:00.000Z', lifecycle: 'active', query: null, limit: 20 },
-          totalMatched: 1,
-          cards: [{ reference: salesAgentJobCaseReference, title: 'Java 案件', version: 2, updatedAt: '2026-07-17T00:02:59.000Z', requiredSkills: 'Java', rate: '85万円/月', workStyle: null, startDate: null, status: 'current' }]
-        }, {
-          type: 'candidate-match-cards', runId: persistedMatchRun.run.id, resultHash: persistedMatchRun.run.resultSetHash,
-          cards: [{
-            reference: salesAgentResultReference,
-            candidateProfileId,
-            runId: persistedMatchRun.run.id,
-            rank: 1,
-            anonymousLabel: persistedAgentResult.anonymousLabel,
-            fitScore: persistedAgentResult.matchScore,
-            matched: persistedAgentResult.matchedTerms,
-            missing: [],
-            hardFilterStatus: 'passed',
-            projectEvidence: persistedAgentResult.projectEvidence?.summary ?? null,
-            status: 'current'
-          }]
-        }]
-      }
-    ],
-    salesAgentState: { selectedCandidateDocumentId: documentId, selectedJobCaseRef: salesAgentJobCaseReference, lastMatchRunId: persistedMatchRun.run.id, lastSearchMessageId: 'sales-agent-assistant-1' },
-    expectedRevision: null
-  }, new Date('2026-07-17T00:02:59.700Z'))
+  const savedSalesAgentConversation = reopened.saveAiConversation(
+    {
+      conversationId: salesAgentConversationId,
+      context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+      messages: [
+        {
+          id: 'sales-agent-user-1',
+          role: 'user',
+          content: '最近有什么案件？',
+          mode: 'local',
+          turnId: salesAgentTurnId,
+          createdAt: '2026-07-17T00:02:59.700Z'
+        },
+        {
+          id: 'sales-agent-assistant-1',
+          role: 'assistant',
+          content: '已找到案件。',
+          mode: 'cloud',
+          modelKey: 'gpt-5.6-luna',
+          modelDisplayName: 'GPT-5.6 Luna',
+          narrativeStatus: 'completed',
+          turnId: salesAgentTurnId,
+          createdAt: '2026-07-17T00:02:59.800Z',
+          references: [salesAgentJobCaseReference, salesAgentResultReference],
+          blocks: [
+            {
+              type: 'job-case-cards',
+              query: '',
+              dataAsOf: '2026-07-17T00:02:59.700Z',
+              normalizedFilters: {
+                updatedAfter: '2026-06-18T15:00:00.000Z',
+                updatedBefore: '2026-07-17T15:00:00.000Z',
+                lifecycle: 'active',
+                query: null,
+                limit: 20
+              },
+              totalMatched: 1,
+              cards: [
+                {
+                  reference: salesAgentJobCaseReference,
+                  title: 'Java 案件',
+                  version: 2,
+                  updatedAt: '2026-07-17T00:02:59.000Z',
+                  requiredSkills: 'Java',
+                  rate: '85万円/月',
+                  workStyle: null,
+                  startDate: null,
+                  status: 'current'
+                }
+              ]
+            },
+            {
+              type: 'candidate-match-cards',
+              runId: persistedMatchRun.run.id,
+              resultHash: persistedMatchRun.run.resultSetHash,
+              cards: [
+                {
+                  reference: salesAgentResultReference,
+                  candidateProfileId,
+                  runId: persistedMatchRun.run.id,
+                  rank: 1,
+                  anonymousLabel: persistedAgentResult.anonymousLabel,
+                  fitScore: persistedAgentResult.matchScore,
+                  matched: persistedAgentResult.matchedTerms,
+                  missing: [],
+                  hardFilterStatus: 'passed',
+                  projectEvidence: persistedAgentResult.projectEvidence?.summary ?? null,
+                  status: 'current'
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      salesAgentState: {
+        selectedCandidateDocumentId: documentId,
+        selectedJobCaseRef: salesAgentJobCaseReference,
+        lastMatchRunId: persistedMatchRun.run.id,
+        lastSearchMessageId: 'sales-agent-assistant-1'
+      },
+      expectedRevision: null
+    },
+    new Date('2026-07-17T00:02:59.700Z')
+  )
   assert.equal(savedSalesAgentConversation.context.candidateDocumentId, null)
   assert.equal(reopened.getAiConversation(salesAgentConversationId)?.salesAgentState?.selectedCandidateDocumentId, documentId)
-  const persistedModelMessage = reopened.getAiConversation(salesAgentConversationId)?.messages.find((message) => message.id === 'sales-agent-assistant-1')
-  assert.deepEqual({
-    mode: persistedModelMessage?.mode,
-    modelKey: persistedModelMessage?.modelKey,
-    modelDisplayName: persistedModelMessage?.modelDisplayName,
-    narrativeStatus: persistedModelMessage?.narrativeStatus
-  }, {
-    mode: 'cloud', modelKey: 'gpt-5.6-luna', modelDisplayName: 'GPT-5.6 Luna', narrativeStatus: 'completed'
-  }, 'Agent model metadata did not survive encrypted conversation persistence')
+  const persistedModelMessage = reopened
+    .getAiConversation(salesAgentConversationId)
+    ?.messages.find((message) => message.id === 'sales-agent-assistant-1')
+  assert.deepEqual(
+    {
+      mode: persistedModelMessage?.mode,
+      modelKey: persistedModelMessage?.modelKey,
+      modelDisplayName: persistedModelMessage?.modelDisplayName,
+      narrativeStatus: persistedModelMessage?.narrativeStatus
+    },
+    {
+      mode: 'cloud',
+      modelKey: 'gpt-5.6-luna',
+      modelDisplayName: 'GPT-5.6 Luna',
+      narrativeStatus: 'completed'
+    },
+    'Agent model metadata did not survive encrypted conversation persistence'
+  )
   const actionRunConversationLink = reopened.createActionRun({
-    toolName: 'job-case.search.local', workTaskId: null, origin: 'user-command', scopeId: 'active-job-cases',
-    scopeFingerprint: '8'.repeat(64), inputHash: '9'.repeat(64), contentRevision: null,
-    conversationId: salesAgentConversationId, turnId: salesAgentTurnId,
-    status: 'queued', idempotencyKey: 'agent-action-run-conversation-link'
+    toolName: 'job-case.search.local',
+    workTaskId: null,
+    origin: 'user-command',
+    scopeId: 'active-job-cases',
+    scopeFingerprint: '8'.repeat(64),
+    inputHash: '9'.repeat(64),
+    contentRevision: null,
+    conversationId: salesAgentConversationId,
+    turnId: salesAgentTurnId,
+    status: 'queued',
+    idempotencyKey: 'agent-action-run-conversation-link'
   })
   assert.equal(reopened.getActionRunStatus(actionRunConversationLink.id), 'queued')
-  assert.equal(reopened.listAiConversations({ assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null }).length, 1)
+  assert.equal(
+    reopened.listAiConversations({
+      assistant: 'sales-agent',
+      candidateDocumentId: null,
+      interviewId: null,
+      interviewKind: null,
+      roundNumber: null
+    }).length,
+    1
+  )
 
   const firstTurnSearchConversationId = '7af9c7d1-3ad1-4c4f-9c42-0a5ce5f7b201'
   const firstTurnSearchTurnId = '6e7c8d9f-2a31-4b45-8c69-0d1e2f3a4b51'
   const firstTurnSearchAction = reopened.createActionRun({
-    toolName: 'job-case.search.local', workTaskId: null, origin: 'user-command', scopeId: 'active-job-cases',
-    scopeFingerprint: 'a'.repeat(64), inputHash: 'b'.repeat(64), contentRevision: null,
-    conversationId: null, turnId: null, status: 'queued', idempotencyKey: 'agent-first-turn-search-null-link'
+    toolName: 'job-case.search.local',
+    workTaskId: null,
+    origin: 'user-command',
+    scopeId: 'active-job-cases',
+    scopeFingerprint: 'a'.repeat(64),
+    inputHash: 'b'.repeat(64),
+    contentRevision: null,
+    conversationId: null,
+    turnId: null,
+    status: 'queued',
+    idempotencyKey: 'agent-first-turn-search-null-link'
   })
   const firstTurnSearchConversation = reopened.saveAiConversation({
     conversationId: firstTurnSearchConversationId,
     context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
     messages: [
-      { id: 'agent-first-turn-search-user', role: 'user', content: '最近の案件は？', mode: 'local', turnId: firstTurnSearchTurnId, createdAt: '2026-07-17T00:02:59.900Z' },
-      { id: 'agent-first-turn-search-assistant', role: 'assistant', content: '案件を確認しました。', mode: 'local', turnId: firstTurnSearchTurnId, createdAt: '2026-07-17T00:02:59.910Z' }
+      {
+        id: 'agent-first-turn-search-user',
+        role: 'user',
+        content: '最近の案件は？',
+        mode: 'local',
+        turnId: firstTurnSearchTurnId,
+        createdAt: '2026-07-17T00:02:59.900Z'
+      },
+      {
+        id: 'agent-first-turn-search-assistant',
+        role: 'assistant',
+        content: '案件を確認しました。',
+        mode: 'local',
+        turnId: firstTurnSearchTurnId,
+        createdAt: '2026-07-17T00:02:59.910Z'
+      }
     ],
     salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: 'agent-first-turn-search-assistant' },
     expectedRevision: null
@@ -1533,16 +2136,38 @@ try {
   const firstTurnCandidateConversationId = '8bf9c7d1-3ad1-4c4f-9c42-0a5ce5f7b202'
   const firstTurnCandidateTurnId = '7e7c8d9f-2a31-4b45-8c69-0d1e2f3a4b52'
   const firstTurnCandidateAction = reopened.createActionRun({
-    toolName: 'candidate.match.local', workTaskId: null, origin: 'user-command', scopeId: 'confirmed-candidate-pool',
-    scopeFingerprint: 'c'.repeat(64), inputHash: 'd'.repeat(64), contentRevision: null,
-    conversationId: null, turnId: null, status: 'queued', idempotencyKey: 'agent-first-turn-candidate-null-link'
+    toolName: 'candidate.match.local',
+    workTaskId: null,
+    origin: 'user-command',
+    scopeId: 'confirmed-candidate-pool',
+    scopeFingerprint: 'c'.repeat(64),
+    inputHash: 'd'.repeat(64),
+    contentRevision: null,
+    conversationId: null,
+    turnId: null,
+    status: 'queued',
+    idempotencyKey: 'agent-first-turn-candidate-null-link'
   })
   const firstTurnCandidateConversation = reopened.saveAiConversation({
     conversationId: firstTurnCandidateConversationId,
     context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
     messages: [
-      { id: 'agent-first-turn-candidate-user', role: 'user', content: '给当前案件匹配候选人', mode: 'local', turnId: firstTurnCandidateTurnId, createdAt: '2026-07-17T00:02:59.920Z' },
-      { id: 'agent-first-turn-candidate-assistant', role: 'assistant', content: '已完成候选人匹配。', mode: 'local', turnId: firstTurnCandidateTurnId, createdAt: '2026-07-17T00:02:59.930Z' }
+      {
+        id: 'agent-first-turn-candidate-user',
+        role: 'user',
+        content: '给当前案件匹配候选人',
+        mode: 'local',
+        turnId: firstTurnCandidateTurnId,
+        createdAt: '2026-07-17T00:02:59.920Z'
+      },
+      {
+        id: 'agent-first-turn-candidate-assistant',
+        role: 'assistant',
+        content: '已完成候选人匹配。',
+        mode: 'local',
+        turnId: firstTurnCandidateTurnId,
+        createdAt: '2026-07-17T00:02:59.930Z'
+      }
     ],
     salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
     expectedRevision: null
@@ -1552,16 +2177,38 @@ try {
   const firstTurnReadConversationId = '9bf9c7d1-3ad1-4c4f-9c42-0a5ce5f7b203'
   const firstTurnReadTurnId = '8e7c8d9f-2a31-4b45-8c69-0d1e2f3a4b53'
   const firstTurnReadAction = reopened.createActionRun({
-    toolName: 'match-run.read.local', workTaskId: null, origin: 'user-command', scopeId: 'selected-match-run',
-    scopeFingerprint: 'e'.repeat(64), inputHash: 'f'.repeat(64), contentRevision: null,
-    conversationId: null, turnId: null, status: 'queued', idempotencyKey: 'agent-first-turn-read-null-link'
+    toolName: 'match-run.read.local',
+    workTaskId: null,
+    origin: 'user-command',
+    scopeId: 'selected-match-run',
+    scopeFingerprint: 'e'.repeat(64),
+    inputHash: 'f'.repeat(64),
+    contentRevision: null,
+    conversationId: null,
+    turnId: null,
+    status: 'queued',
+    idempotencyKey: 'agent-first-turn-read-null-link'
   })
   const firstTurnReadConversation = reopened.saveAiConversation({
     conversationId: firstTurnReadConversationId,
     context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
     messages: [
-      { id: 'agent-first-turn-read-user', role: 'user', content: 'なぜ1位になったの？', mode: 'local', turnId: firstTurnReadTurnId, createdAt: '2026-07-17T00:02:59.940Z' },
-      { id: 'agent-first-turn-read-assistant', role: 'assistant', content: '保存済みの根拠を確認しました。', mode: 'local', turnId: firstTurnReadTurnId, createdAt: '2026-07-17T00:02:59.950Z' }
+      {
+        id: 'agent-first-turn-read-user',
+        role: 'user',
+        content: 'なぜ1位になったの？',
+        mode: 'local',
+        turnId: firstTurnReadTurnId,
+        createdAt: '2026-07-17T00:02:59.940Z'
+      },
+      {
+        id: 'agent-first-turn-read-assistant',
+        role: 'assistant',
+        content: '保存済みの根拠を確認しました。',
+        mode: 'local',
+        turnId: firstTurnReadTurnId,
+        createdAt: '2026-07-17T00:02:59.950Z'
+      }
     ],
     salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: null, lastSearchMessageId: null },
     expectedRevision: null
@@ -1576,26 +2223,39 @@ try {
     /Sales Agent/
   )
   assert.throws(
-    () => reopened.linkActionRunToConversation(firstTurnSearchAction.id, firstTurnSearchConversation.id, 'ffffffff-ffff-4fff-8fff-ffffffffffff'),
+    () =>
+      reopened.linkActionRunToConversation(
+        firstTurnSearchAction.id,
+        firstTurnSearchConversation.id,
+        'ffffffff-ffff-4fff-8fff-ffffffffffff'
+      ),
     /turn_id/
   )
-  const updatedProposal = reopened.updateProposalDraft({
-    draftId: proposalDraft.id,
-    revision: proposalDraft.revision,
-    recipientTo: 'bp-updated@example.co.jp',
-    recipientCc: proposalDraft.recipientCc,
-    candidateDisplayName: proposalDraft.candidateDisplayName,
-    subject: proposalDraft.subject,
-    body: proposalDraft.body
-  }, '検証担当者', new Date('2026-07-17T00:02:59.200Z'))
+  const updatedProposal = reopened.updateProposalDraft(
+    {
+      draftId: proposalDraft.id,
+      revision: proposalDraft.revision,
+      recipientTo: 'bp-updated@example.co.jp',
+      recipientCc: proposalDraft.recipientCc,
+      candidateDisplayName: proposalDraft.candidateDisplayName,
+      subject: proposalDraft.subject,
+      body: proposalDraft.body
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:59.200Z')
+  )
   assert.equal(updatedProposal.revision, 2)
   assert.notEqual(updatedProposal.contentHash, proposalDraft.contentHash)
-  const approvedProposal = reopened.approveProposalDraft({
-    draftId: updatedProposal.id,
-    revision: updatedProposal.revision,
-    contentHash: updatedProposal.contentHash,
-    approvals: { recipient: true, body: true, attachment: true, privacy: true }
-  }, '検証担当者', new Date('2026-07-17T00:02:59.300Z'))
+  const approvedProposal = reopened.approveProposalDraft(
+    {
+      draftId: updatedProposal.id,
+      revision: updatedProposal.revision,
+      contentHash: updatedProposal.contentHash,
+      approvals: { recipient: true, body: true, attachment: true, privacy: true }
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:02:59.300Z')
+  )
   reopened.beginProposalExport(
     approvedProposal.id,
     approvedProposal.revision,
@@ -1615,42 +2275,73 @@ try {
   )
   assert.equal(exportedProposal.status, 'exported')
   assert.equal(exportedProposal.exportPackageHash, '5'.repeat(64))
-  const sentProposal = reopened.recordProposalFollowUp({
-    draftId: exportedProposal.id,
-    expectedRevision: 0,
-    stage: 'sent',
-    occurredOn: '2026-07-17',
-    note: '翌営業日に状況確認',
-    manuallyConfirmed: true
-  }, 'bb6b957e-caf1-4c5c-b9f7-4c0cd358af33', '検証担当者', new Date('2026-07-17T00:02:59.600Z'))
+  const sentProposal = reopened.recordProposalFollowUp(
+    {
+      draftId: exportedProposal.id,
+      expectedRevision: 0,
+      stage: 'sent',
+      occurredOn: '2026-07-17',
+      note: '翌営業日に状況確認',
+      manuallyConfirmed: true
+    },
+    'bb6b957e-caf1-4c5c-b9f7-4c0cd358af33',
+    '検証担当者',
+    new Date('2026-07-17T00:02:59.600Z')
+  )
   assert.equal(sentProposal.followUp.stage, 'sent')
   assert.equal(sentProposal.followUp.events[0]?.cloudEligible, false)
-  assert.throws(() => reopened.recordProposalFollowUp({
-    draftId: exportedProposal.id,
-    expectedRevision: 0,
-    stage: 'replied',
-    occurredOn: '2026-07-18',
-    manuallyConfirmed: true
-  }, 'ab0392b1-c608-44ea-a29d-23d3cded7396', '検証担当者'), /changed/, 'stale proposal follow-up revision was accepted')
-  assert.throws(() => reopened.recordProposalFollowUp({
-    draftId: exportedProposal.id,
-    expectedRevision: 1,
-    stage: 'replied',
-    occurredOn: '2026-07-18',
-    note: '連絡先 090-1234-5678',
-    manuallyConfirmed: true
-  }, 'bf4ba6c0-1d51-4ec6-8801-e9f25517804c', '検証担当者'), /direct identifiers/, 'direct identifier was accepted in proposal follow-up note')
+  assert.throws(
+    () =>
+      reopened.recordProposalFollowUp(
+        {
+          draftId: exportedProposal.id,
+          expectedRevision: 0,
+          stage: 'replied',
+          occurredOn: '2026-07-18',
+          manuallyConfirmed: true
+        },
+        'ab0392b1-c608-44ea-a29d-23d3cded7396',
+        '検証担当者'
+      ),
+    /changed/,
+    'stale proposal follow-up revision was accepted'
+  )
+  assert.throws(
+    () =>
+      reopened.recordProposalFollowUp(
+        {
+          draftId: exportedProposal.id,
+          expectedRevision: 1,
+          stage: 'replied',
+          occurredOn: '2026-07-18',
+          note: '連絡先 090-1234-5678',
+          manuallyConfirmed: true
+        },
+        'bf4ba6c0-1d51-4ec6-8801-e9f25517804c',
+        '検証担当者'
+      ),
+    /direct identifiers/,
+    'direct identifier was accepted in proposal follow-up note'
+  )
   reopened.close()
   reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
   assert.equal(reopened.getProposalDraft(exportedProposal.id)?.followUp.events[0]?.note, '翌営業日に状況確認')
-  const repliedProposal = reopened.recordProposalFollowUp({
-    draftId: exportedProposal.id,
-    expectedRevision: 1,
-    stage: 'replied',
-    occurredOn: '2026-07-18',
-    manuallyConfirmed: true
-  }, 'e31285fe-2f0d-47c7-a53f-1d792daf72f0', '検証担当者', new Date('2026-07-18T00:00:00.000Z'))
-  assert.deepEqual(repliedProposal.followUp.events.map((event) => event.stage), ['sent', 'replied'])
+  const repliedProposal = reopened.recordProposalFollowUp(
+    {
+      draftId: exportedProposal.id,
+      expectedRevision: 1,
+      stage: 'replied',
+      occurredOn: '2026-07-18',
+      manuallyConfirmed: true
+    },
+    'e31285fe-2f0d-47c7-a53f-1d792daf72f0',
+    '検証担当者',
+    new Date('2026-07-18T00:00:00.000Z')
+  )
+  assert.deepEqual(
+    repliedProposal.followUp.events.map((event) => event.stage),
+    ['sent', 'replied']
+  )
   // 案件配信: the built-in template appears until the operator saves one, the
   // copy log only ever grows, and it disappears with the case it belongs to.
   const defaultTemplates = reopened.listBroadcastTemplates()
@@ -1660,40 +2351,57 @@ try {
     defaultTemplates[0].lines.every((line) => line.kind === 'text' || !['contract_chain', 'payment_terms'].includes(line.field)),
     'the built-in broadcast template referenced a forbidden field'
   )
-  const savedTemplates = reopened.createBroadcastTemplate({
-    name: '短文', ratePublic: 'negotiable',
-    headerJa: '【案件】{{title}}', headerZh: '【案件】{{title}}', footerJa: '', footerZh: '',
-    lines: [{ kind: 'field', field: 'required_skills', labelJa: '必須', labelZh: '必须', on: true }]
-  }, new Date('2026-07-17T00:02:59.700Z'))
+  const savedTemplates = reopened.createBroadcastTemplate(
+    {
+      name: '短文',
+      ratePublic: 'negotiable',
+      headerJa: '【案件】{{title}}',
+      headerZh: '【案件】{{title}}',
+      footerJa: '',
+      footerZh: '',
+      lines: [{ kind: 'field', field: 'required_skills', labelJa: '必須', labelZh: '必须', on: true }]
+    },
+    new Date('2026-07-17T00:02:59.700Z')
+  )
   assert.equal(savedTemplates.length, 2, 'adding a template dropped the built-in default')
   const shortTemplate = savedTemplates.find((template) => template.name === '短文')!
   assert.equal(
-    reopened.updateBroadcastTemplate({ id: shortTemplate.id, ...shortTemplate, name: '短文v2' },
-      new Date('2026-07-17T00:02:59.750Z')).find((template) => template.id === shortTemplate.id)?.revision,
+    reopened
+      .updateBroadcastTemplate({ id: shortTemplate.id, ...shortTemplate, name: '短文v2' }, new Date('2026-07-17T00:02:59.750Z'))
+      .find((template) => template.id === shortTemplate.id)?.revision,
     2,
     'editing a broadcast template did not bump its revision'
   )
   assert.throws(
-    () => reopened.createBroadcastTemplate({
-      name: '禁止', ratePublic: 'raw', headerJa: 'x', headerZh: 'x', footerJa: '', footerZh: '',
-      lines: [{ kind: 'field', field: 'contract_chain' as never, labelJa: '商流', labelZh: '商流', on: true }]
-    }),
+    () =>
+      reopened.createBroadcastTemplate({
+        name: '禁止',
+        ratePublic: 'raw',
+        headerJa: 'x',
+        headerZh: 'x',
+        footerJa: '',
+        footerZh: '',
+        lines: [{ kind: 'field', field: 'contract_chain' as never, labelJa: '商流', labelZh: '商流', on: true }]
+      }),
     /invalid|Invalid/,
     'a template referencing the contract chain was accepted'
   )
   const activeBroadcastCase = reopened.getJobCaseReview(jobCaseReviewId)?.jobCase
   assert.ok(activeBroadcastCase, 'the broadcast verification needs a confirmed job case')
-  const appendedCopy = reopened.appendCaseBroadcastCopy({
-    reviewId: jobCaseReviewId,
-    jobCaseId: activeBroadcastCase.id,
-    jobCaseVersion: activeBroadcastCase.version,
-    templateId: shortTemplate.id,
-    templateRevision: 2,
-    lang: 'zh',
-    kind: 'new',
-    text: '【案件】検証案件',
-    actorId: stableOperatorId
-  }, new Date('2026-07-17T00:02:59.900Z'))
+  const appendedCopy = reopened.appendCaseBroadcastCopy(
+    {
+      reviewId: jobCaseReviewId,
+      jobCaseId: activeBroadcastCase.id,
+      jobCaseVersion: activeBroadcastCase.version,
+      templateId: shortTemplate.id,
+      templateRevision: 2,
+      lang: 'zh',
+      kind: 'new',
+      text: '【案件】検証案件',
+      actorId: stableOperatorId
+    },
+    new Date('2026-07-17T00:02:59.900Z')
+  )
   assert.equal(appendedCopy.textSha256.length, 64)
   reopened.close()
   reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
@@ -1706,29 +2414,29 @@ try {
   assert.equal(reopened.listAllCaseBroadcastCopies().length, 1)
   // Sending is not a fact this device has, so nothing writes the v42 ledger.
   assert.equal(reopened.listCaseBroadcasts(jobCaseReviewId).length, 0)
-  const broadcastCopyLogAppendOnly = !['updateCaseBroadcastCopy', 'deleteCaseBroadcastCopy', 'removeCaseBroadcastCopy',
-    'appendCaseBroadcasts', 'createSalesGroup', 'updateSalesGroup', 'setSalesGroupStatus', 'listSalesGroups']
-    .some((method) => method in reopened)
+  const broadcastCopyLogAppendOnly = ![
+    'updateCaseBroadcastCopy',
+    'deleteCaseBroadcastCopy',
+    'removeCaseBroadcastCopy',
+    'appendCaseBroadcasts',
+    'createSalesGroup',
+    'updateSalesGroup',
+    'setSalesGroupStatus',
+    'listSalesGroups'
+  ].some((method) => method in reopened)
   assert.ok(broadcastCopyLogAppendOnly, 'the broadcast copy log exposed a mutation or a sales-group method')
   assert.throws(
-    () => reopened.deleteBroadcastTemplate({ id: shortTemplate.id }) &&
-      reopened.deleteBroadcastTemplate({ id: defaultTemplates[0].id }),
+    () => reopened.deleteBroadcastTemplate({ id: shortTemplate.id }) && reopened.deleteBroadcastTemplate({ id: defaultTemplates[0].id }),
     /最低1件/,
     'the last remaining broadcast template was deletable'
   )
 
   reopened.markJobCaseReviewSeen(jobCaseReviewId, '2026-07-17T00:02:59.950Z')
   reopened.markJobCaseReviewSeen(jobCaseReviewId, '2026-07-17T00:02:59.960Z')
-  assert.deepEqual(
-    reopened.listSeenJobCaseReviewIds(), [jobCaseReviewId],
-    'marking the same case seen twice did not stay one row'
-  )
+  assert.deepEqual(reopened.listSeenJobCaseReviewIds(), [jobCaseReviewId], 'marking the same case seen twice did not stay one row')
   reopened.close()
   reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.deepEqual(
-    reopened.listSeenJobCaseReviewIds(), [jobCaseReviewId],
-    'the seen mark did not survive a reopen'
-  )
+  assert.deepEqual(reopened.listSeenJobCaseReviewIds(), [jobCaseReviewId], 'the seen mark did not survive a reopen')
 
   const jobCaseDeletionPreview = reopened.previewJobCaseDeletion(jobCaseReviewId)
   assert.equal(jobCaseDeletionPreview.counts.caseVersions, 2)
@@ -1738,29 +2446,33 @@ try {
   assert.equal(jobCaseDeletionPreview.counts.evaluationDraftCases, 1)
   assert.equal(jobCaseDeletionPreview.counts.agentReferences?.conversations, 1)
   assert.equal(jobCaseDeletionPreview.counts.agentReferences?.messages, 1)
-  reopened.deleteJobCaseDatabaseData({
-    reviewId: jobCaseReviewId,
-    confirmationHash: jobCaseDeletionPreview.confirmationHash,
-    confirmationText: '削除'
-  }, new Date('2026-07-17T00:03:00.000Z'))
+  reopened.deleteJobCaseDatabaseData(
+    {
+      reviewId: jobCaseReviewId,
+      confirmationHash: jobCaseDeletionPreview.confirmationHash,
+      confirmationText: '削除'
+    },
+    new Date('2026-07-17T00:03:00.000Z')
+  )
   const pendingJobCaseDeletionPreview = reopened.previewJobCaseDeletion(emlDraft.reviewId)
   assert.equal(pendingJobCaseDeletionPreview.counts.caseVersions, 0)
   assert.equal(pendingJobCaseDeletionPreview.counts.reviewAudits, 0)
   assert.equal(pendingJobCaseDeletionPreview.counts.sourceRecords, 1)
-  reopened.deleteJobCaseDatabaseData({
-    reviewId: emlDraft.reviewId,
-    confirmationHash: pendingJobCaseDeletionPreview.confirmationHash,
-    confirmationText: '削除'
-  }, new Date('2026-07-17T00:03:00.500Z'))
+  reopened.deleteJobCaseDatabaseData(
+    {
+      reviewId: emlDraft.reviewId,
+      confirmationHash: pendingJobCaseDeletionPreview.confirmationHash,
+      confirmationText: '削除'
+    },
+    new Date('2026-07-17T00:03:00.500Z')
+  )
   assert.equal(reopened.getJobCaseReview(emlDraft.reviewId), null, 'deleted pending job case review remained')
   assert.equal(
-    reopened.listCaseBroadcastCopies(jobCaseReviewId).length, 0,
+    reopened.listCaseBroadcastCopies(jobCaseReviewId).length,
+    0,
     'broadcast copy rows survived the controlled deletion of their case'
   )
-  assert.deepEqual(
-    reopened.listSeenJobCaseReviewIds(), [],
-    'the seen mark survived the controlled deletion of its case'
-  )
+  assert.deepEqual(reopened.listSeenJobCaseReviewIds(), [], 'the seen mark survived the controlled deletion of its case')
   const jobCaseDeletionReportId = '3f15a899-b863-48ec-acb6-e033b3c04658'
   reopened.saveDataDeletionReport({
     id: jobCaseDeletionReportId,
@@ -1788,66 +2500,105 @@ try {
   assert.equal(reopened.getProposalDraft(proposalDraft.id), null, 'job-case-linked proposal survived case deletion')
   const afterJobCaseDeletionConversation = reopened.getAiConversation(salesAgentConversationId)
   assert.ok(afterJobCaseDeletionConversation)
-  assert.equal(afterJobCaseDeletionConversation.messages.some((message) => message.blocks?.some((block) => block.type === 'error' && block.code === 'ENTITY_DELETED')), true, 'deleted job-case reference was not downgraded')
+  assert.equal(
+    afterJobCaseDeletionConversation.messages.some((message) =>
+      message.blocks?.some((block) => block.type === 'error' && block.code === 'ENTITY_DELETED')
+    ),
+    true,
+    'deleted job-case reference was not downgraded'
+  )
   const directIdentifierConversationId = '9ef7c8d9-0a1b-4c2d-8e3f-4a5b6c7d8e9f'
   const directIdentifierText = '请联系山田 更新後，电话 080-2222-3333，邮箱 candidate@example.jp。'
-  reopened.saveAiConversation({
-    conversationId: directIdentifierConversationId,
-    context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
-    messages: [
-      { id: 'sales-agent-direct-user-1', role: 'user', content: directIdentifierText, mode: 'local', createdAt: '2026-07-17T00:03:00.050Z' },
-      {
-        id: 'sales-agent-direct-assistant-1', role: 'assistant', content: '已保存候选人匹配结果。', mode: 'local', createdAt: '2026-07-17T00:03:00.060Z',
-        references: [salesAgentResultReference],
-        blocks: [{
-          type: 'candidate-match-cards', runId: persistedMatchRun.run.id, resultHash: persistedMatchRun.run.resultSetHash,
-          cards: [{
-            reference: salesAgentResultReference,
-            candidateProfileId,
-            runId: persistedMatchRun.run.id,
-            rank: 1,
-            anonymousLabel: persistedAgentResult.anonymousLabel,
-            fitScore: persistedAgentResult.matchScore,
-            matched: persistedAgentResult.matchedTerms,
-            missing: [],
-            hardFilterStatus: 'passed',
-            projectEvidence: persistedAgentResult.projectEvidence?.summary ?? null,
-            status: 'current'
-          }]
-        }]
-      }
-    ],
-    salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: persistedMatchRun.run.id, lastSearchMessageId: null },
-    expectedRevision: null
-  }, new Date('2026-07-17T00:03:00.060Z'))
+  reopened.saveAiConversation(
+    {
+      conversationId: directIdentifierConversationId,
+      context: { assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null },
+      messages: [
+        {
+          id: 'sales-agent-direct-user-1',
+          role: 'user',
+          content: directIdentifierText,
+          mode: 'local',
+          createdAt: '2026-07-17T00:03:00.050Z'
+        },
+        {
+          id: 'sales-agent-direct-assistant-1',
+          role: 'assistant',
+          content: '已保存候选人匹配结果。',
+          mode: 'local',
+          createdAt: '2026-07-17T00:03:00.060Z',
+          references: [salesAgentResultReference],
+          blocks: [
+            {
+              type: 'candidate-match-cards',
+              runId: persistedMatchRun.run.id,
+              resultHash: persistedMatchRun.run.resultSetHash,
+              cards: [
+                {
+                  reference: salesAgentResultReference,
+                  candidateProfileId,
+                  runId: persistedMatchRun.run.id,
+                  rank: 1,
+                  anonymousLabel: persistedAgentResult.anonymousLabel,
+                  fitScore: persistedAgentResult.matchScore,
+                  matched: persistedAgentResult.matchedTerms,
+                  missing: [],
+                  hardFilterStatus: 'passed',
+                  projectEvidence: persistedAgentResult.projectEvidence?.summary ?? null,
+                  status: 'current'
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      salesAgentState: { selectedJobCaseRef: null, lastMatchRunId: persistedMatchRun.run.id, lastSearchMessageId: null },
+      expectedRevision: null
+    },
+    new Date('2026-07-17T00:03:00.060Z')
+  )
   authoringDraft = reopened.getCandidateEvaluationDraft() ?? authoringDraft
   assert.equal(authoringDraft.caseCount, 0, 'job-case-linked evaluation draft case survived case deletion')
   const manualCaseId = reopened.getJobCaseReview(manualDraft.reviewId)?.jobCase?.id
   assert.ok(manualCaseId)
-  authoringDraft = reopened.saveCandidateEvaluationDraftCase({
-    draftId: authoringDraft.id,
-    expectedRevision: authoringDraft.revision,
-    jobCaseId: manualCaseId,
-    relevantCandidateProfileIds: [candidateProfileId],
-    expectedProjectEvidenceProfileIds: [candidateProfileId],
-    poolReviewed: true
-  }, 'verification-user', '検証担当者', new Date('2026-07-17T00:03:00.100Z'))
+  authoringDraft = reopened.saveCandidateEvaluationDraftCase(
+    {
+      draftId: authoringDraft.id,
+      expectedRevision: authoringDraft.revision,
+      jobCaseId: manualCaseId,
+      relevantCandidateProfileIds: [candidateProfileId],
+      expectedProjectEvidenceProfileIds: [candidateProfileId],
+      poolReviewed: true
+    },
+    'verification-user',
+    '検証担当者',
+    new Date('2026-07-17T00:03:00.100Z')
+  )
   assert.equal(authoringDraft.cases[0]?.status, 'ready')
-  const interruptedProposal = reopened.createProposalDraft({
-    taskId: proposalTask.id,
-    jobCaseId: manualCaseId,
-    candidateProfileId,
-    recipientTo: 'manual@example.co.jp',
-    recipientCc: [],
-    candidateDisplayName: '候補者A',
-    tone: 'formal'
-  }, '28ab0e26-2389-48cb-ac53-e5334ce02bfd', '検証担当者', new Date('2026-07-17T00:03:01.000Z'))
-  const approvedInterruptedProposal = reopened.approveProposalDraft({
-    draftId: interruptedProposal.id,
-    revision: interruptedProposal.revision,
-    contentHash: interruptedProposal.contentHash,
-    approvals: { recipient: true, body: true, attachment: true, privacy: true }
-  }, '検証担当者', new Date('2026-07-17T00:03:01.100Z'))
+  const interruptedProposal = reopened.createProposalDraft(
+    {
+      taskId: proposalTask.id,
+      jobCaseId: manualCaseId,
+      candidateProfileId,
+      recipientTo: 'manual@example.co.jp',
+      recipientCc: [],
+      candidateDisplayName: '候補者A',
+      tone: 'formal'
+    },
+    '28ab0e26-2389-48cb-ac53-e5334ce02bfd',
+    '検証担当者',
+    new Date('2026-07-17T00:03:01.000Z')
+  )
+  const approvedInterruptedProposal = reopened.approveProposalDraft(
+    {
+      draftId: interruptedProposal.id,
+      revision: interruptedProposal.revision,
+      contentHash: interruptedProposal.contentHash,
+      approvals: { recipient: true, body: true, attachment: true, privacy: true }
+    },
+    '検証担当者',
+    new Date('2026-07-17T00:03:01.100Z')
+  )
   reopened.beginProposalExport(
     approvedInterruptedProposal.id,
     approvedInterruptedProposal.revision,
@@ -1859,16 +2610,32 @@ try {
   )
   reopened.close()
   reopened = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(reopened.getProposalDraft(interruptedProposal.id)?.status, 'export_unknown', 'interrupted export was not recovered conservatively')
+  assert.equal(
+    reopened.getProposalDraft(interruptedProposal.id)?.status,
+    'export_unknown',
+    'interrupted export was not recovered conservatively'
+  )
   const refreshedExtraction = extractCandidateDraft(document, new Date('2026-07-17T00:03:00.000Z'))
   reopened.saveParsedDocument(document, { ...summary, analyzedAt: '2026-07-17T00:03:00.000Z' }, redaction.session.id, refreshedExtraction)
   const staleReview = reopened.getCandidateReview(documentId)
   assert.equal(staleReview?.status, 'awaiting-review', 'new extraction did not reopen review')
   assert.equal(staleReview?.reviewRevision, 2, 'review revision did not advance')
   assert.equal(staleReview?.profile?.status, 'current', 'new extraction must immediately provide a current business profile')
-  assert.equal(reopened.listCandidateInterviews().some((item) => item.sourceDocumentId === documentId), true, 'resume refresh discarded recruiting history')
-  assert.equal(reopened.getCandidateProfileHistory(documentId)[1]?.status, 'stale', 'previous profile history must still expose stale status')
-  assert.equal(reopened.getCandidateEvaluationDraft()?.cases[0]?.status, 'candidate-stale', 'a stale candidate profile did not invalidate its expert label')
+  assert.equal(
+    reopened.listCandidateInterviews().some((item) => item.sourceDocumentId === documentId),
+    true,
+    'resume refresh discarded recruiting history'
+  )
+  assert.equal(
+    reopened.getCandidateProfileHistory(documentId)[1]?.status,
+    'stale',
+    'previous profile history must still expose stale status'
+  )
+  assert.equal(
+    reopened.getCandidateEvaluationDraft()?.cases[0]?.status,
+    'candidate-stale',
+    'a stale candidate profile did not invalidate its expert label'
+  )
   assert.throws(
     () => reopened.confirmCandidateReview(reviewSubmission, 'verification-user', '検証担当者'),
     /changed/,
@@ -1886,16 +2653,42 @@ try {
   reopened.deleteCandidateDatabaseData(documentId, deletionPreview.confirmationHash, new Date('2026-07-17T00:04:00.000Z'))
   const afterCandidateDeletionConversation = reopened.getAiConversation(salesAgentConversationId)
   assert.ok(afterCandidateDeletionConversation)
-  assert.equal(afterCandidateDeletionConversation.messages.some((message) => message.blocks?.some((block) => block.type === 'error' && block.code === 'ENTITY_DELETED')), true, 'deleted candidate reference was not downgraded')
+  assert.equal(
+    afterCandidateDeletionConversation.messages.some((message) =>
+      message.blocks?.some((block) => block.type === 'error' && block.code === 'ENTITY_DELETED')
+    ),
+    true,
+    'deleted candidate reference was not downgraded'
+  )
   const afterDirectIdentifierDeletionConversation = reopened.getAiConversation(directIdentifierConversationId)
   assert.ok(afterDirectIdentifierDeletionConversation)
-  assert.equal(afterDirectIdentifierDeletionConversation.messages.some((message) => message.role === 'user'), false, 'direct-identifier user message was not removed')
-  assert.equal(JSON.stringify(afterDirectIdentifierDeletionConversation).includes('山田 更新後'), false, 'deleted candidate name remained in a user message')
-  assert.equal(JSON.stringify(afterDirectIdentifierDeletionConversation).includes('080-2222-3333'), false, 'deleted candidate phone remained in a user message')
-  assert.equal(JSON.stringify(afterDirectIdentifierDeletionConversation).includes('candidate@example.jp'), false, 'deleted candidate email remained in a user message')
+  assert.equal(
+    afterDirectIdentifierDeletionConversation.messages.some((message) => message.role === 'user'),
+    false,
+    'direct-identifier user message was not removed'
+  )
+  assert.equal(
+    JSON.stringify(afterDirectIdentifierDeletionConversation).includes('山田 更新後'),
+    false,
+    'deleted candidate name remained in a user message'
+  )
+  assert.equal(
+    JSON.stringify(afterDirectIdentifierDeletionConversation).includes('080-2222-3333'),
+    false,
+    'deleted candidate phone remained in a user message'
+  )
+  assert.equal(
+    JSON.stringify(afterDirectIdentifierDeletionConversation).includes('candidate@example.jp'),
+    false,
+    'deleted candidate email remained in a user message'
+  )
   assert.deepEqual(reopened.deleteAiConversations([directIdentifierConversationId]), [directIdentifierConversationId])
   assert.deepEqual(reopened.deleteAiConversations([salesAgentConversationId]), [salesAgentConversationId])
-  assert.equal(reopened.getActionRunStatus(actionRunConversationLink.id), 'queued', 'deleting an Agent conversation removed its Action Audit')
+  assert.equal(
+    reopened.getActionRunStatus(actionRunConversationLink.id),
+    'queued',
+    'deleting an Agent conversation removed its Action Audit'
+  )
   assert.equal(reopened.listAiConversations(interviewConversationContext).length, 0, 'candidate deletion retained AI conversation history')
   const deletionReportId = '4ae4efb5-700d-47f7-837f-5bc150016116'
   reopened.saveDataDeletionReport({
@@ -1918,29 +2711,59 @@ try {
     warningCodes: deletionPreview.warningCodes
   })
   assert.equal(reopened.getCandidateReview(documentId), null, 'candidate review remained after deletion')
-  assert.equal(searchConfirmedCandidateProfiles(reopened.listEligibleTalentProfiles(), 'Java AWS').length, 0, 'deleted profile remained in BM25 retrieval')
+  assert.equal(
+    searchConfirmedCandidateProfiles(reopened.listEligibleTalentProfiles(), 'Java AWS').length,
+    0,
+    'deleted profile remained in BM25 retrieval'
+  )
   assert.equal(reopened.getCandidateProfileHistory(documentId).length, 0, 'profile versions remained after deletion')
-  assert.equal(reopened.listCandidateProfileEmbeddings(
-    'Xenova/multilingual-e5-small',
-    '761b726dd34fb83930e26aab4e9ac3899aa1fa78'
-  ).length, 0, 'candidate embedding cache survived profile deletion')
-  assert.equal(reopened.listCandidateProjectEmbeddings(
-    'Xenova/multilingual-e5-small',
-    '761b726dd34fb83930e26aab4e9ac3899aa1fa78'
-  ).length, 0, 'project embedding cache survived profile deletion')
-  assert.equal(reopened.getCandidateMatchRunSummary(persistedMatchRun.run.id).evaluation.resultCount, 0, 'candidate match feedback survived profile deletion')
+  assert.equal(
+    reopened.listCandidateProfileEmbeddings('Xenova/multilingual-e5-small', '761b726dd34fb83930e26aab4e9ac3899aa1fa78').length,
+    0,
+    'candidate embedding cache survived profile deletion'
+  )
+  assert.equal(
+    reopened.listCandidateProjectEmbeddings('Xenova/multilingual-e5-small', '761b726dd34fb83930e26aab4e9ac3899aa1fa78').length,
+    0,
+    'project embedding cache survived profile deletion'
+  )
+  assert.equal(
+    reopened.getCandidateMatchRunSummary(persistedMatchRun.run.id).evaluation.resultCount,
+    0,
+    'candidate match feedback survived profile deletion'
+  )
   assert.equal(reopened.getCandidateEvaluationState().latestReport, null, 'candidate evaluation data survived candidate deletion')
-  assert.equal(reopened.getCandidateEvaluationDraft()?.cases[0]?.status, 'no-relevant-candidates', 'candidate deletion left an expert label or removed the unrelated case')
+  assert.equal(
+    reopened.getCandidateEvaluationDraft()?.cases[0]?.status,
+    'no-relevant-candidates',
+    'candidate deletion left an expert label or removed the unrelated case'
+  )
   assert.equal(reopened.getLocalPiiMappings(redaction.session.id).length, 0, 'PII mappings remained after deletion')
   assert.equal(reopened.getProposalDraft(interruptedProposal.id), null, 'candidate-linked proposal survived candidate deletion')
-  assert.equal(reopened.listDataDeletionReports().some((report) => report.id === deletionReportId), true, 'candidate deletion report was not persisted')
-  assert.equal(reopened.listDataDeletionReports().some((report) => report.id === jobCaseDeletionReportId), true, 'job case deletion report was not persisted')
+  assert.equal(
+    reopened.listDataDeletionReports().some((report) => report.id === deletionReportId),
+    true,
+    'candidate deletion report was not persisted'
+  )
+  assert.equal(
+    reopened.listDataDeletionReports().some((report) => report.id === jobCaseDeletionReportId),
+    true,
+    'job case deletion report was not persisted'
+  )
   reopened.close()
 
   const afterDeletion = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
   assert.equal(afterDeletion.getCandidateProfileHistory(documentId).length, 0, 'deleted candidate recovered after restart')
-  assert.equal(afterDeletion.listDataDeletionReports().some((report) => report.id === deletionReportId), true, 'deletion report did not recover')
-  assert.equal(afterDeletion.listDataDeletionReports().some((report) => report.id === jobCaseDeletionReportId), true, 'job case deletion report did not recover')
+  assert.equal(
+    afterDeletion.listDataDeletionReports().some((report) => report.id === deletionReportId),
+    true,
+    'deletion report did not recover'
+  )
+  assert.equal(
+    afterDeletion.listDataDeletionReports().some((report) => report.id === jobCaseDeletionReportId),
+    true,
+    'job case deletion report did not recover'
+  )
   assert.equal(afterDeletion.countGmailMessages('hr@example.co.jp'), 0, 'deleted Gmail data recovered')
   assert.equal(afterDeletion.hasGmailMessage('hr@example.co.jp', 'gmail_msg_001'), true, 'Gmail tombstone did not recover')
   assert.equal(afterDeletion.getJobCaseReview(manualDraft.reviewId)?.status, 'completed', 'unrelated manual job case was deleted')
@@ -1949,34 +2772,63 @@ try {
   let affiliationProfile = afterDeletion.getCurrentCandidateProfile(rejectedDocumentId)!
   assert.ok(affiliationProfile)
   for (const value of [true, false, undefined, null]) {
-    affiliationProfile = afterDeletion.updateCandidateProfile({ sourceDocumentId: rejectedDocumentId,
-      expectedVersion: affiliationProfile.profileVersion, ...(value === undefined ? {} : { isOwnCompany: value }),
-      identity: affiliationProfile.localPersonalDetails,
-      fields: affiliationProfile.fields.map(({ key, value }) => ({ key, value })),
-      projectExperiences: affiliationProfile.projectExperiences }, 'verification-user', '検証担当者')
-    assert.equal(affiliationProfile.isOwnCompany, value === undefined ? false : value,
-      'explicit null must clear affiliation; omitted values must preserve the HR selection')
+    affiliationProfile = afterDeletion.updateCandidateProfile(
+      {
+        sourceDocumentId: rejectedDocumentId,
+        expectedVersion: affiliationProfile.profileVersion,
+        ...(value === undefined ? {} : { isOwnCompany: value }),
+        identity: affiliationProfile.localPersonalDetails,
+        fields: affiliationProfile.fields.map(({ key, value }) => ({ key, value })),
+        projectExperiences: affiliationProfile.projectExperiences
+      },
+      'verification-user',
+      '検証担当者'
+    )
+    assert.equal(
+      affiliationProfile.isOwnCompany,
+      value === undefined ? false : value,
+      'explicit null must clear affiliation; omitted values must preserve the HR selection'
+    )
   }
   const affiliationOriginal = affiliationProfile
   for (const value of [true, false, null]) {
-    affiliationProfile = afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
-      expectedVersion: affiliationProfile.profileVersion, isOwnCompany: value }, '検証担当者')
+    affiliationProfile = afterDeletion.setCandidateOwnCompany(
+      { documentId: rejectedDocumentId, expectedVersion: affiliationProfile.profileVersion, isOwnCompany: value },
+      '検証担当者'
+    )
     assert.equal(affiliationProfile.isOwnCompany, value)
     assert.deepEqual(affiliationProfile.fields, affiliationOriginal.fields)
     assert.deepEqual(affiliationProfile.projectExperiences, affiliationOriginal.projectExperiences)
     assert.deepEqual(affiliationProfile.localPersonalDetails, affiliationOriginal.localPersonalDetails)
     assert.equal(afterDeletion.getCandidateReview(rejectedDocumentId)?.isOwnCompany, value)
-    assert.equal(afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
-      expectedVersion: affiliationProfile.profileVersion, isOwnCompany: value }, '検証担当者').profileVersion,
-      affiliationProfile.profileVersion, 'same-value saves must not create another version')
+    assert.equal(
+      afterDeletion.setCandidateOwnCompany(
+        { documentId: rejectedDocumentId, expectedVersion: affiliationProfile.profileVersion, isOwnCompany: value },
+        '検証担当者'
+      ).profileVersion,
+      affiliationProfile.profileVersion,
+      'same-value saves must not create another version'
+    )
   }
   assert.equal(affiliationProfile.profileVersion, affiliationOriginal.profileVersion + 3)
-  assert.throws(() => afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
-    expectedVersion: affiliationOriginal.profileVersion, isOwnCompany: true }, '検証担当者'), /再読み込み/)
-  assert.throws(() => afterDeletion.setCandidateOwnCompany({ documentId,
-    expectedVersion: 1, isOwnCompany: true }, '検証担当者'), /アーカイブ/)
-  assert.throws(() => afterDeletion.setCandidateOwnCompany({ documentId: rejectedDocumentId,
-    expectedVersion: affiliationProfile.profileVersion, isOwnCompany: 'true' as unknown as boolean }, '検証担当者'))
+  assert.throws(
+    () =>
+      afterDeletion.setCandidateOwnCompany(
+        { documentId: rejectedDocumentId, expectedVersion: affiliationOriginal.profileVersion, isOwnCompany: true },
+        '検証担当者'
+      ),
+    /再読み込み/
+  )
+  assert.throws(
+    () => afterDeletion.setCandidateOwnCompany({ documentId, expectedVersion: 1, isOwnCompany: true }, '検証担当者'),
+    /アーカイブ/
+  )
+  assert.throws(() =>
+    afterDeletion.setCandidateOwnCompany(
+      { documentId: rejectedDocumentId, expectedVersion: affiliationProfile.profileVersion, isOwnCompany: 'true' as unknown as boolean },
+      '検証担当者'
+    )
+  )
   afterDeletion.close()
 
   const actionAssociationInspection = new Database(databasePath)
@@ -1984,31 +2836,52 @@ try {
   actionAssociationInspection.pragma('legacy=4')
   actionAssociationInspection.key(databaseKey)
   actionAssociationInspection.prepare('SELECT count(*) FROM sqlite_master').get()
-  const firstTurnAssociations = actionAssociationInspection.prepare<
-    [string, string, string, string, string, string],
-    { id: string; tool_name: string; conversation_id: string | null; turn_id: string | null }[]
-  >(
-    `SELECT id, tool_name, conversation_id, turn_id FROM action_runs
+  const firstTurnAssociations = actionAssociationInspection
+    .prepare<
+      [string, string, string, string, string, string],
+      { id: string; tool_name: string; conversation_id: string | null; turn_id: string | null }[]
+    >(
+      `SELECT id, tool_name, conversation_id, turn_id FROM action_runs
      WHERE id IN (?, ?, ?)
      ORDER BY id`
-  ).all(firstTurnSearchAction.id, firstTurnCandidateAction.id, firstTurnReadAction.id)
+    )
+    .all(firstTurnSearchAction.id, firstTurnCandidateAction.id, firstTurnReadAction.id)
   const firstTurnAssociationById = new Map(firstTurnAssociations.map((row) => [row.id, row]))
   assert.deepEqual(
     firstTurnAssociationById.get(firstTurnSearchAction.id),
-    { id: firstTurnSearchAction.id, tool_name: 'job-case.search.local', conversation_id: firstTurnSearchConversationId, turn_id: firstTurnSearchTurnId },
+    {
+      id: firstTurnSearchAction.id,
+      tool_name: 'job-case.search.local',
+      conversation_id: firstTurnSearchConversationId,
+      turn_id: firstTurnSearchTurnId
+    },
     'first-turn job-case search ActionRun was not linked after conversation save'
   )
   assert.deepEqual(
     firstTurnAssociationById.get(firstTurnCandidateAction.id),
-    { id: firstTurnCandidateAction.id, tool_name: 'candidate.match.local', conversation_id: firstTurnCandidateConversationId, turn_id: firstTurnCandidateTurnId },
+    {
+      id: firstTurnCandidateAction.id,
+      tool_name: 'candidate.match.local',
+      conversation_id: firstTurnCandidateConversationId,
+      turn_id: firstTurnCandidateTurnId
+    },
     'first-turn candidate match ActionRun was not linked after conversation save'
   )
   assert.deepEqual(
     firstTurnAssociationById.get(firstTurnReadAction.id),
-    { id: firstTurnReadAction.id, tool_name: 'match-run.read.local', conversation_id: firstTurnReadConversationId, turn_id: firstTurnReadTurnId },
+    {
+      id: firstTurnReadAction.id,
+      tool_name: 'match-run.read.local',
+      conversation_id: firstTurnReadConversationId,
+      turn_id: firstTurnReadTurnId
+    },
     'first-turn match-run read ActionRun was not linked after conversation save'
   )
-  assert.equal((actionAssociationInspection.pragma('foreign_key_check') as unknown[]).length, 0, 'first-turn ActionRun association introduced an FK violation')
+  assert.equal(
+    (actionAssociationInspection.pragma('foreign_key_check') as unknown[]).length,
+    0,
+    'first-turn ActionRun association introduced an FK violation'
+  )
   actionAssociationInspection.close()
 
   assert.throws(

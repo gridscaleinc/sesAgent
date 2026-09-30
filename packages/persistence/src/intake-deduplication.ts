@@ -17,7 +17,11 @@ export class DuplicateCandidateError extends Error {
   }
 }
 
-export function jobCaseIntakeFingerprint(subject: string, body: string, mappings: Array<{ placeholder: string; originalValue: string }> = []): string {
+export function jobCaseIntakeFingerprint(
+  subject: string,
+  body: string,
+  mappings: Array<{ placeholder: string; originalValue: string }> = []
+): string {
   const originals = new Map(mappings.map((item) => [item.placeholder, item.originalValue]))
   const restore = (value: string) => value.replace(/<[A-Z][A-Z0-9_]*?_\d{3,}>/gu, (token) => originals.get(token) ?? token)
   subject = restore(subject)

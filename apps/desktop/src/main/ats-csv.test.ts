@@ -3,7 +3,10 @@ import { atsCsvToCandidateTexts, decodeCsvBytes, parseCsv } from './ats-csv'
 
 describe('ATS CSV import', () => {
   it('parses quoted commas, embedded newlines and doubled quotes', () => {
-    expect(parseCsv('"a","b,c","d""e"\r\n1,"x\ny",3\n')).toEqual([['a', 'b,c', 'd"e'], ['1', 'x\ny', '3']])
+    expect(parseCsv('"a","b,c","d""e"\r\n1,"x\ny",3\n')).toEqual([
+      ['a', 'b,c', 'd"e'],
+      ['1', 'x\ny', '3']
+    ])
   })
 
   it('rewrites known ATS headers to the local person labels and keeps unknown ones', () => {
@@ -18,7 +21,15 @@ describe('ATS CSV import', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toEqual({
       row: 2,
-      text: ['氏名: 佐藤 蓮', '職種: Laravel エンジニア', 'スキル: Laravel, PHP 8', '直近案件: 公共システムの改修', '稼働: 2026年8月から稼働可', '勤務地条件: 大森常駐可', 'memo: 要面談'].join('\n')
+      text: [
+        '氏名: 佐藤 蓮',
+        '職種: Laravel エンジニア',
+        'スキル: Laravel, PHP 8',
+        '直近案件: 公共システムの改修',
+        '稼働: 2026年8月から稼働可',
+        '勤務地条件: 大森常駐可',
+        'memo: 要面談'
+      ].join('\n')
     })
     expect(rows[1]?.text).toBe('氏名: 田中 美咲')
   })

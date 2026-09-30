@@ -9,9 +9,37 @@ import { createCasePersonnelMatcher } from './case-personnel-matching'
 import type { MainIpcContext } from './ipc/context'
 
 const id = '10000000-0000-4000-8000-000000000001'
-const job = { id, version: 1, fields: [{ key: 'required_skills', label: '必須', value: 'Java', sourceLabels: [] }] } as unknown as ConfirmedJobCase
-const profile = (skills = 'Java') => ({ sourceDocumentId: 'p', profileVersion: 1, fields: [{ key: 'skills', label: 'スキル', value: skills }, { key: 'rate', label: '単価', value: '90万円' }], projectExperiences: [] }) as unknown as CandidateProfile
-const library = (kind: WorkRuleClause['kind'], text: string, field: WorkRuleClause['field'] = 'required_skills'): WorkRuleLibrary => ({ revision: 1, rules: [{ id, revision: 1, enabled: true, scope: { kind: 'global' }, text, modelKey: 'test', updatedAt: new Date().toISOString(), updatedBy: 'HR', clauses: [{ kind, text, field, sourceQuote: text, caseKeywords: [] }] }] })
+const job = {
+  id,
+  version: 1,
+  fields: [{ key: 'required_skills', label: '必須', value: 'Java', sourceLabels: [] }]
+} as unknown as ConfirmedJobCase
+const profile = (skills = 'Java') =>
+  ({
+    sourceDocumentId: 'p',
+    profileVersion: 1,
+    fields: [
+      { key: 'skills', label: 'スキル', value: skills },
+      { key: 'rate', label: '単価', value: '90万円' }
+    ],
+    projectExperiences: []
+  }) as unknown as CandidateProfile
+const library = (kind: WorkRuleClause['kind'], text: string, field: WorkRuleClause['field'] = 'required_skills'): WorkRuleLibrary => ({
+  revision: 1,
+  rules: [
+    {
+      id,
+      revision: 1,
+      enabled: true,
+      scope: { kind: 'global' },
+      text,
+      modelKey: 'test',
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'HR',
+      clauses: [{ kind, text, field, sourceQuote: text, caseKeywords: [] }]
+    }
+  ]
+})
 
 describe('shared HR rule matching', () => {
   it('keeps unknown new requirements reviewable for cloud evaluation and never fabricates evidence', () => {
@@ -48,8 +76,19 @@ describe('shared HR rule matching', () => {
   })
   it('evaluates a deliberately supplied nonmatching person and keeps their result', async () => {
     const person = profile('Python')
-    const assessMatchCandidates = vi.fn(async () => ({ assessments: [{ candidate: 'CANDIDATE_1', fit: 'insufficient-info', met: [], gaps: [], confirm: ['Java'], reason: '' }] }))
-    const context = { repository: { listActiveJobCases: () => [job], getCandidateProfileForAssessment: () => person, listEligibleTalentProfiles: () => [person], listWorkRules: () => ({ revision: 0, rules: [] }) }, agentNarrativeStreamer: { assessMatchCandidates, cancel: vi.fn() }, agentChatModelCatalog: loadAgentChatModelCatalog() } as unknown as MainIpcContext
+    const assessMatchCandidates = vi.fn(async () => ({
+      assessments: [{ candidate: 'CANDIDATE_1', fit: 'insufficient-info', met: [], gaps: [], confirm: ['Java'], reason: '' }]
+    }))
+    const context = {
+      repository: {
+        listActiveJobCases: () => [job],
+        getCandidateProfileForAssessment: () => person,
+        listEligibleTalentProfiles: () => [person],
+        listWorkRules: () => ({ revision: 0, rules: [] })
+      },
+      agentNarrativeStreamer: { assessMatchCandidates, cancel: vi.fn() },
+      agentChatModelCatalog: loadAgentChatModelCatalog()
+    } as unknown as MainIpcContext
     const result = await createCasePersonnelMatcher(context)(id, { documentId: 'p' })
     expect(assessMatchCandidates).toHaveBeenCalledOnce()
     expect(result.items).toHaveLength(1)

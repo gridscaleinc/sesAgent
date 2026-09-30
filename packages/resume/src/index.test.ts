@@ -89,9 +89,7 @@ async function createMergedSesResumeDocument(): Promise<DocumentIR> {
     const startRow = 35 + (projectNumber - 1) * 7
     const endRow = startRow + 6
     const startYear = 2026 - projectNumber
-    const title = projectNumber === 1
-      ? '匿名会計システム'
-      : projectNumber === 2 ? 'SWIFT決済システム' : `匿名業務システム${projectNumber}`
+    const title = projectNumber === 1 ? '匿名会計システム' : projectNumber === 2 ? 'SWIFT決済システム' : `匿名業務システム${projectNumber}`
     set(`A${startRow}`, String(projectNumber))
     set(`B${startRow}`, '満')
     set(`C${startRow}`, '13ヶ月')
@@ -222,13 +220,33 @@ describe('extractCandidateDraft', () => {
 
   it('extracts labeled chat availability dates without adding an unstated date', () => {
     const document: DocumentIR = {
-      version: 'document-ir-v1', documentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
+      version: 'document-ir-v1',
+      documentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
       source: { name: 'chat.pdf', format: 'pdf', sha256: 'd'.repeat(64), size: 512 },
       blocks: [{ id: 'line1', kind: 'text', text: '稼働：2026年10月', source: { page: 1 } }],
-      warnings: [], requiresLocalOcr: false, statistics: { pages: 1, sheets: 0, blocks: 1, characters: 12 },
+      warnings: [],
+      requiresLocalOcr: false,
+      statistics: { pages: 1, sheets: 0, blocks: 1, characters: 12 },
       security: { externalContentLoaded: false, macrosExecuted: false, rawFileCloudEligible: false }
     }
     expect(extractCandidateDraft(document).fields.find((f) => f.key === 'availability')?.value).toBe('2026年10月')
+  })
+
+  it('reads a labelled job title (職種) as the role', () => {
+    const lines = ['職種: Java バックエンドエンジニア', '経験年数: 5年', 'スキル: Java, Spring Boot, REST API, MySQL']
+    const document: DocumentIR = {
+      version: 'document-ir-v1',
+      documentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
+      source: { name: 'resume.docx', format: 'docx', sha256: 'e'.repeat(64), size: 512 },
+      blocks: lines.map((text, index) => ({ id: `line${index + 1}`, kind: 'text', text, source: { page: 1 } })),
+      warnings: [],
+      requiresLocalOcr: false,
+      statistics: { pages: 1, sheets: 0, blocks: lines.length, characters: lines.join('').length },
+      security: { externalContentLoaded: false, macrosExecuted: false, rawFileCloudEligible: false }
+    }
+    const fields = extractCandidateDraft(document).fields
+    expect(fields.find((f) => f.key === 'role')?.value).toBe('Java バックエンドエンジニア')
+    expect(fields.find((f) => f.key === 'experience_years')?.value).toBe('5年')
   })
 
   it('reads an anonymous chat profile whose labels are padded brackets', () => {
@@ -251,7 +269,10 @@ describe('extractCandidateDraft', () => {
         documentId: '0a0b3d0e-4d0f-4a3a-9d5f-2b6f5c9a1e77',
         source: { name: 'agent-paste-1a2b3c4d.txt', format: 'txt', sha256: 'e'.repeat(64), size: 512 },
         blocks: lines.map((text, index) => ({
-          id: `L${index + 1}`, kind: 'text' as const, text, source: { paragraph: index + 1 }
+          id: `L${index + 1}`,
+          kind: 'text' as const,
+          text,
+          source: { paragraph: index + 1 }
         })),
         warnings: [],
         requiresLocalOcr: false,
@@ -435,7 +456,7 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: '8055be48-a08f-499d-9d82-c95a36018ad9',
       sourceDocumentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
-      fields: baseProfile.fields.map((field) => field.key === 'skills' ? { ...field, value: 'Java, Spring Boot' } : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'skills' ? { ...field, value: 'Java, Spring Boot' } : field))
     }
     const results = searchConfirmedCandidateProfiles([withoutAws, baseProfile], 'Java "尚可:AWS" "尚可:Docker"')
     expect(results.map((result) => result.id)).toEqual([baseProfile.id, withoutAws.id])
@@ -449,7 +470,7 @@ describe('searchConfirmedCandidateProfiles', () => {
     const awsOnly: CandidateProfile = {
       ...baseProfile,
       id: '9055be48-a08f-499d-9d82-c95a36018ad9',
-      fields: baseProfile.fields.map((field) => field.key === 'skills' ? { ...field, value: 'AWS' } : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'skills' ? { ...field, value: 'AWS' } : field))
     }
     expect(searchConfirmedCandidateProfiles([awsOnly], 'Python "尚可:AWS"')).toEqual([])
   })
@@ -458,7 +479,7 @@ describe('searchConfirmedCandidateProfiles', () => {
     const javascriptProfile: CandidateProfile = {
       ...baseProfile,
       id: '8055be48-a08f-499d-9d82-c95a36018ad9',
-      fields: baseProfile.fields.map((field) => field.key === 'skills' ? { ...field, value: 'JavaScript, React' } : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'skills' ? { ...field, value: 'JavaScript, React' } : field))
     }
     expect(searchConfirmedCandidateProfiles([javascriptProfile], 'Java')).toEqual([])
     expect(searchConfirmedCandidateProfiles([javascriptProfile], '')[0]?.matchScore).toBeNull()
@@ -478,7 +499,7 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: '8055be48-a08f-499d-9d82-c95a36018ad9',
       sourceDocumentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
-      fields: baseProfile.fields.map((field) => field.key === 'experience_years' ? { ...field, value: '3年' } : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'experience_years' ? { ...field, value: '3年' } : field))
     }
     const result = searchConfirmedCandidateProfiles([juniorProfile, baseProfile], 'Java 5年以上')[0]
     expect(result?.sourceDocumentId).toBe(baseProfile.sourceDocumentId)
@@ -496,7 +517,7 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: 'eecabf8d-1a07-4937-99cc-432dbe81352b',
       sourceDocumentId: 'eecabf8d-1a07-4937-99cc-432dbe81352b',
-      fields: baseProfile.fields.map((field) => field.key === 'experience_years' ? { ...field, value: null } : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'experience_years' ? { ...field, value: null } : field))
     }
     const results = searchConfirmedCandidateProfiles([unknownProfile, baseProfile], '5年以上')
     expect(results).toHaveLength(2)
@@ -505,21 +526,20 @@ describe('searchConfirmedCandidateProfiles', () => {
       id: unknownProfile.id,
       matchedTerms: [],
       retrieval: {
-        hardFilters: [{
-          type: 'minimum-experience-years',
-          requested: '5年以上',
-          actual: null,
-          outcome: 'unknown'
-        }]
+        hardFilters: [
+          {
+            type: 'minimum-experience-years',
+            requested: '5年以上',
+            actual: null,
+            outcome: 'unknown'
+          }
+        ]
       }
     })
   })
 
   it('applies conservative rate, availability, remote-work and Japanese hard filters', () => {
-    const matched = searchConfirmedCandidateProfiles(
-      [baseProfile],
-      'Java 5年以上 70〜95万円 8月 週3日リモート N2'
-    )[0]
+    const matched = searchConfirmedCandidateProfiles([baseProfile], 'Java 5年以上 70〜95万円 8月 週3日リモート N2')[0]
     expect(matched?.retrieval.hardFilters).toEqual([
       { type: 'minimum-experience-years', requested: '5年以上', actual: '7年', outcome: 'passed' },
       { type: 'maximum-rate', requested: '70〜95万円', actual: '80〜90万円/月', outcome: 'passed' },
@@ -535,8 +555,10 @@ describe('searchConfirmedCandidateProfiles', () => {
 
   it('treats the words partners use for a Japanese level as the same hard filter as a JLPT grade', () => {
     // baseProfile holds N2: fluent / business is N2-equivalent, native and N1 are above it.
-    const filterFor = (query: string) => searchConfirmedCandidateProfiles([baseProfile], `Java ${query}`)[0]?.retrieval.hardFilters
-      .find((filter) => filter.type === 'japanese-level') ?? null
+    const filterFor = (query: string) =>
+      searchConfirmedCandidateProfiles([baseProfile], `Java ${query}`)[0]?.retrieval.hardFilters.find(
+        (filter) => filter.type === 'japanese-level'
+      ) ?? null
     expect(filterFor('日本語流暢')).toEqual({ type: 'japanese-level', requested: '日本語流暢', actual: 'N2', outcome: 'passed' })
     expect(filterFor('ビジネスレベル')).toMatchObject({ outcome: 'passed' })
     expect(filterFor('日本語N3可')).toMatchObject({ requested: '日本語N3可', outcome: 'passed' })
@@ -547,9 +569,15 @@ describe('searchConfirmedCandidateProfiles', () => {
     // A bare 日本語 states no level and gates nothing.
     expect(filterFor('日本語')).toBeNull()
     // A candidate whose level is only prose is unknown, never passed.
-    const prose = { ...baseProfile, fields: baseProfile.fields.map((field) => field.key === 'japanese_level' ? { ...field, value: '日本語での業務経験あり' } : field) }
-    expect(searchConfirmedCandidateProfiles([prose], 'Java 日本語流暢')[0]?.retrieval.hardFilters.find((filter) => filter.type === 'japanese-level'))
-      .toMatchObject({ outcome: 'unknown' })
+    const prose = {
+      ...baseProfile,
+      fields: baseProfile.fields.map((field) => (field.key === 'japanese_level' ? { ...field, value: '日本語での業務経験あり' } : field))
+    }
+    expect(
+      searchConfirmedCandidateProfiles([prose], 'Java 日本語流暢')[0]?.retrieval.hardFilters.find(
+        (filter) => filter.type === 'japanese-level'
+      )
+    ).toMatchObject({ outcome: 'unknown' })
     expect(scorableCandidateSearchTerms('Java 日本語流暢 常駐')).toEqual(['Java'])
   })
 
@@ -561,10 +589,7 @@ describe('searchConfirmedCandidateProfiles', () => {
   })
 
   it('applies coarse location and compliance-only work-authorization filters without using nationality', () => {
-    const result = searchConfirmedCandidateProfiles(
-      [baseProfile],
-      '勤務地:品川 就労資格:日本で就労可能'
-    )[0]
+    const result = searchConfirmedCandidateProfiles([baseProfile], '勤務地:品川 就労資格:日本で就労可能')[0]
     expect(result?.retrieval).toMatchObject({
       hardFilterPolicyVersion: 'tri-state-v3',
       hardFilters: [
@@ -578,9 +603,9 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: 'f9d4aec2-80bf-488e-9940-aa659e2377be',
       sourceDocumentId: 'f9d4aec2-80bf-488e-9940-aa659e2377be',
-      fields: baseProfile.fields.map((field) => field.key === 'work_authorization'
-        ? { ...field, value: '資格外活動のみ（制限あり）' }
-        : field)
+      fields: baseProfile.fields.map((field) =>
+        field.key === 'work_authorization' ? { ...field, value: '資格外活動のみ（制限あり）' } : field
+      )
     }
     expect(searchConfirmedCandidateProfiles([limited], '就労資格:日本で就労可能')).toEqual([])
   })
@@ -590,9 +615,7 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
       sourceDocumentId: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
-      fields: baseProfile.fields.map((field) => field.key === 'role'
-        ? { ...field, value: 'クラウドネイティブ基盤エンジニア' }
-        : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'role' ? { ...field, value: 'クラウドネイティブ基盤エンジニア' } : field))
     }
     const results = searchConfirmedCandidateProfiles([cloudPlatformProfile], 'クラウド基盤')
     expect(results[0]).toMatchObject({
@@ -607,15 +630,17 @@ describe('searchConfirmedCandidateProfiles', () => {
   it('returns project-level lexical evidence without exposing reviewer identity', () => {
     const projectProfile: CandidateProfile = {
       ...baseProfile,
-      projectExperiences: [{
-        id: '2cb2d484-1895-401b-871a-dbe33a00dbb8',
-        title: '決済基盤の可観測性改善',
-        period: '2023年4月〜2024年3月',
-        role: 'SRE',
-        technologies: ['Kubernetes', 'Prometheus', 'Grafana'],
-        summary: 'メトリクスとアラートを再設計し、障害検知時間を短縮した。',
-        sourceLabels: ['経歴!A2', '経歴!D2']
-      }]
+      projectExperiences: [
+        {
+          id: '2cb2d484-1895-401b-871a-dbe33a00dbb8',
+          title: '決済基盤の可観測性改善',
+          period: '2023年4月〜2024年3月',
+          role: 'SRE',
+          technologies: ['Kubernetes', 'Prometheus', 'Grafana'],
+          summary: 'メトリクスとアラートを再設計し、障害検知時間を短縮した。',
+          sourceLabels: ['経歴!A2', '経歴!D2']
+        }
+      ]
     }
     const result = searchConfirmedCandidateProfiles([projectProfile], '可観測性 アラート', 20)[0]
     expect(result?.projectEvidence).toMatchObject({
@@ -631,12 +656,18 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
       sourceDocumentId: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
-      fields: baseProfile.fields.map((field) => field.key === 'skills' ? { ...field, value: 'Python, AWS, Terraform' } : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'skills' ? { ...field, value: 'Python, AWS, Terraform' } : field))
     }
-    expect(evaluateCandidateRetrieval([baseProfile, pythonProfile], [
-      { query: 'Java Spring Boot', relevantSourceDocumentIds: [baseProfile.sourceDocumentId] },
-      { query: 'Python Terraform', relevantSourceDocumentIds: [pythonProfile.sourceDocumentId] }
-    ], 1)).toEqual({
+    expect(
+      evaluateCandidateRetrieval(
+        [baseProfile, pythonProfile],
+        [
+          { query: 'Java Spring Boot', relevantSourceDocumentIds: [baseProfile.sourceDocumentId] },
+          { query: 'Python Terraform', relevantSourceDocumentIds: [pythonProfile.sourceDocumentId] }
+        ],
+        1
+      )
+    ).toEqual({
       recallAtK: 1,
       evaluatedCases: 2,
       relevantCandidates: 2,
@@ -677,7 +708,11 @@ describe('searchConfirmedCandidateProfiles', () => {
     expect(report.cases[0]?.queryHash).toMatch(/^[a-f0-9]{64}$/u)
 
     const invalid = await evaluateSesCandidateBenchmark(
-      { ...benchmark, id: '117ab4b4-545f-478e-a8c1-79c42b2fb92c', cases: [{ ...benchmark.cases[0]!, relevantCandidateLabels: ['候補者 DEADBEEF'] }] },
+      {
+        ...benchmark,
+        id: '117ab4b4-545f-478e-a8c1-79c42b2fb92c',
+        cases: [{ ...benchmark.cases[0]!, relevantCandidateLabels: ['候補者 DEADBEEF'] }]
+      },
       new Set(['候補者 38DCA6F6']),
       async () => [],
       { id: 'test/model', revision: 'v1' }
@@ -707,16 +742,25 @@ describe('searchConfirmedCandidateProfiles', () => {
 
   it('applies local reranker scores after RRF while preserving the prior rank', () => {
     const results = searchConfirmedCandidateProfiles(
-      [baseProfile, { ...baseProfile, id: 'd580e11d-e367-43cd-8e48-ae33f1e57b46', sourceDocumentId: 'd580e11d-e367-43cd-8e48-ae33f1e57b46' }],
+      [
+        baseProfile,
+        { ...baseProfile, id: 'd580e11d-e367-43cd-8e48-ae33f1e57b46', sourceDocumentId: 'd580e11d-e367-43cd-8e48-ae33f1e57b46' }
+      ],
       'Java AWS',
       20,
-      new Map([[baseProfile.id, 0.95], ['d580e11d-e367-43cd-8e48-ae33f1e57b46', 0.9]])
+      new Map([
+        [baseProfile.id, 0.95],
+        ['d580e11d-e367-43cd-8e48-ae33f1e57b46', 0.9]
+      ])
     )
     expect(results.map((result) => result.id)).toEqual([baseProfile.id, 'd580e11d-e367-43cd-8e48-ae33f1e57b46'])
-    const reranked = applyLocalRerankerScores(results, new Map([
-      [baseProfile.id, -1.2],
-      ['d580e11d-e367-43cd-8e48-ae33f1e57b46', 2.4]
-    ]))
+    const reranked = applyLocalRerankerScores(
+      results,
+      new Map([
+        [baseProfile.id, -1.2],
+        ['d580e11d-e367-43cd-8e48-ae33f1e57b46', 2.4]
+      ])
+    )
     expect(reranked.map((result) => result.id)).toEqual(['d580e11d-e367-43cd-8e48-ae33f1e57b46', baseProfile.id])
     expect(reranked[0]?.retrieval).toMatchObject({
       strategy: 'hard-filter-hybrid-local-rerank-v1',
@@ -732,9 +776,13 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
       sourceDocumentId: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
-      fields: baseProfile.fields.map((field) => field.key === 'skills'
-        ? { ...field, value: 'Terraform, Kubernetes, Argo CD' }
-        : field.key === 'role' ? { ...field, value: 'SRE' } : field)
+      fields: baseProfile.fields.map((field) =>
+        field.key === 'skills'
+          ? { ...field, value: 'Terraform, Kubernetes, Argo CD' }
+          : field.key === 'role'
+            ? { ...field, value: 'SRE' }
+            : field
+      )
     }
     const stored: Array<{
       profileId: string
@@ -745,26 +793,33 @@ describe('searchConfirmedCandidateProfiles', () => {
       updatedAt: string
     }> = []
     let passageBatches = 0
-    const retrieval = new LocalHybridCandidateRetrieval({
-      embedQueries: async () => [[1, 0]],
-      embedPassages: async (texts) => {
-        passageBatches += 1
-        return texts.map((text) => text.includes('Terraform') ? [1, 0] : [0, 1])
+    const retrieval = new LocalHybridCandidateRetrieval(
+      {
+        embedQueries: async () => [[1, 0]],
+        embedPassages: async (texts) => {
+          passageBatches += 1
+          return texts.map((text) => (text.includes('Terraform') ? [1, 0] : [0, 1]))
+        }
+      },
+      {
+        listCandidateProfileEmbeddings: () => stored,
+        saveCandidateProfileEmbeddings: (records) =>
+          stored.push(
+            ...records.map((record) => ({
+              ...record,
+              updatedAt: '2026-07-20T00:00:00.000Z'
+            }))
+          ),
+        listCandidateProjectEmbeddings: () => [],
+        saveCandidateProjectEmbeddings: () => undefined
+      },
+      {
+        modelId: 'test/multilingual',
+        modelRevision: 'test-revision',
+        dimension: 2,
+        minimumVectorScore: 0.8
       }
-    }, {
-      listCandidateProfileEmbeddings: () => stored,
-      saveCandidateProfileEmbeddings: (records) => stored.push(...records.map((record) => ({
-        ...record,
-        updatedAt: '2026-07-20T00:00:00.000Z'
-      }))),
-      listCandidateProjectEmbeddings: () => [],
-      saveCandidateProjectEmbeddings: () => undefined
-    }, {
-      modelId: 'test/multilingual',
-      modelRevision: 'test-revision',
-      dimension: 2,
-      minimumVectorScore: 0.8
-    })
+    )
     const first = await retrieval.search([baseProfile, terraformProfile], 'インフラ自動化', 20)
     expect(first).toHaveLength(1)
     expect(first[0]).toMatchObject({
@@ -788,27 +843,36 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
       sourceDocumentId: 'd580e11d-e367-43cd-8e48-ae33f1e57b46',
-      fields: baseProfile.fields.map((field) => field.key === 'role'
-        ? { ...field, value: 'クラウドアーキテクト' }
-        : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'role' ? { ...field, value: 'クラウドアーキテクト' } : field))
     }
     const rerankerInputs: Array<{ id: string; text: string }> = []
-    const retrieval = new LocalHybridCandidateRetrieval({
-      embedQueries: async () => [[1, 0]],
-      embedPassages: async () => [[1, 0], [0.99, 0.01]]
-    }, {
-      listCandidateProfileEmbeddings: () => [],
-      saveCandidateProfileEmbeddings: () => undefined,
-      listCandidateProjectEmbeddings: () => [],
-      saveCandidateProjectEmbeddings: () => undefined
-    }, {
-      modelId: 'test/model', modelRevision: 'v1', dimension: 2, minimumVectorScore: 0.8
-    }, {
-      rerank: async (_query, candidates) => {
-        rerankerInputs.push(...candidates)
-        return new Map(candidates.map((candidate) => [candidate.id, candidate.id === secondProfile.id ? 2 : -2]))
+    const retrieval = new LocalHybridCandidateRetrieval(
+      {
+        embedQueries: async () => [[1, 0]],
+        embedPassages: async () => [
+          [1, 0],
+          [0.99, 0.01]
+        ]
+      },
+      {
+        listCandidateProfileEmbeddings: () => [],
+        saveCandidateProfileEmbeddings: () => undefined,
+        listCandidateProjectEmbeddings: () => [],
+        saveCandidateProjectEmbeddings: () => undefined
+      },
+      {
+        modelId: 'test/model',
+        modelRevision: 'v1',
+        dimension: 2,
+        minimumVectorScore: 0.8
+      },
+      {
+        rerank: async (_query, candidates) => {
+          rerankerInputs.push(...candidates)
+          return new Map(candidates.map((candidate) => [candidate.id, candidate.id === secondProfile.id ? 2 : -2]))
+        }
       }
-    })
+    )
     const results = await retrieval.search([baseProfile, secondProfile], 'Java AWS', 20)
     expect(rerankerInputs).toHaveLength(2)
     expect(rerankerInputs.some((candidate) => candidate.text.includes(baseProfile.id))).toBe(false)
@@ -828,21 +892,25 @@ describe('searchConfirmedCandidateProfiles', () => {
       ...baseProfile,
       id: '8055be48-a08f-499d-9d82-c95a36018ad9',
       sourceDocumentId: '8055be48-a08f-499d-9d82-c95a36018ad9',
-      fields: baseProfile.fields.map((field) => field.key === 'experience_years' ? { ...field, value: '3年' } : field)
+      fields: baseProfile.fields.map((field) => (field.key === 'experience_years' ? { ...field, value: '3年' } : field))
     }
     const embeddedPassages: string[] = []
-    const retrieval = new LocalHybridCandidateRetrieval({
-      embedQueries: async () => [[1, 0]],
-      embedPassages: async (texts) => {
-        embeddedPassages.push(...texts)
-        return texts.map(() => [1, 0])
-      }
-    }, {
-      listCandidateProfileEmbeddings: () => [],
-      saveCandidateProfileEmbeddings: () => undefined,
-      listCandidateProjectEmbeddings: () => [],
-      saveCandidateProjectEmbeddings: () => undefined
-    }, { modelId: 'test/model', modelRevision: 'v1', dimension: 2, minimumVectorScore: 0.8 })
+    const retrieval = new LocalHybridCandidateRetrieval(
+      {
+        embedQueries: async () => [[1, 0]],
+        embedPassages: async (texts) => {
+          embeddedPassages.push(...texts)
+          return texts.map(() => [1, 0])
+        }
+      },
+      {
+        listCandidateProfileEmbeddings: () => [],
+        saveCandidateProfileEmbeddings: () => undefined,
+        listCandidateProjectEmbeddings: () => [],
+        saveCandidateProjectEmbeddings: () => undefined
+      },
+      { modelId: 'test/model', modelRevision: 'v1', dimension: 2, minimumVectorScore: 0.8 }
+    )
     const results = await retrieval.search([baseProfile, juniorProfile], 'クラウド移行 5年以上', 20)
     expect(results.map((result) => result.id)).toEqual([baseProfile.id])
     expect(embeddedPassages).toHaveLength(1)
@@ -850,22 +918,32 @@ describe('searchConfirmedCandidateProfiles', () => {
   })
 })
 
-it('reads Japanese grade definitions from the same sheet and enriches only unchanged legacy values',async()=>{
- const {extractStructuredJapaneseLevel,enrichCandidateJapaneseEvidence}=await import('./index')
- const document=await createMergedSesResumeDocument()
- const template=document.blocks.find(b=>b.source.cell==='A11')!
- document.blocks.push({...template,text:'A.現地人と同じレベル B.スムーズ対応可 C.ゆっくり対応可 D.初学者',source:{...template.source,cell:'F11'}})
- const expanded=extractStructuredJapaneseLevel(document.blocks)!
- expect(expanded.value).toBe('読む C（ゆっくり対応可） / 書く B（スムーズ対応可） / 会話 C（ゆっくり対応可）')
- const legacy={fields:[{key:'japanese_level',label:'日本語',value:'読む C / 書く B / 会話 C',sourceLabels:[]}],projectExperiences:[]} as unknown as CandidateProfile
- expect(enrichCandidateJapaneseEvidence(legacy,document).fields[0]!.value).toBe(expanded.value)
- const edited={...legacy,fields:[{...legacy.fields[0]!,value:'N1'}]}
- expect(enrichCandidateJapaneseEvidence(edited,document)).toBe(edited)
- expect(extractCandidateDraft(document).fields.find(f=>f.key==='japanese_level')?.value).toBe(expanded.value)
+it('reads Japanese grade definitions from the same sheet and enriches only unchanged legacy values', async () => {
+  const { extractStructuredJapaneseLevel, enrichCandidateJapaneseEvidence } = await import('./index')
+  const document = await createMergedSesResumeDocument()
+  const template = document.blocks.find((b) => b.source.cell === 'A11')!
+  document.blocks.push({
+    ...template,
+    text: 'A.現地人と同じレベル B.スムーズ対応可 C.ゆっくり対応可 D.初学者',
+    source: { ...template.source, cell: 'F11' }
+  })
+  const expanded = extractStructuredJapaneseLevel(document.blocks)!
+  expect(expanded.value).toBe('読む C（ゆっくり対応可） / 書く B（スムーズ対応可） / 会話 C（ゆっくり対応可）')
+  const legacy = {
+    fields: [{ key: 'japanese_level', label: '日本語', value: '読む C / 書く B / 会話 C', sourceLabels: [] }],
+    projectExperiences: []
+  } as unknown as CandidateProfile
+  expect(enrichCandidateJapaneseEvidence(legacy, document).fields[0]!.value).toBe(expanded.value)
+  const edited = { ...legacy, fields: [{ ...legacy.fields[0]!, value: 'N1' }] }
+  expect(enrichCandidateJapaneseEvidence(edited, document)).toBe(edited)
+  expect(extractCandidateDraft(document).fields.find((f) => f.key === 'japanese_level')?.value).toBe(expanded.value)
 })
 
-it.each(['在宅のみ', '只接受在宅', '出社不可', '週2日まで出社', '出社は週2日まで', 'フルリモート希望', 'フルリモートのみ', '出社可能'])('preserves the work-style restriction or preference: %s',async value=>{
- const document=await createMergedSesResumeDocument()
- document.blocks=[{...document.blocks[0]!,text:`勤務形態：${value}`}]
- expect(extractCandidateDraft(document).fields.find(f=>f.key==='work_style')?.value).toBe(value)
-})
+it.each(['在宅のみ', '只接受在宅', '出社不可', '週2日まで出社', '出社は週2日まで', 'フルリモート希望', 'フルリモートのみ', '出社可能'])(
+  'preserves the work-style restriction or preference: %s',
+  async (value) => {
+    const document = await createMergedSesResumeDocument()
+    document.blocks = [{ ...document.blocks[0]!, text: `勤務形態：${value}` }]
+    expect(extractCandidateDraft(document).fields.find((f) => f.key === 'work_style')?.value).toBe(value)
+  }
+)

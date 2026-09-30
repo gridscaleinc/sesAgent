@@ -5,7 +5,9 @@ import { AgentMarkdown } from './AgentMarkdown'
 describe('AgentMarkdown', () => {
   it('renders model-authored headings, emphasis, lists, quotes, and code without exposing Markdown markers', () => {
     const { container } = render(
-      <AgentMarkdown content={'候选人 **CANDIDATE_1** 整体情况如下：\n\n**基本信息**\n- 候选人状态：当前\n  - 可安排\n\n> 仅供招聘判断\n\n`Java`'} />
+      <AgentMarkdown
+        content={'候选人 **CANDIDATE_1** 整体情况如下：\n\n**基本信息**\n- 候选人状态：当前\n  - 可安排\n\n> 仅供招聘判断\n\n`Java`'}
+      />
     )
 
     expect(screen.getByText('CANDIDATE_1').tagName).toBe('STRONG')

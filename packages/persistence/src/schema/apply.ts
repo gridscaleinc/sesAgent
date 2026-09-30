@@ -57,60 +57,68 @@ import {
   migrationV51,
   migrationV52,
   migrationV53,
-  migrationV54, migrationV55, migrationV56, migrationV57, migrationV58, migrationV59
+  migrationV54,
+  migrationV55,
+  migrationV56,
+  migrationV57,
+  migrationV58,
+  migrationV59,
+  migrationV60,
+  migrationV61,
+  migrationV62,
+  migrationV63
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
 export function applyMigrations(database: Database.Database, mappingKey: Buffer): void {
-  database.exec(migrationV1)
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(1, new Date().toISOString())
-  database.exec(migrationV2)
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(2, new Date().toISOString())
-  database.exec(migrationV3)
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(3, new Date().toISOString())
-  database.exec(migrationV4)
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(4, new Date().toISOString())
-  database.exec(migrationV5)
-  const existingExtractions = database
-    .prepare<[], { document_id: string; draft_json: string; updated_at: string }>(
-      'SELECT document_id, draft_json, updated_at FROM candidate_extractions'
-    )
-    .all()
-  const backfillReview = database.prepare(
-    `INSERT OR IGNORE INTO candidate_review_states(
-       document_id, extraction_version, extraction_created_at, status, pii_reviewed, revision, updated_at
-     ) VALUES (?, ?, ?, 'awaiting-review', 0, 1, ?)`
-  )
-  for (const row of existingExtractions) {
-    const draft = candidateExtractionDraftSchema.parse(JSON.parse(row.draft_json))
-    backfillReview.run(row.document_id, draft.version, draft.createdAt, row.updated_at)
+  // v1 creates schema_migrations, so a database without that table has run nothing yet.
+  const applied = (version: number): boolean =>
+    Boolean(
+      database.prepare<[], { name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get()
+    ) && Boolean(database.prepare<[number], { version: number }>('SELECT version FROM schema_migrations WHERE version = ?').get(version))
+  const record = (version: number): void => {
+    database.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)').run(version, new Date().toISOString())
   }
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(5, new Date().toISOString())
-  database.exec(migrationV6)
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(6, new Date().toISOString())
-  database.exec(migrationV7)
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(7, new Date().toISOString())
-  database.exec(migrationV8)
-  database
-    .prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)')
-    .run(8, new Date().toISOString())
-  const hasV9 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 9')
-    .get()
+  // v1-v8 predate per-migration transactions. They used to run on every open, which re-created tables later
+  // migrations retired (candidate_lifecycle) and re-parsed every stored extraction at startup. Each now runs once, atomically.
+  const earlyMigrations: Array<[number, string, (() => void)?]> = [
+    [1, migrationV1],
+    [2, migrationV2],
+    [3, migrationV3],
+    [4, migrationV4],
+    [
+      5,
+      migrationV5,
+      () => {
+        const existingExtractions = database
+          .prepare<[], { document_id: string; draft_json: string; updated_at: string }>(
+            'SELECT document_id, draft_json, updated_at FROM candidate_extractions'
+          )
+          .all()
+        const backfillReview = database.prepare(
+          `INSERT OR IGNORE INTO candidate_review_states(
+           document_id, extraction_version, extraction_created_at, status, pii_reviewed, revision, updated_at
+         ) VALUES (?, ?, ?, 'awaiting-review', 0, 1, ?)`
+        )
+        for (const row of existingExtractions) {
+          const draft = candidateExtractionDraftSchema.parse(JSON.parse(row.draft_json))
+          backfillReview.run(row.document_id, draft.version, draft.createdAt, row.updated_at)
+        }
+      }
+    ],
+    [6, migrationV6],
+    [7, migrationV7],
+    [8, migrationV8]
+  ]
+  for (const [version, sql, backfill] of earlyMigrations) {
+    if (applied(version)) continue
+    database.transaction(() => {
+      database.exec(sql)
+      backfill?.()
+      record(version)
+    })()
+  }
+  const hasV9 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 9').get()
   if (!hasV9) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -121,33 +129,25 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v9 foreign key verification failed.')
   }
-  const hasV10 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 10')
-    .get()
+  const hasV10 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 10').get()
   if (!hasV10) {
     database.exec(migrationV10)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v10 foreign key verification failed.')
   }
-  const hasV11 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 11')
-    .get()
+  const hasV11 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 11').get()
   if (!hasV11) {
     database.exec(migrationV11)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v11 foreign key verification failed.')
   }
-  const hasV12 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 12')
-    .get()
+  const hasV12 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 12').get()
   if (!hasV12) {
     database.exec(migrationV12)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v12 foreign key verification failed.')
   }
-  const hasV13 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 13')
-    .get()
+  const hasV13 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 13').get()
   if (!hasV13) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -158,89 +158,67 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v13 foreign key verification failed.')
   }
-  const hasV14 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 14')
-    .get()
+  const hasV14 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 14').get()
   if (!hasV14) {
     database.exec(migrationV14)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v14 foreign key verification failed.')
   }
-  const hasV15 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 15')
-    .get()
+  const hasV15 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 15').get()
   if (!hasV15) {
     database.exec(migrationV15)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v15 foreign key verification failed.')
   }
-  const hasV16 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 16')
-    .get()
+  const hasV16 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 16').get()
   if (!hasV16) {
     database.exec(migrationV16)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v16 foreign key verification failed.')
   }
-  const hasV17 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 17')
-    .get()
+  const hasV17 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 17').get()
   if (!hasV17) {
     database.exec(migrationV17)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v17 foreign key verification failed.')
   }
-  const hasV18 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 18')
-    .get()
+  const hasV18 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 18').get()
   if (!hasV18) {
     database.exec(migrationV18)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v18 foreign key verification failed.')
   }
-  const hasV19 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 19')
-    .get()
+  const hasV19 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 19').get()
   if (!hasV19) {
     database.exec(migrationV19)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v19 foreign key verification failed.')
   }
-  const hasV20 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 20')
-    .get()
+  const hasV20 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 20').get()
   if (!hasV20) {
     database.exec(migrationV20)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v20 foreign key verification failed.')
   }
-  const hasV21 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 21')
-    .get()
+  const hasV21 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 21').get()
   if (!hasV21) {
     database.exec(migrationV21)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v21 foreign key verification failed.')
   }
-  const hasV22 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 22')
-    .get()
+  const hasV22 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 22').get()
   if (!hasV22) {
     database.exec(migrationV22)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v22 foreign key verification failed.')
   }
-  const hasV23 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 23')
-    .get()
+  const hasV23 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 23').get()
   if (!hasV23) {
     database.exec(migrationV23)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v23 foreign key verification failed.')
   }
-  const hasV24 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 24')
-    .get()
+  const hasV24 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 24').get()
   if (!hasV24) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -251,9 +229,7 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v24 foreign key verification failed.')
   }
-  const hasV25 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 25')
-    .get()
+  const hasV25 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 25').get()
   if (!hasV25) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -264,49 +240,37 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v25 foreign key verification failed.')
   }
-  const hasV26 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 26')
-    .get()
+  const hasV26 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 26').get()
   if (!hasV26) {
     database.exec(migrationV26)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v26 foreign key verification failed.')
   }
-  const hasV27 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 27')
-    .get()
+  const hasV27 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 27').get()
   if (!hasV27) {
     database.exec(migrationV27)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v27 foreign key verification failed.')
   }
-  const hasV28 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 28')
-    .get()
+  const hasV28 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 28').get()
   if (!hasV28) {
     database.exec(migrationV28)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v28 foreign key verification failed.')
   }
-  const hasV29 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 29')
-    .get()
+  const hasV29 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 29').get()
   if (!hasV29) {
     database.exec(migrationV29)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v29 foreign key verification failed.')
   }
-  const hasV30 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 30')
-    .get()
+  const hasV30 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 30').get()
   if (!hasV30) {
     database.exec(migrationV30)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v30 foreign key verification failed.')
   }
-  const hasV31 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 31')
-    .get()
+  const hasV31 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 31').get()
   if (!hasV31) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -317,17 +281,13 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v31 foreign key verification failed.')
   }
-  const hasV32 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 32')
-    .get()
+  const hasV32 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 32').get()
   if (!hasV32) {
     database.exec(migrationV32)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v32 foreign key verification failed.')
   }
-  const hasV33 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 33')
-    .get()
+  const hasV33 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 33').get()
   if (!hasV33) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -338,25 +298,19 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v33 foreign key verification failed.')
   }
-  const hasV34 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 34')
-    .get()
+  const hasV34 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 34').get()
   if (!hasV34) {
     database.exec(migrationV34)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v34 foreign key verification failed.')
   }
-  const hasV35 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 35')
-    .get()
+  const hasV35 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 35').get()
   if (!hasV35) {
     database.exec(migrationV35)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v35 foreign key verification failed.')
   }
-  const hasV36 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 36')
-    .get()
+  const hasV36 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 36').get()
   if (!hasV36) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -367,9 +321,7 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v36 foreign key verification failed.')
   }
-  const hasV37 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 37')
-    .get()
+  const hasV37 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 37').get()
   if (!hasV37) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -380,9 +332,7 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v37 foreign key verification failed.')
   }
-  const hasV38 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 38')
-    .get()
+  const hasV38 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 38').get()
   if (!hasV38) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -393,9 +343,7 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v38 foreign key verification failed.')
   }
-  const hasV39 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 39')
-    .get()
+  const hasV39 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 39').get()
   if (!hasV39) {
     database.pragma('foreign_keys=OFF')
     try {
@@ -406,25 +354,15 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     const violations = database.pragma('foreign_key_check') as unknown[]
     if (violations.length > 0) throw new Error('Schema v39 foreign key verification failed.')
   }
-  const hasV40 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 40')
-    .get()
+  const hasV40 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 40').get()
   if (!hasV40) database.exec(migrationV40)
-  const hasV41 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 41')
-    .get()
+  const hasV41 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 41').get()
   if (!hasV41) database.exec(migrationV41)
-  const hasV42 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 42')
-    .get()
+  const hasV42 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 42').get()
   if (!hasV42) database.exec(migrationV42)
-  const hasV43 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 43')
-    .get()
+  const hasV43 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 43').get()
   if (!hasV43) database.exec(migrationV43)
-  const hasV44 = database
-    .prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 44')
-    .get()
+  const hasV44 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 44').get()
   if (!hasV44) database.exec(migrationV44)
   const hasV45 = database.prepare<[], { version: number }>('SELECT version FROM schema_migrations WHERE version = 45').get()
   if (!hasV45) database.exec(migrationV45)
@@ -433,10 +371,14 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 48').get()) database.exec(migrationV48)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 49').get()) {
     database.pragma('foreign_keys=OFF')
-    try { database.exec(migrationV49) } catch (error) {
+    try {
+      database.exec(migrationV49)
+    } catch (error) {
       if (database.inTransaction) database.exec('ROLLBACK')
       throw error
-    } finally { database.pragma('foreign_keys=ON') }
+    } finally {
+      database.pragma('foreign_keys=ON')
+    }
     if ((database.pragma('foreign_key_check') as unknown[]).length) throw new Error('Schema v49 foreign key verification failed.')
   }
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 50').get()) database.exec(migrationV50)
@@ -444,13 +386,24 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
     database.transaction(() => {
       database.exec(migrationV51)
       const update = database.prepare('UPDATE parsed_documents SET intake_fingerprint = ? WHERE document_id = ?')
-      const documents = database.prepare<[], { document_id: string; document_ir_json: string }>('SELECT document_id, document_ir_json FROM parsed_documents').all()
+      const documents = database
+        .prepare<[], { document_id: string; document_ir_json: string }>('SELECT document_id, document_ir_json FROM parsed_documents')
+        .all()
       for (const row of documents) update.run(candidateContentFingerprint(JSON.parse(row.document_ir_json)), row.document_id)
       const updateCase = database.prepare('UPDATE job_case_sources SET intake_fingerprint = ? WHERE id = ?')
-      const sources = database.prepare<[], { id: string; redacted_subject: string; redacted_body: string; redaction_session_id: string }>('SELECT id, redacted_subject, redacted_body, redaction_session_id FROM job_case_sources').all()
-      const mappingRows = database.prepare<[string], MappingRow>('SELECT placeholder, identifier_type, encrypted_original FROM local_pii_mappings WHERE redaction_session_id = ?')
+      const sources = database
+        .prepare<[], { id: string; redacted_subject: string; redacted_body: string; redaction_session_id: string }>(
+          'SELECT id, redacted_subject, redacted_body, redaction_session_id FROM job_case_sources'
+        )
+        .all()
+      const mappingRows = database.prepare<[string], MappingRow>(
+        'SELECT placeholder, identifier_type, encrypted_original FROM local_pii_mappings WHERE redaction_session_id = ?'
+      )
       for (const row of sources) {
-        const mappings = mappingRows.all(row.redaction_session_id).map((mapping) => ({ placeholder: mapping.placeholder, originalValue: openMapping(mappingKey, mapping, row.redaction_session_id) }))
+        const mappings = mappingRows.all(row.redaction_session_id).map((mapping) => ({
+          placeholder: mapping.placeholder,
+          originalValue: openMapping(mappingKey, mapping, row.redaction_session_id)
+        }))
         updateCase.run(jobCaseIntakeFingerprint(row.redacted_subject, row.redacted_body, mappings), row.id)
       }
       database.prepare('INSERT INTO schema_migrations(version, applied_at) VALUES (51, ?)').run(new Date().toISOString())
@@ -460,13 +413,23 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 53').get()) database.exec(migrationV53)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 54').get()) {
     database.pragma('foreign_keys=OFF')
-    try { database.exec(migrationV54) } catch(error) { if(database.inTransaction)database.exec('ROLLBACK');throw error }
-    finally { database.pragma('foreign_keys=ON') }
-    if((database.pragma('foreign_key_check') as unknown[]).length)throw new Error('Schema v54 foreign key verification failed.')
+    try {
+      database.exec(migrationV54)
+    } catch (error) {
+      if (database.inTransaction) database.exec('ROLLBACK')
+      throw error
+    } finally {
+      database.pragma('foreign_keys=ON')
+    }
+    if ((database.pragma('foreign_key_check') as unknown[]).length) throw new Error('Schema v54 foreign key verification failed.')
   }
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 55').get()) database.exec(migrationV55)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 56').get()) database.exec(migrationV56)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 57').get()) database.exec(migrationV57)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 58').get()) database.exec(migrationV58)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 59').get()) database.exec(migrationV59)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 60').get()) database.exec(migrationV60)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 61').get()) database.exec(migrationV61)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 62').get()) database.exec(migrationV62)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 63').get()) database.exec(migrationV63)
 }

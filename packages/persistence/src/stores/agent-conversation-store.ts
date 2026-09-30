@@ -1,10 +1,6 @@
 import { candidatePoolFingerprint } from '@matching'
 import { detectDirectIdentifiers } from '@privacy'
-import {
-  aiConversationContextSchema,
-  aiConversationSnapshotSchema,
-  saveAiConversationInputSchema
-} from '@shared'
+import { aiConversationContextSchema, aiConversationSnapshotSchema, saveAiConversationInputSchema } from '@shared'
 import {
   type AgentEntityStatus,
   type AiConversationContext,
@@ -30,7 +26,9 @@ import { DomainStore } from './base'
 export class AgentConversationStore extends DomainStore {
   private ownsDeletedObject(snapshot: AiConversationSnapshot, targets: AgentReferenceTargets): boolean {
     const object = snapshot.context.businessObject
-    return Boolean(object && (object.kind === 'person' ? targets.candidateDocumentIds.has(object.id) : targets.jobCaseReviewIds?.has(object.id)))
+    return Boolean(
+      object && (object.kind === 'person' ? targets.candidateDocumentIds.has(object.id) : targets.jobCaseReviewIds?.has(object.id))
+    )
   }
 
   private salesAgentKnownPersonNames(targets: AgentReferenceTargets): string[] {
@@ -42,19 +40,24 @@ export class AgentConversationStore extends DomainStore {
       .all()
       .filter((row) => targets.matchRunIds.has(row.run_id) || targets.matchResultIds.has(row.id))
     const profileIds = [...new Set(targetRows.map((row) => row.candidate_profile_id))]
-    const matchedSourceDocumentIds = profileIds.length === 0
-      ? []
-      : this.database
-          .prepare<string[], { source_document_id: string }>(
-            `SELECT DISTINCT source_document_id FROM candidate_profiles WHERE id IN (${profileIds.map(() => '?').join(', ')})`
-          )
-          .all(...profileIds)
-          .map((row) => row.source_document_id)
+    const matchedSourceDocumentIds =
+      profileIds.length === 0
+        ? []
+        : this.database
+            .prepare<string[], { source_document_id: string }>(
+              `SELECT DISTINCT source_document_id FROM candidate_profiles WHERE id IN (${profileIds.map(() => '?').join(', ')})`
+            )
+            .all(...profileIds)
+            .map((row) => row.source_document_id)
     const sourceDocumentIds = [...new Set([...targets.candidateDocumentIds, ...matchedSourceDocumentIds])]
-    return [...new Set(sourceDocumentIds.flatMap((sourceDocumentId) => {
-      const displayName = this.stores.candidates.getCandidateLocalIdentity(sourceDocumentId).displayName
-      return displayName ? [displayName] : []
-    }))]
+    return [
+      ...new Set(
+        sourceDocumentIds.flatMap((sourceDocumentId) => {
+          const displayName = this.stores.candidates.getCandidateLocalIdentity(sourceDocumentId).displayName
+          return displayName ? [displayName] : []
+        })
+      )
+    ]
   }
 
   countSalesAgentReferences(targets: AgentReferenceTargets): AgentReferenceImpact {
@@ -75,16 +78,17 @@ export class AgentConversationStore extends DomainStore {
       const affectedMessages = snapshot.messages.filter((message) => agentMessageHasTarget(message, targets)).length
       const state = snapshot.salesAgentState
       const affectedState = Boolean(
-        state && (
-          (state.selectedJobCaseRef && agentReferenceIsTargeted(state.selectedJobCaseRef, targets)) ||
-          (state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId))
-        )
+        state &&
+        ((state.selectedJobCaseRef && agentReferenceIsTargeted(state.selectedJobCaseRef, targets)) ||
+          (state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId)))
       )
       if (affectedMessages > 0 || affectedState || this.ownsDeletedObject(snapshot, targets)) {
         conversations += 1
-        messages += this.ownsDeletedObject(snapshot, targets) ? snapshot.messages.length : snapshot.messages.filter((message) =>
-          agentMessageHasTarget(message, targets) || agentMessageHasDirectIdentifier(message, knownPersonNames)
-        ).length
+        messages += this.ownsDeletedObject(snapshot, targets)
+          ? snapshot.messages.length
+          : snapshot.messages.filter(
+              (message) => agentMessageHasTarget(message, targets) || agentMessageHasDirectIdentifier(message, knownPersonNames)
+            ).length
       }
     }
     return { conversations, messages }
@@ -113,14 +117,15 @@ export class AgentConversationStore extends DomainStore {
       }
       const state = snapshot.salesAgentState
       const stateAffected = Boolean(
-        state && (
-          (state.selectedJobCaseRef && agentReferenceIsTargeted(state.selectedJobCaseRef, targets)) ||
+        state &&
+        ((state.selectedJobCaseRef && agentReferenceIsTargeted(state.selectedJobCaseRef, targets)) ||
           (state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId)) ||
-          (state.lastIntakeBatch && sanitizeIntakeBatch(state.lastIntakeBatch, targets)?.reviewIds.length !== state.lastIntakeBatch.reviewIds.length)
-        )
+          (state.lastIntakeBatch &&
+            sanitizeIntakeBatch(state.lastIntakeBatch, targets)?.reviewIds.length !== state.lastIntakeBatch.reviewIds.length))
       )
-      const conversationHasTarget = snapshot.messages.some((message) =>
-        agentMessageHasTarget(message, targets) || agentMessageHasIntakeDraftTarget(message, targets))
+      const conversationHasTarget = snapshot.messages.some(
+        (message) => agentMessageHasTarget(message, targets) || agentMessageHasIntakeDraftTarget(message, targets)
+      )
       if (!conversationHasTarget && !stateAffected) continue
 
       let conversationAffected = false
@@ -147,18 +152,16 @@ export class AgentConversationStore extends DomainStore {
         }
       })
       if (!conversationAffected && !stateAffected) continue
-      const nextState = stateAffected && state
-        ? {
-            ...state,
-            selectedJobCaseRef: state.selectedJobCaseRef && agentReferenceIsTargeted(state.selectedJobCaseRef, targets)
-              ? null
-              : state.selectedJobCaseRef,
-            lastMatchRunId: state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId)
-              ? null
-              : state.lastMatchRunId,
-            lastIntakeBatch: sanitizeIntakeBatch(state.lastIntakeBatch, targets)
-          }
-        : state
+      const nextState =
+        stateAffected && state
+          ? {
+              ...state,
+              selectedJobCaseRef:
+                state.selectedJobCaseRef && agentReferenceIsTargeted(state.selectedJobCaseRef, targets) ? null : state.selectedJobCaseRef,
+              lastMatchRunId: state.lastMatchRunId && targets.matchRunIds.has(state.lastMatchRunId) ? null : state.lastMatchRunId,
+              lastIntakeBatch: sanitizeIntakeBatch(state.lastIntakeBatch, targets)
+            }
+          : state
       const nextSnapshot = aiConversationSnapshotSchema.parse({
         ...snapshot,
         title: detectDirectIdentifiers(snapshot.title, knownPersonNames).length > 0 ? '已删除的案件匹配会话' : snapshot.title,
@@ -183,18 +186,22 @@ export class AgentConversationStore extends DomainStore {
 
   private agentMatchReferenceStatus(runId: string, resultId: string | null): AgentEntityStatus {
     const run = this.database
-      .prepare<[string], {
-        id: string
-        job_case_id: string | null
-        job_case_version: number | null
-        candidate_pool_fingerprint: string | null
-        candidate_profile_versions_json: string | null
-      }>(
+      .prepare<
+        [string],
+        {
+          id: string
+          job_case_id: string | null
+          job_case_version: number | null
+          candidate_pool_fingerprint: string | null
+          candidate_profile_versions_json: string | null
+        }
+      >(
         `SELECT id, job_case_id, job_case_version, candidate_pool_fingerprint, candidate_profile_versions_json
          FROM candidate_match_runs WHERE id = ?`
       )
       .get(runId)
-    if (!run || !run.job_case_id || !run.job_case_version || !run.candidate_pool_fingerprint || !run.candidate_profile_versions_json) return 'deleted'
+    if (!run || !run.job_case_id || !run.job_case_version || !run.candidate_pool_fingerprint || !run.candidate_profile_versions_json)
+      return 'deleted'
     const jobCaseExists = this.database
       .prepare<[string], { present: number }>('SELECT 1 AS present FROM job_cases WHERE id = ?')
       .get(run.job_case_id)
@@ -225,8 +232,11 @@ export class AgentConversationStore extends DomainStore {
       .toSorted((left, right) => left.id.localeCompare(right.id) || left.version - right.version)
     const savedVersions = JSON.parse(run.candidate_profile_versions_json) as Array<{ id: string; version: number }>
     const samePool = JSON.stringify(currentVersions) === JSON.stringify(savedVersions)
-    return activeCase.version === run.job_case_version && profile.status === 'current' && profile.version === result.candidate_profile_version &&
-      samePool && candidatePoolFingerprint(currentPool) === run.candidate_pool_fingerprint
+    return activeCase.version === run.job_case_version &&
+      profile.status === 'current' &&
+      profile.version === result.candidate_profile_version &&
+      samePool &&
+      candidatePoolFingerprint(currentPool) === run.candidate_pool_fingerprint
       ? 'current'
       : 'stale'
   }
@@ -243,11 +253,20 @@ export class AgentConversationStore extends DomainStore {
   private hydrateSalesAgentSnapshot(snapshot: AiConversationSnapshot): AiConversationSnapshot {
     if (snapshot.context.assistant !== 'sales-agent') return snapshot
     const activeCases = new Map(this.stores.jobCases.listActiveJobCases().map((item) => [item.id, item]))
-    const existingCaseIds = new Set(this.database.prepare<[], { id: string }>('SELECT id FROM job_cases').all().map((row) => row.id))
-    const currentProfiles = new Map(this.database
-      .prepare<[], { id: string; version: number; status: 'current' | 'stale' | 'superseded' }>('SELECT id, version, status FROM candidate_profiles')
-      .all()
-      .map((row) => [row.id, row] as const))
+    const existingCaseIds = new Set(
+      this.database
+        .prepare<[], { id: string }>('SELECT id FROM job_cases')
+        .all()
+        .map((row) => row.id)
+    )
+    const currentProfiles = new Map(
+      this.database
+        .prepare<[], { id: string; version: number; status: 'current' | 'stale' | 'superseded' }>(
+          'SELECT id, version, status FROM candidate_profiles'
+        )
+        .all()
+        .map((row) => [row.id, row] as const)
+    )
     let changed = false
     const messages = snapshot.messages.map((message) => {
       if (!message.blocks || message.blocks.length === 0) return message
@@ -258,7 +277,9 @@ export class AgentConversationStore extends DomainStore {
             const active = activeCases.get(card.reference.objectId)
             const status: AgentEntityStatus = !existingCaseIds.has(card.reference.objectId)
               ? 'deleted'
-              : active?.version === card.reference.objectVersion ? 'current' : 'stale'
+              : active?.version === card.reference.objectVersion
+                ? 'current'
+                : 'stale'
             if (card.status !== status) messageChanged = true
             return status === card.status ? card : { ...card, status }
           })
@@ -292,13 +313,9 @@ export class AgentConversationStore extends DomainStore {
         }
         if (block.type === 'match-run-explanation') {
           const validity = this.agentMatchReferenceStatus(block.facts.runId, block.facts.candidate?.reference.objectId ?? null)
-          const candidate = block.facts.candidate
-            ? { ...block.facts.candidate, status: validity }
-            : null
+          const candidate = block.facts.candidate ? { ...block.facts.candidate, status: validity } : null
           if (validity !== block.facts.validity || candidate?.status !== block.facts.candidate?.status) messageChanged = true
-          return messageChanged
-            ? { ...block, facts: { ...block.facts, validity, candidate } }
-            : block
+          return messageChanged ? { ...block, facts: { ...block.facts, validity, candidate } } : block
         }
         if (block.type === 'candidate-profile-evidence') {
           const candidate = block.facts.candidate
@@ -311,14 +328,13 @@ export class AgentConversationStore extends DomainStore {
         }
         if (block.type === 'candidate-interview-evidence') {
           const candidate = block.facts.candidate
-          let validity = candidate
-            ? this.agentMatchCandidateStatus(block.facts.runId, candidate.candidateProfileId)
-            : block.facts.validity
-          const sourceDocumentId = candidate?.sourceDocumentId ?? (candidate
-            ? this.stores.candidates.getCandidateSourceDocumentId(candidate.candidateProfileId)
-            : null)
+          let validity = candidate ? this.agentMatchCandidateStatus(block.facts.runId, candidate.candidateProfileId) : block.facts.validity
+          const sourceDocumentId =
+            candidate?.sourceDocumentId ??
+            (candidate ? this.stores.candidates.getCandidateSourceDocumentId(candidate.candidateProfileId) : null)
           if (validity === 'current' && sourceDocumentId) {
-            const currentInterviews = this.stores.candidateInterviews.listCandidateInterviews()
+            const currentInterviews = this.stores.candidateInterviews
+              .listCandidateInterviews()
               .filter((interview) => interview.sourceDocumentId === sourceDocumentId)
               .map((interview) => `${interview.kind}:${interview.roundNumber}:${interview.updatedAt}`)
               .toSorted()
@@ -389,7 +405,8 @@ export class AgentConversationStore extends DomainStore {
         existing.interview_id !== input.context.interviewId ||
         existing.interview_kind !== input.context.interviewKind ||
         existing.round_number !== input.context.roundNumber
-      ) throw new Error('AI会話の不可変コンテキストを変更できません。')
+      )
+        throw new Error('AI会話の不可変コンテキストを変更できません。')
     } else if (input.expectedRevision !== null) {
       throw new Error('AI会話が見つかりません。履歴を再読み込みしてください。')
     }
@@ -401,9 +418,12 @@ export class AgentConversationStore extends DomainStore {
         )
         .get(input.context.interviewId)
       if (
-        !interview || interview.source_document_id !== input.context.candidateDocumentId ||
-        interview.kind !== input.context.interviewKind || interview.round_number !== input.context.roundNumber
-      ) throw new Error('AI会話の面談コンテキストが現在の候補者記録と一致しません。')
+        !interview ||
+        interview.source_document_id !== input.context.candidateDocumentId ||
+        interview.kind !== input.context.interviewKind ||
+        interview.round_number !== input.context.roundNumber
+      )
+        throw new Error('AI会話の面談コンテキストが現在の候補者記録と一致しません。')
     }
 
     const timestamp = now.toISOString()
@@ -419,31 +439,35 @@ export class AgentConversationStore extends DomainStore {
       updatedAt: timestamp
     })
     if (existing) {
-      const updated = this.database.prepare(
-        `UPDATE ai_conversations
+      const updated = this.database
+        .prepare(
+          `UPDATE ai_conversations
          SET title = ?, payload_json = ?, revision = ?, updated_at = ?
          WHERE id = ? AND revision = ?`
-      ).run(snapshot.title, JSON.stringify(snapshot), snapshot.revision, timestamp, snapshot.id, existing.revision)
+        )
+        .run(snapshot.title, JSON.stringify(snapshot), snapshot.revision, timestamp, snapshot.id, existing.revision)
       if (updated.changes !== 1) throw new Error('AI会話が更新されました。履歴を再読み込みしてください。')
     } else {
-      this.database.prepare(
-        `INSERT INTO ai_conversations(
+      this.database
+        .prepare(
+          `INSERT INTO ai_conversations(
            id, assistant_type, context_key, candidate_document_id, interview_id, interview_kind,
            round_number, title, payload_json, revision, created_at, updated_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
-      ).run(
-        snapshot.id,
-        snapshot.context.assistant,
-        contextKey,
-        snapshot.context.candidateDocumentId,
-        snapshot.context.interviewId,
-        snapshot.context.interviewKind,
-        snapshot.context.roundNumber,
-        snapshot.title,
-        JSON.stringify(snapshot),
-        timestamp,
-        timestamp
-      )
+        )
+        .run(
+          snapshot.id,
+          snapshot.context.assistant,
+          contextKey,
+          snapshot.context.candidateDocumentId,
+          snapshot.context.interviewId,
+          snapshot.context.interviewKind,
+          snapshot.context.roundNumber,
+          snapshot.title,
+          JSON.stringify(snapshot),
+          timestamp,
+          timestamp
+        )
     }
     return snapshot
   }

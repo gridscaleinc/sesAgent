@@ -42,14 +42,16 @@ export function synchronizeImportTask(
     task.progress === (completed ? 100 : 75) &&
     task.evidenceCount === evidenceCount &&
     task.steps.every((step, index) => step.status === (completed ? 'completed' : index < 3 ? 'completed' : 'blocked'))
-  return unchanged ? task : recordResumeImportReviewState(
-    task,
-    completed,
-    evidenceCount,
-    completed ? reviews.flatMap((review) => review?.profile?.id ? [review.profile.id] : []) : [],
-    now,
-    approvedBy
-  )
+  return unchanged
+    ? task
+    : recordResumeImportReviewState(
+        task,
+        completed,
+        evidenceCount,
+        completed ? reviews.flatMap((review) => (review?.profile?.id ? [review.profile.id] : [])) : [],
+        now,
+        approvedBy
+      )
 }
 
 export function createVerifiedPreview(
@@ -73,7 +75,7 @@ export function createVerifiedPreview(
     version: file.sha256
   }))
   const selectedJobCase = input.jobCaseId
-    ? repository.listActiveJobCases().find((jobCase) => jobCase.id === input.jobCaseId) ?? null
+    ? (repository.listActiveJobCases().find((jobCase) => jobCase.id === input.jobCaseId) ?? null)
     : null
   if (input.jobCaseId && !selectedJobCase) throw new Error('選択した確認済み案件は利用できません。')
   const contextBindings = selectedJobCase

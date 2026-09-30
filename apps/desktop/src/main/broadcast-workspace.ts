@@ -31,10 +31,7 @@ interface CopyEvent {
   jobCaseVersion: number
 }
 
-function copyEvents(
-  ledger: ReadonlyArray<CaseBroadcastRecord>,
-  copies: ReadonlyArray<CaseBroadcastCopy>
-): CopyEvent[] {
+function copyEvents(ledger: ReadonlyArray<CaseBroadcastRecord>, copies: ReadonlyArray<CaseBroadcastCopy>): CopyEvent[] {
   return [...ledger, ...copies]
     .map((entry) => ({ at: entry.createdAt, lang: entry.lang, jobCaseVersion: entry.jobCaseVersion }))
     .toSorted((left, right) => left.at.localeCompare(right.at))
@@ -84,8 +81,7 @@ export function deriveBroadcastQueue(input: {
           hasUpdateSinceLastCopy: false
         }
       }
-      const events = (byReview.get(review.reviewId) ?? [])
-        .toSorted((left, right) => left.at.localeCompare(right.at))
+      const events = (byReview.get(review.reviewId) ?? []).toSorted((left, right) => left.at.localeCompare(right.at))
       const latest = events.at(-1) ?? null
       const copiedCeiling = events.reduce((highest, event) => Math.max(highest, event.jobCaseVersion), 0)
       return {
@@ -99,8 +95,7 @@ export function deriveBroadcastQueue(input: {
         hasUpdateSinceLastCopy: latest !== null && review.jobCase!.version > copiedCeiling
       }
     })
-    .toSorted((left, right) =>
-      statusRank[left.status] - statusRank[right.status] || right.reviewId.localeCompare(left.reviewId))
+    .toSorted((left, right) => statusRank[left.status] - statusRank[right.status] || right.reviewId.localeCompare(left.reviewId))
 }
 
 const forbiddenKeys: ReadonlySet<string> = new Set<string>(broadcastForbiddenFieldKeys)

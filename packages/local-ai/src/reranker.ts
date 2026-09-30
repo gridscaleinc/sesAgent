@@ -10,13 +10,48 @@ export const localRerankerModel = Object.freeze({
   maximumPassageLength: 6_000,
   maximumSequenceLength: 512,
   files: Object.freeze([
-    Object.freeze({ path: 'config.json', platform: 'all', bytes: 1_348, sha256: '56ac1e6180e7ee5b7d0700fe69794bff9eb6228bb5510209296d6c7e3f3c98d1' }),
-    Object.freeze({ path: 'special_tokens_map.json', platform: 'all', bytes: 968, sha256: '30bf8256f9a1eb3287af2a9b7940465e29a38aad4a459a3e773bb3a14bd34c0f' }),
-    Object.freeze({ path: 'tokenizer.json', platform: 'all', bytes: 6_724_873, sha256: '0a94ac9a0a02c067bdef25b72ae9f4ee33f48f552e55988d444f6d25eeb1d062' }),
-    Object.freeze({ path: 'tokenizer.model', platform: 'all', bytes: 1_831_879, sha256: '008293028e1a9d9a1038d9b63d989a2319797dfeaa03f171093a57b33a3a8277' }),
-    Object.freeze({ path: 'tokenizer_config.json', platform: 'all', bytes: 3_779, sha256: '34004511993472f15c7202074284c57788c161fb6567de164b8e0c0266f155e4' }),
-    Object.freeze({ path: 'onnx/model_qint8_arm64.onnx', platform: 'darwin-arm64', bytes: 29_634_681, sha256: '7dd460445ddac13fcbbc4f0111a4287e99697fedacd5421d0cc07f08aab881b0' }),
-    Object.freeze({ path: 'onnx/model_qint8_avx2.onnx', platform: 'win32-x64', bytes: 29_634_681, sha256: '649a18583e21ad532e420a4ded4c9c4ff7ce882aa84af2bf2180ec4d4f679e38' })
+    Object.freeze({
+      path: 'config.json',
+      platform: 'all',
+      bytes: 1_348,
+      sha256: '56ac1e6180e7ee5b7d0700fe69794bff9eb6228bb5510209296d6c7e3f3c98d1'
+    }),
+    Object.freeze({
+      path: 'special_tokens_map.json',
+      platform: 'all',
+      bytes: 968,
+      sha256: '30bf8256f9a1eb3287af2a9b7940465e29a38aad4a459a3e773bb3a14bd34c0f'
+    }),
+    Object.freeze({
+      path: 'tokenizer.json',
+      platform: 'all',
+      bytes: 6_724_873,
+      sha256: '0a94ac9a0a02c067bdef25b72ae9f4ee33f48f552e55988d444f6d25eeb1d062'
+    }),
+    Object.freeze({
+      path: 'tokenizer.model',
+      platform: 'all',
+      bytes: 1_831_879,
+      sha256: '008293028e1a9d9a1038d9b63d989a2319797dfeaa03f171093a57b33a3a8277'
+    }),
+    Object.freeze({
+      path: 'tokenizer_config.json',
+      platform: 'all',
+      bytes: 3_779,
+      sha256: '34004511993472f15c7202074284c57788c161fb6567de164b8e0c0266f155e4'
+    }),
+    Object.freeze({
+      path: 'onnx/model_qint8_arm64.onnx',
+      platform: 'darwin-arm64',
+      bytes: 29_634_681,
+      sha256: '7dd460445ddac13fcbbc4f0111a4287e99697fedacd5421d0cc07f08aab881b0'
+    }),
+    Object.freeze({
+      path: 'onnx/model_qint8_avx2.onnx',
+      platform: 'win32-x64',
+      bytes: 29_634_681,
+      sha256: '649a18583e21ad532e420a4ded4c9c4ff7ce882aa84af2bf2180ec4d4f679e38'
+    })
   ])
 })
 
@@ -53,22 +88,31 @@ export function isLocalRerankerWorkerRequest(value: unknown): value is LocalRera
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
   if (
-    typeof candidate.id !== 'string' || candidate.kind !== 'rerank' ||
-    typeof candidate.query !== 'string' || !candidate.query.trim() ||
+    typeof candidate.id !== 'string' ||
+    candidate.kind !== 'rerank' ||
+    typeof candidate.query !== 'string' ||
+    !candidate.query.trim() ||
     candidate.query.length > localRerankerModel.maximumQueryLength ||
-    typeof candidate.modelDirectory !== 'string' || !isAbsoluteWorkerPath(candidate.modelDirectory) ||
-    !Array.isArray(candidate.candidates) || candidate.candidates.length === 0 ||
+    typeof candidate.modelDirectory !== 'string' ||
+    !isAbsoluteWorkerPath(candidate.modelDirectory) ||
+    !Array.isArray(candidate.candidates) ||
+    candidate.candidates.length === 0 ||
     candidate.candidates.length > localRerankerModel.maximumCandidates
-  ) return false
+  )
+    return false
   const ids = new Set<string>()
   return candidate.candidates.every((item) => {
     if (!item || typeof item !== 'object') return false
     const entry = item as Record<string, unknown>
     if (
-      typeof entry.id !== 'string' || !entry.id || ids.has(entry.id) ||
-      typeof entry.text !== 'string' || !entry.text.trim() ||
+      typeof entry.id !== 'string' ||
+      !entry.id ||
+      ids.has(entry.id) ||
+      typeof entry.text !== 'string' ||
+      !entry.text.trim() ||
       entry.text.length > localRerankerModel.maximumPassageLength
-    ) return false
+    )
+      return false
     ids.add(entry.id)
     return true
   })
@@ -79,18 +123,27 @@ export function isLocalRerankerWorkerResponse(value: unknown): value is LocalRer
   const candidate = value as Record<string, unknown>
   if (typeof candidate.id !== 'string' || typeof candidate.ok !== 'boolean') return false
   if (!candidate.ok) {
-    return (candidate.kind === 'rerank' || candidate.kind === 'invalid') &&
-      typeof candidate.errorCode === 'string' && typeof candidate.message === 'string'
+    return (
+      (candidate.kind === 'rerank' || candidate.kind === 'invalid') &&
+      typeof candidate.errorCode === 'string' &&
+      typeof candidate.message === 'string'
+    )
   }
-  return candidate.kind === 'rerank' &&
+  return (
+    candidate.kind === 'rerank' &&
     candidate.modelId === localRerankerModel.id &&
     candidate.modelRevision === localRerankerModel.revision &&
     candidate.networkAccess === false &&
     Array.isArray(candidate.scores) &&
-    candidate.scores.every((item) => item && typeof item === 'object' &&
-      typeof (item as Record<string, unknown>).id === 'string' &&
-      typeof (item as Record<string, unknown>).score === 'number' &&
-      Number.isFinite((item as Record<string, unknown>).score))
+    candidate.scores.every(
+      (item) =>
+        item &&
+        typeof item === 'object' &&
+        typeof (item as Record<string, unknown>).id === 'string' &&
+        typeof (item as Record<string, unknown>).score === 'number' &&
+        Number.isFinite((item as Record<string, unknown>).score)
+    )
+  )
 }
 
 export interface LocalRerankerWorkerClientOptions {
@@ -130,19 +183,26 @@ export class LocalRerankerWorkerClient {
 
   constructor(private readonly options: LocalRerankerWorkerClientOptions) {
     if (
-      !isAbsoluteWorkerPath(options.workerPath) || !isAbsoluteWorkerPath(options.modelDirectory) ||
-      (options.windowsSandbox && (
-        !isAbsoluteWorkerPath(options.windowsSandbox.launcherPath) ||
-        options.windowsSandbox.grantReadRoots.length === 0 ||
-        options.windowsSandbox.grantReadRoots.some((root) => !isAbsoluteWorkerPath(root))
-      ))
-    ) throw new Error('Reranker worker, model, and sandbox paths must be absolute.')
+      !isAbsoluteWorkerPath(options.workerPath) ||
+      !isAbsoluteWorkerPath(options.modelDirectory) ||
+      (options.windowsSandbox &&
+        (!isAbsoluteWorkerPath(options.windowsSandbox.launcherPath) ||
+          options.windowsSandbox.grantReadRoots.length === 0 ||
+          options.windowsSandbox.grantReadRoots.some((root) => !isAbsoluteWorkerPath(root))))
+    )
+      throw new Error('Reranker worker, model, and sandbox paths must be absolute.')
     this.timeoutMs = options.timeoutMs ?? 60_000
   }
 
   rerank(query: string, candidates: LocalRerankerCandidate[]): Promise<ReadonlyMap<string, number>> {
-    const result = this.operationQueue.then(() => this.send(query, candidates), () => this.send(query, candidates))
-    this.operationQueue = result.then(() => undefined, () => undefined)
+    const result = this.operationQueue.then(
+      () => this.send(query, candidates),
+      () => this.send(query, candidates)
+    )
+    this.operationQueue = result.then(
+      () => undefined,
+      () => undefined
+    )
     return result
   }
 
@@ -199,16 +259,21 @@ export class LocalRerankerWorkerClient {
     if (process.platform === 'win32' && !windowsSandbox) {
       throw new Error('Windows reranking requires the AppContainer sandbox launcher.')
     }
-    const command = process.platform === 'darwin' ? '/usr/bin/sandbox-exec' : windowsSandbox?.launcherPath ?? process.execPath
-    const args = process.platform === 'darwin'
-      ? ['-p', '(version 1) (allow default) (deny network*)', process.execPath, this.options.workerPath]
-      : windowsSandbox
-        ? [
-            '--profile', 'jp.sesai.agentdesktop.localworkers',
-            ...windowsSandbox.grantReadRoots.flatMap((root) => ['--grant-read', root]),
-            '--', process.execPath, this.options.workerPath, '--stdio'
-          ]
-        : [this.options.workerPath]
+    const command = process.platform === 'darwin' ? '/usr/bin/sandbox-exec' : (windowsSandbox?.launcherPath ?? process.execPath)
+    const args =
+      process.platform === 'darwin'
+        ? ['-p', '(version 1) (allow default) (deny network*)', process.execPath, this.options.workerPath]
+        : windowsSandbox
+          ? [
+              '--profile',
+              'jp.sesai.agentdesktop.localworkers',
+              ...windowsSandbox.grantReadRoots.flatMap((root) => ['--grant-read', root]),
+              '--',
+              process.execPath,
+              this.options.workerPath,
+              '--stdio'
+            ]
+          : [this.options.workerPath]
     const child = spawn(command, args, {
       cwd: windowsSandbox?.grantReadRoots[0] ?? process.cwd(),
       env: sanitizedWorkerEnvironment(),
@@ -267,10 +332,7 @@ export class LocalRerankerWorkerClient {
       pending.reject(new Error(`${response.errorCode}: ${response.message}`))
       return
     }
-    if (
-      response.scores.length !== pending.expectedIds.size ||
-      response.scores.some((score) => !pending.expectedIds.has(score.id))
-    ) {
+    if (response.scores.length !== pending.expectedIds.size || response.scores.some((score) => !pending.expectedIds.has(score.id))) {
       pending.reject(new Error('The isolated reranker returned an unexpected candidate set.'))
       return
     }

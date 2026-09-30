@@ -25,7 +25,10 @@ interface EmbeddingManifest {
   files: Array<{ path: string; bytes: number; sha256: string }>
 }
 
-type FeatureExtractor = ((texts: string[], options: { pooling: 'mean'; normalize: true }) => Promise<{
+type FeatureExtractor = ((
+  texts: string[],
+  options: { pooling: 'mean'; normalize: true }
+) => Promise<{
   dims: number[]
   tolist(): number[][]
 }>) & { dispose(): Promise<void> }
@@ -50,13 +53,15 @@ async function verifiedManifest(modelDirectory: string): Promise<EmbeddingManife
     raw.modelId !== localEmbeddingModel.id ||
     raw.revision !== localEmbeddingModel.revision ||
     raw.embeddingDimension !== localEmbeddingModel.dimension ||
-    !Array.isArray(raw.files) || raw.files.length === 0
-  ) throw new Error('MODEL_MANIFEST_INVALID')
+    !Array.isArray(raw.files) ||
+    raw.files.length === 0
+  )
+    throw new Error('MODEL_MANIFEST_INVALID')
   for (const file of raw.files) {
     const path = resolve(directory, file.path)
     if (relative(directory, path).startsWith('..')) throw new Error('MODEL_PATH_INVALID')
     const metadata = await stat(path)
-    if (!metadata.isFile() || metadata.size !== file.bytes || await sha256(path) !== file.sha256) {
+    if (!metadata.isFile() || metadata.size !== file.bytes || (await sha256(path)) !== file.sha256) {
       throw new Error(`MODEL_INTEGRITY_FAILED:${file.path}`)
     }
   }
@@ -73,10 +78,10 @@ async function getExtractor(modelDirectory: string): Promise<{ extractor: Featur
     env.localModelPath = resolve(modelDirectory, '..', '..')
     env.useBrowserCache = false
     env.useFSCache = false
-    return await pipeline('feature-extraction', localEmbeddingModel.id, {
+    return (await pipeline('feature-extraction', localEmbeddingModel.id, {
       dtype: 'q8',
       local_files_only: true
-    }) as unknown as FeatureExtractor
+    })) as unknown as FeatureExtractor
   })()
   return { extractor: await extractorPromise, manifest }
 }
@@ -97,7 +102,8 @@ async function embed(request: LocalEmbeddingWorkerRequest): Promise<LocalEmbeddi
     output.dims[0] !== request.texts.length ||
     output.dims[1] !== localEmbeddingModel.dimension ||
     vectors.length !== request.texts.length
-  ) throw new Error('MODEL_OUTPUT_INVALID')
+  )
+    throw new Error('MODEL_OUTPUT_INVALID')
   return {
     id: request.id,
     kind: 'embed',
@@ -131,7 +137,7 @@ function queueRequest(rawRequest: unknown, respond: (response: LocalEmbeddingWor
         id: rawRequest.id,
         kind: 'embed',
         ok: false,
-        errorCode: error instanceof Error ? error.message.split(':')[0] ?? 'EMBEDDING_FAILED' : 'EMBEDDING_FAILED',
+        errorCode: error instanceof Error ? (error.message.split(':')[0] ?? 'EMBEDDING_FAILED') : 'EMBEDDING_FAILED',
         message: 'Local embedding inference failed closed.'
       } satisfies LocalEmbeddingWorkerFailure)
     }
@@ -143,13 +149,15 @@ if (process.argv.includes('--stdio')) {
   process.stdin.on('data', (chunk: Buffer) => {
     input = Buffer.concat([input, chunk])
     if (input.length > 512 * 1024) {
-      process.stdout.write(`${JSON.stringify({
-        id: 'invalid',
-        kind: 'invalid',
-        ok: false,
-        errorCode: 'INPUT_LIMIT',
-        message: 'Embedding request exceeded its local IPC size limit.'
-      } satisfies LocalEmbeddingWorkerFailure)}\n`)
+      process.stdout.write(
+        `${JSON.stringify({
+          id: 'invalid',
+          kind: 'invalid',
+          ok: false,
+          errorCode: 'INPUT_LIMIT',
+          message: 'Embedding request exceeded its local IPC size limit.'
+        } satisfies LocalEmbeddingWorkerFailure)}\n`
+      )
       process.exitCode = 64
       process.stdin.destroy()
       return

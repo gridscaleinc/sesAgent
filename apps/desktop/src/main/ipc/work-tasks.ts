@@ -2,12 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import { cancelWorkTask, materializeWorkTask, retryWorkTask } from '@application'
 import { type SignedWorkTaskPreview, type WorkTask } from '@domain'
-import {
-  createWorkTaskInputSchema,
-  ipcChannels,
-  setWorkTaskLifecycleInputSchema,
-  workTaskInputSchema
-} from '@shared'
+import { createWorkTaskInputSchema, ipcChannels, setWorkTaskLifecycleInputSchema, workTaskInputSchema } from '@shared'
 import { createVerifiedPreview, previewHash, synchronizeImportTask } from '../work-task-helpers'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
@@ -47,8 +42,8 @@ export function registerWorkTaskHandlers(context: MainIpcContext) {
       }
       const task = cancelWorkTask(current)
       const jobs = repository.listProcessingJobs(input.taskId)
-      const cancellableSafeLocalOperation = jobs.some((job) =>
-        job.replayPolicy === 'safe-local' && ['queued', 'running', 'retry_wait'].includes(job.status)
+      const cancellableSafeLocalOperation = jobs.some(
+        (job) => job.replayPolicy === 'safe-local' && ['queued', 'running', 'retry_wait'].includes(job.status)
       )
       if (hasActiveTaskOperation(input.taskId) && !cancellableSafeLocalOperation) {
         throw new Error('ファイル書き出し等の処理中はキャンセルできません。完了後にもう一度操作してください。')

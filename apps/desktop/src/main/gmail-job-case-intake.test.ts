@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import type { JobCaseReviewSnapshot } from '@shared'
-import {
-  createJobCaseDraftsForPendingGmailMessages,
-  type GmailJobCaseIntakeRepository
-} from './gmail-job-case-intake'
+import { createJobCaseDraftsForPendingGmailMessages, type GmailJobCaseIntakeRepository } from './gmail-job-case-intake'
 
 const operator = { operatorId: 'op-1', displayName: 'HR' }
 
@@ -109,10 +106,7 @@ describe('createJobCaseDraftsForPendingGmailMessages', () => {
   })
 
   it('leaves a message pending for the next sync when its draft cannot be created', () => {
-    const { repository, mocks } = intakeRepository([
-      gmailMessage(),
-      gmailMessage({ gmailMessageId: 'msg-0002' })
-    ])
+    const { repository, mocks } = intakeRepository([gmailMessage(), gmailMessage({ gmailMessageId: 'msg-0002' })])
     mocks.ensureGmailJobCaseSource.mockImplementationOnce(() => {
       throw new Error('database is locked')
     })

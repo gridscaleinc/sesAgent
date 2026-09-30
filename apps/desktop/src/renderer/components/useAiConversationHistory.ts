@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type {
-  AiConversationContext,
-  AiConversationMessage,
-  AiConversationSalesAgentState,
-  AiConversationSnapshot
-} from '@shared'
+import type { AiConversationContext, AiConversationMessage, AiConversationSalesAgentState, AiConversationSnapshot } from '@shared'
+import { localizedIpcError, useLocaleText } from '../i18n'
 
 interface PersistMessagesOptions {
   conversationId?: string
@@ -24,10 +20,19 @@ function sortConversations(conversations: AiConversationSnapshot[]): AiConversat
 }
 
 function scopeKey(context: AiConversationContext) {
-  return JSON.stringify([context.assistant, context.candidateDocumentId, context.interviewId, context.interviewKind, context.roundNumber, context.businessObject?.kind ?? null, context.businessObject?.id ?? null])
+  return JSON.stringify([
+    context.assistant,
+    context.candidateDocumentId,
+    context.interviewId,
+    context.interviewKind,
+    context.roundNumber,
+    context.businessObject?.kind ?? null,
+    context.businessObject?.id ?? null
+  ])
 }
 
 export function useAiConversationHistory(context: AiConversationContext, reloadToken = 0) {
+  const { locale, t } = useLocaleText()
   const contextKey = scopeKey(context)
   const scopeRef = useRef(contextKey)
   scopeRef.current = contextKey
@@ -57,45 +62,53 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
     const messageSequenceAtLoad = latestMessageSequenceRef.current
     setLoading(true)
     setError(null)
-    void window.sesAgent.listAiConversations(stableContext).then((items) => {
-      if (!active) return
-      const ordered = sortConversations(items)
-      const latest = ordered.find((item) => item.id === activeConversationRef.current?.id) ?? ordered[0] ?? null
-      if (latestMessageSequenceRef.current === messageSequenceAtLoad) {
-        setConversations(ordered)
-        latestMessageSequenceRef.current += 1
-        activeConversationRef.current = latest
-        setActiveConversationId(latest?.id ?? null)
-        setMessages(latest?.messages ?? [])
-      } else {
-        setConversations((current) => sortConversations([
-          ...current,
-          ...ordered.filter((item) => !current.some((existing) => existing.id === item.id))
-        ]))
-      }
-    }).catch((cause: unknown) => {
-      if (!active) return
-      setError(cause instanceof Error ? cause.message : String(cause))
-      if (latestMessageSequenceRef.current === messageSequenceAtLoad) {
-        setConversations([])
-        activeConversationRef.current = null
-        setActiveConversationId(null)
-        setMessages([])
-      }
-    }).finally(() => {
-      if (active) setLoading(false)
-    })
-    return () => { active = false }
+    void window.sesAgent
+      .listAiConversations(stableContext)
+      .then((items) => {
+        if (!active) return
+        const ordered = sortConversations(items)
+        const latest = ordered.find((item) => item.id === activeConversationRef.current?.id) ?? ordered[0] ?? null
+        if (latestMessageSequenceRef.current === messageSequenceAtLoad) {
+          setConversations(ordered)
+          latestMessageSequenceRef.current += 1
+          activeConversationRef.current = latest
+          setActiveConversationId(latest?.id ?? null)
+          setMessages(latest?.messages ?? [])
+        } else {
+          setConversations((current) =>
+            sortConversations([...current, ...ordered.filter((item) => !current.some((existing) => existing.id === item.id))])
+          )
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!active) return
+        setError(localizedIpcError(locale, cause, t('无法读取会话历史。', '会話履歴を読み込めませんでした。')))
+        if (latestMessageSequenceRef.current === messageSequenceAtLoad) {
+          setConversations([])
+          activeConversationRef.current = null
+          setActiveConversationId(null)
+          setMessages([])
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
   }, [stableContext, reloadToken])
 
-  const selectConversation = useCallback((conversationId: string) => {
-    const selected = conversations.find((item) => item.id === conversationId) ?? null
-    if (!selected) return
-    latestMessageSequenceRef.current += 1
-    activeConversationRef.current = selected
-    setActiveConversationId(selected.id)
-    setMessages(selected.messages)
-  }, [conversations])
+  const selectConversation = useCallback(
+    (conversationId: string) => {
+      const selected = conversations.find((item) => item.id === conversationId) ?? null
+      if (!selected) return
+      latestMessageSequenceRef.current += 1
+      activeConversationRef.current = selected
+      setActiveConversationId(selected.id)
+      setMessages(selected.messages)
+    },
+    [conversations]
+  )
 
   const newConversation = useCallback(() => {
     latestMessageSequenceRef.current += 1
@@ -105,82 +118,91 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
     setError(null)
   }, [])
 
-  const persistMessages = useCallback(async (
-    nextMessages: AiConversationMessage[],
-    baseConversation?: AiConversationSnapshot | null,
-    options: PersistMessagesOptions = {}
-  ): Promise<AiConversationSnapshot> => {
-    const boundedMessages = nextMessages.slice(-200)
-    const messageSequence = latestMessageSequenceRef.current + 1
-    latestMessageSequenceRef.current = messageSequence
-    setMessages(boundedMessages)
-    pendingSaveCountRef.current += 1
-    setSaving(true)
-    setError(null)
-    const baseAtRequest = baseConversation === undefined ? activeConversationRef.current : baseConversation
-    const operation = saveQueueRef.current.then(async () => {
-      const base = baseConversation === undefined && scopeRef.current === contextKey ? activeConversationRef.current : baseAtRequest
+  const persistMessages = useCallback(
+    async (
+      nextMessages: AiConversationMessage[],
+      baseConversation?: AiConversationSnapshot | null,
+      options: PersistMessagesOptions = {}
+    ): Promise<AiConversationSnapshot> => {
+      const boundedMessages = nextMessages.slice(-200)
+      const messageSequence = latestMessageSequenceRef.current + 1
+      latestMessageSequenceRef.current = messageSequence
+      setMessages(boundedMessages)
+      pendingSaveCountRef.current += 1
+      setSaving(true)
+      setError(null)
+      const baseAtRequest = baseConversation === undefined ? activeConversationRef.current : baseConversation
+      const operation = saveQueueRef.current.then(async () => {
+        const base = baseConversation === undefined && scopeRef.current === contextKey ? activeConversationRef.current : baseAtRequest
+        try {
+          const saved = await window.sesAgent.saveAiConversation({
+            conversationId: options.conversationId ?? base?.id ?? createConversationId(),
+            context: stableContext,
+            messages: boundedMessages,
+            ...(options.salesAgentState ? { salesAgentState: options.salesAgentState } : {}),
+            expectedRevision: base?.revision ?? null
+          })
+          if (scopeRef.current !== contextKey) return saved
+          activeConversationRef.current = saved
+          setActiveConversationId(saved.id)
+          if (messageSequence === latestMessageSequenceRef.current) setMessages(saved.messages)
+          setConversations((current) => sortConversations([saved, ...current.filter((item) => item.id !== saved.id)]))
+          return saved
+        } catch (cause) {
+          if (scopeRef.current === contextKey)
+            setError(localizedIpcError(locale, cause, t('无法保存会话历史。', '会話履歴を保存できませんでした。')))
+          throw cause
+        } finally {
+          pendingSaveCountRef.current -= 1
+          setSaving(pendingSaveCountRef.current > 0)
+        }
+      })
+      saveQueueRef.current = operation.then(
+        () => undefined,
+        () => undefined
+      )
+      return operation
+    },
+    [stableContext]
+  )
+
+  const persistSalesAgentState = useCallback(
+    async (salesAgentState: AiConversationSalesAgentState): Promise<AiConversationSnapshot | null> => {
+      const base = activeConversationRef.current
+      if (!base || base.context.assistant !== 'sales-agent' || base.messages.length === 0) return null
+      return persistMessages(base.messages, undefined, {
+        conversationId: base.id,
+        salesAgentState
+      })
+    },
+    [persistMessages]
+  )
+
+  const deleteConversations = useCallback(
+    async (conversationIds: string[]) => {
+      if (conversationIds.length === 0) return
+      setError(null)
       try {
-        const saved = await window.sesAgent.saveAiConversation({
-          conversationId: options.conversationId ?? base?.id ?? createConversationId(),
-          context: stableContext,
-          messages: boundedMessages,
-          ...(options.salesAgentState ? { salesAgentState: options.salesAgentState } : {}),
-          expectedRevision: base?.revision ?? null
-        })
-        if (scopeRef.current !== contextKey) return saved
-        activeConversationRef.current = saved
-        setActiveConversationId(saved.id)
-        if (messageSequence === latestMessageSequenceRef.current) setMessages(saved.messages)
-        setConversations((current) => sortConversations([
-          saved,
-          ...current.filter((item) => item.id !== saved.id)
-        ]))
-        return saved
+        const result = await window.sesAgent.deleteAiConversations({ conversationIds })
+        if (scopeRef.current !== contextKey) return
+        const deleted = new Set(result.deletedConversationIds)
+        const remaining = conversations.filter((item) => !deleted.has(item.id))
+        if (activeConversationRef.current && deleted.has(activeConversationRef.current.id)) {
+          const next = remaining[0] ?? null
+          latestMessageSequenceRef.current += 1
+          activeConversationRef.current = next
+          setActiveConversationId(next?.id ?? null)
+          setMessages(next?.messages ?? [])
+        }
+        setConversations(remaining)
       } catch (cause) {
-        if (scopeRef.current === contextKey) setError(cause instanceof Error ? cause.message : String(cause))
+        if (scopeRef.current === contextKey)
+          setError(localizedIpcError(locale, cause, t('无法删除会话历史。', '会話履歴を削除できませんでした。')))
         throw cause
-      } finally {
-        pendingSaveCountRef.current -= 1
-        setSaving(pendingSaveCountRef.current > 0)
       }
-    })
-    saveQueueRef.current = operation.then(() => undefined, () => undefined)
-    return operation
-  }, [stableContext])
-
-  const persistSalesAgentState = useCallback(async (
-    salesAgentState: AiConversationSalesAgentState
-  ): Promise<AiConversationSnapshot | null> => {
-    const base = activeConversationRef.current
-    if (!base || base.context.assistant !== 'sales-agent' || base.messages.length === 0) return null
-    return persistMessages(base.messages, undefined, {
-      conversationId: base.id,
-      salesAgentState
-    })
-  }, [persistMessages])
-
-  const deleteConversations = useCallback(async (conversationIds: string[]) => {
-    if (conversationIds.length === 0) return
-    setError(null)
-    try {
-      const result = await window.sesAgent.deleteAiConversations({ conversationIds })
-      if (scopeRef.current !== contextKey) return
-      const deleted = new Set(result.deletedConversationIds)
-      const remaining = conversations.filter((item) => !deleted.has(item.id))
-      if (activeConversationRef.current && deleted.has(activeConversationRef.current.id)) {
-        const next = remaining[0] ?? null
-        latestMessageSequenceRef.current += 1
-        activeConversationRef.current = next
-        setActiveConversationId(next?.id ?? null)
-        setMessages(next?.messages ?? [])
-      }
-      setConversations(remaining)
-    } catch (cause) {
-      if (scopeRef.current === contextKey) setError(cause instanceof Error ? cause.message : String(cause))
-      throw cause
-    }
-  }, [conversations, contextKey])
+    },
+    [conversations, contextKey]
+  )
 
   const acceptConversation = useCallback((saved: AiConversationSnapshot) => {
     if (scopeKey(saved.context) !== scopeRef.current) return
@@ -190,10 +212,7 @@ export function useAiConversationHistory(context: AiConversationContext, reloadT
     activeConversationRef.current = saved
     setActiveConversationId(saved.id)
     setMessages(saved.messages)
-    setConversations((current) => sortConversations([
-      saved,
-      ...current.filter((item) => item.id !== saved.id)
-    ]))
+    setConversations((current) => sortConversations([saved, ...current.filter((item) => item.id !== saved.id)]))
   }, [])
 
   return {

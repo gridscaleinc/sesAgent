@@ -1,11 +1,12 @@
 import { matchFollowUpLabels } from '@shared'
 import { CaseResumeAssessmentPanel } from './components/CaseResumeAssessmentPanel'
-import { pendingResumeTask, useCaseResumeAssessments } from './components/use-case-resume-assessments'
+import { useCaseResumeAssessments } from './components/use-case-resume-assessments'
 import { MatchingOpportunities } from './components/MatchingOpportunities'
+import { usePersonCaseMatchCounts } from './person-case-match-cache'
 import { BusinessProgressContext, progressPairKey, useBusinessProgressData } from './business-progress-data'
 import { BusinessProgressOverview } from './components/BusinessProgressOverview'
 import { CaseIntroductionComposer, type CaseIntroductionTarget } from './components/CaseIntroductionComposer'
-import type { FollowUpTarget } from './components/HrFollowUps'
+import type { FollowUpTarget } from './components/follow-up-target'
 import { HrProgressWorkbench } from './components/HrProgressWorkbench'
 import { ResumeImportHistory } from './components/ResumeImportHistory'
 import { HrObjectList } from './components/HrObjectList'
@@ -14,46 +15,42 @@ import { HrMatchingWorkspace, type HrMatchSource, type IntroductionTarget } from
 import { IntroductionComposer } from './components/IntroductionComposer'
 import { BusinessIntakeWorkspace } from './components/BusinessIntakeWorkspace'
 import { CaseTextImport } from './components/CaseTextImport'
-import { CaseMatchingWorkspace } from './components/CaseMatchingWorkspace'
-import { PersonnelWorkspace, type PersonnelEditorTarget } from './components/PersonnelWorkspace'
+import { PersonnelWorkspace } from './components/PersonnelWorkspace'
+import { CandidateProfilePanel } from './components/CandidateProfilePanel'
+import './components/business-workbench.css'
 import type { BusinessFeedEntry, TypedAiConversationReference } from '@shared'
-import { BusinessWorkbench } from './components/BusinessWorkbench'
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { SignedWorkTaskPreview, WorkTask } from '@domain'
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { WorkTask } from '@domain'
 import type {
   BootstrapPayload,
   AiConversationSnapshot,
   AgentSystemAccessBlock,
   CandidateMatchResult,
   CandidateMatchRunSummary,
-  CreateWorkTaskInput,
+  CandidateReviewSnapshot,
   JobCaseReviewSnapshot,
   NewJobCaseDigest,
   ProposalMutationResult,
   ProposalWorkspaceSnapshot,
   SubmitCandidateMatchFeedbackInput,
   SubmitCandidateMatchFeedbackResult,
-  StartupStatus,
-  WorkTaskInput
+  StartupStatus
 } from '@shared'
 import { GovernancePanel } from './components/GovernancePanel'
-import { CandidateLibrary } from './components/CandidateLibrary'
 import { CandidatePipeline, type PipelineView } from './components/CandidatePipeline'
-import { CandidateDirectoryWorkspace, ClientInterviewWorkspace, RecruitingInterviewWorkspace } from './components/CandidateWorkspaces'
+import { RecruitingInterviewWorkspace } from './components/CandidateWorkspaces'
 import { ResumeImportProgressDrawer, progressFiles, type ResumeImportProgress } from './components/ResumeImportProgressDrawer'
 import { InterviewScheduleCenter, type InterviewScheduleRoute } from './components/InterviewScheduleCenter'
-import { CommandPalette, type BusinessCommand } from './components/CommandPalette'
+import { CommandPalette, type BusinessCommand, type CommandText } from './components/CommandPalette'
 import { JobCaseInbox, type GmailImportNotice } from './components/JobCaseInbox'
 import { Icon } from './components/Icon'
 import { ApplicationSettingsDialog, type ApplicationSettingsSection } from './components/ApplicationSettingsDialog'
 import { AiCommerceMemberDialog } from './components/AiCommerceMemberDialog'
 import { LocalOperatorProfileDialog } from './components/LocalOperatorProfileDialog'
 import { buildReviewQueue, ReviewCenter } from './components/ReviewCenter'
-import { Sidebar, type SidebarView } from './components/Sidebar'
-import { TaskComposer } from './components/TaskComposer'
-import { TaskList } from './components/TaskList'
+import type { AppView } from './app-view'
+import { TaskList, workTaskTypeLabel } from './components/TaskList'
 import { TaskWorkspace } from './components/TaskWorkspace'
-import { MatchingHomeDashboard } from './components/MatchingHomeDashboard'
 import { AgentWorkspace } from './components/AgentWorkspace'
 import { pushContextAccess } from './context-trail'
 import { AgentInterviewSchedulePanel } from './components/AgentInterviewSchedulePanel'
@@ -62,7 +59,8 @@ import type { BroadcastPanelActions } from './components/BroadcastWorkspaceView'
 import type { BroadcastSettingsActions } from './components/BroadcastSettingsSection'
 import { AgentSystemRail } from './components/AgentSystemRail'
 import { StartupRecoveryScreen } from './components/StartupRecoveryScreen'
-import { localizedWorkDate, UiLocaleProvider, localizedTaskTitle, useLegacyRendererLocalization } from './i18n'
+import { aiSignInRequestEvent, localeText, localizedIpcError, UiLocaleProvider, localizedTaskTitle, localizedMainText } from './i18n'
+import { joinCreatedCases, revealCreatedCases } from './case-adoption'
 
 /** What the right workspace shows when nothing else was opened: today's arrivals. */
 const defaultAgentContextTrail = (): AgentSystemAccessBlock[] => []
@@ -70,18 +68,19 @@ const defaultAgentContextTrail = (): AgentSystemAccessBlock[] => []
 export function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null)
   const businessProgress = useBusinessProgressData(bootstrap)
-  const caseResumes = useCaseResumeAssessments()
+  const caseResumes = useCaseResumeAssessments(bootstrap?.preferences.locale ?? 'ja-JP')
+  const personCaseMatches = usePersonCaseMatchCounts()
   const [assessmentReviewId, setAssessmentReviewId] = useState<string | null>(null)
   const [assessmentBack, setAssessmentBack] = useState(false)
   const [assessmentFocus, setAssessmentFocus] = useState<string | null>(null)
   const [sideProgressTarget, setSideProgressTarget] = useState<FollowUpTarget | null>(null)
-  const [progressFocus, setProgressFocus] = useState<{kind: HrBusinessKind; id: string; request: number} | null>(null)
+  const [progressFocus, setProgressFocus] = useState<{ kind: HrBusinessKind; id: string; request: number } | null>(null)
   const [startupRecovery, setStartupRecovery] = useState<Extract<StartupStatus, { mode: 'recovery-required' }> | null>(null)
   const [selectedTask, setSelectedTask] = useState<WorkTask | null>(null)
-  const [activeView, setActiveView] = useState<SidebarView>('home')
+  const [activeView, setActiveView] = useState<AppView>('agent')
   const [importHistoryOpen, setImportHistoryOpen] = useState(false)
   const [candidateWorkspaceDetail, setCandidateWorkspaceDetail] = useState<{
-    scope: 'candidate' | 'recruiting' | 'client' | 'schedule' | 'entry'
+    scope: 'recruiting' | 'schedule'
     documentId: string
     view: PipelineView
     interviewId?: string | null
@@ -96,53 +95,74 @@ export function App() {
   const [aiCommerceOpen, setAiCommerceOpen] = useState(false)
   const [aiCommerceCallbackError, setAiCommerceCallbackError] = useState<string | null>(null)
   const [operatorProfileOpen, setOperatorProfileOpen] = useState(false)
-  const [composerFocusRequestId, setComposerFocusRequestId] = useState<number | null>(null)
   const [resumeImportProgress, setResumeImportProgress] = useState<ResumeImportProgress | null>(null)
   const [manualCaseRequestId, setManualCaseRequestId] = useState<number | null>(null)
-  const [matchingJobCaseId, setMatchingJobCaseId] = useState<string | null>(null)
   const [agentHistoryReloadToken, setAgentHistoryReloadToken] = useState(0)
   // The right-hand workspace keeps a trail of the screens it opened, so a
   // sub-page can step back to where it came from instead of only closing.
   const [agentHomeRequest, setAgentHomeRequest] = useState(0)
-  const [hrKind, setHrKind] = useState<HrBusinessKind>(() => { try { return localStorage.getItem('ses-hr-kind-v2') === 'person' ? 'person' : 'case' } catch { return 'case' } })
+  const [hrKind, setHrKind] = useState<HrBusinessKind>(() => {
+    try {
+      return localStorage.getItem('ses-hr-kind-v2') === 'person' ? 'person' : 'case'
+    } catch {
+      return 'case'
+    }
+  })
   const [hrFollowOpen, setHrFollowOpen] = useState(false)
   const [hrFollowTarget, setHrFollowTarget] = useState<FollowUpTarget | null>(null)
+  // Pairs a batch 「开始跟进」 created; the follow-up view opens the first and this notice lists every one.
+  const [hrBatchStarted, setHrBatchStarted] = useState<FollowUpTarget[] | null>(null)
   const [hrSource, setHrSource] = useState<HrMatchSource | null>(null)
-  const [hrBusy, setHrBusy] = useState(false)
+  // People whose 「找案件」 is running; only their cards and actions are locked, never the whole list.
+  const [hrBusyIds, setHrBusyIds] = useState<string[]>([])
   useEffect(() => {
-    const refresh = () => { void window.sesAgent.getBootstrap().then(setBootstrap) }
+    const refresh = () => {
+      void window.sesAgent.getBootstrap().then(setBootstrap)
+    }
     window.addEventListener('ses-business-data-changed', refresh)
     return () => window.removeEventListener('ses-business-data-changed', refresh)
+  }, [])
+  // Any AI surface can ask for the AI member sign-in (e.g. 「去登录」 after "AI 未登录").
+  useEffect(() => {
+    const open = () => setAiCommerceOpen(true)
+    window.addEventListener(aiSignInRequestEvent, open)
+    return () => window.removeEventListener(aiSignInRequestEvent, open)
   }, [])
   const [hrChatRequest, setHrChatRequest] = useState(0)
   const [caseIntroductionTarget, setCaseIntroductionTarget] = useState<CaseIntroductionTarget | null>(null)
   const caseIntroductionPrepared = useCallback((review: JobCaseReviewSnapshot) => {
-    setBootstrap((current) => current ? { ...current, jobCaseReviews: current.jobCaseReviews.map((item) => item.reviewId === review.reviewId ? review : item) } : current)
-    setCaseIntroductionTarget((current) => current?.reviewId === review.reviewId && current.reviewRevision === review.reviewRevision
-      ? { reviewId: review.reviewId, reviewRevision: review.reviewRevision, jobCaseVersion: review.jobCase!.version } : current)
+    setBootstrap((current) =>
+      current
+        ? { ...current, jobCaseReviews: current.jobCaseReviews.map((item) => (item.reviewId === review.reviewId ? review : item)) }
+        : current
+    )
+    setCaseIntroductionTarget((current) =>
+      current?.reviewId === review.reviewId && current.reviewRevision === review.reviewRevision
+        ? { reviewId: review.reviewId, reviewRevision: review.reviewRevision, jobCaseVersion: review.jobCase!.version }
+        : current
+    )
   }, [])
   const [introductionTarget, setIntroductionTarget] = useState<IntroductionTarget | null>(null)
-  const [agentSideMode, setAgentSideMode] = useState<'intake' | 'personnel' | 'assessment' | null>(null)
+  const [agentSideMode, setAgentSideMode] = useState<'intake' | 'personnel' | 'profile' | 'assessment' | null>(null)
+  const [agentProfileId, setAgentProfileId] = useState<string | null>(null)
   const [agentFeedSelection, setAgentFeedSelection] = useState<string | null>(() => readHrPosition(hrKind).selected)
-  const [personnelEditorRequest, setPersonnelEditorRequest] = useState<PersonnelEditorTarget & { id: number }>()
-  const [personnelProfileRequest, setPersonnelProfileRequest] = useState<{ id: number; documentId: string }>()
-  const [personnelMessageEdits, setPersonnelMessageEdits] = useState<Record<string, string>>({})
-  const personnelMessageDrafts = { values: personnelMessageEdits, onChange: (key: string, text: string) => setPersonnelMessageEdits((current) => ({ ...current, [key]: text })) }
   const [agentPersonId, setAgentPersonId] = useState<string>()
   const [agentBatchSeed, setAgentBatchSeed] = useState<{ id: number; text: string }>()
-  const [agentPersonFocusRequest, setAgentPersonFocusRequest] = useState<{ id: number; documentId: string; section: 'view' | 'match' | 'promote' }>()
-  const [caseMatchingId, setCaseMatchingId] = useState<string | null>(null)
-  const [caseMatchRequest, setCaseMatchRequest] = useState<{ id: number; jobCaseId: string }>()
-  const [caseMatchId, setCaseMatchId] = useState<string>()
-  const [personnelMatchingId, setPersonnelMatchingId] = useState<string | null>(null)
+  const [agentPersonFocusRequest, setAgentPersonFocusRequest] = useState<{
+    id: number
+    documentId: string
+    section: 'view' | 'match' | 'promote'
+  }>()
   const feedFocusSequence = useRef(0)
   const [caseFocusRequest, setCaseFocusRequest] = useState(0)
-  const [agentPersonMatchRequest, setAgentPersonMatchRequest] = useState<{ id: number; documentId: string }>()
-  const [agentFocusRequest, setAgentFocusRequest] = useState<{ id: number; caseReference: TypedAiConversationReference | null; candidateDocumentId?: string }>()
+  const [agentFocusRequest, setAgentFocusRequest] = useState<{
+    id: number
+    caseReference: TypedAiConversationReference | null
+    candidateDocumentId?: string
+  }>()
   const [agentContextTrail, setAgentContextTrail] = useState<AgentSystemAccessBlock[]>(defaultAgentContextTrail)
   const agentContextAccess = agentContextTrail[agentContextTrail.length - 1] ?? null
   const [agentComposerDraft, setAgentComposerDraft] = useState('')
-  const [requestedJobCaseReviewId, setRequestedJobCaseReviewId] = useState<string | null>(null)
   const [newCaseDigest, setNewCaseDigest] = useState<NewJobCaseDigest | null>(null)
   // Short-lived, non-blocking notices; they disappear on their own.
   const [toasts, setToasts] = useState<Array<{ id: number; message: string }>>([])
@@ -166,38 +186,43 @@ export function App() {
   const resumeImportRequest = useRef(0)
   const initialRouteApplied = useRef(false)
   const commandPaletteOpener = useRef<HTMLElement | null>(null)
+  /** Mirrors commandPaletteOpen synchronously so ⌘K right after a command closes the palette never reads a stale value. */
+  const commandPaletteOpenRef = useRef(false)
+  // ⌘1–4 (Ctrl on Windows) open the rail items 案件/人员/跟进/Agent; refreshed each render so they act on current state.
+  const railShortcuts = useRef<Array<() => void>>([])
   const candidateMatchStateRef = useRef(candidateMatch)
   candidateMatchStateRef.current = candidateMatch
-  const hasActiveProcessingJobs = bootstrap?.processingJobs.some((job) =>
-    ['queued', 'running', 'retry_wait'].includes(job.status)
-  ) ?? false
-  const activeProcessingJobCount = bootstrap?.processingJobs.filter((job) =>
-    ['queued', 'running', 'retry_wait'].includes(job.status)
-  ).length ?? 0
-  const activeCaseCount = bootstrap?.jobCaseReviews.filter((review) =>
-    review.lifecycle === 'active' && review.status === 'completed'
-  ).length ?? 0
-  const eligibleCandidateCount = bootstrap?.candidateReviews.filter((review) =>
-    review.talentPoolStatus === 'eligible'
-  ).length ?? 0
+  const hasActiveProcessingJobs = bootstrap?.processingJobs.some((job) => ['queued', 'running', 'retry_wait'].includes(job.status)) ?? false
+  const activeProcessingJobCount =
+    bootstrap?.processingJobs.filter((job) => ['queued', 'running', 'retry_wait'].includes(job.status)).length ?? 0
+  const activeCaseCount =
+    bootstrap?.jobCaseReviews.filter((review) => review.lifecycle === 'active' && review.status === 'completed').length ?? 0
+  const eligibleCandidateCount = bootstrap?.candidateReviews.filter((review) => review.talentPoolStatus === 'eligible').length ?? 0
   const selectedTaskId = selectedTask?.id ?? null
   const commandPaletteAvailable = bootstrap !== null && startupRecovery === null && loadError === null
   const normalSessionReady = bootstrap !== null && startupRecovery === null
   const locale = bootstrap?.preferences.locale ?? 'ja-JP'
-  useLegacyRendererLocalization(locale)
-  const reviewQueue = useMemo(() => bootstrap ? buildReviewQueue(
-    bootstrap.tasks,
-    bootstrap.candidateReviews,
-    bootstrap.jobCaseReviews,
-    bootstrap.actionApprovals
-  ) : [], [bootstrap?.actionApprovals, bootstrap?.candidateReviews, bootstrap?.jobCaseReviews, bootstrap?.tasks])
+  const t = useMemo(() => localeText(locale === 'zh-CN'), [locale])
+  useLayoutEffect(() => {
+    document.documentElement.lang = locale
+    document.documentElement.dataset.locale = locale
+  }, [locale])
+  const reviewQueue = useMemo(
+    () =>
+      bootstrap
+        ? buildReviewQueue(bootstrap.tasks, bootstrap.candidateReviews, bootstrap.jobCaseReviews, bootstrap.actionApprovals, t)
+        : [],
+    [bootstrap?.actionApprovals, bootstrap?.candidateReviews, bootstrap?.jobCaseReviews, bootstrap?.tasks, t]
+  )
 
   const showCommandPalette = () => {
     commandPaletteOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    commandPaletteOpenRef.current = true
     setCommandPaletteOpen(true)
   }
 
   const closeCommandPalette = (restoreFocus: boolean) => {
+    commandPaletteOpenRef.current = false
     setCommandPaletteOpen(false)
     const opener = commandPaletteOpener.current
     commandPaletteOpener.current = null
@@ -207,7 +232,8 @@ export function App() {
   useEffect(() => {
     if (startupRecovery) return undefined
     let active = true
-    void window.sesAgent.getStartupStatus()
+    void window.sesAgent
+      .getStartupStatus()
       .then(async (status) => {
         if (!active) return
         if (status.mode === 'recovery-required') {
@@ -220,13 +246,13 @@ export function App() {
           // normal launch from painting the legacy dashboard before AgentWorkspace.
           if (!initialRouteApplied.current) {
             initialRouteApplied.current = true
-            setActiveView(payload.featureFlags?.conversationalMatchingEnabled === true ? 'agent' : 'home')
+            setActiveView('agent')
           }
           setBootstrap(payload)
         }
       })
       .catch((cause: unknown) => {
-        if (active) setLoadError(cause instanceof Error ? cause.message : 'アプリを初期化できませんでした。')
+        if (active) setLoadError(localizedIpcError(locale, cause, t('无法初始化应用。', 'アプリを初期化できませんでした。')))
       })
     return () => {
       active = false
@@ -236,9 +262,19 @@ export function App() {
   useEffect(() => {
     if (!commandPaletteAvailable) return undefined
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase('en-US') !== 'k') return
+      if (!(event.metaKey || event.ctrlKey)) return
+      const railIndex = ['1', '2', '3', '4'].indexOf(event.key)
+      if (railIndex >= 0 && !event.altKey && !event.shiftKey) {
+        const open = railShortcuts.current[railIndex]
+        if (!open) return
+        event.preventDefault()
+        if (commandPaletteOpenRef.current) closeCommandPalette(false)
+        open()
+        return
+      }
+      if (event.key.toLocaleLowerCase('en-US') !== 'k') return
       event.preventDefault()
-      if (commandPaletteOpen) {
+      if (commandPaletteOpenRef.current) {
         closeCommandPalette(true)
       } else {
         showCommandPalette()
@@ -246,17 +282,24 @@ export function App() {
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [commandPaletteAvailable, commandPaletteOpen])
+  }, [commandPaletteAvailable])
 
-  useEffect(() => window.sesAgent.onAiCommerceStateChanged((update) => {
-    setBootstrap((current) => current ? { ...current, aiCommerce: update.state } : current)
-    setAiCommerceCallbackError(update.error)
-  }), [])
+  useEffect(
+    () =>
+      window.sesAgent.onAiCommerceStateChanged((update) => {
+        setBootstrap((current) => (current ? { ...current, aiCommerce: update.state } : current))
+        setAiCommerceCallbackError(update.error)
+      }),
+    []
+  )
 
   const refreshNewCaseDigest = () => {
-    void window.sesAgent.getJobCaseNewDigest()
+    void window.sesAgent
+      .getJobCaseNewDigest()
       .then(setNewCaseDigest)
-      .catch(() => { /* The bootstrap error path remains authoritative. */ })
+      .catch(() => {
+        /* The bootstrap error path remains authoritative. */
+      })
   }
 
   const showToast = (message: string) => {
@@ -274,9 +317,12 @@ export function App() {
   }, [agentContextAccess])
 
   const markJobCaseSeen = (reviewId: string) => {
-    void window.sesAgent.markJobCaseSeen(reviewId)
+    void window.sesAgent
+      .markJobCaseSeen(reviewId)
       .then(() => refreshNewCaseDigest())
-      .catch(() => { /* Unread state is a convenience; a failure must not block the screen. */ })
+      .catch(() => {
+        /* Unread state is a convenience; a failure must not block the screen. */
+      })
   }
 
   useEffect(() => {
@@ -284,33 +330,49 @@ export function App() {
     refreshNewCaseDigest()
   }, [normalSessionReady, bootstrap?.jobCaseReviews])
 
-  useEffect(() => window.sesAgent.onOpenNewCaseBoard(() => {
-    setAgentSideMode(null)
-    setAgentHomeRequest((current) => current + 1)
-    setActiveView('agent')
-    setAgentContextTrail(defaultAgentContextTrail())
-  }), [])
+  useEffect(
+    () =>
+      window.sesAgent.onOpenNewCaseBoard(() => {
+        setAgentSideMode(null)
+        setAgentHomeRequest((current) => current + 1)
+        setActiveView('agent')
+        setAgentContextTrail(defaultAgentContextTrail())
+      }),
+    []
+  )
 
-  useEffect(() => window.sesAgent.onGmailSyncCompleted((completion) => {
-    // A scheduled sync in Main imported mail: pick up the new cases and show
-    // the same notice as the manual button, from the refreshed checkpoint.
-    void window.sesAgent.getBootstrap().then((refreshed) => {
-      setBootstrap((current) => current ? refreshed : current)
-      if (completion.imported > 0 && refreshed.gmailSync.lastRun && refreshed.gmailSync.lastSyncedAt) {
-        setGmailImportNotice({
-          syncedAt: refreshed.gmailSync.lastSyncedAt,
-          storedMessages: refreshed.gmailSync.storedMessages,
-          ...refreshed.gmailSync.lastRun
-        })
-      }
-      if (completion.imported > 0 || (completion.personnelImported ?? 0) > 0) {
-        showToast(refreshed.preferences.locale === 'zh-CN'
-          ? `Gmail 同步：邮件 ${completion.imported} 封，人员 ${completion.personnelImported ?? 0} 名`
-          : `Gmail 同期：メール ${completion.imported}件、人材 ${completion.personnelImported ?? 0}名`)
-      }
-      refreshNewCaseDigest()
-    }).catch(() => { /* The startup/bootstrap error path remains authoritative. */ })
-  }), [])
+  useEffect(
+    () =>
+      window.sesAgent.onGmailSyncCompleted((completion) => {
+        // A scheduled sync in Main imported mail: pick up the new cases and show
+        // the same notice as the manual button, from the refreshed checkpoint.
+        void window.sesAgent
+          .getBootstrap()
+          .then((refreshed) => {
+            setBootstrap((current) => (current ? refreshed : current))
+            if (completion.imported > 0 && refreshed.gmailSync.lastRun && refreshed.gmailSync.lastSyncedAt) {
+              setGmailImportNotice({
+                syncedAt: refreshed.gmailSync.lastSyncedAt,
+                storedMessages: refreshed.gmailSync.storedMessages,
+                ...refreshed.gmailSync.lastRun
+              })
+            }
+            if (completion.imported > 0 || (completion.personnelImported ?? 0) > 0) {
+              showToast(
+                localeText(refreshed.preferences.locale === 'zh-CN')(
+                  `Gmail 同步：邮件 ${completion.imported} 封，人员 ${completion.personnelImported ?? 0} 名`,
+                  `Gmail 同期：メール ${completion.imported}件、人材 ${completion.personnelImported ?? 0}名`
+                )
+              )
+            }
+            refreshNewCaseDigest()
+          })
+          .catch(() => {
+            /* The startup/bootstrap error path remains authoritative. */
+          })
+      }),
+    []
+  )
 
   // Preserve business context while visiting traditional management pages.
 
@@ -320,11 +382,14 @@ export function App() {
     if (!normalSessionReady) return undefined
     let active = true
     const refreshRecovery = () => {
-      void window.sesAgent.getRecoveryState()
+      void window.sesAgent
+        .getRecoveryState()
         .then((recovery) => {
-          if (active) setBootstrap((current) => current ? { ...current, recovery } : current)
+          if (active) setBootstrap((current) => (current ? { ...current, recovery } : current))
         })
-        .catch(() => { /* The main bootstrap error path remains authoritative. */ })
+        .catch(() => {
+          /* The main bootstrap error path remains authoritative. */
+        })
     }
     const interval = window.setInterval(refreshRecovery, 60_000)
     window.addEventListener('focus', refreshRecovery)
@@ -349,9 +414,7 @@ export function App() {
         setSelectedTask((current) => payload.tasks.find((task) => task.id === current?.id) ?? current)
 
         const selected = selectedTaskId ? payload.tasks.find((task) => task.id === selectedTaskId) : null
-        const latestJob = selectedTaskId
-          ? payload.processingJobs.find((job) => job.workTaskId === selectedTaskId)
-          : null
+        const latestJob = selectedTaskId ? payload.processingJobs.find((job) => job.workTaskId === selectedTaskId) : null
         if (
           selected?.type === 'MATCH_CANDIDATES' &&
           latestJob?.type === 'candidate-match' &&
@@ -360,36 +423,43 @@ export function App() {
           !backgroundHydratedJobIds.current.has(latestJob.id)
         ) {
           backgroundHydratedJobIds.current.add(latestJob.id)
-          void window.sesAgent.executeCandidateMatchTask(selected.id).then((result) => {
-            if (!active) return
-            setSelectedTask((current) => current?.id === result.task.id ? result.task : current)
-            setBootstrap((current) => {
-              if (!current) return current
-              const tasks = new Map(current.tasks.map((task) => [task.id, task]))
-              tasks.set(result.task.id, result.task)
-              const jobs = new Map(current.processingJobs.map((job) => [job.id, job]))
-              jobs.set(result.processingJob.id, result.processingJob)
-              return { ...current, tasks: [...tasks.values()], processingJobs: [...jobs.values()] }
-            })
-            setCandidateMatch((current) => current.taskId === result.task.id ? {
-              taskId: result.task.id,
-              status: 'ready',
-              query: result.query,
-              run: result.run,
-              results: result.matches,
-              error: null
-            } : current)
-            void window.sesAgent.getBootstrap().then((latest) => {
+          void window.sesAgent
+            .executeCandidateMatchTask(selected.id)
+            .then((result) => {
               if (!active) return
-              const tasks = new Map(latest.tasks.map((task) => [task.id, task]))
-              tasks.set(result.task.id, result.task)
-              const processingJobs = new Map(latest.processingJobs.map((job) => [job.id, job]))
-              processingJobs.set(result.processingJob.id, result.processingJob)
-              setBootstrap({ ...latest, tasks: [...tasks.values()], processingJobs: [...processingJobs.values()] })
+              setSelectedTask((current) => (current?.id === result.task.id ? result.task : current))
+              setBootstrap((current) => {
+                if (!current) return current
+                const tasks = new Map(current.tasks.map((task) => [task.id, task]))
+                tasks.set(result.task.id, result.task)
+                const jobs = new Map(current.processingJobs.map((job) => [job.id, job]))
+                jobs.set(result.processingJob.id, result.processingJob)
+                return { ...current, tasks: [...tasks.values()], processingJobs: [...jobs.values()] }
+              })
+              setCandidateMatch((current) =>
+                current.taskId === result.task.id
+                  ? {
+                      taskId: result.task.id,
+                      status: 'ready',
+                      query: result.query,
+                      run: result.run,
+                      results: result.matches,
+                      error: null
+                    }
+                  : current
+              )
+              void window.sesAgent.getBootstrap().then((latest) => {
+                if (!active) return
+                const tasks = new Map(latest.tasks.map((task) => [task.id, task]))
+                tasks.set(result.task.id, result.task)
+                const processingJobs = new Map(latest.processingJobs.map((job) => [job.id, job]))
+                processingJobs.set(result.processingJob.id, result.processingJob)
+                setBootstrap({ ...latest, tasks: [...tasks.values()], processingJobs: [...processingJobs.values()] })
+              })
             })
-          }).catch(() => {
-            backgroundHydratedJobIds.current.delete(latestJob.id)
-          })
+            .catch(() => {
+              backgroundHydratedJobIds.current.delete(latestJob.id)
+            })
         }
       } catch {
         // The startup/bootstrap error path remains authoritative; the next interval retries locally.
@@ -398,7 +468,9 @@ export function App() {
       }
     }
     void refreshProcessingJobs()
-    const interval = window.setInterval(() => { void refreshProcessingJobs() }, 1_000)
+    const interval = window.setInterval(() => {
+      void refreshProcessingJobs()
+    }, 1_000)
     return () => {
       active = false
       window.clearInterval(interval)
@@ -410,20 +482,29 @@ export function App() {
    * renders so the broadcast screen does not reload its queue on every keystroke
    * elsewhere in the app.
    */
-  const broadcastActions = useMemo<BroadcastPanelActions & BroadcastSettingsActions>(() => ({
-    loadWorkspace: () => window.sesAgent.listBroadcastWorkspace(),
-    draftBroadcast: (input) => window.sesAgent.draftCaseBroadcast(input),
-    draftUpdateNotice: (input) => window.sesAgent.draftCaseUpdateNotice(input),
-    recordCopy: (input) => window.sesAgent.recordCaseBroadcastCopy(input),
-    openEmail: (input) => window.sesAgent.openCaseBroadcastEmail(input),
-    listBroadcasts: (reviewId) => window.sesAgent.listCaseBroadcasts(reviewId),
-    createTemplate: (input) => window.sesAgent.createBroadcastTemplate(input),
-    updateTemplate: (input) => window.sesAgent.updateBroadcastTemplate(input),
-    deleteTemplate: (input) => window.sesAgent.deleteBroadcastTemplate(input)
-  }), [])
+  const broadcastActions = useMemo<BroadcastPanelActions & BroadcastSettingsActions>(
+    () => ({
+      loadWorkspace: () => window.sesAgent.listBroadcastWorkspace(),
+      draftBroadcast: (input) => window.sesAgent.draftCaseBroadcast(input),
+      draftUpdateNotice: (input) => window.sesAgent.draftCaseUpdateNotice(input),
+      recordCopy: (input) => window.sesAgent.recordCaseBroadcastCopy(input),
+      openEmail: (input) => window.sesAgent.openCaseBroadcastEmail(input),
+      listBroadcasts: (reviewId) => window.sesAgent.listCaseBroadcasts(reviewId),
+      createTemplate: (input) => window.sesAgent.createBroadcastTemplate(input),
+      updateTemplate: (input) => window.sesAgent.updateBroadcastTemplate(input),
+      deleteTemplate: (input) => window.sesAgent.deleteBroadcastTemplate(input)
+    }),
+    []
+  )
 
   if (loadError) {
-    return <main className="fatal-state"><Icon name="alert" size={24} /><h1>起動に失敗しました</h1><p>{loadError}</p></main>
+    return (
+      <main className="fatal-state">
+        <Icon name="alert" size={24} />
+        <h1>{t('启动失败', '起動に失敗しました')}</h1>
+        <p>{loadError}</p>
+      </main>
+    )
   }
 
   if (startupRecovery) {
@@ -438,7 +519,12 @@ export function App() {
   }
 
   if (!bootstrap) {
-    return <main className="loading-state"><span className="loading-mark">S</span><p>安全な作業環境を準備しています…</p></main>
+    return (
+      <main className="loading-state">
+        <span className="loading-mark">S</span>
+        <p>{t('正在准备安全的工作环境…', '安全な作業環境を準備しています…')}</p>
+      </main>
+    )
   }
 
   const selectTask = (task: WorkTask) => {
@@ -451,7 +537,7 @@ export function App() {
       void window.sesAgent.executeCandidateMatchTask(task.id).then(
         (result) => {
           if (candidateMatchRequest.current !== matchRequest) return
-          setSelectedTask((current) => current?.id === result.task.id ? result.task : current)
+          setSelectedTask((current) => (current?.id === result.task.id ? result.task : current))
           setBootstrap((current) => {
             if (!current) return current
             const tasks = new Map(current.tasks.map((item) => [item.id, item]))
@@ -484,7 +570,7 @@ export function App() {
             query: '',
             run: null,
             results: [],
-            error: cause instanceof Error ? cause.message : '候補者を検索できませんでした。'
+            error: localizedIpcError(locale, cause, t('无法搜索人员。', '候補者を検索できませんでした。'))
           })
         }
       )
@@ -505,21 +591,23 @@ export function App() {
             taskId: task.id,
             status: 'error',
             workspace: null,
-            error: cause instanceof Error ? cause.message : '提案ワークスペースを読み込めませんでした。'
+            error: localizedIpcError(locale, cause, t('无法读取提案工作区。', '提案ワークスペースを読み込めませんでした。'))
           })
         }
       )
     } else {
       setProposal({ taskId: task.id, status: 'idle', workspace: null, error: null })
     }
-    const missingResumeAnalyses = task.type === 'IMPORT_RESUME' && executable
-      ? task.contextBindings.filter((binding) =>
-          binding.objectType === 'staged-file' &&
-          !bootstrap.resumeAnalyses.some((analysis) =>
-            analysis.fileToken === binding.objectId && analysis.analysisVersion === 'resume-analysis-v6'
+    const missingResumeAnalyses =
+      task.type === 'IMPORT_RESUME' && executable
+        ? task.contextBindings.filter(
+            (binding) =>
+              binding.objectType === 'staged-file' &&
+              !bootstrap.resumeAnalyses.some(
+                (analysis) => analysis.fileToken === binding.objectId && analysis.analysisVersion === 'resume-analysis-v6'
+              )
           )
-        )
-      : []
+        : []
     if (missingResumeAnalyses.length > 0 && resumeImportRequest.current === 0) {
       const request = Date.now()
       resumeImportRequest.current = request
@@ -547,22 +635,20 @@ export function App() {
     return result
   }
 
-  const submitCandidateMatchFeedback = async (
-    input: SubmitCandidateMatchFeedbackInput
-  ): Promise<SubmitCandidateMatchFeedbackResult> => {
+  const submitCandidateMatchFeedback = async (input: SubmitCandidateMatchFeedbackInput): Promise<SubmitCandidateMatchFeedbackResult> => {
     const result = await window.sesAgent.submitCandidateMatchFeedback(input)
     setCandidateMatch((current) => ({
       ...current,
       run: result.run,
-      results: current.results.map((match) => match.matchResultId === result.matchResultId
-        ? { ...match, feedback: result.feedback }
-        : match)
+      results: current.results.map((match) =>
+        match.matchResultId === result.matchResultId ? { ...match, feedback: result.feedback } : match
+      )
     }))
     return result
   }
 
   const applyProposalMutation = (result: ProposalMutationResult) => {
-    setSelectedTask((current) => current?.id === result.task.id ? result.task : current)
+    setSelectedTask((current) => (current?.id === result.task.id ? result.task : current))
     setBootstrap((current) => {
       if (!current) return current
       const tasks = new Map(current.tasks.map((task) => [task.id, task]))
@@ -573,12 +659,18 @@ export function App() {
       if (current.taskId !== result.task.id || !current.workspace) return current
       const drafts = new Map(current.workspace.drafts.map((draft) => [draft.id, draft]))
       drafts.set(result.draft.id, result.draft)
-      return { ...current, status: 'ready', workspace: { ...current.workspace, drafts: [result.draft, ...[...drafts.values()].filter((draft) => draft.id !== result.draft.id)] }, error: null }
+      return {
+        ...current,
+        status: 'ready',
+        workspace: {
+          ...current.workspace,
+          drafts: [result.draft, ...[...drafts.values()].filter((draft) => draft.id !== result.draft.id)]
+        },
+        error: null
+      }
     })
     void window.sesAgent.getProposalWorkspace(result.task.id).then((workspace) => {
-      setProposal((current) => current.taskId === result.task.id
-        ? { ...current, status: 'ready', workspace, error: null }
-        : current)
+      setProposal((current) => (current.taskId === result.task.id ? { ...current, status: 'ready', workspace, error: null } : current))
     })
     void window.sesAgent.getBootstrap().then(setBootstrap)
   }
@@ -608,13 +700,14 @@ export function App() {
         applyProposalMutation(result)
         if (result.processingJob) {
           const processingJob = result.processingJob
-          setBootstrap((current) => current ? {
-            ...current,
-            processingJobs: [
-              processingJob,
-              ...current.processingJobs.filter((job) => job.id !== processingJob.id)
-            ]
-          } : current)
+          setBootstrap((current) =>
+            current
+              ? {
+                  ...current,
+                  processingJobs: [processingJob, ...current.processingJobs.filter((job) => job.id !== processingJob.id)]
+                }
+              : current
+          )
         }
       }
       return result
@@ -634,7 +727,7 @@ export function App() {
 
   const connectGoogleWorkspace = async () => {
     const gmail = await window.sesAgent.connectGoogleWorkspace()
-    setBootstrap((current) => current ? { ...current, gmail } : current)
+    setBootstrap((current) => (current ? { ...current, gmail } : current))
     if (gmail.status !== 'readonly') return
     await window.sesAgent.syncGoogleWorkspace()
     setBootstrap(await window.sesAgent.getBootstrap())
@@ -644,13 +737,13 @@ export function App() {
 
   const runGoogleWorkspaceOnlineAcceptance = async () => {
     const googleWorkspaceAcceptance = await window.sesAgent.runGoogleWorkspaceOnlineAcceptance()
-    setBootstrap((current) => current ? { ...current, googleWorkspaceAcceptance } : current)
+    setBootstrap((current) => (current ? { ...current, googleWorkspaceAcceptance } : current))
     return googleWorkspaceAcceptance
   }
 
   const disconnectGoogleWorkspace = async () => {
     const gmail = await window.sesAgent.disconnectGoogleWorkspace()
-    setBootstrap((current) => current ? { ...current, gmail } : current)
+    setBootstrap((current) => (current ? { ...current, gmail } : current))
   }
 
   const performGoogleWorkspaceSync = async (): Promise<BootstrapPayload> => {
@@ -665,19 +758,26 @@ export function App() {
   }
 
   const importGmailFromComposer = async () => {
+    const known = new Set(bootstrap?.jobCaseReviews.map((review) => review.reviewId))
     const refreshed = await performGoogleWorkspaceSync()
+    // Cases this sync created are HR's own new cases: they join my cases like any other import.
+    const createdIds = refreshed.jobCaseReviews.filter((review) => !known.has(review.reviewId)).map((review) => review.reviewId)
+    revealCreatedCases(createdIds, await joinCreatedCases(createdIds))
     const run = refreshed.gmailSync.lastRun
     if (!run || !refreshed.gmailSync.lastSyncedAt) {
-      throw new Error('Gmail 同期結果を確認できませんでした。データと承認から同期状態を確認してください。')
+      throw new Error(
+        t(
+          '无法确认 Gmail 同步结果，请在“数据与审批”中检查同步状态。',
+          'Gmail 同期結果を確認できませんでした。データと承認から同期状態を確認してください。'
+        )
+      )
     }
     setGmailImportNotice({
       syncedAt: refreshed.gmailSync.lastSyncedAt,
       storedMessages: refreshed.gmailSync.storedMessages,
       ...run
     })
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setActiveView('cases')
+    openSubpage('case-import', 'case')
   }
 
   const createRecoveryPackage = async (input: Parameters<typeof window.sesAgent.createRecoveryPackage>[0]) => {
@@ -691,7 +791,7 @@ export function App() {
 
   const snoozeRecoveryReminder = async (input: Parameters<typeof window.sesAgent.snoozeRecoveryReminder>[0]) => {
     const recovery = await window.sesAgent.snoozeRecoveryReminder(input)
-    setBootstrap((current) => current ? { ...current, recovery } : current)
+    setBootstrap((current) => (current ? { ...current, recovery } : current))
   }
 
   const submitJobCaseReview = async (input: Parameters<typeof window.sesAgent.submitJobCaseReview>[0]) => {
@@ -707,30 +807,37 @@ export function App() {
 
   const saveJobCaseFieldAliases = async (input: Parameters<typeof window.sesAgent.saveJobCaseFieldAliases>[0]) => {
     const saved = await window.sesAgent.saveJobCaseFieldAliases(input)
-    setBootstrap((current) => current ? { ...current, jobCaseFieldAliases: saved } : current)
+    setBootstrap((current) => (current ? { ...current, jobCaseFieldAliases: saved } : current))
     return saved
   }
 
   const createManualJobCaseDraft = async (input: Parameters<typeof window.sesAgent.createManualJobCaseDraft>[0]) => {
     const result = await window.sesAgent.createManualJobCaseDraft(input)
+    const working = await joinCreatedCases([result.review.reviewId])
     setBootstrap((current) => {
       if (!current) return current
       const reviews = new Map(current.jobCaseReviews.map((review) => [review.reviewId, review]))
       reviews.set(result.review.reviewId, result.review)
-      return { ...current, jobCaseReviews: [result.review, ...[...reviews.values()].filter((review) => review.reviewId !== result.review.reviewId)] }
+      return {
+        ...current,
+        jobCaseReviews: [result.review, ...[...reviews.values()].filter((review) => review.reviewId !== result.review.reviewId)]
+      }
     })
     setBootstrap(await window.sesAgent.getBootstrap())
+    revealCreatedCases([result.review.reviewId], working)
     return result
   }
 
   const createChatPasteJobCaseDraft = async (input: Parameters<typeof window.sesAgent.createChatPasteJobCaseDraft>[0]) => {
     const result = await window.sesAgent.createChatPasteJobCaseDraft(input)
+    const working = await joinCreatedCases([result.review.reviewId])
     setBootstrap((current) => {
       if (!current) return current
       const remaining = current.jobCaseReviews.filter((review) => review.reviewId !== result.review.reviewId)
       return { ...current, jobCaseReviews: [result.review, ...remaining] }
     })
     setBootstrap(await window.sesAgent.getBootstrap())
+    revealCreatedCases([result.review.reviewId], working)
     return result
   }
 
@@ -738,14 +845,16 @@ export function App() {
     const prepared = await window.sesAgent.prepareWechatVisibleRead()
     if (prepared.status === 'cancelled') return null
     if (prepared.status !== 'ready' || !prepared.scopeToken) {
-      throw new Error(`微信读取预检未通过：${prepared.failureCodes.join(', ') || 'UNKNOWN'}`)
+      throw new Error(`${t('微信读取预检未通过：', '微信の読取事前確認に失敗しました：')}${prepared.failureCodes.join(', ') || 'UNKNOWN'}`)
     }
     const result = await window.sesAgent.executeWechatVisibleRead({ scopeToken: prepared.scopeToken })
+    const working = await joinCreatedCases([result.review.reviewId])
     setBootstrap((current) => {
       if (!current) return current
       const remaining = current.jobCaseReviews.filter((review) => review.reviewId !== result.review.reviewId)
       return { ...current, jobCaseReviews: [result.review, ...remaining] }
     })
+    revealCreatedCases([result.review.reviewId], working)
     return result
   }
 
@@ -760,15 +869,24 @@ export function App() {
 
   const importEmlJobCaseDrafts = async () => {
     const result = await window.sesAgent.importEmlJobCaseDrafts()
-    const importedReviews = result.items.flatMap((item) => item.review ? [item.review] : [])
+    const importedReviews = result.items.flatMap((item) => (item.review ? [item.review] : []))
+    const createdIds = result.items.flatMap((item) => (item.status === 'imported' && item.review ? [item.review.reviewId] : []))
+    const working = await joinCreatedCases(createdIds)
     if (importedReviews.length > 0) {
       setBootstrap((current) => {
         if (!current) return current
         const reviews = new Map(current.jobCaseReviews.map((review) => [review.reviewId, review]))
         for (const review of importedReviews) reviews.set(review.reviewId, review)
-        return { ...current, jobCaseReviews: [...importedReviews, ...[...reviews.values()].filter((review) => !importedReviews.some((item) => item.reviewId === review.reviewId))] }
+        return {
+          ...current,
+          jobCaseReviews: [
+            ...importedReviews,
+            ...[...reviews.values()].filter((review) => !importedReviews.some((item) => item.reviewId === review.reviewId))
+          ]
+        }
       })
     }
+    revealCreatedCases(createdIds, working)
     return result
   }
 
@@ -812,35 +930,35 @@ export function App() {
   const importCandidateEvaluationBenchmark = async () => {
     const result = await window.sesAgent.importCandidateEvaluationBenchmark()
     if (!result.cancelled) {
-      setBootstrap((current) => current ? { ...current, candidateEvaluation: result.state } : current)
+      setBootstrap((current) => (current ? { ...current, candidateEvaluation: result.state } : current))
     }
     return result
   }
 
-  const evaluateCandidateEvaluationDraft = async (
-    input: Parameters<typeof window.sesAgent.evaluateCandidateEvaluationDraft>[0]
-  ) => {
+  const evaluateCandidateEvaluationDraft = async (input: Parameters<typeof window.sesAgent.evaluateCandidateEvaluationDraft>[0]) => {
     const result = await window.sesAgent.evaluateCandidateEvaluationDraft(input)
-    setBootstrap((current) => current ? { ...current, candidateEvaluation: result.state } : current)
+    setBootstrap((current) => (current ? { ...current, candidateEvaluation: result.state } : current))
     return result
   }
 
   const setWorkTaskLifecycle = async (input: Parameters<typeof window.sesAgent.setWorkTaskLifecycle>[0]) => {
     const task = await window.sesAgent.setWorkTaskLifecycle(input)
-    setBootstrap((current) => current ? {
-      ...current,
-      tasks: current.tasks.map((item) => item.id === task.id ? task : item)
-    } : current)
-    setSelectedTask((current) => current?.id === task.id ? task : current)
+    setBootstrap((current) =>
+      current
+        ? {
+            ...current,
+            tasks: current.tasks.map((item) => (item.id === task.id ? task : item))
+          }
+        : current
+    )
+    setSelectedTask((current) => (current?.id === task.id ? task : current))
     if (input.action === 'cancel') {
       candidateMatchRequest.current += 1
       proposalRequest.current += 1
-      setCandidateMatch((current) => current.taskId === task.id
-        ? { taskId: task.id, status: 'idle', query: '', run: null, results: [], error: null }
-        : current)
-      setProposal((current) => current.taskId === task.id
-        ? { taskId: task.id, status: 'idle', workspace: null, error: null }
-        : current)
+      setCandidateMatch((current) =>
+        current.taskId === task.id ? { taskId: task.id, status: 'idle', query: '', run: null, results: [], error: null } : current
+      )
+      setProposal((current) => (current.taskId === task.id ? { taskId: task.id, status: 'idle', workspace: null, error: null } : current))
     } else {
       selectTask(task)
     }
@@ -849,18 +967,18 @@ export function App() {
 
   const saveLocalOperatorProfile = async (input: Parameters<typeof window.sesAgent.saveLocalOperatorProfile>[0]) => {
     const operatorProfile = await window.sesAgent.saveLocalOperatorProfile(input)
-    setBootstrap((current) => current ? { ...current, operatorProfile } : current)
+    setBootstrap((current) => (current ? { ...current, operatorProfile } : current))
     return operatorProfile
   }
 
   const saveLocalApplicationPreferences = async (input: Parameters<typeof window.sesAgent.saveLocalApplicationPreferences>[0]) => {
     const preferences = await window.sesAgent.saveLocalApplicationPreferences(input)
-    setBootstrap((current) => current ? { ...current, preferences } : current)
+    setBootstrap((current) => (current ? { ...current, preferences } : current))
     return preferences
   }
 
   const updateAiCommerce = (aiCommerce: BootstrapPayload['aiCommerce']) => {
-    setBootstrap((current) => current ? { ...current, aiCommerce } : current)
+    setBootstrap((current) => (current ? { ...current, aiCommerce } : current))
     return aiCommerce
   }
 
@@ -874,7 +992,7 @@ export function App() {
   const runReviewedAiCommerceCloudPrompt = async (input: Parameters<typeof window.sesAgent.prepareAiCommerceCloudPrompt>[0]) => {
     const prepared = await window.sesAgent.prepareAiCommerceCloudPrompt(input)
     const result = await window.sesAgent.executeAiCommerceCloudPrompt({ reviewTicket: prepared.reviewTicket })
-    setBootstrap((current) => current ? { ...current, aiCommerce: { ...current.aiCommerce, wallet: result.wallet } } : current)
+    setBootstrap((current) => (current ? { ...current, aiCommerce: { ...current.aiCommerce, wallet: result.wallet } } : current))
     return result
   }
   const resolveActionApproval = async (approvalId: string, decision: 'approve' | 'deny') => {
@@ -887,53 +1005,52 @@ export function App() {
     }
   }
 
-  const handleCreated = (task: WorkTask) => {
-    setBootstrap((current) => current ? { ...current, tasks: [task, ...current.tasks] } : current)
-    selectTask(task)
-  }
-
-  const openHome = () => {
+  /**
+   * Opens a page that is not the HR shell as a sub-page of an HR section: the rail keeps that section
+   * highlighted and the return bar goes back to it. Without a section the page belongs to the section
+   * it was opened from (activity, a task, the review center).
+   */
+  const openSubpage = (view: Exclude<AppView, 'agent'>, section?: HrBusinessKind | 'follow') => {
     setGovernanceOpen(false)
-    setSelectedTask(null)
-    setActiveView('home')
+    if (view !== 'task') setSelectedTask(null)
+    // Entering another section's sub-page leaves the current section like the rail does, so the
+    // return lands on that section's own list and selection, not on a panel of the previous one.
+    const switching = section === 'follow' ? !hrFollowOpen : Boolean(section) && (section !== hrKind || hrFollowOpen)
+    if (switching) {
+      closeAgentPanel()
+      setHrSource(null)
+      setHrBatchStarted(null)
+      if (section !== 'follow') setAgentFeedSelection(readHrPosition(section!).selected)
+    }
+    if (section === 'follow') setHrFollowOpen(true)
+    else if (section) {
+      setHrFollowOpen(false)
+      setHrKind(section)
+      try {
+        localStorage.setItem('ses-hr-kind-v2', section)
+      } catch {}
+    }
+    setActiveView(view)
   }
 
   const openTaskCenter = () => {
     setImportHistoryOpen(false)
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setActiveView('tasks')
+    openSubpage('tasks')
   }
 
-  const openReviewCenter = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setActiveView('reviews')
+  const openResumeImportHistory = () => {
+    setImportHistoryOpen(true)
+    openSubpage('tasks', 'person')
   }
 
-  const openCandidateManagement = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setCandidateWorkspaceDetail(null)
-    setActiveView('candidate-management')
-  }
+  const openReviewCenter = () => openSubpage('reviews')
 
-  const openCandidateFromAgent = (
-    sourceDocumentId: string,
-    view: PipelineView = 'overview',
-    interviewId: string | null = null,
-    interviewKind: 'recruiting' | 'client' = 'recruiting'
-  ) => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setCandidateWorkspaceDetail({
-      scope: 'candidate',
-      documentId: sourceDocumentId,
-      view,
-      interviewId,
-      interviewKind
-    })
-    setActiveView('candidate-management')
+  /** 人员 → 招聘面试; with a person, straight to their recruiting pipeline (e.g. confirming an imported resume). */
+  const openRecruiting = (sourceDocumentId?: string, view: PipelineView = 'overview') => {
+    setCandidateWorkspaceDetail(
+      sourceDocumentId ? { scope: 'recruiting', documentId: sourceDocumentId, view, interviewKind: 'recruiting' } : null
+    )
+    openSubpage('interview-workbench', 'person')
   }
 
   const startHrProgress = async (targets: FollowUpTarget[]) => {
@@ -941,200 +1058,220 @@ export function App() {
     businessProgress.publish(records)
     const first = targets[0]
     if (!first) return
-    setHrFollowTarget({ ...first }); setHrFollowOpen(true); setIntroductionTarget(null)
-    closeAgentPanel(); returnToHr(); setAgentHomeRequest((value) => value + 1)
-    setBootstrap((current) => current ? { ...current, candidateInterviews: [...current.candidateInterviews.filter((row) => !records.some((record) => record.id === row.businessFollowUpId)), ...records.flatMap((record) => record.progress?.rounds ?? [])] } : current)
+    setHrBatchStarted(targets.length > 1 ? targets : null)
+    setHrFollowTarget({ ...first })
+    setHrFollowOpen(true)
+    setIntroductionTarget(null)
+    closeAgentPanel()
+    returnToHr()
+    setAgentHomeRequest((value) => value + 1)
+    setBootstrap((current) =>
+      current
+        ? {
+            ...current,
+            candidateInterviews: [
+              ...current.candidateInterviews.filter((row) => !records.some((record) => record.id === row.businessFollowUpId)),
+              ...records.flatMap((record) => record.progress?.rounds ?? [])
+            ]
+          }
+        : current
+    )
   }
 
   const openInterviewSchedule = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
     setCandidateWorkspaceDetail(null)
-    setActiveView('interview-schedule')
+    openSubpage('interview-schedule', 'follow')
   }
 
-  const openInterviewWorkbench = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setCandidateWorkspaceDetail(null)
-    setActiveView('interview-workbench')
-  }
-
-  const openClientInterviews = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setCandidateWorkspaceDetail(null)
-    setActiveView('client-interviews')
-  }
-
-  const openEntryPrep = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setCandidateWorkspaceDetail(null)
-    setActiveView('entry-prep')
-  }
-
-  const openCaseImport = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setActiveView('case-import')
-  }
-
-  const openCases = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setRequestedJobCaseReviewId(null)
-    setActiveView('cases')
-  }
-
-  const openMatching = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setMatchingJobCaseId(bootstrap.matchingHome.selectedJobCaseId)
-    setActiveView(bootstrap.featureFlags?.conversationalMatchingEnabled === true ? 'agent' : 'matching')
-  }
-
-  const openMatchingForCase = (jobCaseId: string) => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setMatchingJobCaseId(jobCaseId)
-    setActiveView('matching')
-  }
+  const openCaseImport = () => openSubpage('case-import', 'case')
 
   const openAgentSystemAccess = (access: AgentSystemAccessBlock) => {
     setAssessmentBack(false)
-    setSideProgressTarget(null); setProgressFocus(null)
+    setSideProgressTarget(null)
+    setProgressFocus(null)
     if (access.destination === 'broadcast' && access.reviewId) {
       const requestedReviewId = access.reviewId
       const review = bootstrap.jobCaseReviews.find((item) => item.reviewId === requestedReviewId)
       if (review && review.lifecycle === 'active') {
-        setCaseIntroductionTarget({ reviewId: review.reviewId, reviewRevision: review.reviewRevision,
-          jobCaseVersion: review.status === 'completed' ? review.jobCase?.version ?? null : null })
+        setCaseIntroductionTarget({
+          reviewId: review.reviewId,
+          reviewRevision: review.reviewRevision,
+          jobCaseVersion: review.status === 'completed' ? (review.jobCase?.version ?? null) : null
+        })
         return
       }
     }
 
-    if (access.destination === 'matching' && access.jobCaseId) {
-      const review = bootstrap.jobCaseReviews.find(item => item.jobCase?.id === access.jobCaseId)
+    // 找人 for a case always runs in the case's resume panel beside the list; without a case it opens the case list.
+    if (access.destination === 'matching') {
+      const review = access.jobCaseId ? bootstrap.jobCaseReviews.find((item) => item.jobCase?.id === access.jobCaseId) : undefined
       if (review) openCasePeople(review)
+      else openHrList('case')
       return
     }
     setAgentHomeRequest((value) => value + 1)
     const personnel = access.destination === 'candidate' && access.view === 'overview'
     setAgentSideMode(personnel ? 'personnel' : null)
-    if (access.destination === 'candidate' && access.view === 'overview') { setAgentPersonId(access.sourceDocumentId); setAgentPersonMatchRequest(undefined) }
+    if (access.destination === 'candidate' && access.view === 'overview') {
+      setAgentPersonId(access.sourceDocumentId)
+    }
     setGovernanceOpen(false)
     setSelectedTask(null)
     setAgentContextTrail((trail) => pushContextAccess(trail, access))
-    const caseReview = access.destination === 'case-review' || access.destination === 'broadcast'
-      ? bootstrap.jobCaseReviews.find((item) => item.reviewId === access.reviewId)
-      : access.destination === 'matching' && access.jobCaseId ? bootstrap.jobCaseReviews.find((item) => item.jobCase?.id === access.jobCaseId) : undefined
+    const caseReview =
+      access.destination === 'case-review' || access.destination === 'broadcast'
+        ? bootstrap.jobCaseReviews.find((item) => item.reviewId === access.reviewId)
+        : undefined
     if (caseReview || access.destination === 'candidate' || access.destination === 'original-document') {
-      setAgentFocusRequest({ id: Date.now(), ...(access.destination === 'candidate' || access.destination === 'original-document' ? { candidateDocumentId: access.sourceDocumentId } : {}), caseReference: caseReview?.jobCase && caseReview.lifecycle === 'active' ? {
-        kind: 'job-case', objectId: caseReview.jobCase.id, objectVersion: caseReview.jobCase.version, resultHash: null, ordinal: null,
-        label: caseReview.fields.find((field) => field.key === 'title')?.value ?? caseReview.redactedSubject, target: `job-case:${caseReview.jobCase.id}`
-      } : null })
+      setAgentFocusRequest({
+        id: Date.now(),
+        ...(access.destination === 'candidate' || access.destination === 'original-document'
+          ? { candidateDocumentId: access.sourceDocumentId }
+          : {}),
+        caseReference:
+          caseReview?.jobCase && caseReview.lifecycle === 'active'
+            ? {
+                kind: 'job-case',
+                objectId: caseReview.jobCase.id,
+                objectVersion: caseReview.jobCase.version,
+                resultHash: null,
+                ordinal: null,
+                label: caseReview.fields.find((field) => field.key === 'title')?.value ?? caseReview.redactedSubject,
+                target: `job-case:${caseReview.jobCase.id}`
+              }
+            : null
+      })
     }
   }
-  const closeAgentPanel = () => { setAssessmentBack(false); setSideProgressTarget(null); setAgentSideMode(null); setAgentContextTrail([]) }
+  const closeAgentPanel = () => {
+    setAssessmentBack(false)
+    setSideProgressTarget(null)
+    setAgentSideMode(null)
+    setAgentContextTrail([])
+  }
   const openAgentBatch = (text?: string) => {
     setAgentHomeRequest((value) => value + 1)
     if (text) setAgentBatchSeed({ id: Date.now(), text })
-    setAgentSideMode('intake'); setAgentContextTrail([]); setActiveView('agent')
+    setAgentSideMode('intake')
+    setAgentContextTrail([])
+    setActiveView('agent')
   }
   const openAgentPersonnel = (documentId: string, match = false) => {
     openAgentSystemAccess({ type: 'system-access', destination: 'candidate', sourceDocumentId: documentId, view: 'overview' })
-    setAgentPersonId(documentId); setAgentSideMode('personnel')
-    setAgentPersonMatchRequest(undefined)
-    if (match && !hrBusy) { setHrFollowOpen(false); setHrKind('person'); setAgentFeedSelection(`person:${documentId}`); saveHrPosition('person', { selected: `person:${documentId}` }); try { localStorage.setItem('ses-hr-kind-v2', 'person') } catch {}; setHrSource({ kind: 'person', id: documentId, requestId: ++feedFocusSequence.current }); setAgentHomeRequest((value) => value + 1) }
-  }
-  const openPersonnelEditor = (target: PersonnelEditorTarget) => {
-    setPersonnelEditorRequest({ ...target, id: Date.now() })
-    setGovernanceOpen(false); setSelectedTask(null); setActiveView('business')
+    setAgentPersonId(documentId)
+    setAgentSideMode('personnel')
+    // A person already being matched is only shown again; the matching workspace never starts a second run for them.
+    if (match) {
+      setHrFollowOpen(false)
+      setHrKind('person')
+      setAgentFeedSelection(`person:${documentId}`)
+      saveHrPosition('person', { selected: `person:${documentId}` })
+      try {
+        localStorage.setItem('ses-hr-kind-v2', 'person')
+      } catch {}
+      setHrSource({ kind: 'person', id: documentId, requestId: ++feedFocusSequence.current })
+      setAgentHomeRequest((value) => value + 1)
+    }
   }
   const openPersonnelProfile = (documentId: string) => {
     if (!bootstrap?.candidateReviews.find((review) => review.documentId === documentId)?.profile) {
-      openCandidateFromAgent(documentId, 'resume')
+      openRecruiting(documentId, 'resume')
       return
     }
-    setPersonnelProfileRequest({ id: Date.now(), documentId })
-    setGovernanceOpen(false); setSelectedTask(null); setActiveView('candidates')
+    // The full profile opens in the right panel beside the list; the talent-pool page stays a library.
+    setAgentProfileId(documentId)
+    setAgentSideMode('profile')
+    setGovernanceOpen(false)
+    setSelectedTask(null)
+    setActiveView('agent')
   }
   const openCasePeople = (review: JobCaseReviewSnapshot, files?: File[]) => {
     setAssessmentBack(false)
     setAssessmentReviewId(review.reviewId)
     setAgentFeedSelection(`case:${review.reviewId}`)
     saveHrPosition('case', { selected: `case:${review.reviewId}` })
-    setHrSource(null); setHrFollowOpen(false); setHrKind('case'); setActiveView('agent')
-    setSideProgressTarget(null); setAgentContextTrail([]); setAgentSideMode('assessment')
-    setAgentHomeRequest(value => value + 1)
+    setHrSource(null)
+    setHrFollowOpen(false)
+    setHrKind('case')
+    setActiveView('agent')
+    setSideProgressTarget(null)
+    setAgentContextTrail([])
+    setAgentSideMode('assessment')
+    setAgentHomeRequest((value) => value + 1)
     if (files?.length) {
-      try { setAssessmentFocus(caseResumes.enqueue(review, files)) }
-      catch (cause) { showToast(cause instanceof Error ? cause.message : String(cause)) }
-    } else { setAssessmentFocus(null); void caseResumes.search(review) }
+      try {
+        setAssessmentFocus(caseResumes.enqueue(review, files))
+      } catch (cause) {
+        showToast(localizedIpcError(locale, cause, t('无法评估简历。', '履歴書を評価できませんでした。')))
+      }
+    } else {
+      setAssessmentFocus(null)
+      void caseResumes.search(review)
+    }
   }
   const openCaseResumeAssessment = (entry: BusinessFeedEntry, files?: File[]) => {
-    const review = bootstrap.jobCaseReviews.find(job => job.reviewId === entry.objectId)
+    const review = bootstrap.jobCaseReviews.find((job) => job.reviewId === entry.objectId)
     if (review) openCasePeople(review, files)
   }
   const openLatestEntry = (entry: BusinessFeedEntry, action: 'view' | 'match' | 'promote') => {
-    if (action === 'match' && hrBusy) return
     setAgentFeedSelection(`${entry.kind}:${entry.objectId}`)
     saveHrPosition(entry.kind, { selected: `${entry.kind}:${entry.objectId}` })
     if (entry.kind === 'person') {
       openAgentPersonnel(entry.objectId, action === 'match')
-      if (action === 'promote') { const person = bootstrap.candidateReviews.find((item) => item.documentId === entry.objectId); if (person?.profile) setIntroductionTarget({ documentId: person.documentId, profileVersion: person.profile.version, matched: [] }) }
+      if (action === 'promote') {
+        const person = bootstrap.candidateReviews.find((item) => item.documentId === entry.objectId)
+        if (person?.profile) setIntroductionTarget({ documentId: person.documentId, profileVersion: person.profile.version, matched: [] })
+      }
       setAgentPersonFocusRequest({ id: ++feedFocusSequence.current, documentId: entry.objectId, section: action })
       return
     }
     if (action !== 'promote') setCaseFocusRequest(++feedFocusSequence.current)
     const review = bootstrap?.jobCaseReviews.find((item) => item.reviewId === entry.objectId)
     if (!review) return
-    if (action === 'match') { openCasePeople(review); return }
-    openAgentSystemAccess(action === 'promote' && review.lifecycle === 'active'
-        ? { type: 'system-access', destination: 'broadcast', reviewId: entry.objectId }
-        : { type: 'system-access', destination: 'case-review', reviewId: entry.objectId })
-  }
-  const agentContextBack = assessmentBack ? () => { setAgentSideMode('assessment'); setAgentContextTrail([]); setAssessmentBack(false) } : agentContextTrail.length > 1
-    ? () => {
-      const previous = agentContextTrail.at(-2)!
-      setAgentContextTrail((trail) => trail.slice(0, -1))
-      const personnel = previous.destination === 'candidate' && previous.view === 'overview'
-      setAgentSideMode(personnel ? 'personnel' : null)
-      if (personnel) setAgentPersonId(previous.sourceDocumentId)
-      if (previous.destination === 'matching' && previous.jobCaseId) setCaseMatchId(previous.jobCaseId)
+    if (action === 'match') {
+      openCasePeople(review)
+      return
     }
-    : undefined
+    openAgentSystemAccess(
+      action === 'promote' && review.lifecycle === 'active'
+        ? { type: 'system-access', destination: 'broadcast', reviewId: entry.objectId }
+        : { type: 'system-access', destination: 'case-review', reviewId: entry.objectId }
+    )
+  }
+  const agentContextBack = assessmentBack
+    ? () => {
+        setAgentSideMode('assessment')
+        setAgentContextTrail([])
+        setAssessmentBack(false)
+      }
+    : agentContextTrail.length > 1
+      ? () => {
+          const previous = agentContextTrail.at(-2)!
+          setAgentContextTrail((trail) => trail.slice(0, -1))
+          const personnel = previous.destination === 'candidate' && previous.view === 'overview'
+          setAgentSideMode(personnel ? 'personnel' : null)
+          if (personnel) setAgentPersonId(previous.sourceDocumentId)
+        }
+      : undefined
 
   const openAgentCandidateAccess = (
     sourceDocumentId: string,
     view: PipelineView = 'overview',
     interviewId?: string | null,
     interviewKind?: 'recruiting' | 'client'
-  ) => openAgentSystemAccess({
-    type: 'system-access',
-    destination: 'candidate',
-    sourceDocumentId,
-    view,
-    ...(interviewId !== undefined ? { interviewId } : {}),
-    ...(interviewKind ? { interviewKind } : {})
-  })
+  ) =>
+    openAgentSystemAccess({
+      type: 'system-access',
+      destination: 'candidate',
+      sourceDocumentId,
+      view,
+      ...(interviewId !== undefined ? { interviewId } : {}),
+      ...(interviewKind ? { interviewKind } : {})
+    })
 
   const openApplicationSettings = (section: ApplicationSettingsSection = 'general') => {
     setApplicationSettingsSection(section)
     setApplicationSettingsOpen(true)
-  }
-
-  const openJobCaseReview = (reviewId: string) => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setRequestedJobCaseReviewId(reviewId)
-    setActiveView('cases')
-  }
-
-  const startNewTask = () => {
-    openMatching()
-    setComposerFocusRequestId(1)
   }
 
   const executeResumeImportTask = async (
@@ -1143,18 +1280,22 @@ export function App() {
     conversationId?: string
   ): Promise<AiConversationSnapshot | null> => {
     let latestConversation: AiConversationSnapshot | null = null
-    const completedTokens = new Set(bootstrap.resumeAnalyses
-      .filter((analysis) => analysis.analysisVersion === 'resume-analysis-v6')
-      .map((analysis) => analysis.fileToken))
+    const completedTokens = new Set(
+      bootstrap.resumeAnalyses.filter((analysis) => analysis.analysisVersion === 'resume-analysis-v6').map((analysis) => analysis.fileToken)
+    )
     const bindings = task.contextBindings.filter(
       (binding) => binding.objectType === 'staged-file' && !completedTokens.has(binding.objectId)
     )
     for (const binding of bindings) {
       if (resumeImportRequest.current !== request) return latestConversation
-      setResumeImportProgress((current) => current?.taskId === task.id ? {
-        ...current,
-        files: current.files.map((file) => file.token === binding.objectId ? { ...file, status: 'parsing', error: null } : file)
-      } : current)
+      setResumeImportProgress((current) =>
+        current?.taskId === task.id
+          ? {
+              ...current,
+              files: current.files.map((file) => (file.token === binding.objectId ? { ...file, status: 'parsing', error: null } : file))
+            }
+          : current
+      )
       try {
         const execution = await window.sesAgent.analyzeResumeFile({
           fileToken: binding.objectId,
@@ -1171,20 +1312,39 @@ export function App() {
           processingJobs.set(execution.processingJob.id, execution.processingJob)
           const analyses = new Map(current.resumeAnalyses.map((analysis) => [analysis.fileToken, analysis]))
           analyses.set(execution.analysis.fileToken, execution.analysis)
-          return { ...current, tasks: [...tasks.values()], processingJobs: [...processingJobs.values()], resumeAnalyses: [...analyses.values()] }
+          return {
+            ...current,
+            tasks: [...tasks.values()],
+            processingJobs: [...processingJobs.values()],
+            resumeAnalyses: [...analyses.values()]
+          }
         })
-        setResumeImportProgress((current) => current?.taskId === task.id ? {
-          ...current,
-          files: current.files.map((file) => file.token === binding.objectId ? { ...file, status: 'success', error: null } : file)
-        } : current)
+        setResumeImportProgress((current) =>
+          current?.taskId === task.id
+            ? {
+                ...current,
+                files: current.files.map((file) => (file.token === binding.objectId ? { ...file, status: 'success', error: null } : file))
+              }
+            : current
+        )
       } catch (cause) {
         if (resumeImportRequest.current !== request) return latestConversation
-        setResumeImportProgress((current) => current?.taskId === task.id ? {
-          ...current,
-          files: current.files.map((file) => file.token === binding.objectId ? {
-            ...file, status: 'error', error: cause instanceof Error ? cause.message : 'ローカル解析に失敗しました。'
-          } : file)
-        } : current)
+        setResumeImportProgress((current) =>
+          current?.taskId === task.id
+            ? {
+                ...current,
+                files: current.files.map((file) =>
+                  file.token === binding.objectId
+                    ? {
+                        ...file,
+                        status: 'error',
+                        error: localizedIpcError(locale, cause, t('本机解析失败。', 'ローカル解析に失敗しました。'))
+                      }
+                    : file
+                )
+              }
+            : current
+        )
       }
     }
     return latestConversation
@@ -1199,36 +1359,40 @@ export function App() {
         const analysis = analyses.get(binding.objectId)
         return {
           token: binding.objectId,
-          name: analysis?.fileName ?? reviews.get(binding.objectId)?.fileName ?? `${locale === 'zh-CN' ? '候选文件' : '選択ファイル'} ${index + 1}`,
-          status: analysis?.analysisVersion === 'resume-analysis-v6' ? 'success' as const : 'queued' as const,
+          name: analysis?.fileName ?? reviews.get(binding.objectId)?.fileName ?? `${t('候选文件', '選択ファイル')} ${index + 1}`,
+          status: analysis?.analysisVersion === 'resume-analysis-v6' ? ('success' as const) : ('queued' as const),
           error: null
         }
       })
   }
 
-  const runResumeImportTask = async (
-    task: WorkTask,
-    request: number,
-    conversationId?: string
-  ): Promise<AiConversationSnapshot | null> => {
+  const runResumeImportTask = async (task: WorkTask, request: number, conversationId?: string): Promise<AiConversationSnapshot | null> => {
     try {
       const conversation = await executeResumeImportTask(task, request, conversationId)
       if (resumeImportRequest.current !== request) return conversation
       const refreshed = await window.sesAgent.getBootstrap()
       setBootstrap(refreshed)
       setSelectedTask((current) => refreshed.tasks.find((item) => item.id === current?.id) ?? current)
-      setResumeImportProgress((current) => current?.taskId === task.id ? {
-        ...current,
-        phase: current.files.some((file) => file.status === 'error') ? 'partial-failed' : 'completed'
-      } : current)
+      setResumeImportProgress((current) =>
+        current?.taskId === task.id
+          ? {
+              ...current,
+              phase: current.files.some((file) => file.status === 'error') ? 'partial-failed' : 'completed'
+            }
+          : current
+      )
       return conversation
     } catch (cause) {
       if (resumeImportRequest.current === request) {
-        setResumeImportProgress((current) => current ? {
-          ...current,
-          phase: 'error',
-          error: cause instanceof Error ? cause.message : '履歴書を取り込めませんでした。'
-        } : current)
+        setResumeImportProgress((current) =>
+          current
+            ? {
+                ...current,
+                phase: 'error',
+                error: localizedIpcError(locale, cause, t('无法导入简历。', '履歴書を取り込めませんでした。'))
+              }
+            : current
+        )
       }
       return null
     } finally {
@@ -1249,16 +1413,20 @@ export function App() {
         resumeImportRequest.current = 0
         return null
       }
-      setBootstrap((current) => current ? { ...current, tasks: [created.task, ...current.tasks] } : current)
+      setBootstrap((current) => (current ? { ...current, tasks: [created.task, ...current.tasks] } : current))
       setResumeImportProgress({ phase: 'parsing', taskId: created.task.id, files: progressFiles(created.files), error: null })
       return await runResumeImportTask(created.task, request, conversationId)
     } catch (cause) {
       if (resumeImportRequest.current === request) {
-        setResumeImportProgress((current) => current ? {
-          ...current,
-          phase: 'error',
-          error: cause instanceof Error ? cause.message : '履歴書を取り込めませんでした。'
-        } : current)
+        setResumeImportProgress((current) =>
+          current
+            ? {
+                ...current,
+                phase: 'error',
+                error: localizedIpcError(locale, cause, t('无法导入简历。', '履歴書を取り込めませんでした。'))
+              }
+            : current
+        )
       }
       if (resumeImportRequest.current === request) resumeImportRequest.current = 0
       return null
@@ -1266,9 +1434,7 @@ export function App() {
   }
 
   const startManualCase = () => {
-    setGovernanceOpen(false)
-    setSelectedTask(null)
-    setActiveView('case-import')
+    openCaseImport()
     setManualCaseRequestId(1)
   }
 
@@ -1288,170 +1454,417 @@ export function App() {
     await importGmailFromComposer()
   }
 
-  const gmailCommandLabel = bootstrap.gmail.configuration === 'required' || bootstrap.gmailSync.configuration === 'required'
-    ? 'Google Workspaceを設定'
-    : bootstrap.gmail.status !== 'readonly'
-      ? 'Gmail読取専用接続を確認'
-      : bootstrap.gmailSync.status === 'error'
-        ? 'Gmail同期を再試行'
-        : 'Gmailを同期して案件を確認'
+  const gmailCommandLabel: CommandText =
+    bootstrap.gmail.configuration === 'required' || bootstrap.gmailSync.configuration === 'required'
+      ? { zh: '设置 Google Workspace', ja: 'Google Workspaceを設定' }
+      : bootstrap.gmail.status !== 'readonly'
+        ? { zh: '确认 Gmail 只读连接', ja: 'Gmail読取専用接続を確認' }
+        : bootstrap.gmailSync.status === 'error'
+          ? { zh: '重试 Gmail 同步', ja: 'Gmail同期を再試行' }
+          : { zh: '同步 Gmail 并确认案件', ja: 'Gmailを同期して案件を確認' }
+  const caseTitleOf = (review: JobCaseReviewSnapshot) =>
+    review.fields.find((field) => field.key === 'title')?.value?.trim() || review.redactedSubject
+  const personNameOf = (person: CandidateReviewSnapshot) => person.localIdentity?.displayName ?? person.fileName
+  // 找人/找案件 act on the object selected in its HR list, so the palette works from anywhere without a second click.
+  const selectedHrObject = (kind: HrBusinessKind) => {
+    const key = agentFeedSelection?.startsWith(`${kind}:`) ? agentFeedSelection : readHrPosition(kind).selected
+    return key?.startsWith(`${kind}:`) ? key.slice(kind.length + 1) : null
+  }
+  const paletteCase = (() => {
+    const id = selectedHrObject('case')
+    const review = id ? bootstrap.jobCaseReviews.find((item) => item.reviewId === id) : undefined
+    return review?.lifecycle === 'active' && review.status === 'completed' ? review : undefined
+  })()
+  const palettePerson = (() => {
+    const id = selectedHrObject('person')
+    const person = id ? bootstrap.candidateReviews.find((item) => item.documentId === id) : undefined
+    return person?.recordStatus === 'active' ? person : undefined
+  })()
+  const openHrObject = (kind: HrBusinessKind, id: string) => {
+    openHrList(kind)
+    setAgentFeedSelection(`${kind}:${id}`)
+    saveHrPosition(kind, { selected: `${kind}:${id}` })
+    if (kind === 'person') openAgentPersonnel(id)
+    else openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })
+  }
   const businessCommands: BusinessCommand[] = [
     {
-      id: 'input-resume', group: '入力', label: 'スキルシートを取り込む', icon: 'upload',
-      description: 'ファイル選択後も実行前プレビューとローカル解析を維持します。',
-      keywords: ['履歴書', '職務経歴書', 'resume', 'candidate', '候補者', 'ファイル'],
-      run: async () => { await startResumeImport() }
+      id: 'hr-find-people',
+      group: '業務',
+      label: { zh: '找人', ja: '要員を探す' },
+      description: paletteCase
+        ? { zh: `为「${caseTitleOf(paletteCase)}」找人`, ja: `「${caseTitleOf(paletteCase)}」の要員を探します。` }
+        : { zh: '未选择案件，打开案件列表后选择。', ja: '案件が選択されていません。案件一覧から選びます。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['找人', '要員を探す', 'matching', 'マッチング', '案件'],
+      icon: 'users',
+      run: () => {
+        if (paletteCase) openCasePeople(paletteCase)
+        else openHrList('case')
+      }
     },
     {
-      id: 'input-case', group: '入力', label: '案件を手動で追加', icon: 'briefcase',
-      description: '貼り付けた件名・本文を端末内で脱敏してレビュー草稿にします。',
+      id: 'hr-find-cases',
+      group: '業務',
+      label: { zh: '找案件', ja: '案件を探す' },
+      description: palettePerson
+        ? { zh: `为「${personNameOf(palettePerson)}」找案件`, ja: `「${personNameOf(palettePerson)}」の案件を探します。` }
+        : { zh: '未选择人员，打开人员列表后选择。', ja: '要員が選択されていません。要員一覧から選びます。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['找案件', '案件を探す', 'matching', 'マッチング', '要員', '人员'],
+      icon: 'briefcase',
+      run: () => {
+        if (palettePerson) openAgentPersonnel(palettePerson.documentId, true)
+        else openHrList('person')
+      }
+    },
+    {
+      id: 'hr-cases',
+      group: '業務',
+      label: { zh: '打开案件列表', ja: '案件一覧を開く' },
+      description: {
+        zh: `待确认 ${bootstrap.jobCaseReviews.filter((review) => review.status === 'awaiting-review').length} 件。`,
+        ja: `確認待ち ${bootstrap.jobCaseReviews.filter((review) => review.status === 'awaiting-review').length}件。`
+      },
+      // i18n-ignore: search keywords match either language
+      keywords: ['案件', 'case', 'review', '案件レビュー', 'eml'],
+      icon: 'briefcase',
+      run: () => openHrList('case')
+    },
+    {
+      id: 'hr-people',
+      group: '業務',
+      label: { zh: '打开人员列表', ja: '要員一覧を開く' },
+      description: { zh: '查看和管理本机加密的人员资料。', ja: '暗号化したローカル要員情報を確認・管理します。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['人员', '要員', '候補者', '候補者プール', 'candidate', '人材', 'profile'],
+      icon: 'users',
+      run: () => openHrList('person')
+    },
+    {
+      id: 'hr-follow-ups',
+      group: '業務',
+      label: { zh: '打开跟进', ja: '対応記録を開く' },
+      description: { zh: '查看已开始跟进的人员与案件组合。', ja: '対応中の要員と案件の組み合わせを確認します。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['跟进', '対応', 'follow', '面談', 'interview'],
+      icon: 'clock',
+      run: () => openFollowUps()
+    },
+    {
+      id: 'hr-case-import',
+      group: '業務',
+      label: { zh: '批量导入案件', ja: '案件を一括取込' },
+      description: { zh: '案件 → 批量导入：Gmail、EML、微信和手动输入。', ja: '案件 → 一括取込：Gmail・EML・WeChat・手入力。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['批量导入', '一括取込', 'gmail', 'eml', 'wechat', '微信', '案件', 'import'],
+      icon: 'upload',
+      run: openCaseImport
+    },
+    {
+      id: 'hr-broadcast',
+      group: '業務',
+      label: { zh: '群发案件', ja: '案件を配信' },
+      description: paletteCase
+        ? { zh: `群发「${caseTitleOf(paletteCase)}」`, ja: `「${caseTitleOf(paletteCase)}」を配信します。` }
+        : { zh: '在案件列表旁打开群发。', ja: '案件一覧の横で配信を開きます。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['群发', '群发案件', '配信', 'broadcast', '案件'],
+      icon: 'mail',
+      run: () => {
+        openHrList('case')
+        openAgentSystemAccess(
+          paletteCase
+            ? { type: 'system-access', destination: 'broadcast', reviewId: paletteCase.reviewId }
+            : { type: 'system-access', destination: 'broadcast' }
+        )
+      }
+    },
+    {
+      id: 'hr-recruiting',
+      group: '業務',
+      label: { zh: '招聘面试', ja: '採用面談' },
+      description: { zh: '人员 → 招聘面试：初面、复试和招聘结论。', ja: '要員 → 採用面談：一次面談・再面談・採用結論。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['招聘面试', '採用面談', '招聘', '採用', 'recruiting', 'interview', '人员', '要員'],
+      icon: 'users',
+      run: () => openRecruiting()
+    },
+    {
+      id: 'hr-interview-schedule',
+      group: '業務',
+      label: { zh: '面试日程', ja: '面談日程' },
+      description: { zh: '跟进 → 面试日程：所有已预约的面试。', ja: '対応記録 → 面談日程：予約済みの面談の一覧。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['面试日程', '面談日程', 'schedule', 'interview', '跟进', '日程'],
+      icon: 'clock',
+      run: openInterviewSchedule
+    },
+    {
+      id: 'hr-new-case',
+      group: '業務',
+      label: { zh: '新增案件', ja: '案件を追加' },
+      description: { zh: '粘贴案件信息，整理后加入案件列表。', ja: '案件情報を貼り付けて整理し、案件一覧に追加します。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['新增', '追加', '案件', 'paste', 'case'],
+      icon: 'plus',
+      run: () => {
+        openHrList('case')
+        openAgentBatch()
+      }
+    },
+    {
+      id: 'hr-import-people',
+      group: '業務',
+      label: { zh: '导入人员', ja: '要員を取り込む' },
+      description: { zh: '粘贴人员介绍，整理后加入人员列表。', ja: '要員紹介を貼り付けて整理し、要員一覧に追加します。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['导入', '取り込む', '要員', '人员', 'paste', 'candidate'],
+      icon: 'upload',
+      run: () => {
+        openHrList('person')
+        openAgentBatch()
+      }
+    },
+    {
+      id: 'input-resume',
+      group: '入力',
+      label: { zh: '导入技能表', ja: 'スキルシートを取り込む' },
+      icon: 'upload',
+      description: { zh: '选择文件后仍保持执行前预览和本地解析。', ja: 'ファイル選択後も実行前プレビューとローカル解析を維持します。' },
+      // i18n-ignore: search keywords match either language
+      keywords: ['履歴書', '職務経歴書', 'resume', 'candidate', '候補者', 'ファイル'],
+      run: async () => {
+        await startResumeImport()
+      }
+    },
+    {
+      id: 'input-case',
+      group: '入力',
+      label: { zh: '手工添加案件', ja: '案件を手動で追加' },
+      icon: 'briefcase',
+      description: {
+        zh: '在设备内对粘贴的主题和正文脱敏，并生成审核草稿。',
+        ja: '貼り付けた件名・本文を端末内で脱敏してレビュー草稿にします。'
+      },
+      // i18n-ignore: search keywords match either language
       keywords: ['案件', 'メール', '手動', 'paste', 'job'],
       run: startManualCase
     },
     {
-      id: 'input-gmail', group: '入力', label: gmailCommandLabel, icon: 'mail',
-      description: bootstrap.gmail.status === 'readonly'
-        ? '管理者が固定したLabel・期間・上限だけを読取専用同期します。'
-        : 'Desktop OAuth設定とgmail.readonlyの接続状態を確認します。',
+      id: 'input-gmail',
+      group: '入力',
+      label: gmailCommandLabel,
+      icon: 'mail',
+      description:
+        bootstrap.gmail.status === 'readonly'
+          ? { zh: '只读同步管理员固定的 Label、期间和上限。', ja: '管理者が固定したLabel・期間・上限だけを読取専用同期します。' }
+          : { zh: '确认 Desktop OAuth 设置与 gmail.readonly 连接状态。', ja: 'Desktop OAuth設定とgmail.readonlyの接続状態を確認します。' },
+      // i18n-ignore: search keywords match either language
       keywords: ['gmail', 'google workspace', '同期', 'メール', '案件'],
       run: runGoogleWorkspaceCommand
     },
     {
-      id: 'work-new', group: '作業', label: '新しい作業を作成', icon: 'plus',
-      description: '自然言語で目的を入力し、データ範囲を実行前に確認します。',
+      id: 'work-new',
+      group: '作業',
+      label: { zh: '创建新任务', ja: '新しい作業を作成' },
+      icon: 'plus',
+      description: { zh: '输入自然语言目标，并在执行前确认数据范围。', ja: '自然言語で目的を入力し、データ範囲を実行前に確認します。' },
+      // i18n-ignore: search keywords match either language
       keywords: ['task', '新規', '指示', 'agent'],
-      run: startNewTask
+      run: () => openAgentChat()
     },
     {
-      id: 'work-list', group: '作業', label: 'アクティビティを開く', icon: 'tasks',
-      description: locale === 'zh-CN'
-        ? `查看 ${bootstrap.tasks.length} 项处理历史及其状态、进度和证据。`
-        : `処理履歴 ${bootstrap.tasks.length}件を状態・進捗・証跡とともに確認します。`,
+      id: 'work-list',
+      group: '作業',
+      label: { zh: '打开活动记录', ja: 'アクティビティを開く' },
+      icon: 'tasks',
+      description: {
+        zh: `查看 ${bootstrap.tasks.length} 项处理历史及其状态、进度和证据。`,
+        ja: `処理履歴 ${bootstrap.tasks.length}件を状態・進捗・証跡とともに確認します。`
+      },
+      // i18n-ignore: search keywords match either language
       keywords: ['task', '履歴', '進捗', '再開', '失敗'],
       run: openTaskCenter
     },
     {
-      id: 'data-cases', group: 'データ', label: '案件レビューを開く', icon: 'briefcase',
-      description: `確認待ち ${bootstrap.jobCaseReviews.filter((review) => review.status === 'awaiting-review').length}件。Gmail・EML・手動入力を同じ流れで確認します。`,
-      keywords: ['案件', 'case', 'review', 'eml'],
-      run: () => {
-        setGovernanceOpen(false)
-        setSelectedTask(null)
-        setActiveView('cases')
-      }
+      id: 'control-reviews',
+      group: '統制',
+      label: { zh: '打开审核中心', ja: 'レビューセンターを開く' },
+      icon: 'shield',
+      description: {
+        zh: `待确认 ${reviewQueue.length} 项（案件、简历、审批）待处理。`,
+        ja: `確認待ち ${reviewQueue.length} 件（案件・履歴書・承認）を確認します。`
+      },
+      // i18n-ignore: search keywords match either language
+      keywords: ['review', 'approval', '確認', '承認', 'レビュー', '审核'],
+      run: openReviewCenter
     },
     {
-      id: 'data-candidates', group: 'データ', label: '候補者プールを開く', icon: 'users',
-      description: '暗号化したローカル人材プロフィールを検索・比較・管理します。',
-      keywords: ['候補者', 'candidate', '人材', '検索', 'profile'],
-      run: () => {
-        setGovernanceOpen(false)
-        setSelectedTask(null)
-        setActiveView('candidates')
-      }
-    },
-    {
-      id: 'control-governance', group: '統制', label: 'データと承認を開く', icon: 'shield',
-      description: '脱敏、Local AI、品質門とバックアップを確認します。',
+      id: 'control-governance',
+      group: '統制',
+      label: { zh: '打开数据与审批', ja: 'データと承認を開く' },
+      icon: 'shield',
+      description: { zh: '查看脱敏、本地 AI、质量门和备份。', ja: '脱敏、Local AI、品質門とバックアップを確認します。' },
+      // i18n-ignore: search keywords match either language
       keywords: ['privacy', 'pii', '脱敏', 'バックアップ', '設定', 'security'],
       run: () => {
         setSelectedTask(null)
-        setActiveView('home')
         setGovernanceOpen(true)
       }
     },
+    ...bootstrap.jobCaseReviews
+      .filter((review) => review.lifecycle === 'active')
+      .map((review): BusinessCommand => ({
+        id: `object-case-${review.reviewId}`,
+        group: '対象',
+        label: { zh: caseTitleOf(review), ja: caseTitleOf(review) },
+        description: { zh: '在案件列表中打开', ja: '案件一覧で開く' },
+        keywords: [caseTitleOf(review), review.redactedSubject],
+        icon: 'briefcase',
+        searchOnly: true,
+        run: () => openHrObject('case', review.reviewId)
+      })),
+    ...bootstrap.candidateReviews
+      .filter((person) => person.recordStatus === 'active')
+      .map((person): BusinessCommand => ({
+        id: `object-person-${person.documentId}`,
+        group: '対象',
+        label: { zh: personNameOf(person), ja: personNameOf(person) },
+        description: { zh: '在人员列表中打开', ja: '要員一覧で開く' },
+        keywords: [personNameOf(person), person.fileName],
+        icon: 'users',
+        searchOnly: true,
+        run: () => openHrObject('person', person.documentId)
+      })),
     ...bootstrap.tasks.slice(0, 5).map((task): BusinessCommand => ({
       id: `recent-${task.id}`,
+      // i18n-ignore: group identifier
       group: '最近の作業',
-      label: task.title,
-      description: `${task.typeLabel} · ${task.progress}% · 証跡 ${task.evidenceCount}件`,
+      label: { zh: localizedTaskTitle('zh-CN', task), ja: task.title },
+      description: {
+        zh: `${workTaskTypeLabel(task, localeText(true))} · ${task.progress}% · 证据 ${task.evidenceCount} 项`,
+        ja: `${task.typeLabel} · ${task.progress}% · 証跡 ${task.evidenceCount}件`
+      },
       keywords: [task.typeLabel, task.status, task.instruction],
-      icon: task.type === 'IMPORT_RESUME' ? 'upload' : task.type === 'CREATE_CASE' ? 'briefcase' : task.type === 'MATCH_CANDIDATES' ? 'users' : 'file',
+      icon:
+        task.type === 'IMPORT_RESUME'
+          ? 'upload'
+          : task.type === 'CREATE_CASE'
+            ? 'briefcase'
+            : task.type === 'MATCH_CANDIDATES'
+              ? 'users'
+              : 'file',
       run: () => selectTask(task)
     }))
   ]
 
-  const saveCandidateInterviewSchedule = async (
-    input: Parameters<typeof window.sesAgent.saveCandidateInterviewSchedule>[0]
-  ) => {
+  const saveCandidateInterviewSchedule = async (input: Parameters<typeof window.sesAgent.saveCandidateInterviewSchedule>[0]) => {
     const interview = await window.sesAgent.saveCandidateInterviewSchedule(input)
-    setBootstrap((current) => current ? {
-      ...current,
-      candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
-    } : current)
+    setBootstrap((current) =>
+      current
+        ? {
+            ...current,
+            candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
+          }
+        : current
+    )
     return interview
   }
 
-  const renderCandidatePipelineDetail = (
-    detail: NonNullable<typeof candidateWorkspaceDetail>,
-    showBackToQueue = true
-  ) => <CandidatePipeline
-    aiCommerce={bootstrap.aiCommerce}
-    analyses={bootstrap.resumeAnalyses}
-    initialCandidateId={detail.documentId}
-    initialInterviewId={detail.interviewId ?? null}
-    interviewKind={detail.interviewKind ?? (detail.scope === 'client' ? 'client' : 'recruiting')}
-    interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-    matchingHome={bootstrap.matchingHome}
-    tasks={bootstrap.tasks}
-    onBackToQueue={showBackToQueue ? () => setCandidateWorkspaceDetail(null) : undefined}
-    onConfirmCandidateProfile={submitCandidateReview}
-    onCreateRound={async (input) => {
-      const interview = await window.sesAgent.createCandidateInterviewRound(input)
-      setBootstrap((current) => current ? {
-        ...current,
-        candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
-      } : current)
-      return interview
-    }}
-    onImportResume={() => void startResumeImport()}
-    onOpenCandidateLibrary={() => setActiveView('candidates')}
-    onOpenCloudSettings={() => setAiCommerceOpen(true)}
-    onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
-    onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
-    onOpenIntegrationSettings={() => openApplicationSettings('integrations')}
-    onOpenZoomMeeting={(input) => window.sesAgent.openZoomMeeting(input)}
-    onOpenInterviewMeeting={(input) => window.sesAgent.openInterviewMeeting(input)}
-    onRecordDecision={async (input) => {
-      const interview = await window.sesAgent.recordCandidateInterviewDecision(input)
-      setBootstrap((current) => current ? {
-        ...current,
-        candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
-      } : current)
-      return interview
-    }}
-    onSaveNotes={async (input) => {
-      const interview = await window.sesAgent.saveCandidateInterviewNotes(input)
-      setBootstrap((current) => current ? {
-        ...current,
-        candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
-      } : current)
-      return interview
-    }}
-    onSavePreparation={async (input) => {
-      const interview = await window.sesAgent.saveCandidateInterviewPreparation(input)
-      setBootstrap((current) => current ? {
-        ...current,
-        candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
-      } : current)
-      return interview
-    }}
-    onSaveSchedule={saveCandidateInterviewSchedule}
-    onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
-    onSetTaskLifecycle={setWorkTaskLifecycle}
-    onViewChange={(nextView) => setCandidateWorkspaceDetail((current) => current
-      ? { ...current, view: nextView }
-      : { ...detail, view: nextView })}
-    reviews={bootstrap.candidateReviews}
-    view={detail.view}
-  />
+  const renderCandidatePipelineDetail = (detail: NonNullable<typeof candidateWorkspaceDetail>, showBackToQueue = true) => (
+    <CandidatePipeline
+      aiCommerce={bootstrap.aiCommerce}
+      analyses={bootstrap.resumeAnalyses}
+      initialCandidateId={detail.documentId}
+      initialInterviewId={detail.interviewId ?? null}
+      interviewKind={detail.interviewKind ?? 'recruiting'}
+      interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
+      matchingHome={bootstrap.matchingHome}
+      tasks={bootstrap.tasks}
+      onBackToQueue={showBackToQueue ? () => setCandidateWorkspaceDetail(null) : undefined}
+      onConfirmCandidateProfile={submitCandidateReview}
+      onCreateRound={async (input) => {
+        const interview = await window.sesAgent.createCandidateInterviewRound(input)
+        setBootstrap((current) =>
+          current
+            ? {
+                ...current,
+                candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
+              }
+            : current
+        )
+        return interview
+      }}
+      onImportResume={() => void startResumeImport()}
+      onOpenCandidateLibrary={(documentId) => (documentId ? openHrObject('person', documentId) : openHrList('person'))}
+      onOpenCloudSettings={() => setAiCommerceOpen(true)}
+      onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
+      onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
+      onOpenIntegrationSettings={() => openApplicationSettings('integrations')}
+      onOpenZoomMeeting={(input) => window.sesAgent.openZoomMeeting(input)}
+      onOpenInterviewMeeting={(input) => window.sesAgent.openInterviewMeeting(input)}
+      onRecordDecision={async (input) => {
+        const interview = await window.sesAgent.recordCandidateInterviewDecision(input)
+        setBootstrap((current) =>
+          current
+            ? {
+                ...current,
+                candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
+              }
+            : current
+        )
+        return interview
+      }}
+      onSaveNotes={async (input) => {
+        const interview = await window.sesAgent.saveCandidateInterviewNotes(input)
+        setBootstrap((current) =>
+          current
+            ? {
+                ...current,
+                candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
+              }
+            : current
+        )
+        return interview
+      }}
+      onSavePreparation={async (input) => {
+        const interview = await window.sesAgent.saveCandidateInterviewPreparation(input)
+        setBootstrap((current) =>
+          current
+            ? {
+                ...current,
+                candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
+              }
+            : current
+        )
+        return interview
+      }}
+      onSaveSchedule={saveCandidateInterviewSchedule}
+      onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
+      onSetTaskLifecycle={setWorkTaskLifecycle}
+      onViewChange={(nextView) =>
+        setCandidateWorkspaceDetail((current) => (current ? { ...current, view: nextView } : { ...detail, view: nextView }))
+      }
+      reviews={bootstrap.candidateReviews}
+      view={detail.view}
+    />
+  )
 
   const openInterviewFromSchedule = (route: InterviewScheduleRoute) => {
     if (route.businessFollowUpId) {
-      void window.sesAgent.listBusinessFollowUps().then((rows) => {
-        const item = rows.find((row) => row.id === route.businessFollowUpId)
-        if (item) { setHrFollowTarget({documentId:item.documentId,reviewId:item.reviewId}); setHrFollowOpen(true); returnToHr(); closeAgentPanel() }
-      }).catch((cause) => setLoadError(String(cause)))
+      void window.sesAgent
+        .listBusinessFollowUps()
+        .then((rows) => {
+          const item = rows.find((row) => row.id === route.businessFollowUpId)
+          if (item) {
+            setHrFollowTarget({ documentId: item.documentId, reviewId: item.reviewId })
+            setHrFollowOpen(true)
+            returnToHr()
+            closeAgentPanel()
+          }
+        })
+        .catch((cause) => setLoadError(localizedIpcError(locale, cause, t('无法读取跟进记录。', '対応記録を読み込めませんでした。'))))
       return
     }
     setCandidateWorkspaceDetail({
@@ -1462,697 +1875,940 @@ export function App() {
       view: route.view
     })
   }
-  const hrNavigation = bootstrap.featureFlags?.conversationalMatchingEnabled === true
-  const agentPrimary = activeView === 'agent' && hrNavigation
+  const agentPrimary = activeView === 'agent'
   const pendingActionApprovals = reviewQueue.filter((item) => item.kind === 'action-approval')
-  const resumeImports = bootstrap.tasks.filter((task) => task.type === 'IMPORT_RESUME').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const resumeImports = bootstrap.tasks
+    .filter((task) => task.type === 'IMPORT_RESUME')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   const failedImports = resumeImports.filter((task) => task.status === 'failed')
-  const navigationFollows = agentPrimary ? hrFollowOpen : ['interview-schedule', 'interview-workbench', 'client-interviews', 'entry-prep'].includes(activeView) || hrFollowOpen
-  const navigationKind = ['cases', 'case-import', 'matching'].includes(activeView) ? 'case'
-    : ['candidates', 'candidate-management', 'business'].includes(activeView) ? 'person' : hrKind
   const openHrList = (kind: HrBusinessKind) => {
-    setActiveView('agent'); setSelectedTask(null); setGovernanceOpen(false); setHrFollowOpen(false); setHrKind(kind)
-    setAgentFeedSelection(readHrPosition(kind).selected); setHrSource(null); closeAgentPanel(); setAgentHomeRequest((value) => value + 1)
-    try { localStorage.setItem('ses-hr-kind-v2', kind) } catch {}
+    setActiveView('agent')
+    setSelectedTask(null)
+    setGovernanceOpen(false)
+    setHrFollowOpen(false)
+    setHrBatchStarted(null)
+    setHrKind(kind)
+    setAgentFeedSelection(readHrPosition(kind).selected)
+    setHrSource(null)
+    closeAgentPanel()
+    setAgentHomeRequest((value) => value + 1)
+    try {
+      localStorage.setItem('ses-hr-kind-v2', kind)
+    } catch {}
   }
-  const returnToHr = () => { setActiveView('agent'); setSelectedTask(null); setGovernanceOpen(false) }
-  const openHrLibrary = () => {
-    const selected = readHrPosition(hrKind).selected?.split(':').slice(1).join(':')
-    if (hrKind === 'person') {
-      if (selected) openPersonnelProfile(selected)
-      else openCandidateManagement()
-    } else { setRequestedJobCaseReviewId(selected ?? null); setActiveView('cases') }
+  const returnToHr = () => {
+    setActiveView('agent')
+    setSelectedTask(null)
+    setGovernanceOpen(false)
   }
-  const assessmentJob = bootstrap.jobCaseReviews.find(job => job.reviewId === assessmentReviewId)
-  const resumeStates: Record<string, { pending: number; count: number }> = {}
-  // The card counts exactly the people the panel would show.
-  for (const reviewId of new Set(caseResumes.tasks.map(task => task.reviewId))) {
-    const visible = caseResumes.visible(reviewId, bootstrap.candidateReviews, task => Boolean(task.documentId && businessProgress.indexes.pairs.get(progressPairKey({ documentId: task.documentId, reviewId })))).tasks
-    resumeStates[reviewId] = { pending: visible.filter(pendingResumeTask).length, count: visible.length }
+  const openFollowUps = () => {
+    returnToHr()
+    setHrFollowOpen(true)
+    setHrBatchStarted(null)
+    closeAgentPanel()
+    setAgentHomeRequest((value) => value + 1)
   }
-  for (const [reviewId, search] of Object.entries(caseResumes.searches)) {
-    const state = resumeStates[reviewId] ??= { pending: 0, count: 0 }
-    if (search.pending) state.pending++
+  const openAgentChat = () => {
+    returnToHr()
+    setHrChatRequest((value) => value + 1)
   }
-  const composerCase = agentContextAccess?.destination === 'case-review' || agentContextAccess?.destination === 'broadcast'
-    ? bootstrap.jobCaseReviews.find((review) => review.reviewId === agentContextAccess.reviewId)
-    : agentContextAccess?.destination === 'matching' && agentContextAccess.jobCaseId ? bootstrap.jobCaseReviews.find((review) => review.jobCase?.id === agentContextAccess.jobCaseId) : undefined
-  const composerPerson = agentContextAccess?.destination === 'candidate' || agentContextAccess?.destination === 'original-document'
-    ? bootstrap.candidateReviews.find((review) => review.documentId === agentContextAccess.sourceDocumentId) : undefined
-  const composerObject = composerPerson ? {
-    kind: 'person' as const, label: composerPerson.localIdentity?.displayName ?? composerPerson.fileName,
-    onMatch: composerPerson.recordStatus === 'active' ? () => openAgentPersonnel(composerPerson.documentId, true) : undefined,
-    onPromote: composerPerson.recordStatus === 'active' ? () => openAgentPersonnel(composerPerson.documentId) : undefined
-  } : composerCase ? {
-    kind: 'case' as const, label: composerCase.fields.find((field) => field.key === 'title')?.value ?? composerCase.redactedSubject,
-    onMatch: composerCase.lifecycle === 'active' ? () => openAgentSystemAccess(composerCase.jobCase
-      ? { type: 'system-access', destination: 'matching', jobCaseId: composerCase.jobCase.id }
-      : { type: 'system-access', destination: 'case-review', reviewId: composerCase.reviewId }) : undefined,
-    onPromote: composerCase.lifecycle === 'active' ? () => openAgentSystemAccess({ type: 'system-access', destination: composerCase.jobCase ? 'broadcast' : 'case-review', reviewId: composerCase.reviewId }) : undefined
-  } : undefined
+  railShortcuts.current = [() => openHrList('case'), () => openHrList('person'), openFollowUps, openAgentChat]
+  // 完整人员资料 opens the selected person's full profile beside the list; a case's full record is its detail panel.
+  const hrLibraryPerson = hrKind === 'person' ? selectedHrObject('person') : null
+  // Person list entries use the person's documentId as objectId; only a result for the current profile counts.
+  const personMatchCounts: Record<string, number> = {}
+  for (const person of bootstrap.candidateReviews) {
+    const count = personCaseMatches.count(person.documentId, person.profile?.version)
+    if (count !== null) personMatchCounts[person.documentId] = count
+  }
+  const assessmentJob = bootstrap.jobCaseReviews.find((job) => job.reviewId === assessmentReviewId)
+  // The card counts exactly the people the panel would show; before the panel has data, the saved count from Main.
+  const resumeStates = caseResumes.cardStates(bootstrap.candidateReviews, (task) =>
+    Boolean(
+      task.documentId && businessProgress.indexes.pairs.get(progressPairKey({ documentId: task.documentId, reviewId: task.reviewId }))
+    )
+  )
+  const composerCase =
+    agentContextAccess?.destination === 'case-review' || agentContextAccess?.destination === 'broadcast'
+      ? bootstrap.jobCaseReviews.find((review) => review.reviewId === agentContextAccess.reviewId)
+      : undefined
+  const composerPerson =
+    agentContextAccess?.destination === 'candidate' || agentContextAccess?.destination === 'original-document'
+      ? bootstrap.candidateReviews.find((review) => review.documentId === agentContextAccess.sourceDocumentId)
+      : undefined
+  const composerObject = composerPerson
+    ? {
+        kind: 'person' as const,
+        label: composerPerson.localIdentity?.displayName ?? composerPerson.fileName,
+        onMatch: composerPerson.recordStatus === 'active' ? () => openAgentPersonnel(composerPerson.documentId, true) : undefined,
+        onPromote: composerPerson.recordStatus === 'active' ? () => openAgentPersonnel(composerPerson.documentId) : undefined
+      }
+    : composerCase
+      ? {
+          kind: 'case' as const,
+          label: composerCase.fields.find((field) => field.key === 'title')?.value ?? composerCase.redactedSubject,
+          onMatch:
+            composerCase.lifecycle === 'active'
+              ? () =>
+                  openAgentSystemAccess(
+                    composerCase.jobCase
+                      ? { type: 'system-access', destination: 'matching', jobCaseId: composerCase.jobCase.id }
+                      : { type: 'system-access', destination: 'case-review', reviewId: composerCase.reviewId }
+                  )
+              : undefined,
+          onPromote:
+            composerCase.lifecycle === 'active'
+              ? () =>
+                  openAgentSystemAccess({
+                    type: 'system-access',
+                    destination: composerCase.jobCase ? 'broadcast' : 'case-review',
+                    reviewId: composerCase.reviewId
+                  })
+              : undefined
+        }
+      : undefined
 
-
-  const renderBusinessProgress = (kind: HrBusinessKind, id: string) => <BusinessProgressOverview key={`${kind}:${id}`} kind={kind} objectId={id} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onAdvance={setSideProgressTarget} focusRequest={progressFocus?.kind === kind && progressFocus.id === id ? progressFocus.request : undefined} />
+  const renderBusinessProgress = (kind: HrBusinessKind, id: string) => (
+    <BusinessProgressOverview
+      key={`${kind}:${id}`}
+      kind={kind}
+      objectId={id}
+      people={bootstrap.candidateReviews}
+      cases={bootstrap.jobCaseReviews}
+      onAdvance={setSideProgressTarget}
+      focusRequest={progressFocus?.kind === kind && progressFocus.id === id ? progressFocus.request : undefined}
+    />
+  )
 
   return (
     <UiLocaleProvider locale={locale}>
-    <BusinessProgressContext.Provider value={businessProgress}>
-      <div className={hrNavigation ? 'app-shell is-agent-primary is-hr-navigation' : 'app-shell'}>
-      {toasts.length > 0 ? <div className="app-toasts" role="status">
-        {toasts.map((toast) => <button className="app-toast" key={toast.id} onClick={() => {
-          setToasts((current) => current.filter((item) => item.id !== toast.id))
-          setActiveView('agent')
-          setAgentContextTrail(defaultAgentContextTrail())
-        }} type="button"><Icon name="mail" size={13} />{toast.message}</button>)}
-      </div> : null}
-      {hrNavigation ? <AgentSystemRail
-        businessKind={navigationKind}
-        followActive={navigationFollows}
-        onFollowUps={() => { returnToHr(); setHrFollowOpen(true); closeAgentPanel(); setAgentHomeRequest((value) => value + 1) }}
-        onBusinessCases={() => openHrList('case')}
-        onBusinessPeople={() => openHrList('person')}
-        caseUnseenCount={newCaseDigest?.unseenCount ?? 0}
-        onAgent={() => { returnToHr(); setHrChatRequest((value) => value + 1) }}
-        onBusiness={() => openAgentBatch()}
-        onCandidates={openCandidateManagement}
-        onCases={openCases}
-        onInterviews={openInterviewSchedule}
-        onReviews={openReviewCenter}
-        onSettings={() => openApplicationSettings('general')}
-      /> : <Sidebar
-        active={activeView}
-        agentEnabled={bootstrap.featureFlags?.conversationalMatchingEnabled === true}
-        caseCount={activeCaseCount}
-        candidateManagementCount={bootstrap.candidateReviews.filter(review => review.inTalentLibrary !== false).length}
-        candidateCount={eligibleCandidateCount}
-        clientInterviewCount={new Set(bootstrap.candidateInterviews.filter((interview) => interview.kind === 'client' && interview.stage !== 'passed' && interview.stage !== 'closed').map((interview) => interview.sourceDocumentId)).size}
-        interviewDecisionCount={new Set([
-          ...bootstrap.candidateReviews.filter((review) => review.status === 'awaiting-review').map((review) => review.documentId),
-          ...bootstrap.candidateInterviews.filter((interview) => interview.kind === 'recruiting' && interview.stage !== 'passed' && interview.stage !== 'closed').map((interview) => interview.sourceDocumentId)
-        ]).size}
-        interviewScheduleCount={new Set([
-          ...bootstrap.candidateReviews.filter((review) => !review.profile).map((review) => review.documentId),
-          ...bootstrap.candidateInterviews.filter((interview) => interview.stage !== 'passed' && interview.stage !== 'closed').map((interview) => interview.sourceDocumentId)
-        ]).size}
-        operatorProfile={bootstrap.operatorProfile}
-        reviewCount={reviewQueue.length}
-        onCandidates={() => {
-          setGovernanceOpen(false)
-          setSelectedTask(null)
-          setActiveView('candidates')
-        }}
-        onCandidateManagement={openCandidateManagement}
-        onClientInterviews={openClientInterviews}
-        onEntryPrep={openEntryPrep}
-        onInterviewSchedule={openInterviewSchedule}
-        onInterviewWorkbench={openInterviewWorkbench}
-        onCases={openCases}
-        onCaseImport={openCaseImport}
-        onGovernance={() => {
-          setSelectedTask(null)
-          setGovernanceOpen(true)
-        }}
-        onBusiness={() => setActiveView('business')}
-        onHome={openHome}
-        onMatching={openMatching}
-        onOperatorProfile={() => setOperatorProfileOpen(true)}
-        onResumeImport={() => void startResumeImport()}
-        onSettings={() => openApplicationSettings('general')}
-        onReviews={openReviewCenter}
-        onTasks={openTaskCenter}
-        taskCount={bootstrap.tasks.length}
-      />}
-
-      <CaseIntroductionComposer target={caseIntroductionTarget} cases={bootstrap.jobCaseReviews} onPrepared={caseIntroductionPrepared} onClose={() => setCaseIntroductionTarget(null)} />
-      <IntroductionComposer onFollowUp={(target) => startHrProgress([target])} target={introductionTarget} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onClose={() => setIntroductionTarget(null)} />
-      <ResumeImportProgressDrawer
-        onClose={() => setResumeImportProgress(null)}
-        onOpenCandidates={() => {
-          setResumeImportProgress(null)
-          if (hrNavigation) openHrList('person')
-          else openCandidateManagement()
-        }}
-        onOpenFailures={(taskId) => {
-          setResumeImportProgress(null)
-          const task = bootstrap.tasks.find((item) => item.id === taskId)
-          if (task) selectTask(task)
-          else openTaskCenter()
-        }}
-        onOpenReviewCenter={() => {
-          setResumeImportProgress(null)
-          openReviewCenter()
-        }}
-        progress={resumeImportProgress}
-      />
-
-      <div className={hrNavigation ? 'hr-route-container' : 'legacy-route-container'}>
-      {hrNavigation && !agentPrimary ? <nav className="hr-return-bar" aria-label={locale === 'zh-CN' ? '返回业务列表' : '業務一覧へ戻る'}><button type="button" onClick={returnToHr}><Icon name="arrow-left" size={16} />{hrFollowOpen ? (locale === 'zh-CN' ? '返回跟进' : '対応記録に戻る') : hrKind === 'case' ? (locale === 'zh-CN' ? '返回案件列表' : '案件一覧に戻る') : (locale === 'zh-CN' ? '返回人员列表' : '要員一覧に戻る')}</button></nav> : null}
-      <div className="business-route" hidden={activeView !== 'business'}>
-        <BusinessWorkbench bootstrap={bootstrap} broadcastActions={broadcastActions} personnelRequest={personnelEditorRequest} personnelMessageDrafts={personnelMessageDrafts}
-          onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
-          onCaseImport={openCaseImport}
-          onCase={(reviewId) => { setRequestedJobCaseReviewId(reviewId); setActiveView('cases') }}
-          onProfile={openPersonnelProfile}
-          onMatchCase={openMatchingForCase} />
-      </div>
-      <div className="agent-route" hidden={!agentPrimary}>
-        {bootstrap.featureFlags?.conversationalMatchingEnabled === true ? (
-        <AgentWorkspace
-          businessMatchingBusy={hrBusy}
-          businessTitle={hrFollowOpen ? (locale === 'zh-CN' ? '跟进' : '対応記録') : hrSource ? (locale === 'zh-CN' ? '匹配结果' : 'マッチング結果') : hrKind === 'case' ? (locale === 'zh-CN' ? '案件' : '案件') : (locale === 'zh-CN' ? '人员' : '要員')}
-          chatRequest={hrChatRequest}
-          businessObject={agentFeedSelection ? { kind: agentFeedSelection.startsWith('case:') ? 'case' : 'person', id: agentFeedSelection.slice(agentFeedSelection.indexOf(':') + 1) } : undefined}
-          candidateReviews={bootstrap.candidateReviews}
-          composerObject={composerObject}
-          activeSystemAccess={agentContextAccess}
-          cloudConnected={bootstrap.aiCommerce.connection === 'connected'}
-          composerDraft={agentComposerDraft}
-          latestContent={<div className="hr-board">
-            <div className="hr-list-surface" hidden={Boolean(hrSource) || hrFollowOpen}><MatchingOpportunities active={agentPrimary&&!hrSource&&!hrFollowOpen} onOpen={item=>{ const review = bootstrap.jobCaseReviews.find(job => job.jobCase?.id === item.jobCaseId); const person = bootstrap.candidateReviews.find(person => person.documentId === item.documentId); if (review && person) { openCasePeople(review); setAssessmentFocus(caseResumes.addPerson(review, person)) } }}/><HrObjectList active={agentPrimary} onAssessResumes={openCaseResumeAssessment} resumeStates={resumeStates} onDeleted={async (entry) => {
-              if (agentFeedSelection === `${entry.kind}:${entry.objectId}`) setAgentFeedSelection(null)
-              setAgentHistoryReloadToken((current) => current + 1)
-              setBootstrap(await window.sesAgent.getBootstrap())
-            }} onOpenProgress={(entry) => { openLatestEntry(entry, 'view'); setProgressFocus({kind: entry.kind, id: entry.objectId, request: ++feedFocusSequence.current}) }} cases={bootstrap.jobCaseReviews} kind={hrKind} reloadToken={bootstrap} candidates={bootstrap.candidateReviews} selectedKey={agentFeedSelection} busy={hrBusy} onOpen={openLatestEntry} onIntake={() => openAgentBatch()} onImportResume={() => void startResumeImport()} onOpenLibrary={openHrLibrary} onImportHistory={hrKind === 'case' ? openCaseImport : () => { openTaskCenter(); setImportHistoryOpen(true) }} onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())} /></div>
-            <div className="hr-match-surface" hidden={!hrSource || hrFollowOpen}><HrMatchingWorkspace source={hrSource} cases={bootstrap.jobCaseReviews} people={bootstrap.candidateReviews} onBusy={setHrBusy}
-              onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })}
-              onContinue={(target) => { if (hrSource?.kind === 'person') openAgentPersonnel(target.documentId); else openAgentSystemAccess({type: 'system-access', destination: 'case-review', reviewId: target.reviewId}); setSideProgressTarget(target) }} onFollowUp={(target) => startHrProgress([target])} onScheduleMany={startHrProgress}
-              onPrepare={setIntroductionTarget} onBack={() => { setHrSource(null); closeAgentPanel() }} /></div>
-            <div className="hr-follow-surface" hidden={!hrFollowOpen}><HrProgressWorkbench active={hrFollowOpen} onSchedule={openInterviewSchedule}
-              onBackToMatches={hrFollowTarget?.reviewId === assessmentReviewId && !hrSource ? () => { setHrFollowOpen(false); setAgentSideMode('assessment'); setAgentHomeRequest(value => value + 1) } : hrSource ? () => { setHrFollowOpen(false); closeAgentPanel(); setAgentHomeRequest((value) => value + 1) } : undefined}
-              onBrowse={openHrList}
-              interviews={bootstrap.candidateInterviews} onUpdated={() => { caseResumes.refreshAvailability(); void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} target={hrFollowTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} /></div>
-          </div>}
-
-          homeRequestToken={agentHomeRequest}
-          focusRequest={agentFocusRequest}
-          onOpenBatch={openAgentBatch}
-          contextPanelOpen={agentPrimary && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)}
-          contextPanel={<>
-            {sideProgressTarget ? <HrProgressWorkbench embedded key={`${sideProgressTarget.documentId}:${sideProgressTarget.reviewId}`} onBack={() => setSideProgressTarget(null)} target={sideProgressTarget} reloadToken={bootstrap} people={bootstrap.candidateReviews} cases={bootstrap.jobCaseReviews} interviews={bootstrap.candidateInterviews} onView={(kind, id) => kind === 'person' ? openAgentPersonnel(id) : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })} onUpdated={() => { caseResumes.refreshAvailability(); void window.sesAgent.getBootstrap().then(setBootstrap).catch((cause) => setLoadError(String(cause))) }} /> : null}
-            <div className="hr-object-context" hidden={Boolean(sideProgressTarget)}>
-            <div hidden={agentSideMode !== 'assessment'} className="case-resume-panel-surface">
-              {assessmentJob ? <CaseResumeAssessmentPanel job={assessmentJob} people={bootstrap.candidateReviews} controller={caseResumes} focusTaskId={assessmentFocus} onClose={closeAgentPanel}
-                onSchedule={async values => { await startHrProgress(values.map(value => ({ documentId: value.documentId, reviewId: assessmentJob.reviewId, pendingConditions: matchFollowUpLabels(value.result.qualification, value.appliedRules.filter(rule => rule.kind === 'confirm').map(rule => rule.text), locale === 'zh-CN') }))) }}
-                onOriginal={documentId => { openAgentSystemAccess({ type: 'system-access', destination: 'original-document', sourceDocumentId: documentId }); setAssessmentBack(true) }}
-                onPrepare={value => setIntroductionTarget({ documentId: value.documentId, reviewId: assessmentJob.reviewId, profileVersion: value.profileVersion, jobCaseVersion: value.jobCaseVersion, assessment: value.result.assessment, matched: value.result.matched, pendingConditions: matchFollowUpLabels(value.result.qualification, value.appliedRules.filter(rule => rule.kind === 'confirm').map(rule => rule.text), locale === 'zh-CN') })}
-                onFollowUp={value => { setAgentSideMode(null); setSideProgressTarget({ documentId: value.documentId, reviewId: assessmentJob.reviewId, pendingConditions: matchFollowUpLabels(value.result.qualification, value.appliedRules.filter(rule => rule.kind === 'confirm').map(rule => rule.text), locale === 'zh-CN') }) }} /> : null}
+      <BusinessProgressContext.Provider value={businessProgress}>
+        <div className="app-shell is-agent-primary is-hr-navigation">
+          {toasts.length > 0 ? (
+            <div className="app-toasts" role="status">
+              {toasts.map((toast) => (
+                <button
+                  className="app-toast"
+                  key={toast.id}
+                  onClick={() => {
+                    setToasts((current) => current.filter((item) => item.id !== toast.id))
+                    setActiveView('agent')
+                    setAgentContextTrail(defaultAgentContextTrail())
+                  }}
+                  type="button"
+                >
+                  <Icon name="mail" size={13} />
+                  {toast.message}
+                </button>
+              ))}
             </div>
-            <div className="agent-business-tools" hidden={agentSideMode !== 'intake' && agentSideMode !== 'personnel'}>
-              <header className="agent-tool-header">{agentSideMode === 'personnel' && agentContextBack ? <button aria-label={locale === 'zh-CN' ? '返回上一级' : '前の画面に戻る'} onClick={agentContextBack} type="button">←</button> : null}<strong>{agentSideMode === 'intake' ? (hrKind === 'case' ? (locale === 'zh-CN' ? '新增案件' : '案件を追加') : (locale === 'zh-CN' ? '信息整理' : '情報整理')) : (locale === 'zh-CN' ? '人员资料' : '要員情報')}</strong><button aria-label={locale === 'zh-CN' ? '关闭业务面板' : '業務パネルを閉じる'} onClick={closeAgentPanel} type="button">×</button></header>
-              <div className="business-workbench agent-tool-content">
-                <div hidden={agentSideMode !== 'intake'}><div hidden={hrKind !== 'case'}><CaseTextImport inputSeed={hrKind === 'case' ? agentBatchSeed : undefined} cases={bootstrap.jobCaseReviews} onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())} /></div><div hidden={hrKind === 'case'}>{failedImports.length > 0 ? <details className="hr-intake-issues"><summary>{locale === 'zh-CN' ? '导入失败，需要处理' : '対応が必要な取込エラー'} ({failedImports.length})</summary>{failedImports.map((task) => <button key={task.id} type="button" onClick={() => selectTask(task)}>{localizedTaskTitle(locale, task)}<span>{locale === 'zh-CN' ? '查看失败原因' : '失敗理由を確認'}</span></button>)}</details> : null}<BusinessIntakeWorkspace inputSeed={agentBatchSeed} modelKey={bootstrap.defaultAgentChatModelKey ?? 'gpt-5.6-luna'} cases={bootstrap.jobCaseReviews} candidates={bootstrap.candidateReviews}
-                  onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
-                  onCase={(reviewId) => openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })}
-                  onPerson={(documentId) => openAgentPersonnel(documentId)} onCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })} /></div></div>
-                <div hidden={agentSideMode !== 'personnel'}><PersonnelWorkspace renderBusinessProgress={renderBusinessProgress} compact businessOnly matchingBusy={hrBusy} onMatch={() => openAgentPersonnel(agentPersonId!, true)} onPrepare={() => { const person = bootstrap.candidateReviews.find((item) => item.documentId === agentPersonId); if (person?.profile) setIntroductionTarget({ documentId: person.documentId, profileVersion: person.profile.version, matched: [] }) }} messageDrafts={personnelMessageDrafts} onSelectPerson={(documentId) => openAgentPersonnel(documentId)} initialDocumentId={agentPersonId} matchRequest={agentPersonMatchRequest} focusRequest={agentPersonFocusRequest} onMatchingChange={setPersonnelMatchingId} reviews={bootstrap.candidateReviews}
-                  onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
-                  onOpenCase={(reviewId) => openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })}
-                  onOpenProfile={openPersonnelProfile} onOpenEditor={openPersonnelEditor} /></div>
-              </div>
+          ) : null}
+          <AgentSystemRail
+            businessKind={hrKind}
+            followActive={hrFollowOpen}
+            onFollowUps={openFollowUps}
+            onBusinessCases={() => openHrList('case')}
+            onBusinessPeople={() => openHrList('person')}
+            caseUnseenCount={newCaseDigest?.unseenCount ?? 0}
+            onAgent={openAgentChat}
+            onSettings={() => openApplicationSettings('general')}
+            onCommandPalette={showCommandPalette}
+          />
+
+          <CaseIntroductionComposer
+            target={caseIntroductionTarget}
+            cases={bootstrap.jobCaseReviews}
+            onPrepared={caseIntroductionPrepared}
+            onClose={() => setCaseIntroductionTarget(null)}
+          />
+          <IntroductionComposer
+            onFollowUp={(target) => startHrProgress([target])}
+            target={introductionTarget}
+            people={bootstrap.candidateReviews}
+            cases={bootstrap.jobCaseReviews}
+            onClose={() => setIntroductionTarget(null)}
+          />
+          <ResumeImportProgressDrawer
+            onClose={() => setResumeImportProgress(null)}
+            onOpenCandidates={() => {
+              setResumeImportProgress(null)
+              openHrList('person')
+            }}
+            onOpenFailures={(taskId) => {
+              setResumeImportProgress(null)
+              const task = bootstrap.tasks.find((item) => item.id === taskId)
+              if (task) selectTask(task)
+              else openTaskCenter()
+            }}
+            onOpenReviewCenter={() => {
+              setResumeImportProgress(null)
+              openReviewCenter()
+            }}
+            onFindCases={(documentId) => {
+              setResumeImportProgress(null)
+              openAgentPersonnel(documentId, true)
+            }}
+            onOpenPerson={(documentId) => {
+              setResumeImportProgress(null)
+              openAgentPersonnel(documentId)
+            }}
+            progress={resumeImportProgress}
+          />
+
+          <div className="hr-route-container">
+            {!agentPrimary ? (
+              <nav className="hr-return-bar" aria-label={t('返回业务列表', '業務一覧へ戻る')}>
+                <button type="button" onClick={returnToHr}>
+                  <Icon name="arrow-left" size={16} />
+                  {hrFollowOpen
+                    ? t('返回跟进', '対応記録に戻る')
+                    : hrKind === 'case'
+                      ? t('返回案件', '案件に戻る')
+                      : t('返回人员', '要員に戻る')}
+                </button>
+              </nav>
+            ) : null}
+            <div className="agent-route" hidden={!agentPrimary}>
+              <AgentWorkspace
+                businessMatchingBusy={composerPerson ? hrBusyIds.includes(composerPerson.documentId) : false}
+                businessTitle={
+                  hrFollowOpen
+                    ? t('跟进', '対応記録')
+                    : hrSource
+                      ? t('为此人员找案件', 'この要員の案件を探す')
+                      : hrKind === 'case'
+                        ? t('案件', '案件')
+                        : t('人员', '要員')
+                }
+                chatRequest={hrChatRequest}
+                businessObject={
+                  agentFeedSelection
+                    ? {
+                        kind: agentFeedSelection.startsWith('case:') ? 'case' : 'person',
+                        id: agentFeedSelection.slice(agentFeedSelection.indexOf(':') + 1)
+                      }
+                    : undefined
+                }
+                candidateReviews={bootstrap.candidateReviews}
+                composerObject={composerObject}
+                activeSystemAccess={agentContextAccess}
+                cloudConnected={bootstrap.aiCommerce.connection === 'connected'}
+                composerDraft={agentComposerDraft}
+                latestContent={
+                  <div className="hr-board">
+                    <div className="hr-list-surface" hidden={Boolean(hrSource) || hrFollowOpen}>
+                      <MatchingOpportunities
+                        active={agentPrimary && !hrSource && !hrFollowOpen}
+                        onOpen={(item) => {
+                          // The opportunity opens on the side of the list it was clicked from: a person's 找案件
+                          // on the person list, the case's 找人 panel with this person on the case list.
+                          if (hrKind === 'person') {
+                            if (bootstrap.candidateReviews.some((person) => person.documentId === item.documentId))
+                              openAgentPersonnel(item.documentId, true)
+                            return
+                          }
+                          const review = bootstrap.jobCaseReviews.find((job) => job.jobCase?.id === item.jobCaseId)
+                          const person = bootstrap.candidateReviews.find((person) => person.documentId === item.documentId)
+                          if (review && person) {
+                            openCasePeople(review)
+                            setAssessmentFocus(caseResumes.addPerson(review, person))
+                          }
+                        }}
+                      />
+                      <HrObjectList
+                        active={agentPrimary}
+                        onAssessResumes={openCaseResumeAssessment}
+                        resumeStates={resumeStates}
+                        onDeleted={async (entry) => {
+                          if (agentFeedSelection === `${entry.kind}:${entry.objectId}`) setAgentFeedSelection(null)
+                          setAgentHistoryReloadToken((current) => current + 1)
+                          setBootstrap(await window.sesAgent.getBootstrap())
+                        }}
+                        onOpenProgress={(entry) => {
+                          openLatestEntry(entry, 'view')
+                          setProgressFocus({ kind: entry.kind, id: entry.objectId, request: ++feedFocusSequence.current })
+                        }}
+                        cases={bootstrap.jobCaseReviews}
+                        kind={hrKind}
+                        reloadToken={bootstrap}
+                        candidates={bootstrap.candidateReviews}
+                        selectedKey={agentFeedSelection}
+                        busyObjectIds={hrKind === 'person' ? hrBusyIds : []}
+                        personMatchCounts={personMatchCounts}
+                        onOpen={openLatestEntry}
+                        onIntake={() => openAgentBatch()}
+                        onImportResume={() => void startResumeImport()}
+                        onOpenLibrary={hrLibraryPerson ? () => openPersonnelProfile(hrLibraryPerson) : undefined}
+                        onImportHistory={hrKind === 'case' ? openCaseImport : openResumeImportHistory}
+                        extraActions={[
+                          ...(hrKind === 'person'
+                            ? [{ id: 'recruiting', label: t('招聘面试', '採用面談'), onSelect: () => openRecruiting() }]
+                            : []),
+                          {
+                            id: 'reviews',
+                            label: t('审核中心', 'レビューセンター'),
+                            onSelect: openReviewCenter,
+                            overflow: true
+                          },
+                          {
+                            id: 'activity',
+                            label: t('活动记录', 'アクティビティ'),
+                            onSelect: openTaskCenter,
+                            overflow: true
+                          }
+                        ]}
+                        onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                      />
+                    </div>
+                    <div className="hr-match-surface" hidden={!hrSource || hrFollowOpen}>
+                      <HrMatchingWorkspace
+                        source={hrSource}
+                        cases={bootstrap.jobCaseReviews}
+                        people={bootstrap.candidateReviews}
+                        onBusyChange={(ids) => setHrBusyIds(ids)}
+                        onView={(kind, id) =>
+                          kind === 'person'
+                            ? openAgentPersonnel(id)
+                            : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })
+                        }
+                        onContinue={(target) => {
+                          openAgentPersonnel(target.documentId)
+                          setSideProgressTarget(target)
+                        }}
+                        onFollowUp={(target) => startHrProgress([target])}
+                        onScheduleMany={startHrProgress}
+                        onPrepare={setIntroductionTarget}
+                        onBack={() => {
+                          setHrSource(null)
+                          closeAgentPanel()
+                        }}
+                      />
+                    </div>
+                    <div className="hr-follow-surface" hidden={!hrFollowOpen}>
+                      {hrBatchStarted ? (
+                        <section aria-label={t('批量开始跟进', '一括で対応を開始')} className="hr-batch-started" role="status">
+                          <header>
+                            <strong>
+                              {t(
+                                `已为 ${hrBatchStarted.length} 个组合开始跟进`,
+                                `${hrBatchStarted.length} 件の組み合わせで対応を開始しました`
+                              )}
+                            </strong>
+                            <button aria-label={t('关闭提示', 'お知らせを閉じる')} onClick={() => setHrBatchStarted(null)} type="button">
+                              ×
+                            </button>
+                          </header>
+                          <ul>
+                            {hrBatchStarted.map((target) => {
+                              const person = bootstrap.candidateReviews.find((item) => item.documentId === target.documentId)
+                              const review = bootstrap.jobCaseReviews.find((item) => item.reviewId === target.reviewId)
+                              const label = `${person?.localIdentity?.displayName ?? person?.fileName ?? target.documentId} · ${
+                                review?.fields.find((field) => field.key === 'title')?.value ?? review?.redactedSubject ?? target.reviewId
+                              }`
+                              return (
+                                <li key={`${target.documentId}:${target.reviewId}`}>
+                                  <button
+                                    aria-current={
+                                      hrFollowTarget?.documentId === target.documentId && hrFollowTarget.reviewId === target.reviewId
+                                        ? 'true'
+                                        : undefined
+                                    }
+                                    onClick={() => setHrFollowTarget({ ...target })}
+                                    type="button"
+                                  >
+                                    {label}
+                                  </button>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </section>
+                      ) : null}
+                      <HrProgressWorkbench
+                        active={hrFollowOpen}
+                        onSchedule={openInterviewSchedule}
+                        onBackToMatches={
+                          hrFollowTarget?.reviewId === assessmentReviewId && !hrSource
+                            ? () => {
+                                setHrFollowOpen(false)
+                                setAgentSideMode('assessment')
+                                setAgentHomeRequest((value) => value + 1)
+                              }
+                            : hrSource
+                              ? () => {
+                                  setHrFollowOpen(false)
+                                  closeAgentPanel()
+                                  setAgentHomeRequest((value) => value + 1)
+                                }
+                              : undefined
+                        }
+                        onBrowse={openHrList}
+                        interviews={bootstrap.candidateInterviews}
+                        onUpdated={() => {
+                          caseResumes.refreshAvailability()
+                          void window.sesAgent
+                            .getBootstrap()
+                            .then(setBootstrap)
+                            .catch((cause) =>
+                              setLoadError(localizedIpcError(locale, cause, t('无法读取最新数据。', '最新の情報を読み込めませんでした。')))
+                            )
+                        }}
+                        target={hrFollowTarget}
+                        reloadToken={bootstrap}
+                        people={bootstrap.candidateReviews}
+                        cases={bootstrap.jobCaseReviews}
+                        onView={(kind, id) =>
+                          kind === 'person'
+                            ? openAgentPersonnel(id)
+                            : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })
+                        }
+                      />
+                    </div>
+                  </div>
+                }
+
+                homeRequestToken={agentHomeRequest}
+                focusRequest={agentFocusRequest}
+                onOpenBatch={openAgentBatch}
+                contextPanelOpen={agentPrimary && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)}
+                contextPanel={
+                  <>
+                    {sideProgressTarget ? (
+                      <HrProgressWorkbench
+                        embedded
+                        key={`${sideProgressTarget.documentId}:${sideProgressTarget.reviewId}`}
+                        onBack={() => setSideProgressTarget(null)}
+                        target={sideProgressTarget}
+                        reloadToken={bootstrap}
+                        people={bootstrap.candidateReviews}
+                        cases={bootstrap.jobCaseReviews}
+                        interviews={bootstrap.candidateInterviews}
+                        onView={(kind, id) =>
+                          kind === 'person'
+                            ? openAgentPersonnel(id)
+                            : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })
+                        }
+                        onUpdated={() => {
+                          caseResumes.refreshAvailability()
+                          void window.sesAgent
+                            .getBootstrap()
+                            .then(setBootstrap)
+                            .catch((cause) =>
+                              setLoadError(localizedIpcError(locale, cause, t('无法读取最新数据。', '最新の情報を読み込めませんでした。')))
+                            )
+                        }}
+                      />
+                    ) : null}
+                    <div className="hr-object-context" hidden={Boolean(sideProgressTarget)}>
+                      <div hidden={agentSideMode !== 'assessment'} className="case-resume-panel-surface">
+                        {assessmentJob ? (
+                          <CaseResumeAssessmentPanel
+                            job={assessmentJob}
+                            people={bootstrap.candidateReviews}
+                            controller={caseResumes}
+                            focusTaskId={assessmentFocus}
+                            onClose={closeAgentPanel}
+                            onOpenPersonImport={() => {
+                              openHrList('person')
+                              openAgentBatch()
+                            }}
+                            onSchedule={async (values) => {
+                              await startHrProgress(
+                                values.map((value) => ({
+                                  documentId: value.documentId,
+                                  reviewId: assessmentJob.reviewId,
+                                  pendingConditions: matchFollowUpLabels(
+                                    value.result.qualification,
+                                    value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
+                                    locale === 'zh-CN'
+                                  )
+                                }))
+                              )
+                            }}
+                            onOriginal={(documentId) => {
+                              openAgentSystemAccess({
+                                type: 'system-access',
+                                destination: 'original-document',
+                                sourceDocumentId: documentId
+                              })
+                              setAssessmentBack(true)
+                            }}
+                            onPrepare={(value) =>
+                              setIntroductionTarget({
+                                documentId: value.documentId,
+                                reviewId: assessmentJob.reviewId,
+                                profileVersion: value.profileVersion,
+                                jobCaseVersion: value.jobCaseVersion,
+                                assessment: value.result.assessment,
+                                matched: value.result.matched,
+                                pendingConditions: matchFollowUpLabels(
+                                  value.result.qualification,
+                                  value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
+                                  locale === 'zh-CN'
+                                )
+                              })
+                            }
+                            onFollowUp={(value) => {
+                              setAgentSideMode(null)
+                              setSideProgressTarget({
+                                documentId: value.documentId,
+                                reviewId: assessmentJob.reviewId,
+                                pendingConditions: matchFollowUpLabels(
+                                  value.result.qualification,
+                                  value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text),
+                                  locale === 'zh-CN'
+                                )
+                              })
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                      <div className="agent-business-tools" hidden={agentSideMode !== 'intake' && agentSideMode !== 'personnel'}>
+                        <header className="agent-tool-header">
+                          {agentSideMode === 'personnel' && agentContextBack ? (
+                            <button aria-label={t('返回上一级', '前の画面に戻る')} onClick={agentContextBack} type="button">
+                              ←
+                            </button>
+                          ) : null}
+                          <strong>
+                            {agentSideMode === 'intake'
+                              ? hrKind === 'case'
+                                ? t('新增案件', '案件を追加')
+                                : t('信息整理', '情報整理')
+                              : t('人员资料', '要員情報')}
+                          </strong>
+                          <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
+                            ×
+                          </button>
+                        </header>
+                        <div className="business-workbench agent-tool-content">
+                          <div hidden={agentSideMode !== 'intake'}>
+                            <div hidden={hrKind !== 'case'}>
+                              <CaseTextImport
+                                inputSeed={hrKind === 'case' ? agentBatchSeed : undefined}
+                                cases={bootstrap.jobCaseReviews}
+                                onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                                onFindPeople={(reviewId) => {
+                                  const review = bootstrap.jobCaseReviews.find((item) => item.reviewId === reviewId)
+                                  if (review) openCasePeople(review)
+                                }}
+                                onOpenCase={(reviewId) =>
+                                  openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })
+                                }
+                                onShowInList={closeAgentPanel}
+                                onOpenPersonImport={() => {
+                                  openHrList('person')
+                                  openAgentBatch()
+                                }}
+                              />
+                            </div>
+                            <div hidden={hrKind === 'case'}>
+                              {failedImports.length > 0 ? (
+                                <details className="hr-intake-issues">
+                                  <summary>
+                                    {t('导入失败，需要处理', '対応が必要な取込エラー')} ({failedImports.length})
+                                  </summary>
+                                  {failedImports.map((task) => (
+                                    <button key={task.id} type="button" onClick={() => selectTask(task)}>
+                                      {localizedTaskTitle(locale, task)}
+                                      <span>{t('查看失败原因', '失敗理由を確認')}</span>
+                                    </button>
+                                  ))}
+                                </details>
+                              ) : null}
+                              <BusinessIntakeWorkspace
+                                inputSeed={agentBatchSeed}
+                                modelKey={bootstrap.defaultAgentChatModelKey ?? 'gpt-5.6-luna'}
+                                cases={bootstrap.jobCaseReviews}
+                                candidates={bootstrap.candidateReviews}
+                                onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                                onCase={(reviewId) =>
+                                  openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })
+                                }
+                                onPerson={(documentId) => openAgentPersonnel(documentId)}
+                                onCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
+                              />
+                            </div>
+                          </div>
+                          <div hidden={agentSideMode !== 'personnel'}>
+                            <PersonnelWorkspace
+                              renderBusinessProgress={renderBusinessProgress}
+                              onMatch={() => openAgentPersonnel(agentPersonId!, true)}
+                              onPrepare={() => {
+                                const person = bootstrap.candidateReviews.find((item) => item.documentId === agentPersonId)
+                                if (person?.profile)
+                                  setIntroductionTarget({
+                                    documentId: person.documentId,
+                                    profileVersion: person.profile.version,
+                                    matched: []
+                                  })
+                              }}
+                              initialDocumentId={agentPersonId}
+                              focusRequest={agentPersonFocusRequest}
+                              reviews={bootstrap.candidateReviews}
+                              onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                              onOpenProfile={openPersonnelProfile}
+                              onOpenRecruiting={(documentId) => openRecruiting(documentId)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="agent-business-tools" hidden={agentSideMode !== 'profile'}>
+                        <header className="agent-tool-header">
+                          {agentPersonId ? (
+                            <button
+                              aria-label={t('返回人员资料', '要員情報に戻る')}
+                              onClick={() => setAgentSideMode('personnel')}
+                              type="button"
+                            >
+                              ←
+                            </button>
+                          ) : null}
+                          <strong>{t('完整人员档案', '要員プロフィール')}</strong>
+                          <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
+                            ×
+                          </button>
+                        </header>
+                        <div className="agent-tool-content">
+                          {agentSideMode === 'profile' && agentProfileId ? (
+                            <CandidateProfilePanel
+                              documentId={agentProfileId}
+                              aiCommerce={bootstrap.aiCommerce}
+                              analyses={bootstrap.resumeAnalyses}
+                              onClose={() => setAgentSideMode(agentPersonId ? 'personnel' : null)}
+                              onDeleteCandidate={async (input) => {
+                                const result = await deleteCandidateData(input)
+                                setAgentPersonId(undefined)
+                                return result
+                              }}
+                              onLoadHistory={(sourceDocumentId) => window.sesAgent.getCandidateProfileHistory(sourceDocumentId)}
+                              onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
+                              onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
+                              onOpenCloudSettings={() => setAiCommerceOpen(true)}
+                              onPreviewDeletion={(sourceDocumentId) => window.sesAgent.previewCandidateDeletion(sourceDocumentId)}
+                              onSearch={(input) => window.sesAgent.searchCandidateProfiles(input)}
+                              onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
+                              onUpdateCandidate={async (input) => {
+                                const result = await window.sesAgent.updateCandidateProfile(input)
+                                setBootstrap(await window.sesAgent.getBootstrap())
+                                return result
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="agent-standard-context" hidden={agentSideMode !== null}>
+                        {agentContextAccess && agentContextAccess.destination !== 'matching' ? (
+                          agentContextAccess.destination === 'interview-schedule' ? (
+                            <AgentInterviewSchedulePanel
+                              access={agentContextAccess}
+                              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
+                              onBack={agentContextBack}
+                              onClose={() => setAgentContextTrail([])}
+                              onSave={saveCandidateInterviewSchedule}
+                              reviews={bootstrap.candidateReviews}
+                            />
+                          ) : (
+                            <AgentBusinessWorkspacePanel
+                              renderBusinessProgress={renderBusinessProgress}
+                              onFindPeople={openCasePeople}
+                              access={agentContextAccess}
+                              focusRequest={caseFocusRequest}
+                              broadcastActions={broadcastActions}
+                              candidateReviews={bootstrap.candidateReviews}
+                              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
+                              jobCaseReviews={bootstrap.jobCaseReviews}
+                              onBack={agentContextBack}
+                              onClose={() => setAgentContextTrail([])}
+                              onCreateManualCase={createManualJobCaseDraft}
+                              onLoadJobCaseSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
+                              onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
+                              onOpenAccess={openAgentSystemAccess}
+                              onResolveActionApproval={resolveActionApproval}
+                              caseManagement={{
+                                onSubmit: submitJobCaseReview,
+                                fieldAliases: bootstrap.jobCaseFieldAliases,
+                                onSaveFieldAliases: saveJobCaseFieldAliases,
+                                onSetLifecycle: setJobCaseLifecycle,
+                                onReopen: reopenJobCaseReview,
+                                onLoadHistory: (reviewId) => window.sesAgent.getJobCaseHistory(reviewId),
+                                onPreviewDeletion: (reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId),
+                                onDelete: deleteJobCaseData,
+                                onDeleted: () => setAgentContextTrail([])
+                              }}
+                              onSubmitJobCaseReview={submitJobCaseReview}
+                              newCaseDigest={newCaseDigest}
+                              gmailLastSyncedAt={bootstrap.gmail.status === 'readonly' ? bootstrap.gmailSync.lastSyncedAt : null}
+                              onMarkSeen={markJobCaseSeen}
+                              reviewQueue={pendingActionApprovals}
+                              tasks={bootstrap.tasks}
+                            />
+                          )
+                        ) : null}
+                      </div>
+                    </div>
+                  </>
+                }
+                contextPanelLabel={t('业务工作区', '業務ワークスペース')}
+                newCaseUnseenCount={newCaseDigest?.unseenCount ?? 0}
+                onOpenNewCaseBoard={() => setAgentContextTrail(defaultAgentContextTrail())}
+                defaultModelKey={bootstrap.defaultAgentChatModelKey}
+                jobCaseReviews={bootstrap.jobCaseReviews}
+                models={bootstrap.agentChatModels}
+                onComposerDraftChange={setAgentComposerDraft}
+                onDeleteJobCase={deleteJobCaseData}
+                onPreviewJobCaseDeletion={(reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId)}
+                onConnectCloud={() => setAiCommerceOpen(true)}
+                onCloseContextPanel={closeAgentPanel}
+                onImportAtsCsv={importAtsCsvCandidates}
+                onImportResume={(conversationId) => startResumeImport(conversationId)}
+                onOpenCandidate={openAgentCandidateAccess}
+                onOpenCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
+                onOpenBroadcast={() => openAgentSystemAccess({ type: 'system-access', destination: 'broadcast' })}
+                onOpenCases={() => openAgentSystemAccess({ type: 'system-access', destination: 'job-cases' })}
+                onOpenMatching={(jobCaseId) => openAgentSystemAccess({ type: 'system-access', destination: 'matching', jobCaseId })}
+                onOpenOriginalDocument={async (sourceDocumentId) =>
+                  openAgentSystemAccess({ type: 'system-access', destination: 'original-document', sourceDocumentId })
+                }
+                onOpenOperatorProfile={() => setOperatorProfileOpen(true)}
+                onLocalDataChanged={async () => {
+                  const refreshed = await window.sesAgent.getBootstrap()
+                  setBootstrap(refreshed)
+                }}
+                onOpenSystemAccess={openAgentSystemAccess}
+                operatorLabel={localizedMainText(locale, bootstrap.operatorProfile.displayName) || bootstrap.operatorProfile.operatorId}
+                reloadToken={agentHistoryReloadToken}
+                status={{
+                  activeCaseCount,
+                  eligibleCandidateCount,
+                  runningJobCount: activeProcessingJobCount,
+                  backupReminder: bootstrap.recovery.reminder.status
+                }}
+              />
             </div>
-            <div className="agent-case-matching-panel agent-business-tools" hidden={agentSideMode !== null || agentContextAccess?.destination !== 'matching'}>
-              <header className="agent-tool-header">{agentContextBack ? <button aria-label={locale === 'zh-CN' ? '返回上一级' : '前の画面に戻る'} onClick={agentContextBack} type="button">←</button> : null}<strong>{locale === 'zh-CN' ? '案件找人' : '案件の要員検索'}</strong><button aria-label={locale === 'zh-CN' ? '关闭业务面板' : '業務パネルを閉じる'} onClick={closeAgentPanel} type="button">×</button></header>
-              <CaseMatchingWorkspace jobCaseId={caseMatchId} request={caseMatchRequest} reviews={bootstrap.jobCaseReviews} candidates={bootstrap.candidateReviews} onMatchingChange={setCaseMatchingId} onOpenPerson={(documentId) => openAgentPersonnel(documentId)} />
-            </div>
-            <div className="agent-standard-context" hidden={agentSideMode !== null || agentContextAccess?.destination === 'matching'}>{agentContextAccess && agentContextAccess.destination !== 'matching'
-            ? agentContextAccess.destination === 'interview-schedule'
-              ? <AgentInterviewSchedulePanel
-                  access={agentContextAccess}
+            {agentPrimary ? null : activeView === 'task' && selectedTask ? (
+              <TaskWorkspace
+                aiCommerce={bootstrap.aiCommerce}
+                analyses={bootstrap.resumeAnalyses.filter((analysis) =>
+                  selectedTask.contextBindings.some(
+                    (binding) => binding.objectType === 'staged-file' && binding.objectId === analysis.fileToken
+                  )
+                )}
+                candidateReviews={bootstrap.candidateReviews.filter((review) =>
+                  selectedTask.contextBindings.some(
+                    (binding) => binding.objectType === 'staged-file' && binding.objectId === review.documentId
+                  )
+                )}
+                candidateMatchError={candidateMatch.taskId === selectedTask.id ? candidateMatch.error : null}
+                candidateMatches={candidateMatch.taskId === selectedTask.id ? candidateMatch.results : []}
+                candidateMatchQuery={candidateMatch.taskId === selectedTask.id ? candidateMatch.query : ''}
+                candidateMatchRun={candidateMatch.taskId === selectedTask.id ? candidateMatch.run : null}
+                candidateMatchStatus={candidateMatch.taskId === selectedTask.id ? candidateMatch.status : 'idle'}
+                onApproveProposal={approveProposalDraft}
+                onBack={returnToHr}
+                onCreateProposal={createProposalDraft}
+                onExportProposal={exportProposalPackage}
+                onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
+                onOpenCloudSettings={() => setAiCommerceOpen(true)}
+                onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
+                onRecordProposalFollowUp={recordProposalFollowUp}
+                onSubmitCandidateReview={submitCandidateReview}
+                onSubmitCandidateMatchFeedback={submitCandidateMatchFeedback}
+                onSetTaskLifecycle={setWorkTaskLifecycle}
+                onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
+                onUpdateProposal={updateProposalDraft}
+                proposalError={proposal.taskId === selectedTask.id ? proposal.error : null}
+                proposalStatus={proposal.taskId === selectedTask.id ? proposal.status : 'idle'}
+                proposalWorkspace={proposal.taskId === selectedTask.id ? proposal.workspace : null}
+                processingJob={bootstrap.processingJobs.find((job) => job.workTaskId === selectedTask.id) ?? null}
+                task={selectedTask}
+              />
+            ) : activeView === 'tasks' && importHistoryOpen ? (
+              <ResumeImportHistory tasks={resumeImports} onSelect={selectTask} onImport={() => void startResumeImport()} />
+            ) : activeView === 'tasks' ? (
+              <main className="task-center-page">
+                <header className="task-center-header">
+                  <div>
+                    <span className="eyebrow">ACTIVITY & EVIDENCE</span>
+                    <h1>{t('活动记录', 'アクティビティ')}</h1>
+                    <p>
+                      {t(
+                        '可在一个列表中恢复本地处理历史、进度、证据和待确认状态。',
+                        'ローカル処理の履歴、進捗、証跡と確認待ち状態を一つの一覧から再開できます。'
+                      )}
+                    </p>
+                  </div>
+                  <button onClick={openAgentChat} type="button">
+                    <Icon name="sparkles" size={16} />
+                    {t('AI 匹配', 'AI マッチング')}
+                  </button>
+                </header>
+                <section className="task-center-stats" aria-label={t('任务状态汇总', '作業状態の集計')}>
+                  <div>
+                    <strong>{bootstrap.tasks.length}</strong>
+                    <span>{t('全部', 'すべて')}</span>
+                  </div>
+                  <div>
+                    <strong>{bootstrap.tasks.filter((task) => ['planned', 'running'].includes(task.status)).length}</strong>
+                    <span>{t('进行中', '進行中')}</span>
+                  </div>
+                  <div>
+                    <strong>{bootstrap.tasks.filter((task) => task.status === 'awaiting_review').length}</strong>
+                    <span>{t('待确认', '確認待ち')}</span>
+                  </div>
+                  <div>
+                    <strong>{bootstrap.tasks.filter((task) => task.status === 'failed').length}</strong>
+                    <span>{t('需处理', '要対応')}</span>
+                  </div>
+                </section>
+                <TaskList
+                  eyebrow="LOCAL WORK HISTORY"
+                  onSelect={selectTask}
+                  tasks={bootstrap.tasks}
+                  title={t('处理记录与证据', '処理履歴と証跡')}
+                />
+                <footer className="app-footer">
+                  {t(
+                    '任务指令、进度和证据保存在加密本地数据库 · 不发送到云端',
+                    'タスクの指示・進捗・証跡は暗号化ローカルDBに保存 · Cloud送信なし'
+                  )}
+                </footer>
+              </main>
+            ) : activeView === 'reviews' ? (
+              <ReviewCenter
+                items={reviewQueue}
+                onOpenCandidate={(documentId, taskId) => {
+                  const task = taskId ? bootstrap.tasks.find((item) => item.id === taskId) : null
+                  if (task) selectTask(task)
+                  else openHrObject('person', documentId)
+                }}
+                onOpenCase={(reviewId) => openHrObject('case', reviewId)}
+                onOpenTask={(taskId) => {
+                  const task = bootstrap.tasks.find((item) => item.id === taskId)
+                  if (task) selectTask(task)
+                }}
+                onResolveActionApproval={resolveActionApproval}
+              />
+            ) : activeView === 'case-import' ? (
+              <JobCaseInbox
+                gmailConnected={bootstrap.gmail.status === 'readonly'}
+                gmailImportNotice={gmailImportNotice}
+                gmailSetupRequired={bootstrap.gmail.configuration === 'required' || bootstrap.gmailSync.configuration === 'required'}
+                manualCreateRequestId={manualCaseRequestId}
+                onDelete={deleteJobCaseData}
+                onCreateChat={createChatPasteJobCaseDraft}
+                onCreateManual={createManualJobCaseDraft}
+                onReadWechat={readWechatVisibleMessages}
+                onDismissGmailImportNotice={() => setGmailImportNotice(null)}
+                onManualCreateRequestHandled={() => setManualCaseRequestId(null)}
+                onImportEml={importEmlJobCaseDrafts}
+                onImportGmail={importGmailFromComposer}
+                onOpenExternalSettings={() => openApplicationSettings('integrations')}
+                onOpenLibrary={(reviewId) => (reviewId ? openHrObject('case', reviewId) : openHrList('case'))}
+                onPreviewDeletion={(reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId)}
+                reviews={bootstrap.jobCaseReviews}
+                wechatVisibleMessage={bootstrap.wechatVisibleMessage}
+              />
+            ) : activeView === 'interview-workbench' ? (
+              candidateWorkspaceDetail?.scope === 'recruiting' ? (
+                renderCandidatePipelineDetail(candidateWorkspaceDetail)
+              ) : (
+                <RecruitingInterviewWorkspace
                   interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-                  onBack={agentContextBack}
-                  onClose={() => setAgentContextTrail([])}
-                  onSave={saveCandidateInterviewSchedule}
+                  onImportResume={() => void startResumeImport()}
+                  onOpenCandidate={(documentId, view, interviewId, interviewKind) =>
+                    setCandidateWorkspaceDetail({ scope: 'recruiting', documentId, view, interviewId, interviewKind })
+                  }
                   reviews={bootstrap.candidateReviews}
                 />
-              : <AgentBusinessWorkspacePanel
-                  renderBusinessProgress={renderBusinessProgress}
-                  matchingBusy={hrBusy}
-                  access={agentContextAccess}
-                  focusRequest={caseFocusRequest}
-                  broadcastActions={broadcastActions}
-                  candidateReviews={bootstrap.candidateReviews}
+              )
+            ) : activeView === 'interview-schedule' ? (
+              candidateWorkspaceDetail?.scope === 'schedule' ? (
+                renderCandidatePipelineDetail(candidateWorkspaceDetail)
+              ) : (
+                <InterviewScheduleCenter
+                  cases={bootstrap.jobCaseReviews}
                   interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-                  jobCaseReviews={bootstrap.jobCaseReviews}
-                  matchingHome={bootstrap.matchingHome}
-                  onBack={agentContextBack}
-                  onClose={() => setAgentContextTrail([])}
-                  onCreateManualCase={createManualJobCaseDraft}
-                  onLoadJobCaseSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
-                  onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
-                  onOpenAccess={openAgentSystemAccess}
-                  onResolveActionApproval={resolveActionApproval}
-                  onEditCase={(reviewId) => { setRequestedJobCaseReviewId(reviewId); setActiveView('cases') }}
-                  onSubmitJobCaseReview={submitJobCaseReview}
-                  newCaseDigest={newCaseDigest}
-                  gmailLastSyncedAt={bootstrap.gmail.status === 'readonly' ? bootstrap.gmailSync.lastSyncedAt : null}
-                  onMarkSeen={markJobCaseSeen}
-                  reviewQueue={pendingActionApprovals}
-                  tasks={bootstrap.tasks}
+                  onOpenInterview={openInterviewFromSchedule}
+                  reviews={bootstrap.candidateReviews}
                 />
-            : null}</div>
-            </div>
-          </>}
-          contextPanelLabel={locale === 'zh-CN' ? '业务工作区' : '業務ワークスペース'}
-          newCaseUnseenCount={newCaseDigest?.unseenCount ?? 0}
-          onOpenNewCaseBoard={() => setAgentContextTrail(defaultAgentContextTrail())}
-          defaultModelKey={bootstrap.defaultAgentChatModelKey}
-          jobCaseReviews={bootstrap.jobCaseReviews}
-          models={bootstrap.agentChatModels}
-          onComposerDraftChange={setAgentComposerDraft}
-          onDeleteJobCase={deleteJobCaseData}
-          onPreviewJobCaseDeletion={(reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId)}
-          onConnectCloud={() => setAiCommerceOpen(true)}
-          onCloseContextPanel={closeAgentPanel}
-          onImportAtsCsv={importAtsCsvCandidates}
-          onImportResume={(conversationId) => startResumeImport(conversationId)}
-          onOpenCandidate={openAgentCandidateAccess}
-          onOpenCandidatePool={() => openAgentSystemAccess({ type: 'system-access', destination: 'candidate-management' })}
-          onOpenCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
-          onOpenBroadcast={() => openAgentSystemAccess({ type: 'system-access', destination: 'broadcast' })}
-          onOpenCases={() => openAgentSystemAccess({ type: 'system-access', destination: 'job-cases' })}
-          onOpenGovernance={() => setGovernanceOpen(true)}
-          onOpenMatching={(jobCaseId) => openAgentSystemAccess({ type: 'system-access', destination: 'matching', jobCaseId })}
-          onOpenOriginalDocument={async (sourceDocumentId) => openAgentSystemAccess({ type: 'system-access', destination: 'original-document', sourceDocumentId })}
-          onOpenOperatorProfile={() => setOperatorProfileOpen(true)}
-          onLocalDataChanged={async () => {
-            const refreshed = await window.sesAgent.getBootstrap()
-            setBootstrap(refreshed)
-          }}
-          onOpenSystemAccess={openAgentSystemAccess}
-          onOpenTasks={openTaskCenter}
-          operatorLabel={bootstrap.operatorProfile.displayName || bootstrap.operatorProfile.operatorId}
-          reloadToken={agentHistoryReloadToken}
-          status={{
-            activeCaseCount,
-            eligibleCandidateCount,
-            runningJobCount: activeProcessingJobCount,
-            backupReminder: bootstrap.recovery.reminder.status
-          }}
-        />
-        ) : null}
-      </div>
-      {activeView === 'business' || agentPrimary ? null : activeView === 'task' && selectedTask ? (
-        <TaskWorkspace
-          aiCommerce={bootstrap.aiCommerce}
-          analyses={bootstrap.resumeAnalyses.filter((analysis) =>
-            selectedTask.contextBindings.some(
-              (binding) => binding.objectType === 'staged-file' && binding.objectId === analysis.fileToken
-            )
-          )}
-          candidateReviews={bootstrap.candidateReviews.filter((review) =>
-            selectedTask.contextBindings.some(
-              (binding) => binding.objectType === 'staged-file' && binding.objectId === review.documentId
-            )
-          )}
-          candidateMatchError={candidateMatch.taskId === selectedTask.id ? candidateMatch.error : null}
-          candidateMatches={candidateMatch.taskId === selectedTask.id ? candidateMatch.results : []}
-          candidateMatchQuery={candidateMatch.taskId === selectedTask.id ? candidateMatch.query : ''}
-          candidateMatchRun={candidateMatch.taskId === selectedTask.id ? candidateMatch.run : null}
-          candidateMatchStatus={candidateMatch.taskId === selectedTask.id ? candidateMatch.status : 'idle'}
-          onApproveProposal={approveProposalDraft}
-          onBack={() => {
-            setSelectedTask(null)
-            setActiveView('home')
-          }}
-          onCreateProposal={createProposalDraft}
-          onExportProposal={exportProposalPackage}
-          onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
-          onOpenCloudSettings={() => setAiCommerceOpen(true)}
-          onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
-          onRecordProposalFollowUp={recordProposalFollowUp}
-          onSubmitCandidateReview={submitCandidateReview}
-          onSubmitCandidateMatchFeedback={submitCandidateMatchFeedback}
-          onSetTaskLifecycle={setWorkTaskLifecycle}
-          onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
-          onUpdateProposal={updateProposalDraft}
-          proposalError={proposal.taskId === selectedTask.id ? proposal.error : null}
-          proposalStatus={proposal.taskId === selectedTask.id ? proposal.status : 'idle'}
-          proposalWorkspace={proposal.taskId === selectedTask.id ? proposal.workspace : null}
-          processingJob={bootstrap.processingJobs.find((job) => job.workTaskId === selectedTask.id) ?? null}
-          task={selectedTask}
-        />
-      ) : activeView === 'tasks' && hrNavigation && importHistoryOpen ? (
-        <ResumeImportHistory tasks={resumeImports} onSelect={selectTask} onImport={() => void startResumeImport()} />
-      ) : activeView === 'tasks' ? (
-        <main className="task-center-page">
-          <header className="task-center-header">
-            <div><span className="eyebrow">ACTIVITY & EVIDENCE</span><h1>アクティビティ</h1><p>ローカル処理の履歴、進捗、証跡と確認待ち状態を一つの一覧から再開できます。</p></div>
-            <button onClick={startNewTask} type="button"><Icon name="sparkles" size={16} />AI マッチング</button>
-          </header>
-          <section className="task-center-stats" aria-label="作業状態の集計">
-            <div><strong>{bootstrap.tasks.length}</strong><span>すべて</span></div>
-            <div><strong>{bootstrap.tasks.filter((task) => ['planned', 'running'].includes(task.status)).length}</strong><span>進行中</span></div>
-            <div><strong>{bootstrap.tasks.filter((task) => task.status === 'awaiting_review').length}</strong><span>確認待ち</span></div>
-            <div><strong>{bootstrap.tasks.filter((task) => task.status === 'failed').length}</strong><span>要対応</span></div>
-          </section>
-          <TaskList eyebrow="LOCAL WORK HISTORY" onSelect={selectTask} tasks={bootstrap.tasks} title="処理履歴と証跡" />
-          <footer className="app-footer">タスクの指示・進捗・証跡は暗号化ローカルDBに保存 · Cloud送信なし</footer>
-        </main>
-      ) : activeView === 'reviews' ? (
-        <ReviewCenter
-          items={reviewQueue}
-          onOpenCandidate={(_documentId, taskId) => {
-            const task = taskId ? bootstrap.tasks.find((item) => item.id === taskId) : null
-            if (task) selectTask(task)
-            else openTaskCenter()
-          }}
-          onOpenCase={openJobCaseReview}
-          onOpenTask={(taskId) => {
-            const task = bootstrap.tasks.find((item) => item.id === taskId)
-            if (task) selectTask(task)
-          }}
-          onResolveActionApproval={resolveActionApproval}
-        />
-      ) : activeView === 'case-import' ? (
-        <JobCaseInbox
-          fieldAliases={bootstrap.jobCaseFieldAliases}
-          onSaveFieldAliases={saveJobCaseFieldAliases}
-          gmailConnected={bootstrap.gmail.status === 'readonly'}
-          gmailImportNotice={gmailImportNotice}
-          gmailSetupRequired={bootstrap.gmail.configuration === 'required' || bootstrap.gmailSync.configuration === 'required'}
-          manualCreateRequestId={manualCaseRequestId}
-          mode="import"
-          onDelete={deleteJobCaseData}
-          onCreateChat={createChatPasteJobCaseDraft}
-          onCreateManual={createManualJobCaseDraft}
-          onReadWechat={readWechatVisibleMessages}
-          onDismissGmailImportNotice={() => setGmailImportNotice(null)}
-          onManualCreateRequestHandled={() => setManualCaseRequestId(null)}
-          onSelectedReviewRequestHandled={() => setRequestedJobCaseReviewId(null)}
-          onImportEml={importEmlJobCaseDrafts}
-          onImportGmail={importGmailFromComposer}
-          newCaseDigest={newCaseDigest}
-          onMarkSeen={markJobCaseSeen}
-          onLoadHistory={(reviewId) => window.sesAgent.getJobCaseHistory(reviewId)}
-          onLoadSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
-          onOpenExternalSettings={() => openApplicationSettings('integrations')}
-          onOpenLibrary={(reviewId) => {
-            setRequestedJobCaseReviewId(reviewId ?? null)
-            setActiveView('cases')
-          }}
-          onPreviewDeletion={(reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId)}
-          onReopen={reopenJobCaseReview}
-          onSetLifecycle={setJobCaseLifecycle}
-          onSubmit={submitJobCaseReview}
-          reviews={bootstrap.jobCaseReviews}
-          selectedReviewRequestId={requestedJobCaseReviewId}
-          wechatVisibleMessage={bootstrap.wechatVisibleMessage}
-        />
-      ) : activeView === 'cases' ? (
-        <JobCaseInbox
-          fieldAliases={bootstrap.jobCaseFieldAliases}
-          onSaveFieldAliases={saveJobCaseFieldAliases}
-          gmailImportNotice={gmailImportNotice}
-          manualCreateRequestId={manualCaseRequestId}
-          onDelete={deleteJobCaseData}
-          onCreateChat={createChatPasteJobCaseDraft}
-          onCreateManual={createManualJobCaseDraft}
-          onReadWechat={readWechatVisibleMessages}
-          onDismissGmailImportNotice={() => setGmailImportNotice(null)}
-          onManualCreateRequestHandled={() => setManualCaseRequestId(null)}
-          onSelectedReviewRequestHandled={() => setRequestedJobCaseReviewId(null)}
-          onImportEml={importEmlJobCaseDrafts}
-          onOpenLibrary={(reviewId) => {
-            setRequestedJobCaseReviewId(reviewId ?? null)
-            setActiveView('cases')
-          }}
-          newCaseDigest={newCaseDigest}
-          onMarkSeen={markJobCaseSeen}
-          onLoadHistory={(reviewId) => window.sesAgent.getJobCaseHistory(reviewId)}
-          onLoadSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
-          onPreviewDeletion={(reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId)}
-          onReopen={reopenJobCaseReview}
-          onSetLifecycle={setJobCaseLifecycle}
-          onSubmit={submitJobCaseReview}
-          reviews={bootstrap.jobCaseReviews}
-          selectedReviewRequestId={requestedJobCaseReviewId}
-          wechatVisibleMessage={bootstrap.wechatVisibleMessage}
-        />
-      ) : activeView === 'agent' && bootstrap.featureFlags?.conversationalMatchingEnabled === true ? (
-        null
-      ) : activeView === 'matching' || activeView === 'agent' ? (
-        <main className="core-workflow-page matching-page">
-          <header className="core-workflow-header">
-            <div><span className="eyebrow">EVIDENCE-BASED MATCHING</span><h1>AI マッチング</h1><p>案件条件をもとに、確認済みの人材だけを硬条件・検索・Local AI 精査で比較します。</p></div>
-            <div className="matching-resource-status"><span><strong>{bootstrap.jobCaseReviews.filter((review) => review.status === 'completed' && review.lifecycle === 'active').length}</strong>案件</span><span><strong>{bootstrap.candidateReviews.filter((review) => review.talentPoolStatus === 'eligible').length}</strong>人材</span></div>
-          </header>
-          <div className="matching-method-strip"><span>1</span><strong>硬条件</strong><Icon name="chevron-right" size={14} /><span>2</span><strong>BM25 + Vector</strong><Icon name="chevron-right" size={14} /><span>3</span><strong>Local AI 精査</strong><Icon name="chevron-right" size={14} /><span>4</span><strong>HR 確認</strong></div>
-          <TaskComposer
-            focusRequestId={composerFocusRequestId}
-            gmailConnected={false}
-            gmailSetupRequired={false}
-            gmailSyncStatus="never"
-            mode="matching"
-            initialJobCaseId={matchingJobCaseId}
-            jobCases={bootstrap.jobCaseReviews.flatMap((review) => review.status === 'completed' && review.lifecycle === 'active' && review.jobCase
-              ? [{
-                  id: review.jobCase.id,
-                  version: review.jobCase.version,
-                  title: review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject,
-                  requiredSkills: review.fields.find((field) => field.key === 'required_skills')?.value ?? null,
-                  role: review.fields.find((field) => field.key === 'role')?.value ?? null
-                }]
-              : [])}
-            onCreate={(input: CreateWorkTaskInput) => window.sesAgent.createWorkTask(input)}
-            onCreated={handleCreated}
-            onImportGmail={async () => undefined}
-            onFocusRequestHandled={() => setComposerFocusRequestId(null)}
-            onOpenGoogleWorkspace={() => undefined}
-            onPreview={(input: WorkTaskInput): Promise<SignedWorkTaskPreview> => window.sesAgent.previewWorkTask(input)}
+              )
+            ) : null}
+          </div>
+          <GovernancePanel
+            bootstrap={bootstrap}
+            onConfirmRecovery={(input) => window.sesAgent.confirmRecovery(input)}
+            onConnectGoogleWorkspace={connectGoogleWorkspace}
+            onDiagnoseGoogleWorkspace={diagnoseGoogleWorkspace}
+            onRunGoogleWorkspaceOnlineAcceptance={runGoogleWorkspaceOnlineAcceptance}
+            onSaveGoogleWorkspaceAdminConfiguration={(input) => window.sesAgent.saveGoogleWorkspaceAdminConfiguration(input)}
+            onCreateRecovery={createRecoveryPackage}
+            onDisconnectGoogleWorkspace={disconnectGoogleWorkspace}
+            onGetCandidateEvaluationAuthoringWorkspace={() => window.sesAgent.getCandidateEvaluationAuthoringWorkspace()}
+            onCreateCandidateEvaluationDraft={(input) => window.sesAgent.createCandidateEvaluationDraft(input)}
+            onSaveCandidateEvaluationDraftCase={(input) => window.sesAgent.saveCandidateEvaluationDraftCase(input)}
+            onDeleteCandidateEvaluationDraftCase={(input) => window.sesAgent.deleteCandidateEvaluationDraftCase(input)}
+            onEvaluateCandidateEvaluationDraft={evaluateCandidateEvaluationDraft}
+            onImportCandidateEvaluationBenchmark={importCandidateEvaluationBenchmark}
+            onPreviewRecovery={(input) => window.sesAgent.previewRecoveryPackage(input)}
+            onSnoozeRecoveryReminder={snoozeRecoveryReminder}
+            onSyncGoogleWorkspace={syncGoogleWorkspace}
+            onClose={() => setGovernanceOpen(false)}
+            responsiveOpen={governanceOpen}
+            showExternalSystems={false}
           />
-          <section className="matching-explanation"><Icon name="shield" size={18} /><div><strong>AI は採否を決定しません</strong><span>資料にない条件は「不明」として保持し、案件ごとの一致根拠・不足条件・出典を表示します。</span></div></section>
-        </main>
-      ) : activeView === 'candidate-management' ? (
-        candidateWorkspaceDetail?.scope === 'candidate'
-          ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
-          : <CandidateDirectoryWorkspace
-              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-              onImportResume={() => void startResumeImport()}
-              onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'candidate', documentId, view, interviewId, interviewKind })}
-              reviews={bootstrap.candidateReviews}
+          {operatorProfileOpen ? (
+            <LocalOperatorProfileDialog
+              onClose={() => setOperatorProfileOpen(false)}
+              onSave={saveLocalOperatorProfile}
+              profile={bootstrap.operatorProfile}
             />
-      ) : activeView === 'interview-workbench' ? (
-        candidateWorkspaceDetail?.scope === 'recruiting'
-          ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
-          : <RecruitingInterviewWorkspace
-              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-              onImportResume={() => void startResumeImport()}
-              onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'recruiting', documentId, view, interviewId, interviewKind })}
-              reviews={bootstrap.candidateReviews}
+          ) : null}
+          {applicationSettingsOpen ? (
+            <ApplicationSettingsDialog
+              bootstrap={bootstrap}
+              broadcastActions={broadcastActions}
+              initialSection={applicationSettingsSection}
+              fieldAliases={bootstrap.jobCaseFieldAliases}
+              onSaveFieldAliases={saveJobCaseFieldAliases}
+              onConnectGoogleWorkspace={connectGoogleWorkspace}
+              onClose={() => setApplicationSettingsOpen(false)}
+              onDisconnectGoogleWorkspace={disconnectGoogleWorkspace}
+              onOpenAiCommerce={() => {
+                setApplicationSettingsOpen(false)
+                setAiCommerceOpen(true)
+              }}
+              onOpenDataSecurity={() => {
+                setApplicationSettingsOpen(false)
+                setGovernanceOpen(true)
+              }}
+              onOpenOperatorProfile={() => {
+                setApplicationSettingsOpen(false)
+                setOperatorProfileOpen(true)
+              }}
+              onOpenZoomTestMeeting={() => window.sesAgent.openZoomTestMeeting()}
+              onSave={saveLocalApplicationPreferences}
+              onSyncGoogleWorkspace={syncGoogleWorkspace}
+              preferences={bootstrap.preferences}
             />
-      ) : activeView === 'client-interviews' ? (
-        candidateWorkspaceDetail?.scope === 'client'
-          ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
-          : <ClientInterviewWorkspace
-              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-              onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'client', documentId, view, interviewId, interviewKind })}
-              onOpenMatching={openMatching}
-              reviews={bootstrap.candidateReviews}
+          ) : null}
+          {aiCommerceOpen ? (
+            <AiCommerceMemberDialog
+              callbackError={aiCommerceCallbackError}
+              onClose={() => setAiCommerceOpen(false)}
+              onConnect={connectAiCommerce}
+              onDisconnect={disconnectAiCommerce}
+              onOpenMemberCenter={() => window.sesAgent.openAiCommerceMemberCenter()}
+              onRefresh={refreshAiCommerce}
+              onResetToken={resetAiCommerceToken}
+              onSendPrompt={runReviewedAiCommerceCloudPrompt}
+              privacy={bootstrap.privacy}
+              state={bootstrap.aiCommerce}
             />
-      ) : activeView === 'interview-schedule' ? (
-        candidateWorkspaceDetail?.scope === 'schedule'
-          ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
-          : <InterviewScheduleCenter cases={bootstrap.jobCaseReviews}
-              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-              onOpenInterview={openInterviewFromSchedule}
-              reviews={bootstrap.candidateReviews}
-            />
-      ) : activeView === 'entry-prep' ? (
-        candidateWorkspaceDetail?.scope === 'entry'
-          ? renderCandidatePipelineDetail(candidateWorkspaceDetail)
-          : <ClientInterviewWorkspace
-              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-              mode="entry-prep"
-              onOpenCandidate={(documentId, view, interviewId, interviewKind) => setCandidateWorkspaceDetail({ scope: 'entry', documentId, view, interviewId, interviewKind })}
-              onOpenMatching={openMatching}
-              reviews={bootstrap.candidateReviews}
-            />
-      ) : activeView === 'candidates' ? (
-        <CandidateLibrary
-          profileRequest={personnelProfileRequest}
-          aiCommerce={bootstrap.aiCommerce}
-          analyses={bootstrap.resumeAnalyses}
-          onImportResume={() => void startResumeImport()}
-          onDeleteCandidate={deleteCandidateData}
-          onLoadHistory={(sourceDocumentId) => window.sesAgent.getCandidateProfileHistory(sourceDocumentId)}
-          onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
-          onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
-          onOpenCloudSettings={() => setAiCommerceOpen(true)}
-          onPreviewDeletion={(sourceDocumentId) => window.sesAgent.previewCandidateDeletion(sourceDocumentId)}
-          onSearch={(input) => window.sesAgent.searchCandidateProfiles(input)}
-          onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
-          onUpdateCandidate={async (input) => {
-            const result = await window.sesAgent.updateCandidateProfile(input)
-            setBootstrap(await window.sesAgent.getBootstrap())
-            return result
-          }}
-        />
-      ) : (
-        <div className="home-layout">
-          <main className="home-main">
-            <header className="home-topbar">
-              <div>
-                <span className="eyebrow">{localizedWorkDate(locale)}</span>
-                <h1>業務ワークベンチ</h1>
-                <p>履歴書と案件をリソース化し、根拠付きの AI マッチングへ進みます。</p>
-              </div>
-              <div className="home-topbar-actions">
-                <button
-                  aria-label={bootstrap.recovery.reminder.status === 'due' ? 'データと承認・バックアップ要確認' : 'データと承認'}
-                  className={`governance-compact-trigger${bootstrap.recovery.reminder.status === 'due' ? ' has-attention' : ''}`}
-                  onClick={() => setGovernanceOpen(true)}
-                  type="button"
-                >
-                  <Icon name={bootstrap.recovery.reminder.status === 'due' ? 'alert' : 'shield'} size={17} />
-                  {bootstrap.recovery.reminder.status === 'due' ? 'バックアップ要確認' : 'データセキュリティ'}
-                </button>
-                <button
-                  aria-expanded={commandPaletteOpen}
-                  aria-haspopup="dialog"
-                  className="command-search"
-                  onClick={showCommandPalette}
-                  type="button"
-                >
-                  <Icon name="search" size={18} />
-                  コマンドを検索
-                  <kbd>⌘ K</kbd>
-                </button>
-              </div>
-            </header>
-
-            {bootstrap.matchingHome.state === 'onboarding' ? <section className="onboarding-workflow" aria-labelledby="onboarding-workflow-title">
-              <div className="onboarding-workflow-heading">
-                <div><span className="eyebrow">CORE WORKFLOW</span><h2 id="onboarding-workflow-title">3つのステップで最初のマッチングを開始</h2><p>初めての方は左から順に進めてください。登録済みデータがある場合は、直接データベースへ移動できます。</p></div>
-                <span className="onboarding-progress">{
-                  (bootstrap.candidateReviews.some((review) => review.talentPoolStatus === 'eligible') ? 1 : 0) +
-                  (bootstrap.jobCaseReviews.some((review) => review.status === 'completed' && review.lifecycle === 'active') ? 1 : 0) +
-                  (bootstrap.tasks.some((task) => task.type === 'MATCH_CANDIDATES') ? 1 : 0)
-                } / 3</span>
-              </div>
-              <div className="workflow-step-grid">
-                <button onClick={() => void startResumeImport()} type="button">
-                  <span className="workflow-step-number">1</span>
-                  <span className="workflow-step-icon"><Icon name="upload" size={22} /></span>
-                  <span><strong>履歴書をインポート</strong><small>PDF、Word、Excelから標準プロフィールを作成</small></span>
-                  <span className="workflow-step-meta">取込済み {bootstrap.candidateReviews.length} 件</span>
-                  <Icon name="chevron-right" size={17} />
-                </button>
-                <button onClick={openCaseImport} type="button">
-                  <span className="workflow-step-number">2</span>
-                  <span className="workflow-step-icon"><Icon name="briefcase" size={22} /></span>
-                  <span><strong>案件をインポート</strong><small>Gmail、EML、テキストを固定フォーマットへ変換</small></span>
-                  <span className="workflow-step-meta">案件候補 {bootstrap.jobCaseReviews.length} 件</span>
-                  <Icon name="chevron-right" size={17} />
-                </button>
-                <button className="is-ai-step" onClick={openMatching} type="button">
-                  <span className="workflow-step-number">3</span>
-                  <span className="workflow-step-icon"><Icon name="sparkles" size={22} /></span>
-                  <span><strong>AI マッチングを実行</strong><small>硬条件、検索、Local AI 精査から根拠付き候補を作成</small></span>
-                  <span className="workflow-step-meta">AI は採否を決定しません</span>
-                  <Icon name="chevron-right" size={17} />
-                </button>
-              </div>
-            </section> : (
-              <MatchingHomeDashboard
-                onOpenMatching={openMatchingForCase}
-                onOverridePriority={async (input) => {
-                  const matchingHome = await window.sesAgent.setBusinessPriorityOverride(input)
-                  setBootstrap((current) => current ? { ...current, matchingHome } : current)
-                }}
-                projection={bootstrap.matchingHome}
-              />
-            )}
-
-            <section className="resource-overview" aria-labelledby="resource-overview-title">
-              <div className="resource-overview-heading"><div><span className="eyebrow">RESOURCE OVERVIEW</span><h2 id="resource-overview-title">現在のリソース</h2></div><button onClick={openReviewCenter} type="button">確認待ちを開く<Icon name="chevron-right" size={15} /></button></div>
-              <div className="resource-overview-grid">
-                <button onClick={() => setActiveView('candidates')} type="button"><span><Icon name="users" size={20} /></span><strong>{bootstrap.candidateReviews.filter((review) => review.talentPoolStatus === 'eligible').length}</strong><small>採用通過済み</small><em>人材プール</em></button>
-                <button onClick={() => setActiveView('cases')} type="button"><span><Icon name="briefcase" size={20} /></span><strong>{bootstrap.jobCaseReviews.filter((review) => review.status === 'completed' && review.lifecycle === 'active').length}</strong><small>確認済み案件</small><em>案件データベース</em></button>
-                <button onClick={openReviewCenter} type="button"><span><Icon name="shield" size={20} /></span><strong>{reviewQueue.length}</strong><small>確認待ち</small><em>レビューセンター</em></button>
-                <button onClick={openTaskCenter} type="button"><span><Icon name="tasks" size={20} /></span><strong>{bootstrap.tasks.length}</strong><small>活動記録</small><em>処理履歴と証跡</em></button>
-              </div>
-            </section>
-
-            <TaskList eyebrow="RECENT ACTIVITY" onSelect={selectTask} onViewAll={openTaskCenter} tasks={bootstrap.tasks.slice(0, 5)} title="最近のアクティビティ" />
-            <footer className="app-footer">SES Agent Desktop v{bootstrap.appVersion} · {bootstrap.environmentLabel}</footer>
-          </main>
+          ) : null}
+          {commandPaletteOpen ? <CommandPalette commands={businessCommands} onClose={closeCommandPalette} /> : null}
         </div>
-      )}
-      </div>
-      <GovernancePanel
-        bootstrap={bootstrap}
-        onConfirmRecovery={(input) => window.sesAgent.confirmRecovery(input)}
-        onConnectGoogleWorkspace={connectGoogleWorkspace}
-        onDiagnoseGoogleWorkspace={diagnoseGoogleWorkspace}
-        onRunGoogleWorkspaceOnlineAcceptance={runGoogleWorkspaceOnlineAcceptance}
-        onSaveGoogleWorkspaceAdminConfiguration={(input) => window.sesAgent.saveGoogleWorkspaceAdminConfiguration(input)}
-        onCreateRecovery={createRecoveryPackage}
-        onDisconnectGoogleWorkspace={disconnectGoogleWorkspace}
-        onGetCandidateEvaluationAuthoringWorkspace={() => window.sesAgent.getCandidateEvaluationAuthoringWorkspace()}
-        onCreateCandidateEvaluationDraft={(input) => window.sesAgent.createCandidateEvaluationDraft(input)}
-        onSaveCandidateEvaluationDraftCase={(input) => window.sesAgent.saveCandidateEvaluationDraftCase(input)}
-        onDeleteCandidateEvaluationDraftCase={(input) => window.sesAgent.deleteCandidateEvaluationDraftCase(input)}
-        onEvaluateCandidateEvaluationDraft={evaluateCandidateEvaluationDraft}
-        onImportCandidateEvaluationBenchmark={importCandidateEvaluationBenchmark}
-        onPreviewRecovery={(input) => window.sesAgent.previewRecoveryPackage(input)}
-        onSnoozeRecoveryReminder={snoozeRecoveryReminder}
-        onSyncGoogleWorkspace={syncGoogleWorkspace}
-        onClose={() => setGovernanceOpen(false)}
-        responsiveOpen={governanceOpen}
-        showExternalSystems={false}
-      />
-      {operatorProfileOpen ? (
-        <LocalOperatorProfileDialog
-          onClose={() => setOperatorProfileOpen(false)}
-          onSave={saveLocalOperatorProfile}
-          profile={bootstrap.operatorProfile}
-        />
-      ) : null}
-      {applicationSettingsOpen ? (
-        <ApplicationSettingsDialog
-          bootstrap={bootstrap}
-          broadcastActions={broadcastActions}
-          initialSection={applicationSettingsSection}
-          fieldAliases={bootstrap.jobCaseFieldAliases}
-          onSaveFieldAliases={saveJobCaseFieldAliases}
-          onConnectGoogleWorkspace={connectGoogleWorkspace}
-          onClose={() => setApplicationSettingsOpen(false)}
-          onDisconnectGoogleWorkspace={disconnectGoogleWorkspace}
-          onOpenAiCommerce={() => {
-            setApplicationSettingsOpen(false)
-            setAiCommerceOpen(true)
-          }}
-          onOpenDataSecurity={() => {
-            setApplicationSettingsOpen(false)
-            setGovernanceOpen(true)
-          }}
-          onOpenOperatorProfile={() => {
-            setApplicationSettingsOpen(false)
-            setOperatorProfileOpen(true)
-          }}
-          onOpenZoomTestMeeting={() => window.sesAgent.openZoomTestMeeting()}
-          onSave={saveLocalApplicationPreferences}
-          onSyncGoogleWorkspace={syncGoogleWorkspace}
-          preferences={bootstrap.preferences}
-        />
-      ) : null}
-      {aiCommerceOpen ? (
-        <AiCommerceMemberDialog
-          callbackError={aiCommerceCallbackError}
-          onClose={() => setAiCommerceOpen(false)}
-          onConnect={connectAiCommerce}
-          onDisconnect={disconnectAiCommerce}
-          onOpenMemberCenter={() => window.sesAgent.openAiCommerceMemberCenter()}
-          onRefresh={refreshAiCommerce}
-          onResetToken={resetAiCommerceToken}
-          onSendPrompt={runReviewedAiCommerceCloudPrompt}
-          privacy={bootstrap.privacy}
-          state={bootstrap.aiCommerce}
-        />
-      ) : null}
-      {commandPaletteOpen ? <CommandPalette commands={businessCommands} onClose={closeCommandPalette} /> : null}
-      </div>
-    </BusinessProgressContext.Provider>
+      </BusinessProgressContext.Provider>
     </UiLocaleProvider>
   )
 }

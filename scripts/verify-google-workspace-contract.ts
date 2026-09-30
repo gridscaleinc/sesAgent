@@ -21,16 +21,24 @@ import { collectLocalPersonNameCandidates } from '@local-ai'
 
 class MemoryCredentialStore implements GoogleWorkspaceCredentialStore {
   value: GoogleWorkspaceCredential | null = null
-  async load() { return this.value }
-  async save(value: GoogleWorkspaceCredential) { this.value = value }
-  async clear() { this.value = null }
+  async load() {
+    return this.value
+  }
+  async save(value: GoogleWorkspaceCredential) {
+    this.value = value
+  }
+  async clear() {
+    this.value = null
+  }
 }
 
 class MemorySyncStore {
   checkpoint: GmailSyncCheckpointPortRecord | null = null
   messages = new Map<string, GmailProcessedMessage>()
   lastRun: GmailSyncRun | null = null
-  getGmailSyncCheckpoint() { return this.checkpoint }
+  getGmailSyncCheckpoint() {
+    return this.checkpoint
+  }
   saveGmailSyncSuccess(_account: string, configHash: string, historyId: string, lastRun: GmailSyncRun) {
     this.checkpoint = { configHash, historyId }
     this.lastRun = { ...lastRun }
@@ -39,7 +47,9 @@ class MemorySyncStore {
     this.checkpoint = { configHash, historyId: this.checkpoint?.historyId ?? null }
     this.lastRun = lastRun
   }
-  hasGmailMessage(_account: string, id: string) { return this.messages.has(id) }
+  hasGmailMessage(_account: string, id: string) {
+    return this.messages.has(id)
+  }
   findGmailMessageByFingerprint(_account: string, fingerprint: string) {
     return [...this.messages.values()].find((message) => message.businessFingerprint === fingerprint)?.gmailMessageId ?? null
   }
@@ -108,13 +118,15 @@ const server = createServer(async (request, response) => {
         assert.match(body.get('code_verifier') ?? '', /^[A-Za-z0-9_-]{43,128}$/u)
         assert.match(body.get('redirect_uri') ?? '', /^http:\/\/127\.0\.0\.1:\d+\/oauth2\/callback$/u)
         response.setHeader('content-type', 'application/json')
-        response.end(JSON.stringify({
-          access_token: initialAccessToken,
-          refresh_token: initialRefreshToken,
-          expires_in: 3600,
-          scope: gmailReadonlyScope,
-          token_type: 'Bearer'
-        }))
+        response.end(
+          JSON.stringify({
+            access_token: initialAccessToken,
+            refresh_token: initialRefreshToken,
+            expires_in: 3600,
+            scope: gmailReadonlyScope,
+            token_type: 'Bearer'
+          })
+        )
         return
       }
       assert.equal(body.get('grant_type'), 'refresh_token')
@@ -123,13 +135,15 @@ const server = createServer(async (request, response) => {
       currentAccessToken = refreshedAccessToken
       currentRefreshToken = rotatedRefreshToken
       response.setHeader('content-type', 'application/json')
-      response.end(JSON.stringify({
-        access_token: refreshedAccessToken,
-        refresh_token: rotatedRefreshToken,
-        expires_in: 3600,
-        scope: gmailReadonlyScope,
-        token_type: 'Bearer'
-      }))
+      response.end(
+        JSON.stringify({
+          access_token: refreshedAccessToken,
+          refresh_token: rotatedRefreshToken,
+          expires_in: 3600,
+          scope: gmailReadonlyScope,
+          token_type: 'Bearer'
+        })
+      )
       return
     }
     if (request.method === 'POST' && url.pathname === '/revoke') {
@@ -160,13 +174,17 @@ const server = createServer(async (request, response) => {
       assert.deepEqual(url.searchParams.getAll('historyTypes'), ['messageAdded', 'labelAdded'])
       assert.equal(url.searchParams.get('labelId'), 'Label_SES')
       response.setHeader('content-type', 'application/json')
-      response.end(JSON.stringify({
-        historyId: '210',
-        history: [{
-          id: '205',
-          labelsAdded: [{ message: { id: 'msg_002', threadId: 'thread_msg_002' }, labelIds: ['Label_SES'] }]
-        }]
-      }))
+      response.end(
+        JSON.stringify({
+          historyId: '210',
+          history: [
+            {
+              id: '205',
+              labelsAdded: [{ message: { id: 'msg_002', threadId: 'thread_msg_002' }, labelIds: ['Label_SES'] }]
+            }
+          ]
+        })
+      )
       return
     }
     response.writeHead(404).end()
@@ -228,9 +246,7 @@ try {
   assert.deepEqual(credentialStore.value?.scopes, [gmailReadonlyScope])
 
   credentialStore.value = { ...credentialStore.value!, expiresAt: '2026-07-19T00:00:00.000Z' }
-  const refreshed = await Promise.all([
-    client.getAccessToken(), client.getAccessToken(), client.getAccessToken(), client.getAccessToken()
-  ])
+  const refreshed = await Promise.all([client.getAccessToken(), client.getAccessToken(), client.getAccessToken(), client.getAccessToken()])
   assert.deepEqual(refreshed, Array(4).fill(refreshedAccessToken))
   assert.equal(refreshRequests, 1)
   assert.equal(credentialStore.value?.refreshToken, rotatedRefreshToken)
@@ -311,27 +327,35 @@ try {
   await client.disconnect()
   assert.equal(credentialStore.value, null)
   assert.equal(revocationBody, `token=${rotatedRefreshToken}`)
-  assert.equal(requestedGoogleUrls.some((url) => url.includes(initialRefreshToken) || url.includes(rotatedRefreshToken)), false)
-  assert.equal(requestedGoogleUrls.some((url) => /drafts|send|modify|delete/iu.test(url)), false)
+  assert.equal(
+    requestedGoogleUrls.some((url) => url.includes(initialRefreshToken) || url.includes(rotatedRefreshToken)),
+    false
+  )
+  assert.equal(
+    requestedGoogleUrls.some((url) => /drafts|send|modify|delete/iu.test(url)),
+    false
+  )
 
-  process.stdout.write(`${JSON.stringify({
-    version: 'google-workspace-local-contract-v1',
-    networkScope: 'loopback-only',
-    systemBrowserPkce: true,
-    exactReadonlyScope: true,
-    clientSecretSent: false,
-    concurrentRefreshCoalesced: refreshRequests === 1,
-    refreshTokenRotated: true,
-    revocationTokenInUrl: false,
-    baselineImported: baseline.lastRun?.imported ?? 0,
-    incrementalLabelAddedImported: incremental.lastRun?.imported ?? 0,
-    storedMessages: syncStore.messages.size,
-    storedDirectIdentifiers: 0,
-    cloudModelUsed: false,
-    sendMethodReachable: false,
-    acceptanceStatus: acceptance.overall,
-    manualNameReviewRequired: true
-  })}\n`)
+  process.stdout.write(
+    `${JSON.stringify({
+      version: 'google-workspace-local-contract-v1',
+      networkScope: 'loopback-only',
+      systemBrowserPkce: true,
+      exactReadonlyScope: true,
+      clientSecretSent: false,
+      concurrentRefreshCoalesced: refreshRequests === 1,
+      refreshTokenRotated: true,
+      revocationTokenInUrl: false,
+      baselineImported: baseline.lastRun?.imported ?? 0,
+      incrementalLabelAddedImported: incremental.lastRun?.imported ?? 0,
+      storedMessages: syncStore.messages.size,
+      storedDirectIdentifiers: 0,
+      cloudModelUsed: false,
+      sendMethodReachable: false,
+      acceptanceStatus: acceptance.overall,
+      manualNameReviewRequired: true
+    })}\n`
+  )
 } finally {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 }

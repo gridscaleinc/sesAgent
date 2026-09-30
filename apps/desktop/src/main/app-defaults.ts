@@ -109,7 +109,10 @@ const defaultGmailBusinessQuery = `${personnelGmailBusinessQuery} OR 面談 OR �
  * domain null so personal Gmail and any customer Workspace account can use the
  * same consent flow; private distributions may optionally restrict one domain.
  */
-export function loadManagedGoogleWorkspaceConfiguration(now = new Date(), privateClient?: { clientId: string; workspaceDomain: string }): GoogleWorkspaceAdminConfiguration | null {
+export function loadManagedGoogleWorkspaceConfiguration(
+  now = new Date(),
+  privateClient?: { clientId: string; workspaceDomain: string }
+): GoogleWorkspaceAdminConfiguration | null {
   const clientId = privateClient?.clientId ?? process.env.SES_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? ''
   const workspaceDomain = privateClient?.workspaceDomain ?? process.env.SES_GOOGLE_WORKSPACE_DOMAIN?.trim() ?? ''
   const configuredValues = [
@@ -128,7 +131,10 @@ export function loadManagedGoogleWorkspaceConfiguration(now = new Date(), privat
   const rawQuery = process.env.SES_GMAIL_QUERY?.trim() || defaultGmailBusinessQuery
   const sync = gmailSyncConfigurationSchema.parse({
     version: 'gmail-sync-config-v1' as const,
-    labelIds: rawLabels.split(',').map((label) => label.trim()).filter(Boolean),
+    labelIds: rawLabels
+      .split(',')
+      .map((label) => label.trim())
+      .filter(Boolean),
     query: rawQuery,
     lookbackDays: Number(process.env.SES_GMAIL_LOOKBACK_DAYS?.trim() || 30),
     maxMessagesPerRun: Number(process.env.SES_GMAIL_MAX_MESSAGES_PER_RUN?.trim() || 200)
@@ -149,14 +155,14 @@ export function loadManagedGoogleWorkspaceConfiguration(now = new Date(), privat
   })
 }
 
-export function gmailSyncConfigurationFromAdmin(
-  configuration: GoogleWorkspaceAdminConfiguration | null
-): GmailSyncConfiguration | null {
+export function gmailSyncConfigurationFromAdmin(configuration: GoogleWorkspaceAdminConfiguration | null): GmailSyncConfiguration | null {
   if (!configuration) return null
   return gmailSyncConfigurationSchema.parse({
     version: 'gmail-sync-config-v1',
     labelIds: configuration.labelIds,
-    query: [legacyGmailBusinessQuery,personnelGmailBusinessQuery].includes(configuration.query) ? defaultGmailBusinessQuery : configuration.query,
+    query: [legacyGmailBusinessQuery, personnelGmailBusinessQuery].includes(configuration.query)
+      ? defaultGmailBusinessQuery
+      : configuration.query,
     lookbackDays: configuration.lookbackDays,
     maxMessagesPerRun: configuration.maxMessagesPerRun
   })
@@ -167,12 +173,12 @@ export function gmailSyncState(
   googleState: GoogleWorkspaceState,
   config: GmailSyncConfiguration | null
 ): GmailSyncState {
-  const checkpoint = googleState.accountEmail
-    ? repository.getGmailSyncCheckpoint(googleState.accountEmail)
-    : null
+  const checkpoint = googleState.accountEmail ? repository.getGmailSyncCheckpoint(googleState.accountEmail) : null
   const { continuation: _continuation, ...publicRun } = checkpoint?.lastRun ?? {}
   return {
-    personnelIntake: googleState.accountEmail ? repository.getGmailPersonnelIntakeStatus(googleState.accountEmail) : { failed: 0, warnings: 0 },
+    personnelIntake: googleState.accountEmail
+      ? repository.getGmailPersonnelIntakeStatus(googleState.accountEmail)
+      : { failed: 0, warnings: 0 },
     intervalMinutes: resolveGmailSyncIntervalMinutes(process.env.SES_GMAIL_SYNC_INTERVAL_MINUTES),
     configuration: config ? 'ready' : 'required',
     status: checkpoint?.status ?? 'never',
@@ -182,7 +188,7 @@ export function gmailSyncState(
     checkpointHistoryId: checkpoint?.historyId ?? null,
     storedMessages: googleState.accountEmail ? repository.countGmailMessages(googleState.accountEmail) : 0,
     lastSyncedAt: checkpoint?.lastSyncedAt ?? null,
-    lastRun: checkpoint?.lastRun ? publicRun as NonNullable<GmailSyncState['lastRun']> : null,
+    lastRun: checkpoint?.lastRun ? (publicRun as NonNullable<GmailSyncState['lastRun']>) : null,
     lastError: checkpoint?.lastError ?? null
   }
 }

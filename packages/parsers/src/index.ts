@@ -92,7 +92,11 @@ export const documentIrSchema: z.ZodType<DocumentIR> = z.object({
     name: z.string().min(1).max(180),
     format: z.enum(['pdf', 'docx', 'xlsx', 'xls', 'xlsb', 'txt']),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    size: z.number().int().positive().max(25 * 1024 * 1024)
+    size: z
+      .number()
+      .int()
+      .positive()
+      .max(25 * 1024 * 1024)
   }),
   blocks: z.array(
     z.object({
@@ -262,7 +266,10 @@ async function parsePdf(bytes: Buffer, limits: ParserLimits): Promise<ParsedCont
       const sortedLines = [...lineItems.entries()].toSorted(([a], [b]) => b - a)
       for (const [, items] of sortedLines) {
         const sortedItems = items.toSorted((a, b) => a.x - b.x)
-        const text = sortedItems.map((item) => item.text).join(' ').trim()
+        const text = sortedItems
+          .map((item) => item.text)
+          .join(' ')
+          .trim()
         const minX = Math.min(...sortedItems.map((item) => item.x))
         const minY = Math.min(...sortedItems.map((item) => item.y))
         const maxX = Math.max(...sortedItems.map((item) => item.x + item.width))
@@ -315,12 +322,12 @@ async function parseSpreadsheet(bytes: Buffer, limits: ParserLimits): Promise<Pa
   for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
     const sheet = workbook.Sheets[sheetName]
     if (!sheet) continue
-    const printArea = workbook.Workbook?.Names
-      ?.find((name) => name.Name === '_xlnm.Print_Area' && name.Sheet === sheetIndex)
-      ?.Ref.split('!').at(-1)?.replaceAll('$', '').split(',')[0]
-    const printRange = printArea && /^[A-Z]{1,3}[1-9]\d*:[A-Z]{1,3}[1-9]\d*$/u.test(printArea)
-      ? XLSX.utils.decode_range(printArea)
-      : null
+    const printArea = workbook.Workbook?.Names?.find((name) => name.Name === '_xlnm.Print_Area' && name.Sheet === sheetIndex)
+      ?.Ref.split('!')
+      .at(-1)
+      ?.replaceAll('$', '')
+      .split(',')[0]
+    const printRange = printArea && /^[A-Z]{1,3}[1-9]\d*:[A-Z]{1,3}[1-9]\d*$/u.test(printArea) ? XLSX.utils.decode_range(printArea) : null
     const mergedRanges = sheet['!merges'] ?? []
     const visibility = workbook.Workbook?.Sheets?.[sheetIndex]?.Hidden
     if (visibility) {
@@ -362,9 +369,8 @@ async function parseSpreadsheet(bytes: Buffer, limits: ParserLimits): Promise<Pa
       const text = XLSX.utils.format_cell(cell).trim()
       if (!text) continue
       const coordinate = XLSX.utils.decode_cell(address)
-      const merged = mergedRanges.find((range) =>
-        coordinate.r >= range.s.r && coordinate.r <= range.e.r &&
-        coordinate.c >= range.s.c && coordinate.c <= range.e.c
+      const merged = mergedRanges.find(
+        (range) => coordinate.r >= range.s.r && coordinate.r <= range.e.r && coordinate.c >= range.s.c && coordinate.c <= range.e.c
       )
       blocks.push({
         id: `sheet-${sheetIndex + 1}-cell-${address}`,
@@ -377,8 +383,11 @@ async function parseSpreadsheet(bytes: Buffer, limits: ParserLimits): Promise<Pa
           ...(printArea && printRange
             ? {
                 printArea,
-                inPrintArea: coordinate.r >= printRange.s.r && coordinate.r <= printRange.e.r &&
-                  coordinate.c >= printRange.s.c && coordinate.c <= printRange.e.c
+                inPrintArea:
+                  coordinate.r >= printRange.s.r &&
+                  coordinate.r <= printRange.e.r &&
+                  coordinate.c >= printRange.s.c &&
+                  coordinate.c <= printRange.e.c
               }
             : {})
         }
@@ -403,12 +412,10 @@ async function parseDocx(bytes: Buffer, limits: ParserLimits): Promise<ParsedCon
     text,
     source: { paragraph: index + 1 }
   }))
-  const warnings = result.messages.map(
-    (message): DocumentWarning => ({
-      code: 'PARSER_MESSAGE',
-      message: `DOCX parser ${message.type}: ${message.message}`
-    })
-  )
+  const warnings = result.messages.map((message): DocumentWarning => ({
+    code: 'PARSER_MESSAGE',
+    message: `DOCX parser ${message.type}: ${message.message}`
+  }))
   const content = { blocks, warnings, pages: 0, sheets: 0, requiresLocalOcr: false }
   enforceOutputLimits(content, limits)
   return content

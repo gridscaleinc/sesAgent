@@ -136,23 +136,25 @@ try {
   restoredRepository.close()
   await finalizePendingRestore(lostDevicePath, activation)
   assert.equal(await hasPendingRestore(lostDevicePath), false)
-  assert.equal((await readFile(join(lostDevicePath, 'security', 'master-key.v1'), 'utf8')), 'restored-protected-key')
+  assert.equal(await readFile(join(lostDevicePath, 'security', 'master-key.v1'), 'utf8'), 'restored-protected-key')
   staged.masterKey.fill(0)
 
-  process.stdout.write(`${JSON.stringify({
-    authenticatedEncryption: true,
-    plaintextLeak: false,
-    consistentSqlcipherSnapshot: true,
-    manifestVaultObjects: created.summary.vaultObjectCount,
-    crossDirectoryRestore: true,
-    inaccessibleActiveDataReplacedAfterConfirmation: true,
-    pendingRestoreFinalized: true,
-    restoredTask: true,
-    restoredVaultAead: true,
-    googleWorkspaceCredentialIncluded: false,
-    schemaVersion: created.summary.schemaVersion,
-    fileMode: '0600'
-  })}\n`)
+  process.stdout.write(
+    `${JSON.stringify({
+      authenticatedEncryption: true,
+      plaintextLeak: false,
+      consistentSqlcipherSnapshot: true,
+      manifestVaultObjects: created.summary.vaultObjectCount,
+      crossDirectoryRestore: true,
+      inaccessibleActiveDataReplacedAfterConfirmation: true,
+      pendingRestoreFinalized: true,
+      restoredTask: true,
+      restoredVaultAead: true,
+      googleWorkspaceCredentialIncluded: false,
+      schemaVersion: created.summary.schemaVersion,
+      fileMode: '0600'
+    })}\n`
+  )
 } finally {
   masterKey.fill(0)
   await rm(root, { recursive: true, force: true })

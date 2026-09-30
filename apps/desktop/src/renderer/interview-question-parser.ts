@@ -17,12 +17,15 @@ function cleanQuestion(value: string): string {
 }
 
 function numberedSegments(content: string): string[] {
-  const candidates = [...content.matchAll(numberedMarkerPattern)].map((match) => ({
-    index: match.index,
-    end: match.index + match[0].length,
-    prefix: match[1] ?? '',
-    number: Number(match[2] ?? match[3])
-  } satisfies NumberedMarker))
+  const candidates = [...content.matchAll(numberedMarkerPattern)].map(
+    (match) =>
+      ({
+        index: match.index,
+        end: match.index + match[0].length,
+        prefix: match[1] ?? '',
+        number: Number(match[2] ?? match[3])
+      }) satisfies NumberedMarker
+  )
   const markers: NumberedMarker[] = []
   let expected = 1
   for (const candidate of candidates) {
@@ -47,7 +50,7 @@ function normalizedQuestionKey(value: string): string {
 export function extractInterviewQuestions(content: string): string[] {
   const normalized = content
     .replaceAll('\u0000', '')
-    .replace(/[０-９]/gu, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0))
+    .replace(/[０-９]/gu, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
     .replaceAll('．', '.')
     .trim()
   if (!normalized) return []

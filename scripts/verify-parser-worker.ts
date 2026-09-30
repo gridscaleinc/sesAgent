@@ -29,7 +29,10 @@ const client = new ParserWorkerClient({
   timeoutMs: 10_000
 })
 const result = await client.parse(file, bytes)
-assert.equal(result.blocks.some((block) => block.text === 'WORKER_SENTINEL_JAVA'), true)
+assert.equal(
+  result.blocks.some((block) => block.text === 'WORKER_SENTINEL_JAVA'),
+  true
+)
 assert.deepEqual(parserWorkerEnvironmentKeys, ['ELECTRON_RUN_AS_NODE', 'NODE_ENV', 'LANG', 'TZ'])
 assert.equal(result.security.externalContentLoaded, false)
 assert.equal(result.security.macrosExecuted, false)

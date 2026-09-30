@@ -1,9 +1,4 @@
-import {
-  type CloudCallAuditRecord,
-  type DirectIdentifier,
-  type LocalPiiMapping,
-  type RedactionSessionEvidence
-} from '@privacy'
+import { type CloudCallAuditRecord, type DirectIdentifier, type LocalPiiMapping, type RedactionSessionEvidence } from '@privacy'
 import { openMapping, sealMapping } from '../mappers'
 import { type MappingRow, type RedactionSessionIdRow, type RedactionSessionRow } from '../rows'
 import { DomainStore } from './base'
@@ -45,25 +40,20 @@ export class PrivacyStore extends DomainStore {
        ) VALUES (?, ?, ?, ?)`
     )
     for (const mapping of mappings) {
-      insertMapping.run(
-        session.id,
-        mapping.placeholder,
-        mapping.identifierType,
-        sealMapping(this.mappingKey, mapping, session.id)
-      )
+      insertMapping.run(session.id, mapping.placeholder, mapping.identifierType, sealMapping(this.mappingKey, mapping, session.id))
     }
   }
 
   getRedactionSessionIdForDocument(documentId: string): string | null {
-    return this.database
-      .prepare<[string], RedactionSessionIdRow>('SELECT redaction_session_id FROM parsed_documents WHERE document_id = ?')
-      .get(documentId)?.redaction_session_id ?? null
+    return (
+      this.database
+        .prepare<[string], RedactionSessionIdRow>('SELECT redaction_session_id FROM parsed_documents WHERE document_id = ?')
+        .get(documentId)?.redaction_session_id ?? null
+    )
   }
 
   getRedactionSession(id: string): RedactionSessionEvidence | null {
-    const row = this.database
-      .prepare<[string], RedactionSessionRow>('SELECT * FROM redaction_sessions WHERE id = ?')
-      .get(id)
+    const row = this.database.prepare<[string], RedactionSessionRow>('SELECT * FROM redaction_sessions WHERE id = ?').get(id)
     if (!row) return null
     return {
       id: row.id,

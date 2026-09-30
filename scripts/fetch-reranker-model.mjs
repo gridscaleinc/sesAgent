@@ -22,7 +22,7 @@ async function fileDigest(path) {
 async function isVerified(path, file) {
   try {
     const metadata = await stat(path)
-    return metadata.isFile() && metadata.size === file.bytes && await fileDigest(path) === file.sha256
+    return metadata.isFile() && metadata.size === file.bytes && (await fileDigest(path)) === file.sha256
   } catch {
     return false
   }
@@ -41,7 +41,7 @@ for (const file of manifest.files) {
   const response = await fetch(sourceUrl(file.path), { redirect: 'follow' })
   if (!response.ok || !response.body) throw new Error(`Download failed for ${file.path}: HTTP ${response.status}`)
   await pipeline(response.body, createWriteStream(temporary, { flags: 'wx', mode: 0o600 }))
-  if (!await isVerified(temporary, file)) {
+  if (!(await isVerified(temporary, file))) {
     const metadata = await stat(temporary)
     const digest = await fileDigest(temporary)
     await rm(temporary, { force: true })

@@ -81,12 +81,14 @@ function expertReport(overrides: Record<string, unknown> = {}) {
   }
 }
 
-async function packagedFixture(options: {
-  includeExpert?: boolean
-  expertOverrides?: Record<string, unknown>
-  expertManifestHash?: string
-  mainBundleAfterManifest?: string
-} = {}) {
+async function packagedFixture(
+  options: {
+    includeExpert?: boolean
+    expertOverrides?: Record<string, unknown>
+    expertManifestHash?: string
+    mainBundleAfterManifest?: string
+  } = {}
+) {
   const root = await mkdtemp(join(tmpdir(), 'ses-privacy-gates-'))
   temporaryDirectories.push(root)
   const resourcesPath = join(root, 'resources')
@@ -102,9 +104,7 @@ async function packagedFixture(options: {
   const preloadBundleBytes = Buffer.from('trusted-preload-bundle')
   const qualityBytes = Buffer.from(JSON.stringify(qualityReport()) + '\n')
   const includeExpert = options.includeExpert ?? true
-  const expertBytes = includeExpert
-    ? Buffer.from(JSON.stringify(expertReport(options.expertOverrides)) + '\n')
-    : null
+  const expertBytes = includeExpert ? Buffer.from(JSON.stringify(expertReport(options.expertOverrides)) + '\n') : null
   await writeFile(mainBundlePath, mainBundleBytes)
   await writeFile(preloadBundlePath, preloadBundleBytes)
   await writeFile(join(verificationPath, 'privacy-quality-report.json'), qualityBytes)
@@ -146,7 +146,11 @@ describe('packaged Cloud privacy gate binding', () => {
   it('accepts a current expert attestation bound to the reports, source manifests and runtime bundles', async () => {
     const fixture = await packagedFixture()
     const result = await loadCloudPrivacyGates({
-      ...fixture, packaged: true, platform: 'darwin', arch: 'arm64', now
+      ...fixture,
+      packaged: true,
+      platform: 'darwin',
+      arch: 'arm64',
+      now
     })
 
     expect(result.qualityGate.status).toBe('passed')
@@ -162,7 +166,11 @@ describe('packaged Cloud privacy gate binding', () => {
   it('keeps Cloud quality binding available when optional expert evidence is missing', async () => {
     const fixture = await packagedFixture({ includeExpert: false })
     const result = await loadCloudPrivacyGates({
-      ...fixture, packaged: true, platform: 'darwin', arch: 'arm64', now
+      ...fixture,
+      packaged: true,
+      platform: 'darwin',
+      arch: 'arm64',
+      now
     })
 
     expect(result.qualityGate.status).toBe('passed')
@@ -181,7 +189,11 @@ describe('packaged Cloud privacy gate binding', () => {
       expertOverrides: { cloudEnforcementSha256: 'f'.repeat(64) }
     })
     const result = await loadCloudPrivacyGates({
-      ...fixture, packaged: true, platform: 'darwin', arch: 'arm64', now
+      ...fixture,
+      packaged: true,
+      platform: 'darwin',
+      arch: 'arm64',
+      now
     })
 
     expect(result.qualityGate.status).toBe('passed')
@@ -192,7 +204,11 @@ describe('packaged Cloud privacy gate binding', () => {
   it('rejects an expert report whose packaged report hash differs from the manifest', async () => {
     const fixture = await packagedFixture({ expertManifestHash: 'f'.repeat(64) })
     const result = await loadCloudPrivacyGates({
-      ...fixture, packaged: true, platform: 'darwin', arch: 'arm64', now
+      ...fixture,
+      packaged: true,
+      platform: 'darwin',
+      arch: 'arm64',
+      now
     })
 
     expect(result.qualityGate.status).toBe('passed')
@@ -203,7 +219,11 @@ describe('packaged Cloud privacy gate binding', () => {
   it('invalidates both gates when a packaged runtime bundle changes after the manifest is created', async () => {
     const fixture = await packagedFixture({ mainBundleAfterManifest: 'modified-main-bundle' })
     const result = await loadCloudPrivacyGates({
-      ...fixture, packaged: true, platform: 'darwin', arch: 'arm64', now
+      ...fixture,
+      packaged: true,
+      platform: 'darwin',
+      arch: 'arm64',
+      now
     })
 
     expect(result.qualityGate.status).toBe('not-verified')
@@ -217,7 +237,11 @@ describe('packaged Cloud privacy gate binding', () => {
       expertOverrides: { evaluatedAt: '2026-06-01T00:00:00.000Z' }
     })
     const result = await loadCloudPrivacyGates({
-      ...fixture, packaged: true, platform: 'darwin', arch: 'arm64', now
+      ...fixture,
+      packaged: true,
+      platform: 'darwin',
+      arch: 'arm64',
+      now
     })
 
     expect(result.expertGate.failureCodes).toContain('report:stale')
@@ -229,7 +253,11 @@ describe('packaged Cloud privacy gate binding', () => {
       expertOverrides: { platform: 'win32', arch: 'x64' }
     })
     const result = await loadCloudPrivacyGates({
-      ...fixture, packaged: true, platform: 'darwin', arch: 'arm64', now
+      ...fixture,
+      packaged: true,
+      platform: 'darwin',
+      arch: 'arm64',
+      now
     })
 
     expect(result.expertGate.failureCodes).toContain('report:platform-arch')

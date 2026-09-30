@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { vi } from 'vitest'
 import {
   jobCaseFieldKeys,
@@ -7,7 +8,7 @@ import {
   type JobCaseVersionDetail,
   type DeleteJobCaseDataInput
 } from '@shared'
-import { JobCaseInbox } from './JobCaseInbox'
+import { JobCaseAliasSuggestions, JobCaseInbox, JobCaseManagement, JobCaseReviewEditor, type AliasSuggestion } from './JobCaseInbox'
 
 const labels = {
   title: '案件名',
@@ -85,13 +86,23 @@ const review: JobCaseReviewSnapshot = {
 
 const governanceProps = {
   gmailImportNotice: null,
-  onImportEml: vi.fn().mockResolvedValue({ cancelled: true, importedCount: 0, duplicateCount: 0, skippedCount: 0, failedCount: 0, items: [] }),
+  onImportEml: vi
+    .fn()
+    .mockResolvedValue({ cancelled: true, importedCount: 0, duplicateCount: 0, skippedCount: 0, failedCount: 0, items: [] }),
   onDismissGmailImportNotice: vi.fn(),
-  onLoadHistory: vi.fn().mockResolvedValue([]),
-  onSetLifecycle: vi.fn(),
-  onReopen: vi.fn(),
   onPreviewDeletion: vi.fn(),
   onDelete: vi.fn()
+}
+
+const managementProps = {
+  onClose: vi.fn(),
+  onDelete: vi.fn(),
+  onDeleted: vi.fn(),
+  onLoadHistory: vi.fn().mockResolvedValue([]),
+  onPreviewDeletion: vi.fn(),
+  onReopen: vi.fn(),
+  onReviewChanged: vi.fn(),
+  onSetLifecycle: vi.fn()
 }
 
 const completedReview: JobCaseReviewSnapshot = {
@@ -160,24 +171,29 @@ describe('JobCaseInbox', () => {
     render(
       <JobCaseInbox
         {...governanceProps}
-        mode="import"
         onCreateManual={vi.fn()}
         onOpenLibrary={onOpenLibrary}
         onReadWechat={onReadWechat}
-        onSubmit={vi.fn()}
         reviews={[]}
         wechatVisibleMessage={{
-          phase: 'B-03-1', gateStatus: 'go', platform: 'darwin', featureFlagEnabled: true,
-          userFeatureAvailable: true, accessibilityTrusted: true, screenCaptureTrusted: true,
-          rawTextNetworkIsolationVerified: true, evidenceVerified: false, targetVersion: '4.1.5',
+          phase: 'B-03-1',
+          gateStatus: 'go',
+          platform: 'darwin',
+          featureFlagEnabled: true,
+          userFeatureAvailable: true,
+          accessibilityTrusted: true,
+          screenCaptureTrusted: true,
+          rawTextNetworkIsolationVerified: true,
+          evidenceVerified: false,
+          targetVersion: '4.1.5',
           failureCodes: ['RELEASE_EVIDENCE_PENDING']
         }}
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /本次可視メッセージを読取/u }))
+    fireEvent.click(screen.getByRole('button', { name: /表示中のメッセージを読取/u }))
     expect(onReadWechat).toHaveBeenCalledTimes(1)
-    expect(await screen.findByText('Vision OCR · 4節点')).toBeInTheDocument()
+    expect(await screen.findByText('文字認識 · テキスト4件')).toBeInTheDocument()
     expect(onOpenLibrary).toHaveBeenCalledWith(wechatReview.reviewId)
     expect(screen.queryByText('山田太郎')).not.toBeInTheDocument()
   })
@@ -199,7 +215,6 @@ describe('JobCaseInbox', () => {
         }}
         onCreateManual={vi.fn()}
         onDismissGmailImportNotice={onDismissGmailImportNotice}
-        onSubmit={vi.fn()}
         reviews={[review]}
       />
     )
@@ -232,9 +247,9 @@ describe('JobCaseInbox', () => {
         { fileName: 'broken.eml', status: 'failed', classification: null, errorCode: 'PARSE_FAILED', review: null }
       ]
     })
-    render(<JobCaseInbox {...governanceProps} onCreateManual={vi.fn()} onImportEml={onImportEml} onSubmit={vi.fn()} reviews={[]} />)
+    render(<JobCaseInbox {...governanceProps} onCreateManual={vi.fn()} onImportEml={onImportEml} reviews={[]} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'EMLを取り込む' }))
+    fireEvent.click(screen.getByRole('button', { name: 'EML を選択' }))
     expect(onImportEml).toHaveBeenCalledTimes(1)
     expect(await screen.findByRole('region', { name: 'EML取込結果' })).toHaveTextContent('1件登録')
     expect(screen.getByText(/添付ファイルと元のEMLは保存していません/)).toBeInTheDocument()
@@ -252,9 +267,9 @@ describe('JobCaseInbox', () => {
       fromDomain: null
     }
     const onCreateManual = vi.fn().mockResolvedValue({ review: manualReview })
-    render(<JobCaseInbox {...governanceProps} onCreateManual={onCreateManual} onSubmit={vi.fn()} reviews={[]} />)
+    render(<JobCaseInbox {...governanceProps} onCreateManual={onCreateManual} reviews={[]} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '案件を手動追加' }))
+    fireEvent.click(screen.getByRole('button', { name: '案件情報を入力' }))
     expect(screen.getByRole('dialog', { name: '案件情報を手動で追加' })).toBeInTheDocument()
     expect(screen.getByText('入力はまず端末内で脱敏されます')).toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: '件名・案件名' }), { target: { value: 'Java 基盤案件' } })
@@ -267,11 +282,32 @@ describe('JobCaseInbox', () => {
     })
   })
 
+  it('opens the HR case list on the case an import just created', async () => {
+    const manualReview: JobCaseReviewSnapshot = { ...review, reviewId: '0f7c3f7e-1a5d-4e44-9f0c-5b3f0f4b1d2a', sourceType: 'manual' }
+    const onOpenLibrary = vi.fn()
+    render(
+      <JobCaseInbox
+        {...governanceProps}
+        onCreateManual={vi.fn().mockResolvedValue({ review: manualReview })}
+        onOpenLibrary={onOpenLibrary}
+        reviews={[review]}
+      />
+    )
+
+    expect(screen.getByRole('heading', { name: '案件をインポート' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '案件情報を入力' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '件名・案件名' }), { target: { value: 'Java 基盤案件' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '案件本文' }), { target: { value: '必須スキル：Java' } })
+    fireEvent.click(screen.getByRole('button', { name: '脱敏して草稿を作成' }))
+    await waitFor(() => expect(onOpenLibrary).toHaveBeenCalledWith(manualReview.reviewId))
+    fireEvent.click(screen.getByRole('button', { name: /案件一覧を開く/u }))
+    expect(onOpenLibrary).toHaveBeenLastCalledWith()
+  })
+
   it('requires explicit field and privacy confirmation before creating a JobCase', async () => {
     const onSubmit = vi.fn().mockResolvedValue({ review: { ...review, status: 'completed' } })
-    render(<JobCaseInbox {...governanceProps} onCreateManual={vi.fn()} onSubmit={onSubmit} reviews={[review]} />)
+    render(<JobCaseReviewEditor onManage={vi.fn()} onSubmit={onSubmit} review={review} />)
 
-    expect(screen.getByRole('heading', { name: '案件データベース' })).toBeInTheDocument()
     expect(screen.getByText('ローカル脱敏済みソース')).toBeInTheDocument()
     const submit = screen.getByRole('button', { name: '案件を確定' })
     expect(submit).toBeDisabled()
@@ -281,27 +317,49 @@ describe('JobCaseInbox', () => {
     expect(submit).toBeEnabled()
     fireEvent.click(submit)
 
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      reviewId: review.reviewId,
-      reviewRevision: 1,
-      privacyReviewed: true,
-      fields: expect.arrayContaining([
-        expect.objectContaining({ key: 'required_skills', value: 'Java / Spring Boot / AWS', confirmed: true })
-      ])
-    }))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewId: review.reviewId,
+        reviewRevision: 1,
+        privacyReviewed: true,
+        fields: expect.arrayContaining([
+          expect.objectContaining({ key: 'required_skills', value: 'Java / Spring Boot / AWS', confirmed: true })
+        ])
+      })
+    )
   })
 
   it('offers the source label of a hand-typed value as a field alias after confirmation', async () => {
     const unlabeled: JobCaseReviewSnapshot = {
       ...review,
       redactedPreview: 'Java 決済基盤案件\n\n作業期間: 8月\n必須スキル: Java / Spring Boot / AWS',
-      fields: review.fields.map((field) => field.key === 'start_date' ? { ...field, originalValue: null, value: null, status: 'missing' } : field)
+      fields: review.fields.map((field) =>
+        field.key === 'start_date' ? { ...field, originalValue: null, value: null, status: 'missing' } : field
+      )
     }
     const onSubmit = vi.fn().mockResolvedValue({ review: { ...unlabeled, status: 'completed' } })
     const onSaveFieldAliases = vi.fn().mockResolvedValue({
-      version: 'job-case-field-aliases-v1', aliases: { start_date: ['作業期間'] }, configured: true, revision: 1, updatedAt: '2026-08-26T00:00:00.000Z'
+      version: 'job-case-field-aliases-v1',
+      aliases: { start_date: ['作業期間'] },
+      configured: true,
+      revision: 1,
+      updatedAt: '2026-08-26T00:00:00.000Z'
     })
-    render(<JobCaseInbox {...governanceProps} onCreateManual={vi.fn()} onSaveFieldAliases={onSaveFieldAliases} onSubmit={onSubmit} reviews={[unlabeled]} />)
+    function EditorWithAliases() {
+      const [suggestions, setSuggestions] = useState<AliasSuggestion[]>([])
+      return (
+        <>
+          <JobCaseReviewEditor onAliasSuggestions={setSuggestions} onManage={vi.fn()} onSubmit={onSubmit} review={unlabeled} />
+          <JobCaseAliasSuggestions
+            onDismiss={(suggestion) => setSuggestions((current) => current.filter((item) => item !== suggestion))}
+            onSaveFieldAliases={onSaveFieldAliases}
+            review={unlabeled}
+            suggestions={suggestions}
+          />
+        </>
+      )
+    }
+    render(<EditorWithAliases />)
 
     fireEvent.change(screen.getByLabelText('開始時期'), { target: { value: '8月' } })
     fireEvent.change(screen.getByLabelText('開始時期の変更理由'), { target: { value: 'JDの作業期間から転記' } })
@@ -315,34 +373,8 @@ describe('JobCaseInbox', () => {
     await waitFor(() => expect(screen.queryByText('「作業期間」→ 開始時期')).not.toBeInTheDocument())
   })
 
-  it('opens the exact active review requested by the unified review center', async () => {
-    const requestedReview: JobCaseReviewSnapshot = {
-      ...review,
-      reviewId: 'a7e97863-52fb-4aae-b32b-acde7957b814',
-      sourceId: 'b0a65bf8-9b12-45a7-ad86-47558fa5f165',
-      redactedSubject: 'COBOL 基幹刷新案件',
-      fields: review.fields.map((field) => field.key === 'title'
-        ? { ...field, originalValue: 'COBOL 基幹刷新案件', value: 'COBOL 基幹刷新案件' }
-        : field)
-    }
-    const onSelectedReviewRequestHandled = vi.fn()
-    render(
-      <JobCaseInbox
-        {...governanceProps}
-        onCreateManual={vi.fn()}
-        onSelectedReviewRequestHandled={onSelectedReviewRequestHandled}
-        onSubmit={vi.fn()}
-        reviews={[review, requestedReview]}
-        selectedReviewRequestId={requestedReview.reviewId}
-      />
-    )
-
-    expect(await screen.findByRole('heading', { name: 'COBOL 基幹刷新案件' })).toBeInTheDocument()
-    expect(onSelectedReviewRequestHandled).toHaveBeenCalledTimes(1)
-  })
-
   it('shows a privacy-safe completed case without the raw sender identity', () => {
-    render(<JobCaseInbox {...governanceProps} onCreateManual={vi.fn()} onSubmit={vi.fn()} reviews={[completedReview]} />)
+    render(<JobCaseReviewEditor onManage={vi.fn()} onSubmit={vi.fn()} review={completedReview} />)
 
     expect(screen.getByRole('heading', { name: 'Java 決済基盤案件' })).toBeInTheDocument()
     expect(screen.getByText('個人識別子なし')).toBeInTheDocument()
@@ -355,23 +387,24 @@ describe('JobCaseInbox', () => {
       sourceId: review.sourceId,
       title: review.redactedSubject,
       sourceType: review.sourceType,
-      counts: { caseVersions: 0, reviewAudits: 0, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 2, sourceRecords: 1, gmailMessages: 1, agentReferences: { conversations: 1, messages: 1 } },
+      counts: {
+        caseVersions: 0,
+        reviewAudits: 0,
+        taskRecords: 0,
+        proposalDrafts: 0,
+        evaluationDraftCases: 0,
+        piiMappings: 2,
+        sourceRecords: 1,
+        gmailMessages: 1,
+        agentReferences: { conversations: 1, messages: 1 }
+      },
       confirmationHash: 'c'.repeat(64),
       warningCodes: ['GMAIL_SOURCE_TOMBSTONED_TO_PREVENT_REIMPORT']
     })
-    render(
-      <JobCaseInbox
-        {...governanceProps}
-        onCreateManual={vi.fn()}
-        onPreviewDeletion={onPreviewDeletion}
-        onSubmit={vi.fn()}
-        reviews={[review]}
-      />
-    )
+    render(<JobCaseManagement {...managementProps} onPreviewDeletion={onPreviewDeletion} review={review} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '履歴・管理' }))
     expect(await screen.findByRole('dialog', { name: '案件の履歴と管理' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '案件をアーカイブ' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '案件を終了' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '削除前の影響を確認' }))
 
     expect(onPreviewDeletion).toHaveBeenCalledWith(review.reviewId)
@@ -387,20 +420,12 @@ describe('JobCaseInbox', () => {
       history: [{ ...version, status: 'archived' }]
     })
     render(
-      <JobCaseInbox
-        {...governanceProps}
-        onCreateManual={vi.fn()}
-        onLoadHistory={onLoadHistory}
-        onSetLifecycle={onSetLifecycle}
-        onSubmit={vi.fn()}
-        reviews={[completedReview]}
-      />
+      <JobCaseManagement {...managementProps} onLoadHistory={onLoadHistory} onSetLifecycle={onSetLifecycle} review={completedReview} />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '履歴・管理' }))
     expect(await screen.findByRole('dialog', { name: '案件の履歴と管理' })).toBeInTheDocument()
     expect(await screen.findByText('Version 1')).toBeInTheDocument()
-    const archive = screen.getByRole('button', { name: '案件をアーカイブ' })
+    const archive = screen.getByRole('button', { name: '案件を終了' })
     expect(archive).toBeDisabled()
     fireEvent.change(screen.getByRole('textbox', { name: '案件管理の理由' }), { target: { value: '募集終了のため' } })
     fireEvent.click(archive)
@@ -418,7 +443,17 @@ describe('JobCaseInbox', () => {
       sourceId: completedReview.sourceId,
       title: 'Java 決済基盤案件',
       sourceType: 'gmail',
-      counts: { caseVersions: 1, reviewAudits: 13, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 2, sourceRecords: 1, gmailMessages: 1, agentReferences: { conversations: 0, messages: 0 } },
+      counts: {
+        caseVersions: 1,
+        reviewAudits: 13,
+        taskRecords: 0,
+        proposalDrafts: 0,
+        evaluationDraftCases: 0,
+        piiMappings: 2,
+        sourceRecords: 1,
+        gmailMessages: 1,
+        agentReferences: { conversations: 0, messages: 0 }
+      },
       confirmationHash: 'a'.repeat(64),
       warningCodes: ['GMAIL_SOURCE_TOMBSTONED_TO_PREVENT_REIMPORT']
     })
@@ -430,24 +465,40 @@ describe('JobCaseInbox', () => {
       startedAt: '2026-07-17T01:00:00.000Z',
       completedAt: '2026-07-17T01:00:01.000Z',
       outcome: 'completed',
-      components: { database: 'deleted', fileVault: 'not_present', searchIndex: 'not_present', cache: 'not_present', temporaryFiles: 'not_present', backups: 'not_present' },
-      deletedCounts: { caseVersions: 1, reviewAudits: 13, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 2, sourceRecords: 1, gmailMessages: 1, agentReferences: { conversations: 0, messages: 0 } },
+      components: {
+        database: 'deleted',
+        fileVault: 'not_present',
+        searchIndex: 'not_present',
+        cache: 'not_present',
+        temporaryFiles: 'not_present',
+        backups: 'not_present'
+      },
+      deletedCounts: {
+        caseVersions: 1,
+        reviewAudits: 13,
+        taskRecords: 0,
+        proposalDrafts: 0,
+        evaluationDraftCases: 0,
+        piiMappings: 2,
+        sourceRecords: 1,
+        gmailMessages: 1,
+        agentReferences: { conversations: 0, messages: 0 }
+      },
       warningCodes: ['GMAIL_SOURCE_TOMBSTONED_TO_PREVENT_REIMPORT']
     }
     const onDelete = vi.fn().mockResolvedValue({ report })
+    const onDeleted = vi.fn()
     render(
-      <JobCaseInbox
-        {...governanceProps}
-        onCreateManual={vi.fn()}
+      <JobCaseManagement
+        {...managementProps}
         onDelete={onDelete}
+        onDeleted={onDeleted}
         onLoadHistory={vi.fn().mockResolvedValue([version])}
         onPreviewDeletion={onPreviewDeletion}
-        onSubmit={vi.fn()}
-        reviews={[completedReview]}
+        review={completedReview}
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '履歴・管理' }))
     await screen.findByRole('dialog', { name: '案件の履歴と管理' })
     fireEvent.click(screen.getByRole('button', { name: '削除前の影響を確認' }))
     expect(await screen.findByText('監査記録 13件')).toBeInTheDocument()
@@ -461,21 +512,53 @@ describe('JobCaseInbox', () => {
       confirmationHash: 'a'.repeat(64),
       confirmationText: '削除'
     })
-    expect(await screen.findByLabelText('案件削除レポート')).toBeInTheDocument()
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith({ report }))
   })
   it('deletes every case through the same governed preview and typed confirmation', async () => {
-    const second: JobCaseReviewSnapshot = { ...completedReview, reviewId: 'f0e1d2c3-b4a5-4968-8778-695a4b3c2d1e', redactedSubject: 'PHP 案件' }
-    const counts = { caseVersions: 1, reviewAudits: 2, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 1, sourceRecords: 1, gmailMessages: 0, agentReferences: { conversations: 0, messages: 0 } }
+    const second: JobCaseReviewSnapshot = {
+      ...completedReview,
+      reviewId: 'f0e1d2c3-b4a5-4968-8778-695a4b3c2d1e',
+      redactedSubject: 'PHP 案件'
+    }
+    const counts = {
+      caseVersions: 1,
+      reviewAudits: 2,
+      taskRecords: 0,
+      proposalDrafts: 0,
+      evaluationDraftCases: 0,
+      piiMappings: 1,
+      sourceRecords: 1,
+      gmailMessages: 0,
+      agentReferences: { conversations: 0, messages: 0 }
+    }
     const onPreviewDeletion = vi.fn(async (reviewId: string) => ({
-      reviewId, sourceId: `source-${reviewId}`, title: reviewId === review.reviewId ? 'Java 案件' : 'PHP 案件', sourceType: 'chat-paste' as const,
-      counts, confirmationHash: (reviewId === review.reviewId ? 'a' : 'b').repeat(64), warningCodes: []
+      reviewId,
+      sourceId: `source-${reviewId}`,
+      title: reviewId === review.reviewId ? 'Java 案件' : 'PHP 案件',
+      sourceType: 'chat-paste' as const,
+      counts,
+      confirmationHash: (reviewId === review.reviewId ? 'a' : 'b').repeat(64),
+      warningCodes: []
     }))
     const onDelete = vi.fn(async (input: DeleteJobCaseDataInput) => ({
       report: {
-        id: `report-${input.reviewId}`, entityType: 'job_case' as const, entityIdHash: 'c'.repeat(64), requestedBy: 'HR',
-        startedAt: '2026-08-26T01:00:00.000Z', completedAt: '2026-08-26T01:00:01.000Z', outcome: 'completed' as const,
-        components: { database: 'deleted' as const, fileVault: 'not_present' as const, searchIndex: 'not_present' as const, cache: 'not_present' as const, temporaryFiles: 'not_present' as const, backups: 'not_present' as const },
-        deletedCounts: counts, warningCodes: []
+        id: `report-${input.reviewId}`,
+        entityType: 'job_case' as const,
+        entityIdHash: 'c'.repeat(64),
+        requestedBy: 'HR',
+        startedAt: '2026-08-26T01:00:00.000Z',
+        completedAt: '2026-08-26T01:00:01.000Z',
+        outcome: 'completed' as const,
+        components: {
+          database: 'deleted' as const,
+          fileVault: 'not_present' as const,
+          searchIndex: 'not_present' as const,
+          cache: 'not_present' as const,
+          temporaryFiles: 'not_present' as const,
+          backups: 'not_present' as const
+        },
+        deletedCounts: counts,
+        warningCodes: []
       }
     }))
     render(
@@ -484,11 +567,13 @@ describe('JobCaseInbox', () => {
         onCreateManual={vi.fn()}
         onDelete={onDelete}
         onPreviewDeletion={onPreviewDeletion}
-        onSubmit={vi.fn()}
         reviews={[review, second]}
       />
     )
 
+    // Kept under 「管理」 rather than as a prominent red header button.
+    expect(screen.getByText('全案件を削除').closest('details')).toHaveTextContent('管理')
+    fireEvent.click(screen.getByText('管理'))
     fireEvent.click(screen.getByRole('button', { name: '全案件を削除' }))
     expect(await screen.findByRole('dialog', { name: 'すべての案件データを永久削除' })).toBeInTheDocument()
     // The aggregate of both previews, and both titles, before anything is deleted.
@@ -507,42 +592,9 @@ describe('JobCaseInbox', () => {
     expect(screen.queryByRole('dialog', { name: 'すべての案件データを永久削除' })).not.toBeInTheDocument()
   })
 
-  it('groups the list by arrival day, marks the unread cases and clears one when it is opened', () => {
-    const older: JobCaseReviewSnapshot = {
-      ...completedReview,
-      reviewId: 'c1f5d0d4-2c5f-4c2c-9d21-6f4dbb1a4e91',
-      redactedSubject: 'C# 保守案件',
-      fields: completedReview.fields.map((field) => field.key === 'title'
-        ? { ...field, value: 'C# 保守案件', originalValue: 'C# 保守案件' }
-        : field)
-    }
-    const onMarkSeen = vi.fn()
-    render(<JobCaseInbox
-      {...governanceProps}
-      newCaseDigest={{
-        newCasesToday: 1,
-        unseenCount: 1,
-        groups: [{
-          day: 'today', count: 1, unseenCount: 1,
-          entries: [{
-            reviewId: completedReview.reviewId, jobCaseId: completedReview.jobCase?.id ?? null,
-            title: 'Java 決済基盤案件', sourceType: 'gmail', arrivedAt: '2026-07-17T01:00:00.000Z',
-            unseen: true, status: 'ready', missingFieldKeys: [], highlights: []
-          }]
-        }]
-      }}
-      onCreateManual={vi.fn()}
-      onMarkSeen={onMarkSeen}
-      onSubmit={vi.fn()}
-      reviews={[completedReview, older]}
-    />)
-
-    // A case the digest does not carry is simply older news, never marked 新.
-    expect(screen.getByText('本日')).toBeInTheDocument()
-    expect(screen.getByText('それ以前')).toBeInTheDocument()
-    expect(screen.getAllByText('新')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: /^確認済み.*C# 保守案件/u }))
-    expect(onMarkSeen).toHaveBeenCalledWith(older.reviewId)
+  it('offers no bulk deletion when there are no cases', () => {
+    render(<JobCaseInbox {...governanceProps} onCreateManual={vi.fn()} onDelete={vi.fn()} onPreviewDeletion={vi.fn()} reviews={[]} />)
+    expect(screen.queryByText('全案件を削除')).not.toBeInTheDocument()
+    expect(screen.queryByText('管理')).not.toBeInTheDocument()
   })
-
 })

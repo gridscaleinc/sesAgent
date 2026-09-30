@@ -13,8 +13,7 @@ const root = resolve(import.meta.dirname, '..')
 const uncoveredMainProcessSources = mainProcessCoverageFailures(root)
 if (uncoveredMainProcessSources.length > 0) {
   throw new Error(
-    'Main-process sources are neither bound to the cloud enforcement SHA nor listed as unbound: ' +
-    uncoveredMainProcessSources.join(', ')
+    'Main-process sources are neither bound to the cloud enforcement SHA nor listed as unbound: ' + uncoveredMainProcessSources.join(', ')
   )
 }
 const verificationDirectory = resolve(root, 'build/privacy-verification')
@@ -39,30 +38,31 @@ async function javascriptFiles(directory) {
   const files = []
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) files.push(...await javascriptFiles(path))
+    if (entry.isDirectory()) files.push(...(await javascriptFiles(path)))
     else if (entry.isFile() && entry.name.endsWith('.js')) files.push(path)
   }
   return files
 }
 
-const runtimeBundleExclusions = new Set(process.platform === 'darwin'
-  ? [
-      'out/main/windows-ocr-worker.js',
-      'out/main/tesseract-worker.js',
-      'out/main/windows-network-probe.js'
-    ]
-  : process.platform === 'win32'
-    ? ['out/main/windows-network-probe.js']
-    : [])
+const runtimeBundleExclusions = new Set(
+  process.platform === 'darwin'
+    ? ['out/main/windows-ocr-worker.js', 'out/main/tesseract-worker.js', 'out/main/windows-network-probe.js']
+    : process.platform === 'win32'
+      ? ['out/main/windows-network-probe.js']
+      : []
+)
 const runtimeBundlePaths = [
-  ...await javascriptFiles(resolve(outDirectory, 'main')),
-  ...await javascriptFiles(resolve(outDirectory, 'preload'))
-].filter((path) => !runtimeBundleExclusions.has(relative(root, path).replaceAll('\\', '/')))
+  ...(await javascriptFiles(resolve(outDirectory, 'main'))),
+  ...(await javascriptFiles(resolve(outDirectory, 'preload')))
+]
+  .filter((path) => !runtimeBundleExclusions.has(relative(root, path).replaceAll('\\', '/')))
   .sort((left, right) => left.localeCompare(right))
-const runtimeBundleFiles = await Promise.all(runtimeBundlePaths.map(async (path) => {
-  const bytes = await readFile(path)
-  return { path: relative(root, path).replaceAll('\\', '/'), sha256: sha256(bytes), bytes }
-}))
+const runtimeBundleFiles = await Promise.all(
+  runtimeBundlePaths.map(async (path) => {
+    const bytes = await readFile(path)
+    return { path: relative(root, path).replaceAll('\\', '/'), sha256: sha256(bytes), bytes }
+  })
+)
 const runtimeBundleSetHash = createHash('sha256')
 for (const file of runtimeBundleFiles) {
   runtimeBundleSetHash.update(file.path)
@@ -80,17 +80,29 @@ let qualityGateBound = false
 if (qualityReportBytes) {
   try {
     const quality = JSON.parse(qualityReportBytes.toString('utf8'))
-    qualityGateBound = quality.version === 'ses-privacy-quality-report-v1' &&
+    qualityGateBound =
+      quality.version === 'ses-privacy-quality-report-v1' &&
       quality.datasetVersion === 'ses-privacy-regression-v1' &&
       quality.datasetSha256 === '83ce7ac64d07337b41bdd303450c97cc894e74fcf36730bcade60cbb2bf9cb4e' &&
-      quality.releaseEligible === true && quality.platform === process.platform && quality.arch === process.arch &&
-      quality.syntheticOnly === true && quality.humanLabeledDataset === false &&
-      quality.caseCount === 28 && quality.safeCaseCount === 6 && quality.blockedCaseCount === 4 &&
-      quality.expectedIdentifiers === 30 && quality.detectedIdentifiers === 30 &&
-      quality.identifierRecall === 1 && quality.redactionPrecision === 1 &&
-      quality.residualLeakCount === 0 && quality.safeCaseFalsePositiveCount === 0 &&
-      quality.failedClosedCases === 4 && quality.cloudDirectIdentifiers === 0 &&
-      quality.networkAccess === false && Array.isArray(quality.failures) && quality.failures.length === 0 &&
+      quality.releaseEligible === true &&
+      quality.platform === process.platform &&
+      quality.arch === process.arch &&
+      quality.syntheticOnly === true &&
+      quality.humanLabeledDataset === false &&
+      quality.caseCount === 28 &&
+      quality.safeCaseCount === 6 &&
+      quality.blockedCaseCount === 4 &&
+      quality.expectedIdentifiers === 30 &&
+      quality.detectedIdentifiers === 30 &&
+      quality.identifierRecall === 1 &&
+      quality.redactionPrecision === 1 &&
+      quality.residualLeakCount === 0 &&
+      quality.safeCaseFalsePositiveCount === 0 &&
+      quality.failedClosedCases === 4 &&
+      quality.cloudDirectIdentifiers === 0 &&
+      quality.networkAccess === false &&
+      Array.isArray(quality.failures) &&
+      quality.failures.length === 0 &&
       (process.platform !== 'darwin' || quality.appleNer?.verified === true) &&
       (process.platform !== 'win32' || quality.appleNer?.required === false)
   } catch {
@@ -102,12 +114,13 @@ let expertAttestationBound = false
 if (expertReportBytes) {
   try {
     const expert = JSON.parse(expertReportBytes.toString('utf8'))
-    expertAttestationBound = privacyExpertReportFailures(expert, {
-      platform: process.platform,
-      arch: process.arch,
-      privacyImplementationSha256,
-      cloudEnforcementSha256: cloudEnforcementSourceSha256
-    }).length === 0
+    expertAttestationBound =
+      privacyExpertReportFailures(expert, {
+        platform: process.platform,
+        arch: process.arch,
+        privacyImplementationSha256,
+        cloudEnforcementSha256: cloudEnforcementSourceSha256
+      }).length === 0
   } catch {
     expertAttestationBound = false
   }
@@ -135,11 +148,13 @@ await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', {
   mode: 0o600
 })
 await chmod(manifestPath, 0o600)
-process.stdout.write(JSON.stringify({
-  manifestPath,
-  runtimeBundleFiles: manifest.runtimeBundleFiles.length,
-  runtimeBundleSetSha256: manifest.runtimeBundleSetSha256,
-  qualityGateBound,
-  expertAttestationBound,
-  releaseEligible: manifest.releaseEligible
-}) + '\n')
+process.stdout.write(
+  JSON.stringify({
+    manifestPath,
+    runtimeBundleFiles: manifest.runtimeBundleFiles.length,
+    runtimeBundleSetSha256: manifest.runtimeBundleSetSha256,
+    qualityGateBound,
+    expertAttestationBound,
+    releaseEligible: manifest.releaseEligible
+  }) + '\n'
+)

@@ -1,10 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import {
-  brandPersistedUserContent,
-  type BusinessTextIntakeKind,
-  type BusinessTextRouteDecision,
-  type LocalAgentUseCase
-} from '@agent'
+import { brandPersistedUserContent, type BusinessTextIntakeKind, type BusinessTextRouteDecision, type LocalAgentUseCase } from '@agent'
 import type { ActionContext, ActionOrchestrator } from '@action-runtime'
 import type { EncryptedFileVault, StagedFileRecord } from '@files'
 import { agentJobCaseDraftFacts, createRedactedChatPasteJobCaseSource, extractJobCaseDraft, type JobCaseFieldOverrides } from '@job-cases'
@@ -52,6 +47,25 @@ export interface JobCaseTextImportResult {
   attentionReason: string | null
 }
 
+/** The field without redaction tokens and the list separators they leave behind; null when nothing else remains. */
+export function withoutRedactionTokens(value: string | null): string | null {
+  if (!value || !/<[A-Z_]+_\d{3,}>/u.test(value)) return value
+  const cleaned = value
+    .split(/\r?\n/u)
+    .map((line) =>
+      line
+        .replace(/<[A-Z_]+_\d{3,}>/gu, ' ')
+        .replace(/[（(]\s*[）)]/gu, ' ')
+        // Collapse the separators a removed item leaves behind ("Java、 、Spring" -> "Java、Spring").
+        .replace(/\s*([、,，／/・;；])(?:\s*[、,，／/・;；])+/gu, '$1')
+        .replace(/^[\s、,，／/・;；]+|[\s、,，／/・;；]+$/gu, '')
+        .replace(/\s{2,}/gu, ' ')
+    )
+    .filter(Boolean)
+    .join('\n')
+  return cleaned || null
+}
+
 /**
  * Makes a fresh draft a job case on the spot with its extracted values. A
  * case has two states for the operator - valid or not - and edits happen
@@ -66,18 +80,34 @@ export function autoConfirmJobCaseDraft(
   now = new Date()
 ): { review: JobCaseReviewSnapshot; reason: null } | { review: null; reason: string } {
   try {
-    const confirmed = repository.confirmJobCaseReview({
-      reviewId: review.reviewId,
-      reviewRevision: review.reviewRevision,
-      privacyReviewed: true,
-      fields: review.fields.map((field) => {
-        // A field consisting only of redaction tokens contains no business fact.
-        // Keep the redacted source, and leave that structured field empty.
-        const emptyRedaction = /^(?:\s*<[A-Z_]+_\d{3,}>\s*)+$/u.test(field.value ?? '')
-        return { key: field.key, value: emptyRedaction ? null : field.value, confirmed: true,
-          ...(emptyRedaction ? { changeReason: 'Remove placeholder-only field after local redaction' } : {}) }
-      })
-    }, operator.operatorId, operator.displayName, now)
+    const confirmed = repository.confirmJobCaseReview(
+      {
+        reviewId: review.reviewId,
+        reviewRevision: review.reviewRevision,
+        privacyReviewed: true,
+        fields: review.fields.map((field) => {
+          // Redaction tokens carry no business fact. Keep the redacted source, and drop the tokens from
+          // the structured field: an identifier (or a word mistaken for one) must not block the whole case.
+          const value = withoutRedactionTokens(field.value)
+          return {
+            key: field.key,
+            value,
+            confirmed: true,
+            ...(value !== field.value
+              ? {
+                  changeReason:
+                    value === null
+                      ? 'Remove placeholder-only field after local redaction'
+                      : 'Remove redaction placeholders from a structured field after local redaction'
+                }
+              : {})
+          }
+        })
+      },
+      operator.operatorId,
+      operator.displayName,
+      now
+    )
     return { review: confirmed, reason: null }
   } catch (error) {
     return { review: null, reason: (error instanceof Error ? error.message : String(error)).slice(0, 300) }
@@ -144,12 +174,9 @@ export async function importChatPastedJobCaseText(
     if (value) localizedOverrides[key] = applyLocalPiiMappings(value, processed.redaction.mappings)
   }
   const draft = extractJobCaseDraft(processed.source, randomUUID(), now, localizedOverrides, intakeBatchId, aliases)
-  if (!deps.repository.saveRedactedJobCaseSourceAndDraft(
-    processed.redaction.session,
-    processed.redaction.mappings,
-    processed.source,
-    draft
-  )) {
+  if (
+    !deps.repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, processed.source, draft)
+  ) {
     throw new Error('チャット貼り付け案件の草稿を作成できませんでした。')
   }
   const review = deps.repository.getJobCaseReview(draft.reviewId)
@@ -175,8 +202,9 @@ function documentIrFromTrustedText(record: StagedFileRecord, text: string): Docu
       kind: 'text' as const,
       // Chat labels are often padded for alignment - 氏　名：. Collapsing the
       // spaces inside the label lets the existing extractor patterns match.
-      text: line.replace(/^([^:：\n]{1,12})([:：])/u, (_match, label: string, colon: string) =>
-        `${label.replace(/[\s　]+/gu, '')}${colon}`).trim(),
+      text: line
+        .replace(/^([^:：\n]{1,12})([:：])/u, (_match, label: string, colon: string) => `${label.replace(/[\s　]+/gu, '')}${colon}`)
+        .trim(),
       source: { paragraph: index + 1 }
     }))
     .filter((block) => block.text.length > 0)
@@ -254,9 +282,7 @@ export async function importPastedCandidateText(
     }
     const analyzedAt = now.toISOString()
     const extraction = applyCandidateFieldOverrides(extractCandidateDraft(document, now), document, fieldOverrides)
-    const preview = redaction.redactedContent.length > 4_000
-      ? `${redaction.redactedContent.slice(0, 3_999)}…`
-      : redaction.redactedContent
+    const preview = redaction.redactedContent.length > 4_000 ? `${redaction.redactedContent.slice(0, 3_999)}…` : redaction.redactedContent
     const summary: ResumeAnalysisSummary = {
       analysisVersion: 'resume-analysis-v6',
       fileToken: record.token,
@@ -291,12 +317,7 @@ export async function importPastedCandidateText(
         confidence: project.confidence,
         sourceLabels: [...new Set(project.sources.map((source) => source.sourceLabel))]
       })),
-      warningCodes: [
-        ...new Set([
-          'BUSINESS_TEXT_INTAKE_SOURCE',
-          ...(knownPersonNames.length > 0 ? ['PERSON_NAME_REVIEW_REQUIRED'] : [])
-        ])
-      ],
+      warningCodes: [...new Set(['BUSINESS_TEXT_INTAKE_SOURCE', ...(knownPersonNames.length > 0 ? ['PERSON_NAME_REVIEW_REQUIRED'] : [])])],
       redactedPreview: preview,
       analyzedAt
     }
@@ -322,7 +343,12 @@ export async function importPastedCandidateText(
     }
     if (cause instanceof DuplicateCandidateError) {
       const review = deps.repository.getCandidateReview(cause.documentId)
-      if (review) return { review, outcome: review.recordStatus === 'archived' ? 'archived' : review.status === 'completed' ? 'already-imported' : 'existing-review', facts: null }
+      if (review)
+        return {
+          review,
+          outcome: review.recordStatus === 'archived' ? 'archived' : review.status === 'completed' ? 'already-imported' : 'existing-review',
+          facts: null
+        }
     }
     throw cause
   }
@@ -388,9 +414,7 @@ function intakeActionContext(deps: BusinessTextIntakeTurnDependencies, digest: s
  * importers' own fingerprint / SHA-256 checks.
  */
 function intakeIdempotencyKey(input: ExecuteAgentTurnInput, digest: string): string {
-  return createHash('sha256')
-    .update(`${intakeToolName}:${input.conversationId}:${input.requestId}:${digest}`)
-    .digest('hex')
+  return createHash('sha256').update(`${intakeToolName}:${input.conversationId}:${input.requestId}:${digest}`).digest('hex')
 }
 
 /**
@@ -409,7 +433,10 @@ function saveLinkedIntakeTurn(
   batch: { intakeBatchId: string; cards: AgentJobCaseDraftCard[] } | null = null
 ): ReturnType<LocalAgentUseCase['saveIntakeTurn']> {
   const saved = useCase.saveIntakeTurn(
-    input, summary, assistant, outcome,
+    input,
+    summary,
+    assistant,
+    outcome,
     batch && batch.cards.length > 0 ? { intakeBatchId: batch.intakeBatchId, reviewIds: batch.cards.map((card) => card.reviewId) } : null
   )
   const turnId = saved.assistantMessage.turnId
@@ -436,7 +463,9 @@ function reportImportFailure(kind: BusinessTextIntakeKind, actionRunId: string, 
 }
 
 function contentDigest(text: string): string {
-  return createHash('sha256').update(Buffer.from(text.replace(/\r\n/gu, '\n').trim(), 'utf8')).digest('hex')
+  return createHash('sha256')
+    .update(Buffer.from(text.replace(/\r\n/gu, '\n').trim(), 'utf8'))
+    .digest('hex')
 }
 
 /**
@@ -471,13 +500,27 @@ function jobCaseDraftBlocks(intakeBatchId: string, cards: AgentJobCaseDraftCard[
 type IntakeSummaryKind = BusinessTextIntakeKind | 'ambiguous' | 'multiple'
 
 function intakeUserSummary(zh: boolean, kind: IntakeSummaryKind, digestTag: string) {
-  const zhLabel = kind === 'job-case'
-    ? '案件文本' : kind === 'candidate' ? '人员文本' : kind === 'multiple' ? '业务文本（多条记录）' : '业务文本（类型待确认）'
-  const jaLabel = kind === 'job-case'
-    ? '案件テキスト' : kind === 'candidate' ? '要員テキスト' : kind === 'multiple' ? '業務テキスト（複数レコード）' : '業務テキスト（種別未確定）'
-  return brandPersistedUserContent(zh
-    ? `【已提交${zhLabel}】内容摘要 ${digestTag}，原文未写入会话。`
-    : `【${jaLabel}を送信】内容ダイジェスト ${digestTag}。原文は会話に保存されません。`)
+  const zhLabel =
+    kind === 'job-case'
+      ? '案件文本'
+      : kind === 'candidate'
+        ? '人员文本'
+        : kind === 'multiple'
+          ? '业务文本（多条记录）'
+          : '业务文本（类型待确认）'
+  const jaLabel =
+    kind === 'job-case'
+      ? '案件テキスト'
+      : kind === 'candidate'
+        ? '要員テキスト'
+        : kind === 'multiple'
+          ? '業務テキスト（複数レコード）'
+          : '業務テキスト（種別未確定）'
+  return brandPersistedUserContent(
+    zh
+      ? `【已提交${zhLabel}】内容摘要 ${digestTag}，原文未写入会话。`
+      : `【${jaLabel}を送信】内容ダイジェスト ${digestTag}。原文は会話に保存されません。`
+  )
 }
 
 function guidanceText(zh: boolean, decision: BusinessTextRouteDecision): string {
@@ -518,11 +561,14 @@ function jobCaseOutcomeText(
 ): string {
   switch (outcome) {
     case 'created': {
-      const extracted = extraction === 'cloud-fields'
-        ? (zh
+      const extracted =
+        extraction === 'cloud-fields'
+          ? zh
             ? '字段由云端模型从脱敏投影中抽取，并经本机逐项核验（值必须原样出现在原文中），原文未离开本机。'
-            : '項目は匿名化投影からクラウドモデルが抽出し、端末内で原文との逐語一致を検証しています。原文は端末外に出ていません。')
-        : (zh ? '字段解析仅在本机完成，未调用云端。' : '項目抽出は端末内で完結し、クラウドは呼び出していません。')
+            : '項目は匿名化投影からクラウドモデルが抽出し、端末内で原文との逐語一致を検証しています。原文は端末外に出ていません。'
+          : zh
+            ? '字段解析仅在本机完成，未调用云端。'
+            : '項目抽出は端末内で完結し、クラウドは呼び出していません。'
       if (validity === 'needs-attention') {
         return zh
           ? `已从粘贴文本导入一条案件，但尚未生效：${attentionReason ?? '案件内容不完整'}。${extracted}请在右侧案件详情补充后保存，保存即生效。`
@@ -542,9 +588,7 @@ function jobCaseOutcomeText(
         ? '相同内容此前已提交，已打开现有的案件待审核草稿，未重复创建。'
         : '同じ内容は提出済みです。既存の案件レビュー草稿を開きました。重複作成はしていません。'
     case 'already-imported':
-      return zh
-        ? '相同内容已完成导入并确认为正式案件，本次未重复创建。'
-        : '同じ内容は取込・確定済みの案件です。今回は再作成していません。'
+      return zh ? '相同内容已完成导入并确认为正式案件，本次未重复创建。' : '同じ内容は取込・確定済みの案件です。今回は再作成していません。'
     case 'archived':
       return zh
         ? '相同内容对应的案件记录已归档。如需恢复请在案件页面手动处理；本次未创建新草稿。'
@@ -607,10 +651,7 @@ interface SegmentImportOutcome {
 }
 
 /** Narrows the lane's loosely typed field map to one importer's known keys. */
-function pickOverrides<Key extends string>(
-  fields: Record<string, string>,
-  keys: readonly Key[]
-): Partial<Record<Key, string>> {
+function pickOverrides<Key extends string>(fields: Record<string, string>, keys: readonly Key[]): Partial<Record<Key, string>> {
   const picked: Partial<Record<Key, string>> = {}
   for (const key of keys) {
     const value = fields[key]
@@ -652,9 +693,14 @@ async function importOneSegment(
         resultHash: createHash('sha256').update(`${imported.outcome}:${imported.review.reviewId}`).digest('hex')
       })
       return {
-        kind, status: 'succeeded', actionRunId: preflight.actionRunId,
-        outcome: imported.outcome, jobCaseReviewId: imported.review.reviewId, candidate: null,
-        validity: imported.validity, attentionReason: imported.attentionReason
+        kind,
+        status: 'succeeded',
+        actionRunId: preflight.actionRunId,
+        outcome: imported.outcome,
+        jobCaseReviewId: imported.review.reviewId,
+        candidate: null,
+        validity: imported.validity,
+        attentionReason: imported.attentionReason
       }
     }
     const imported = await deps.importCandidateText(segmentText, pickOverrides(fields, candidateFieldKeys))
@@ -662,8 +708,12 @@ async function importOneSegment(
       resultHash: createHash('sha256').update(`${imported.outcome}:${imported.review.documentId}`).digest('hex')
     })
     return {
-      kind, status: 'succeeded', actionRunId: preflight.actionRunId,
-      outcome: imported.outcome, jobCaseReviewId: null, candidate: imported
+      kind,
+      status: 'succeeded',
+      actionRunId: preflight.actionRunId,
+      outcome: imported.outcome,
+      jobCaseReviewId: null,
+      candidate: imported
     }
   } catch (error) {
     const errorCode = kind === 'job-case' ? 'BUSINESS_TEXT_JOB_CASE_IMPORT_FAILED' : 'BUSINESS_TEXT_CANDIDATE_IMPORT_FAILED'
@@ -673,10 +723,7 @@ async function importOneSegment(
   }
 }
 
-function cloudAssistedBatchText(
-  zh: boolean,
-  outcomes: SegmentImportOutcome[]
-): string {
+function cloudAssistedBatchText(zh: boolean, outcomes: SegmentImportOutcome[]): string {
   const caseCount = outcomes.filter((item) => item.kind === 'job-case').length
   const candidateCount = outcomes.length - caseCount
   const created = outcomes.filter((item) => item.outcome === 'created').length
@@ -688,14 +735,18 @@ function cloudAssistedBatchText(
     ? `新建 ${created} 条${valid > 0 || attention > 0 ? `（生效 ${valid} 条${attention > 0 ? `，待补充 ${attention} 条` : ''}）` : ''}`
     : `${created}件を新規作成${valid > 0 || attention > 0 ? `（有効${valid}件${attention > 0 ? `・要補完${attention}件` : ''}）` : ''}`
   if (zh) {
-    return `已通过脱敏云端分段识别出 ${outcomes.length} 条业务记录（案件 ${caseCount} 条、人员 ${candidateCount} 条）：${createdText}` +
+    return (
+      `已通过脱敏云端分段识别出 ${outcomes.length} 条业务记录（案件 ${caseCount} 条、人员 ${candidateCount} 条）：${createdText}` +
       `${duplicate > 0 ? `，返回已有记录 ${duplicate} 条` : ''}${failed > 0 ? `，失败 ${failed} 条` : ''}。` +
       '字段由云端模型从脱敏行投影中抽取，并经本机逐条核验（值必须原样出现在原文中），原文未离开本机。' +
       (attention > 0 ? '可在右侧案件详情直接修改；待补充的案件保存后即生效。' : '可在右侧案件详情直接修改。')
+    )
   }
-  return `匿名化した行投影のクラウド分割により、業務レコードを${outcomes.length}件（案件${caseCount}件・要員${candidateCount}件）識別しました。${createdText}` +
+  return (
+    `匿名化した行投影のクラウド分割により、業務レコードを${outcomes.length}件（案件${caseCount}件・要員${candidateCount}件）識別しました。${createdText}` +
     `${duplicate > 0 ? `、既存レコードを${duplicate}件再利用` : ''}${failed > 0 ? `、${failed}件は失敗` : ''}。` +
     '項目は匿名化投影からクラウドモデルが抽出し、端末内で原文との逐語一致を検証しています。原文は端末外に出ていません。右側の案件詳細で項目を直接編集できます。要補完の案件は保存すると有効になります。'
+  )
 }
 
 /**
@@ -753,7 +804,10 @@ async function tryCloudAssistedIntake(
   const lines = decision.businessText.replace(/\r\n/gu, '\n').split('\n')
   const outcomes: SegmentImportOutcome[] = []
   for (const record of extraction.records) {
-    const segmentText = lines.slice(record.startLine - 1, record.endLine).join('\n').trim()
+    const segmentText = lines
+      .slice(record.startLine - 1, record.endLine)
+      .join('\n')
+      .trim()
     if (!segmentText) continue
     const outcome = await importOneSegment(deps, input, record.kind, segmentText, record.fields, intakeBatchId)
     outcome.startLine = record.startLine
@@ -767,8 +821,12 @@ async function tryCloudAssistedIntake(
 
   const succeeded = outcomes.filter((item) => item.status === 'succeeded')
   const anySuccess = succeeded.length > 0
-  const cards = jobCaseDraftCards(deps, succeeded.flatMap((item) =>
-    item.kind === 'job-case' && item.jobCaseReviewId && item.outcome ? [{ reviewId: item.jobCaseReviewId, outcome: item.outcome }] : []))
+  const cards = jobCaseDraftCards(
+    deps,
+    succeeded.flatMap((item) =>
+      item.kind === 'job-case' && item.jobCaseReviewId && item.outcome ? [{ reviewId: item.jobCaseReviewId, outcome: item.outcome }] : []
+    )
+  )
   const blocks: AiConversationBlock[] = []
   let content: string
   if (outcomes.length === 1 && succeeded.length === 1) {
@@ -780,9 +838,11 @@ async function tryCloudAssistedIntake(
       : zh
         ? `已通过脱敏云端判定为${only.kind === 'job-case' ? '案件' : '人员'}。`
         : `匿名化投影のクラウド判定により${only.kind === 'job-case' ? '案件' : '要員'}として取り込みました。`
-    content = `${prefix}${only.kind === 'job-case'
-      ? jobCaseOutcomeText(zh, only.outcome!, 'cloud-fields', only.validity, only.attentionReason ?? null)
-      : candidateOutcomeText(zh, only.outcome!, 'cloud-fields')}`
+    content = `${prefix}${
+      only.kind === 'job-case'
+        ? jobCaseOutcomeText(zh, only.outcome!, 'cloud-fields', only.validity, only.attentionReason ?? null)
+        : candidateOutcomeText(zh, only.outcome!, 'cloud-fields')
+    }`
     if (only.jobCaseReviewId) {
       blocks.push({ type: 'system-access', destination: 'case-review', reviewId: only.jobCaseReviewId })
       blocks.push(...jobCaseDraftBlocks(intakeBatchId, cards))
@@ -793,9 +853,7 @@ async function tryCloudAssistedIntake(
       blocks.push({ type: 'system-access', destination: 'review-center' })
     }
   } else {
-    content = anySuccess
-      ? cloudAssistedBatchText(zh, outcomes)
-      : importFailureText(zh, 'BUSINESS_TEXT_BATCH_IMPORT_FAILED')
+    content = anySuccess ? cloudAssistedBatchText(zh, outcomes) : importFailureText(zh, 'BUSINESS_TEXT_BATCH_IMPORT_FAILED')
     if (cards.length > 0) blocks.push(...jobCaseDraftBlocks(intakeBatchId, cards))
     else blocks.push({ type: 'system-access', destination: 'review-center' })
   }
@@ -818,7 +876,15 @@ async function tryCloudAssistedIntake(
     intake: {
       route: decisiveKind ?? (decision.route === 'multiple' ? 'multiple' : 'ambiguous-sensitive'),
       reason: 'cloud-assisted-extraction',
-      records: outcomes.map((item) => ({ kind: item.kind, status: item.status, outcome: item.outcome, reviewId: item.jobCaseReviewId, sourceDocumentId: item.candidate?.review.documentId ?? null, startLine: item.startLine, endLine: item.endLine })),
+      records: outcomes.map((item) => ({
+        kind: item.kind,
+        status: item.status,
+        outcome: item.outcome,
+        reviewId: item.jobCaseReviewId,
+        sourceDocumentId: item.candidate?.review.documentId ?? null,
+        startLine: item.startLine,
+        endLine: item.endLine
+      })),
       restoreComposerText: !anySuccess
     }
   }
@@ -859,9 +925,9 @@ export async function executeBusinessTextIntakeTurn(
     // operator is seeing guidance instead of drafts. Reasons are fixed
     // protocol / gateway strings - never the pasted text.
     const laneNote = diagnostics.laneFailure
-      ? (zh
-          ? `\n\n云端分段车道本次未完成：${diagnostics.laneFailure}`
-          : `\n\nクラウド分割レーンは今回完了しませんでした：${diagnostics.laneFailure}`)
+      ? zh
+        ? `\n\n云端分段车道本次未完成：${diagnostics.laneFailure}`
+        : `\n\nクラウド分割レーンは今回完了しませんでした：${diagnostics.laneFailure}`
       : ''
     const saved = useCase.saveIntakeTurn(
       input,
@@ -950,7 +1016,12 @@ export async function executeBusinessTextIntakeTurn(
       ...saved,
       toolName: intakeToolName,
       actionRunId: preflight.actionRunId,
-      intake: { route: kind, reason: decision.reason, restoreComposerText: false, records: [{ kind, status: 'succeeded', outcome: imported.outcome, reviewId: imported.review.reviewId, sourceDocumentId: null }] }
+      intake: {
+        route: kind,
+        reason: decision.reason,
+        restoreComposerText: false,
+        records: [{ kind, status: 'succeeded', outcome: imported.outcome, reviewId: imported.review.reviewId, sourceDocumentId: null }]
+      }
     }
   }
 
@@ -1017,6 +1088,11 @@ export async function executeBusinessTextIntakeTurn(
     ...saved,
     toolName: intakeToolName,
     actionRunId: preflight.actionRunId,
-    intake: { route: kind, reason: decision.reason, restoreComposerText: false, records: [{ kind, status: 'succeeded', outcome: imported.outcome, reviewId: null, sourceDocumentId: imported.review.documentId }] }
+    intake: {
+      route: kind,
+      reason: decision.reason,
+      restoreComposerText: false,
+      records: [{ kind, status: 'succeeded', outcome: imported.outcome, reviewId: null, sourceDocumentId: imported.review.documentId }]
+    }
   }
 }

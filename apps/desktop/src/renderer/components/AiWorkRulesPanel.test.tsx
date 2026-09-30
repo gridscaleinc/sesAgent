@@ -1,10 +1,36 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AiWorkRulesPanel } from './AiWorkRulesPanel'
-vi.mock('../i18n', () => ({ useUiLocale: () => 'zh-CN' }))
+vi.mock('../i18n', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../i18n')>()
+  return {
+    ...actual,
+    useUiLocale: () => 'zh-CN',
+    useLocaleText: () => ({ locale: 'zh-CN' as const, zh: true, t: actual.localeText(true) })
+  }
+})
 const text = 'Java 案件优先 AWS 经验'
-const preview = { text, scope: { kind: 'global' }, token: 'token', clauses: [{ kind: 'preferred', field: 'required_skills', text: 'AWS 经验', sourceQuote: text, caseKeywords: ['Java'] }], issues: [], modelKey: 'test', expiresAt: new Date(Date.now() + 60000).toISOString() }
-beforeEach(() => { Object.defineProperty(window, 'sesAgent', { configurable: true, value: { listWorkRules: vi.fn(async () => ({ revision: 0, rules: [] })), analyzeWorkRule: vi.fn(async () => preview), saveWorkRule: vi.fn(async () => ({})), changeWorkRule: vi.fn(), getWorkRuleHistory: vi.fn(async () => []) } as any }) })
+const preview = {
+  text,
+  scope: { kind: 'global' },
+  token: 'token',
+  clauses: [{ kind: 'preferred', field: 'required_skills', text: 'AWS 经验', sourceQuote: text, caseKeywords: ['Java'] }],
+  issues: [],
+  modelKey: 'test',
+  expiresAt: new Date(Date.now() + 60000).toISOString()
+}
+beforeEach(() => {
+  Object.defineProperty(window, 'sesAgent', {
+    configurable: true,
+    value: {
+      listWorkRules: vi.fn(async () => ({ revision: 0, rules: [] })),
+      analyzeWorkRule: vi.fn(async () => preview),
+      saveWorkRule: vi.fn(async () => ({})),
+      changeWorkRule: vi.fn(),
+      getWorkRuleHistory: vi.fn(async () => [])
+    } as any
+  })
+})
 afterEach(cleanup)
 it('shows interpreted intent before saving, and editing the text invalidates the preview', async () => {
   render(<AiWorkRulesPanel />)

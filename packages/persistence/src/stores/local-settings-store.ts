@@ -39,10 +39,7 @@ export class LocalSettingsStore extends DomainStore {
     })
   }
 
-  saveLocalOperatorProfile(
-    rawInput: SaveLocalOperatorProfileInput,
-    now = new Date()
-  ): LocalOperatorProfile {
+  saveLocalOperatorProfile(rawInput: SaveLocalOperatorProfileInput, now = new Date()): LocalOperatorProfile {
     const input = saveLocalOperatorProfileInputSchema.parse(rawInput)
     const current = this.getLocalOperatorProfile()
     if ((current && current.revision !== input.expectedRevision) || (!current && input.expectedRevision !== null)) {
@@ -86,10 +83,7 @@ export class LocalSettingsStore extends DomainStore {
     })
   }
 
-  saveLocalApplicationPreferences(
-    rawInput: SaveLocalApplicationPreferencesInput,
-    now = new Date()
-  ): LocalApplicationPreferences {
+  saveLocalApplicationPreferences(rawInput: SaveLocalApplicationPreferencesInput, now = new Date()): LocalApplicationPreferences {
     const input = saveLocalApplicationPreferencesInputSchema.parse(rawInput)
     const current = this.getLocalApplicationPreferences()
     if ((current && current.revision !== input.expectedRevision) || (!current && input.expectedRevision !== null)) {
@@ -115,9 +109,7 @@ export class LocalSettingsStore extends DomainStore {
 
   getJobCaseFieldAliases(): JobCaseFieldAliases | null {
     const row = this.database
-      .prepare<[], JobCaseFieldAliasesRow>(
-        'SELECT aliases_json, revision, updated_at FROM job_case_field_aliases WHERE singleton = 1'
-      )
+      .prepare<[], JobCaseFieldAliasesRow>('SELECT aliases_json, revision, updated_at FROM job_case_field_aliases WHERE singleton = 1')
       .get()
     if (!row) return null
     return jobCaseFieldAliasesSchema.parse({
@@ -138,9 +130,7 @@ export class LocalSettingsStore extends DomainStore {
     const timestamp = now.toISOString()
     const nextRevision = (current?.revision ?? 0) + 1
     // Empty alias lists are dropped so the stored map only carries real entries.
-    const aliases = Object.fromEntries(
-      Object.entries(input.aliases).filter(([, values]) => Array.isArray(values) && values.length > 0)
-    )
+    const aliases = Object.fromEntries(Object.entries(input.aliases).filter(([, values]) => Array.isArray(values) && values.length > 0))
     this.database
       .prepare(
         `INSERT INTO job_case_field_aliases(singleton, aliases_json, revision, created_at, updated_at)

@@ -24,11 +24,7 @@ import { cloudPrivacyGateLoadOptions, effectiveOperatorProfile } from '../app-de
 import { AgentCloudNarrativeService } from '../agent-cloud-narrative'
 import { CloudAiReviewService } from '../cloud-ai-review'
 import { loadCloudPrivacyGates } from '../privacy-gates'
-import {
-  MacWechatVisibleReader,
-  WechatVisibleScopeTokenStore,
-  resolveWechatAccessibilityHelperPath
-} from '../wechat-visible-reader'
+import { MacWechatVisibleReader, WechatVisibleScopeTokenStore, resolveWechatAccessibilityHelperPath } from '../wechat-visible-reader'
 
 /**
  * Rejects any IPC request that did not originate from the application's own
@@ -79,21 +75,20 @@ export type MainIpcContext = ReturnType<typeof createMainIpcContext>
 export function createMainIpcContext(dependencies: MainIpcDependencies) {
   const { repository, candidateRetrieval, localRerankerEnabled, localNer, aiCommerce } = dependencies
 
-  const conversationalMatchingEnabled = process.env.SES_CONVERSATIONAL_MATCHING_ENABLED !== '0'
   const agentChatModelCatalog = loadAgentChatModelCatalog()
   const activeTaskOperations = new Set<string>()
-  const wechatVisibleReader = new MacWechatVisibleReader(resolveWechatAccessibilityHelperPath({
-    packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath()
-  }))
+  const wechatVisibleReader = new MacWechatVisibleReader(
+    resolveWechatAccessibilityHelperPath({
+      packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath()
+    })
+  )
   const wechatScopeTokens = new WechatVisibleScopeTokenStore()
   const processingResources = new ProcessingResourceScheduler({ 'local-ai': 1, 'file-export': 1 })
   const currentOperator = () => effectiveOperatorProfile(repository)
   const currentMatchRuntimeIdentity = {
-    algorithmVersion: localRerankerEnabled
-      ? 'hard-filter-hybrid-local-rerank-v1' as const
-      : 'hard-filter-hybrid-rrf-v1' as const,
+    algorithmVersion: localRerankerEnabled ? ('hard-filter-hybrid-local-rerank-v1' as const) : ('hard-filter-hybrid-rrf-v1' as const),
     hardFilterPolicyVersion: 'tri-state-v3' as const,
     embeddingModelId: localEmbeddingModel.id,
     embeddingModelRevision: localEmbeddingModel.revision,
@@ -109,9 +104,7 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
         policyVersion: 'cloud-redaction-v2',
         loadGates: () => loadCloudPrivacyGates(cloudPrivacyGateLoadOptions()),
         confirm: async (review) => {
-          const removed = review.removedIdentifierTypes.length > 0
-            ? review.removedIdentifierTypes.join(', ')
-            : 'なし'
+          const removed = review.removedIdentifierTypes.length > 0 ? review.removedIdentifierTypes.join(', ') : 'なし'
           const confirmation = await dialog.showMessageBox({
             type: 'warning',
             title: 'Cloud AI 送信前確認',
@@ -125,18 +118,22 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
           return confirmation.response === 0
         },
         invoke: async (payload, operationId, auditContext) => {
-          const gateway = new CloudRedactionGateway([
+          const gateway = new CloudRedactionGateway(
+            [
+              {
+                id: 'aicommerce',
+                endpoint: aiCommerce.requestEndpoint,
+                invoke: async (_taskType, content) => aiCommerce.requestText(content, operationId)
+              }
+            ],
+            repository,
             {
-              id: 'aicommerce',
-              endpoint: aiCommerce.requestEndpoint,
-              invoke: async (_taskType, content) => aiCommerce.requestText(content, operationId)
+              policyVersion: 'cloud-redaction-v2',
+              allowedEndpoints: [aiCommerce.requestEndpoint],
+              allowedTasks: ['cloud-assist'],
+              allowLoopbackHttp: !app.isPackaged && aiCommerce.allowsLoopbackHttp
             }
-          ], repository, {
-            policyVersion: 'cloud-redaction-v2',
-            allowedEndpoints: [aiCommerce.requestEndpoint],
-            allowedTasks: ['cloud-assist'],
-            allowLoopbackHttp: !app.isPackaged && aiCommerce.allowsLoopbackHttp
-          })
+          )
           const result = await gateway.invoke('aicommerce', 'cloud-assist', payload, auditContext)
           if (!result || typeof result !== 'object') throw new Error('AICommerce の応答を検証できませんでした。')
           return result as Awaited<ReturnType<AiCommerceNativeClient['requestText']>>
@@ -186,9 +183,7 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
     const current = repository.getProcessingJob(jobId)
     if (!current || !['queued', 'retry_wait'].includes(current.status)) return current
     const lease = repository.acquireProcessingJob(jobId, 60_000)
-    return lease
-      ? repository.failProcessingJob(jobId, lease.leaseToken, errorCode, false)
-      : repository.getProcessingJob(jobId)
+    return lease ? repository.failProcessingJob(jobId, lease.leaseToken, errorCode, false) : repository.getProcessingJob(jobId)
   }
 
   /**
@@ -206,11 +201,12 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
   const conversationImports = new Map<string, Array<{ label: string; sourceDocumentId: string }>>()
 
   const searchCandidates = async (query: string, maxResults: number, candidateDocumentId?: string, expectedProfileVersion?: number) => {
-    const profiles = repository.listEligibleTalentProfiles().filter((profile) => !candidateDocumentId || profile.sourceDocumentId === candidateDocumentId)
-    const identities = new Map(profiles.map((profile) => [
-      profile.sourceDocumentId,
-      repository.getCandidateLocalIdentity(profile.sourceDocumentId)
-    ]))
+    const profiles = repository
+      .listEligibleTalentProfiles()
+      .filter((profile) => !candidateDocumentId || profile.sourceDocumentId === candidateDocumentId)
+    const identities = new Map(
+      profiles.map((profile) => [profile.sourceDocumentId, repository.getCandidateLocalIdentity(profile.sourceDocumentId)])
+    )
     const enrichLocalIdentity = (results: Awaited<ReturnType<typeof candidateRetrieval.search>>) =>
       results.map((result) => ({
         ...result,
@@ -239,14 +235,11 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
     const normalizedQuery = query.normalize('NFKC').trim().toLocaleLowerCase('ja-JP')
     if (normalizedQuery.length >= 2) {
       const identityMatchedProfiles = profiles.filter((profile) => {
-        const displayName = identities.get(profile.sourceDocumentId)?.displayName
-          ?.normalize('NFKC').toLocaleLowerCase('ja-JP')
+        const displayName = identities.get(profile.sourceDocumentId)?.displayName?.normalize('NFKC').toLocaleLowerCase('ja-JP')
         return Boolean(displayName && (displayName.includes(normalizedQuery) || normalizedQuery.includes(displayName)))
       })
       if (identityMatchedProfiles.length > 0) {
-        return enrichLocalIdentity(
-          searchConfirmedCandidateProfiles(identityMatchedProfiles, '', maxResults)
-        )
+        return enrichLocalIdentity(searchConfirmedCandidateProfiles(identityMatchedProfiles, '', maxResults))
       }
     }
     try {
@@ -263,7 +256,6 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
 
   return {
     ...dependencies,
-    conversationalMatchingEnabled,
     agentChatModelCatalog,
     wechatVisibleReader,
     wechatScopeTokens,

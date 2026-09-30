@@ -4,7 +4,9 @@ import type { CandidateInterviewSnapshot, CandidateReviewSnapshot } from '@share
 import { UiLocaleProvider } from '../i18n'
 import { InterviewScheduleCenter } from './InterviewScheduleCenter'
 
-beforeEach(() => { Object.defineProperty(window, 'sesAgent', { configurable:true, value:{ listBusinessFollowUps:vi.fn(async()=>[]) } }) })
+beforeEach(() => {
+  Object.defineProperty(window, 'sesAgent', { configurable: true, value: { listBusinessFollowUps: vi.fn(async () => []) } })
+})
 
 const review = (documentId: string, name: string): CandidateReviewSnapshot => ({
   documentId,
@@ -13,13 +15,43 @@ const review = (documentId: string, name: string): CandidateReviewSnapshot => ({
   status: 'completed',
   piiReviewed: true,
   localIdentity: {
-    displayName: name, gender: null, birthDate: null, nationality: null, phone: null, email: null,
-    address: null, education: null, major: null, graduationDate: null, degree: null,
-    storage: 'encrypted-local-only', cloudEligible: false
+    displayName: name,
+    gender: null,
+    birthDate: null,
+    nationality: null,
+    phone: null,
+    email: null,
+    address: null,
+    education: null,
+    major: null,
+    graduationDate: null,
+    degree: null,
+    storage: 'encrypted-local-only',
+    cloudEligible: false
   },
   fields: [
-    { key: 'role', label: '角色', originalValue: 'Java 工程师', value: 'Java 工程师', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null },
-    { key: 'skills', label: '技能', originalValue: 'Java, AWS', value: 'Java, AWS', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null }
+    {
+      key: 'role',
+      label: '角色',
+      originalValue: 'Java 工程师',
+      value: 'Java 工程师',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    },
+    {
+      key: 'skills',
+      label: '技能',
+      originalValue: 'Java, AWS',
+      value: 'Java, AWS',
+      confidence: 1,
+      status: 'confirmed',
+      sourceLabels: [],
+      changed: false,
+      changeReason: null
+    }
   ],
   projectExperiences: [],
   completedAt: '2026-07-20T00:00:00.000Z',
@@ -35,7 +67,8 @@ const interview = ({
   sourceDocumentId,
   kind,
   ...input
-}: Partial<CandidateInterviewSnapshot> & Pick<CandidateInterviewSnapshot, 'id' | 'sourceDocumentId' | 'kind'>): CandidateInterviewSnapshot => ({
+}: Partial<CandidateInterviewSnapshot> &
+  Pick<CandidateInterviewSnapshot, 'id' | 'sourceDocumentId' | 'kind'>): CandidateInterviewSnapshot => ({
   id,
   sourceDocumentId,
   kind,
@@ -80,7 +113,15 @@ describe('InterviewScheduleCenter', () => {
   })
 
   it('opens as a neutral weekly aggregate instead of selecting a first candidate', () => {
-    render(<UiLocaleProvider locale="zh-CN"><InterviewScheduleCenter interviews={[interview({ id: 'a1', sourceDocumentId: zhang, kind: 'recruiting' })]} onOpenInterview={vi.fn()} reviews={[review(zhang, '张伟')]} /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <InterviewScheduleCenter
+          interviews={[interview({ id: 'a1', sourceDocumentId: zhang, kind: 'recruiting' })]}
+          onOpenInterview={vi.fn()}
+          reviews={[review(zhang, '张伟')]}
+        />
+      </UiLocaleProvider>
+    )
 
     expect(screen.getByRole('main', { name: '面试日程中心' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '张伟 招聘初面' })).toBeInTheDocument()
@@ -89,14 +130,45 @@ describe('InterviewScheduleCenter', () => {
 
   it('aggregates recruiting, client and unscheduled work, flags interviewer conflicts, and routes the exact session', () => {
     const onOpenInterview = vi.fn()
-    const unscheduledReview: CandidateReviewSnapshot = { ...review(chen, '陈宁'), status: 'awaiting-review', piiReviewed: false, completedAt: null, reviewerDisplayName: null }
+    const unscheduledReview: CandidateReviewSnapshot = {
+      ...review(chen, '陈宁'),
+      status: 'awaiting-review',
+      piiReviewed: false,
+      completedAt: null,
+      reviewerDisplayName: null
+    }
     const reviews = [review(zhang, '张伟'), review(li, '李明'), review(wang, '王洁'), unscheduledReview]
     const interviews = [
-      interview({ id: 'a1', sourceDocumentId: zhang, kind: 'recruiting', stage: 'prepared', scheduledAt: '2026-07-20T01:00:00.000Z', interviewer: '李娜' }),
-      interview({ id: 'b1', sourceDocumentId: li, kind: 'client', stage: 'awaiting-decision', scheduledAt: '2026-07-21T04:00:00.000Z', interviewer: '王经理' }),
-      interview({ id: 'c1', sourceDocumentId: wang, kind: 'recruiting', stage: 'scheduled', scheduledAt: '2026-07-20T01:30:00.000Z', interviewer: '李娜' })
+      interview({
+        id: 'a1',
+        sourceDocumentId: zhang,
+        kind: 'recruiting',
+        stage: 'prepared',
+        scheduledAt: '2026-07-20T01:00:00.000Z',
+        interviewer: '李娜'
+      }),
+      interview({
+        id: 'b1',
+        sourceDocumentId: li,
+        kind: 'client',
+        stage: 'awaiting-decision',
+        scheduledAt: '2026-07-21T04:00:00.000Z',
+        interviewer: '王经理'
+      }),
+      interview({
+        id: 'c1',
+        sourceDocumentId: wang,
+        kind: 'recruiting',
+        stage: 'scheduled',
+        scheduledAt: '2026-07-20T01:30:00.000Z',
+        interviewer: '李娜'
+      })
     ]
-    render(<UiLocaleProvider locale="zh-CN"><InterviewScheduleCenter interviews={interviews} onOpenInterview={onOpenInterview} reviews={reviews} /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <InterviewScheduleCenter interviews={interviews} onOpenInterview={onOpenInterview} reviews={reviews} />
+      </UiLocaleProvider>
+    )
 
     expect(screen.getAllByText('时间冲突').length).toBeGreaterThan(0)
     fireEvent.click(screen.getByRole('tab', { name: '全部面试' }))
@@ -124,7 +196,11 @@ describe('InterviewScheduleCenter', () => {
       decision: 'passed',
       decisionReason: '通过'
     })
-    render(<UiLocaleProvider locale="zh-CN"><InterviewScheduleCenter interviews={[finished]} onOpenInterview={onOpenInterview} reviews={[review(zhang, '张伟')]} /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <InterviewScheduleCenter interviews={[finished]} onOpenInterview={onOpenInterview} reviews={[review(zhang, '张伟')]} />
+      </UiLocaleProvider>
+    )
 
     expect(screen.getAllByText('21:00').length).toBeGreaterThan(0)
     fireEvent.click(screen.getByRole('tab', { name: '全部面试' }))
@@ -139,7 +215,11 @@ describe('InterviewScheduleCenter', () => {
       interview({ id: 'a1', sourceDocumentId: zhang, kind: 'recruiting' }),
       interview({ id: 'b1', sourceDocumentId: li, kind: 'client', stage: 'scheduled', interviewer: '王经理' })
     ]
-    render(<UiLocaleProvider locale="zh-CN"><InterviewScheduleCenter interviews={interviews} onOpenInterview={onOpenInterview} reviews={reviews} /></UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <InterviewScheduleCenter interviews={interviews} onOpenInterview={onOpenInterview} reviews={reviews} />
+      </UiLocaleProvider>
+    )
 
     fireEvent.click(screen.getByRole('tab', { name: '全部面试' }))
     fireEvent.change(screen.getByLabelText('面试类型'), { target: { value: 'client' } })

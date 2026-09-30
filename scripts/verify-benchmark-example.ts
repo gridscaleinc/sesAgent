@@ -14,11 +14,13 @@ assert.equal(benchmark.privacy.directIdentifiersRemoved, true)
 assert.equal(benchmark.privacy.rawResumeIncluded, false)
 assert.equal(benchmark.privacy.rawMailIncluded, false)
 
-process.stdout.write(`${JSON.stringify({
-  version: benchmark.version,
-  cases: benchmark.cases.length,
-  minimumCases: benchmark.thresholds.minimumCases,
-  directIdentifiers: 0,
-  rawDocuments: false,
-  expectedStatus: 'insufficient-cases-example-only'
-})}\n`)
+process.stdout.write(
+  `${JSON.stringify({
+    version: benchmark.version,
+    cases: benchmark.cases.length,
+    minimumCases: benchmark.thresholds.minimumCases,
+    directIdentifiers: 0,
+    rawDocuments: false,
+    expectedStatus: 'insufficient-cases-example-only'
+  })}\n`
+)

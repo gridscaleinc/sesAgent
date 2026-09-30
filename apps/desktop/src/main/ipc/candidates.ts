@@ -31,7 +31,8 @@ export function registerCandidateHandlers(context: MainIpcContext) {
     if (input.sourceDocumentId) {
       const profile = repository.getCurrentCandidateProfile(input.sourceDocumentId)
       return searchConfirmedCandidateProfiles(profile ? [profile] : [], '', 1).map((candidate) => ({
-        ...candidate, localIdentity: repository.getCandidateLocalIdentity(input.sourceDocumentId!)
+        ...candidate,
+        localIdentity: repository.getCandidateLocalIdentity(input.sourceDocumentId!)
       }))
     }
     return searchCandidates(input.query, input.maxResults)
@@ -74,7 +75,7 @@ export function registerCandidateHandlers(context: MainIpcContext) {
     const sourceDocumentId = candidateProfileSourceInputSchema.parse(rawSourceDocumentId)
     const record = repository.getStagedFileRecords([sourceDocumentId])[0]
     if (!record) throw new Error('原始ファイルが見つかりません。')
-    const root = currentOriginalOpenRoot() ?? await prepareOriginalOpenRoot(userDataPath)
+    const root = currentOriginalOpenRoot() ?? (await prepareOriginalOpenRoot(userDataPath))
     const temporaryDirectory = join(root, randomUUID())
     const temporaryPath = await fileVault.materializeTemporaryCopy(record, temporaryDirectory)
     const error = await shell.openPath(temporaryPath)

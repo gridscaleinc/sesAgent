@@ -44,7 +44,8 @@ export type LocalEmbeddingWorkerResponse = LocalEmbeddingWorkerSuccess | LocalEm
 export function isLocalEmbeddingWorkerRequest(value: unknown): value is LocalEmbeddingWorkerRequest {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
-  return typeof candidate.id === 'string' &&
+  return (
+    typeof candidate.id === 'string' &&
     candidate.kind === 'embed' &&
     (candidate.role === 'query' || candidate.role === 'passage') &&
     typeof candidate.modelDirectory === 'string' &&
@@ -52,13 +53,18 @@ export function isLocalEmbeddingWorkerRequest(value: unknown): value is LocalEmb
     Array.isArray(candidate.texts) &&
     candidate.texts.length > 0 &&
     candidate.texts.length <= localEmbeddingModel.maximumBatchSize &&
-    candidate.texts.every((text) => typeof text === 'string' && text.trim().length > 0 && text.length <= localEmbeddingModel.maximumTextLength)
+    candidate.texts.every(
+      (text) => typeof text === 'string' && text.trim().length > 0 && text.length <= localEmbeddingModel.maximumTextLength
+    )
+  )
 }
 
 function isFiniteVector(value: unknown): value is number[] {
-  return Array.isArray(value) &&
+  return (
+    Array.isArray(value) &&
     value.length === localEmbeddingModel.dimension &&
     value.every((item) => typeof item === 'number' && Number.isFinite(item))
+  )
 }
 
 export function isLocalEmbeddingWorkerResponse(value: unknown): value is LocalEmbeddingWorkerResponse {
@@ -66,17 +72,21 @@ export function isLocalEmbeddingWorkerResponse(value: unknown): value is LocalEm
   const candidate = value as Record<string, unknown>
   if (typeof candidate.id !== 'string' || typeof candidate.ok !== 'boolean') return false
   if (!candidate.ok) {
-    return (candidate.kind === 'embed' || candidate.kind === 'invalid') &&
+    return (
+      (candidate.kind === 'embed' || candidate.kind === 'invalid') &&
       typeof candidate.errorCode === 'string' &&
       typeof candidate.message === 'string'
+    )
   }
-  return candidate.kind === 'embed' &&
+  return (
+    candidate.kind === 'embed' &&
     candidate.modelId === localEmbeddingModel.id &&
     candidate.modelRevision === localEmbeddingModel.revision &&
     candidate.dimension === localEmbeddingModel.dimension &&
     candidate.networkAccess === false &&
     Array.isArray(candidate.vectors) &&
     candidate.vectors.every(isFiniteVector)
+  )
 }
 
 export interface LocalEmbeddingWorkerClientOptions {
@@ -125,11 +135,10 @@ export class LocalEmbeddingWorkerClient {
     if (
       !isAbsoluteWorkerPath(options.workerPath) ||
       !isAbsoluteWorkerPath(options.modelDirectory) ||
-      (options.windowsSandbox && (
-        !isAbsoluteWorkerPath(options.windowsSandbox.launcherPath) ||
-        options.windowsSandbox.grantReadRoots.length === 0 ||
-        options.windowsSandbox.grantReadRoots.some((root) => !isAbsoluteWorkerPath(root))
-      ))
+      (options.windowsSandbox &&
+        (!isAbsoluteWorkerPath(options.windowsSandbox.launcherPath) ||
+          options.windowsSandbox.grantReadRoots.length === 0 ||
+          options.windowsSandbox.grantReadRoots.some((root) => !isAbsoluteWorkerPath(root))))
     ) {
       throw new Error('Embedding worker and model paths must be absolute.')
     }
@@ -167,7 +176,7 @@ export class LocalEmbeddingWorkerClient {
       const vectors: number[][] = []
       for (let offset = 0; offset < texts.length; offset += localEmbeddingModel.maximumBatchSize) {
         const batch = texts.slice(offset, offset + localEmbeddingModel.maximumBatchSize)
-        vectors.push(...await this.sendBatch(role, batch))
+        vectors.push(...(await this.sendBatch(role, batch)))
       }
       return vectors
     })
@@ -175,7 +184,10 @@ export class LocalEmbeddingWorkerClient {
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationQueue.then(operation, operation)
-    this.operationQueue = result.then(() => undefined, () => undefined)
+    this.operationQueue = result.then(
+      () => undefined,
+      () => undefined
+    )
     return result
   }
 
@@ -197,7 +209,10 @@ export class LocalEmbeddingWorkerClient {
       if (process.platform === 'win32' && this.options.windowsSandbox) {
         child.stdin?.write(`${JSON.stringify(request)}\n`, (error) => {
           if (!error) return
-          this.rejectPendingRequest(request.id, new Error('Embedding input could not be sent to the AppContainer worker.', { cause: error }))
+          this.rejectPendingRequest(
+            request.id,
+            new Error('Embedding input could not be sent to the AppContainer worker.', { cause: error })
+          )
         })
       } else {
         child.send(request, (error) => {
@@ -215,18 +230,21 @@ export class LocalEmbeddingWorkerClient {
     if (process.platform === 'win32' && !windowsSandbox) {
       throw new Error('Windows embedding inference requires the AppContainer sandbox launcher.')
     }
-    const command = process.platform === 'darwin'
-      ? '/usr/bin/sandbox-exec'
-      : windowsSandbox?.launcherPath ?? process.execPath
-    const args = process.platform === 'darwin'
-      ? ['-p', sandboxProfile, process.execPath, this.options.workerPath]
-      : windowsSandbox
-        ? [
-            '--profile', 'jp.sesai.agentdesktop.localworkers',
-            ...windowsSandbox.grantReadRoots.flatMap((root) => ['--grant-read', root]),
-            '--', process.execPath, this.options.workerPath, '--stdio'
-          ]
-        : [this.options.workerPath]
+    const command = process.platform === 'darwin' ? '/usr/bin/sandbox-exec' : (windowsSandbox?.launcherPath ?? process.execPath)
+    const args =
+      process.platform === 'darwin'
+        ? ['-p', sandboxProfile, process.execPath, this.options.workerPath]
+        : windowsSandbox
+          ? [
+              '--profile',
+              'jp.sesai.agentdesktop.localworkers',
+              ...windowsSandbox.grantReadRoots.flatMap((root) => ['--grant-read', root]),
+              '--',
+              process.execPath,
+              this.options.workerPath,
+              '--stdio'
+            ]
+          : [this.options.workerPath]
     const child = spawn(command, args, {
       cwd: windowsSandbox?.grantReadRoots[0] ?? process.cwd(),
       env: sanitizedWorkerEnvironment(),

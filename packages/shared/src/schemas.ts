@@ -23,11 +23,13 @@ import {
   type BroadcastTemplateLine
 } from './contracts'
 
-export const setCandidateOwnCompanyInputSchema = z.object({
-  documentId: z.string().uuid(),
-  expectedVersion: z.number().int().positive(),
-  isOwnCompany: z.boolean().nullable()
-}).strict()
+export const setCandidateOwnCompanyInputSchema = z
+  .object({
+    documentId: z.string().uuid(),
+    expectedVersion: z.number().int().positive(),
+    isOwnCompany: z.boolean().nullable()
+  })
+  .strict()
 
 const taskStepSchema = z.object({
   id: z.string().min(1),
@@ -36,10 +38,12 @@ const taskStepSchema = z.object({
   status: z.enum(['pending', 'running', 'completed', 'blocked'])
 })
 
-export const resolveActionApprovalInputSchema = z.object({
-  approvalId: z.string().uuid(),
-  decision: z.enum(['approve', 'deny'])
-}).strict()
+export const resolveActionApprovalInputSchema = z
+  .object({
+    approvalId: z.string().uuid(),
+    decision: z.enum(['approve', 'deny'])
+  })
+  .strict()
 
 const dataScopeSchema = z.object({
   id: z.enum(['confirmed-candidate-pool', 'selected-files', 'selected-gmail-message', 'selected-case']),
@@ -68,18 +72,20 @@ const workTaskMessageSchema = z.object({
   createdAt: z.string().datetime()
 })
 
-const approvalGateSchema = z.object({
-  id: z.string().min(1).max(120),
-  label: z.string().min(1).max(160),
-  status: z.enum(['required', 'approved']),
-  approvedBy: z.string().min(1).max(120).nullable(),
-  approvedAt: z.string().datetime().nullable()
-}).superRefine((gate, context) => {
-  const complete = gate.approvedBy !== null && gate.approvedAt !== null
-  if ((gate.status === 'approved') !== complete) {
-    context.addIssue({ code: 'custom', message: '承認済みゲートには承認者と承認日時が必要です。' })
-  }
-})
+const approvalGateSchema = z
+  .object({
+    id: z.string().min(1).max(120),
+    label: z.string().min(1).max(160),
+    status: z.enum(['required', 'approved']),
+    approvedBy: z.string().min(1).max(120).nullable(),
+    approvedAt: z.string().datetime().nullable()
+  })
+  .superRefine((gate, context) => {
+    const complete = gate.approvedBy !== null && gate.approvedAt !== null
+    if ((gate.status === 'approved') !== complete) {
+      context.addIssue({ code: 'custom', message: '承認済みゲートには承認者と承認日時が必要です。' })
+    }
+  })
 
 const workTaskArtifactSchema = z.object({
   id: z.string().min(1).max(120),
@@ -87,7 +93,10 @@ const workTaskArtifactSchema = z.object({
   label: z.string().min(1).max(180),
   status: z.enum(['available', 'exported', 'superseded']),
   objectId: z.string().min(1).max(180).nullable(),
-  contentHash: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
+  contentHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .nullable(),
   containsDirectIdentifiers: z.literal(false),
   createdAt: z.string().datetime()
 })
@@ -126,14 +135,16 @@ export const workTaskSchema = z.object({
   toolAudits: z.array(toolAuditSchema).max(500).default([])
 })
 
-export const workTaskInputSchema = z.object({
-  instruction: z.string().trim().min(8).max(2000),
-  scopeId: z
-    .enum(['confirmed-candidate-pool', 'selected-files', 'selected-gmail-message', 'selected-case'])
-    .default('confirmed-candidate-pool'),
-  fileTokens: z.array(z.string().uuid()).max(10).default([]),
-  jobCaseId: z.string().uuid().optional()
-}).strict()
+export const workTaskInputSchema = z
+  .object({
+    instruction: z.string().trim().min(8).max(2000),
+    scopeId: z
+      .enum(['confirmed-candidate-pool', 'selected-files', 'selected-gmail-message', 'selected-case'])
+      .default('confirmed-candidate-pool'),
+    fileTokens: z.array(z.string().uuid()).max(10).default([]),
+    jobCaseId: z.string().uuid().optional()
+  })
+  .strict()
 
 export const createWorkTaskInputSchema = workTaskInputSchema.extend({
   previewHash: z.string().regex(/^[a-f0-9]{64}$/)
@@ -158,7 +169,10 @@ export const processingJobSummarySchema = z.object({
   nextRetryAt: z.string().datetime().nullable(),
   leaseExpiresAt: z.string().datetime().nullable(),
   cancelRequestedAt: z.string().datetime().nullable(),
-  errorCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,79}$/u).nullable(),
+  errorCode: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]{1,79}$/u)
+    .nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 })
@@ -179,7 +193,11 @@ export const stagedLocalFileSchema = z.object({
   name: z.string().min(1).max(180),
   // 'txt' is a Main-created intake source; upload entry points stay file-only.
   format: z.enum(['pdf', 'docx', 'xlsx', 'xls', 'xlsb', 'txt']),
-  size: z.number().int().positive().max(25 * 1024 * 1024),
+  size: z
+    .number()
+    .int()
+    .positive()
+    .max(25 * 1024 * 1024),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   createdAt: z.string().datetime(),
   privacyStatus: z.literal('awaiting-local-scan')
@@ -190,16 +208,25 @@ export const stagedLocalFileSchema = z.object({
  * declared name; the main process decides the real format from the bytes and
  * keeps the name only as a display label.
  */
-export const stageDroppedResumeFilesInputSchema = z.object({
-  files: z.array(z.object({
-    name: z.string().min(1).max(180),
-    bytes: z.instanceof(Uint8Array)
-  })).min(1).max(10)
-}).strict()
+export const stageDroppedResumeFilesInputSchema = z
+  .object({
+    files: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(180),
+          bytes: z.instanceof(Uint8Array)
+        })
+      )
+      .min(1)
+      .max(10)
+  })
+  .strict()
 
-export const previewStagedResumeFileInputSchema = z.object({
-  fileToken: z.string().uuid()
-}).strict()
+export const previewStagedResumeFileInputSchema = z
+  .object({
+    fileToken: z.string().uuid()
+  })
+  .strict()
 
 export const analyzeResumeFileInputSchema = z.object({
   fileToken: z.string().uuid(),
@@ -209,7 +236,16 @@ export const analyzeResumeFileInputSchema = z.object({
 })
 
 export const resumeAnalysisSummarySchema = z.object({
-  analysisVersion: z.enum(['resume-analysis-v1', 'resume-analysis-v2', 'resume-analysis-v3', 'resume-analysis-v4', 'resume-analysis-v5', 'resume-analysis-v6']).default('resume-analysis-v1'),
+  analysisVersion: z
+    .enum([
+      'resume-analysis-v1',
+      'resume-analysis-v2',
+      'resume-analysis-v3',
+      'resume-analysis-v4',
+      'resume-analysis-v5',
+      'resume-analysis-v6'
+    ])
+    .default('resume-analysis-v1'),
   fileToken: z.string().uuid(),
   fileName: z.string().min(1).max(180),
   status: z.enum(['requires-pii-review', 'requires-local-ocr', 'ready-for-field-review']),
@@ -223,7 +259,13 @@ export const resumeAnalysisSummarySchema = z.object({
   detectedIdentifiers: z.array(z.object({ type: z.string().min(1), count: z.number().int().positive() })),
   localProcessing: z
     .object({
-      ocr: z.enum(['not-required', 'apple-vision-completed', 'windows-media-ocr-completed', 'windows-tesseract-wasm-completed', 'requires-local-ocr']),
+      ocr: z.enum([
+        'not-required',
+        'apple-vision-completed',
+        'windows-media-ocr-completed',
+        'windows-tesseract-wasm-completed',
+        'requires-local-ocr'
+      ]),
       ocrPages: z.number().int().nonnegative(),
       personNameCandidates: z.number().int().nonnegative(),
       networkAccess: z.literal(false)
@@ -241,16 +283,21 @@ export const resumeAnalysisSummarySchema = z.object({
       })
     )
     .default([]),
-  extractedProjectExperiences: z.array(z.object({
-    draftId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
-    title: z.string().min(1).max(160),
-    period: z.string().min(1).max(120).nullable(),
-    role: z.string().min(1).max(120).nullable(),
-    technologies: z.array(z.string().min(1).max(80)).max(40),
-    summary: z.string().min(1).max(1_500),
-    confidence: z.number().min(0).max(1),
-    sourceLabels: z.array(z.string().min(1).max(180)).max(100)
-  })).max(20).default([]),
+  extractedProjectExperiences: z
+    .array(
+      z.object({
+        draftId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
+        title: z.string().min(1).max(160),
+        period: z.string().min(1).max(120).nullable(),
+        role: z.string().min(1).max(120).nullable(),
+        technologies: z.array(z.string().min(1).max(80)).max(40),
+        summary: z.string().min(1).max(1_500),
+        confidence: z.number().min(0).max(1),
+        sourceLabels: z.array(z.string().min(1).max(180)).max(100)
+      })
+    )
+    .max(20)
+    .default([]),
   warningCodes: z.array(z.string().min(1)),
   redactedPreview: z.string().max(4000),
   analyzedAt: z.string().datetime()
@@ -335,7 +382,16 @@ export const candidateReviewSnapshotSchema = z.object({
   completedAt: z.string().datetime().nullable(),
   reviewerDisplayName: z.string().min(1).max(120).nullable(),
   profile: candidateProfileSummarySchema.nullable(),
-  recruitingStatus: z.enum(['pending-review', 'ready-for-recruiting', 'recruiting', 'passed', 'rejected', 'withdrawn', 'no-show', 'on-hold']),
+  recruitingStatus: z.enum([
+    'pending-review',
+    'ready-for-recruiting',
+    'recruiting',
+    'passed',
+    'rejected',
+    'withdrawn',
+    'no-show',
+    'on-hold'
+  ]),
   talentPoolStatus: z.enum(['none', 'eligible', 'suspended', 'removed']),
   recordStatus: z.enum(['active', 'archived', 'deleted'])
 })
@@ -347,11 +403,20 @@ const candidateInterviewMethodSchema = z.enum(['zoom', 'google-meet', 'phone', '
 const candidateInterviewDurationSchema = z.number().int().min(5).max(480)
 
 export const candidateInterviewQuestionSchema = z.object({
-  bankQuestionId:z.string().uuid().optional(),bankVersion:z.number().int().positive().optional(),
+  bankQuestionId: z.string().uuid().optional(),
+  bankVersion: z.number().int().positive().optional(),
   experienceRunId: z.string().uuid().optional(),
   requirement: z.string().max(600).optional(),
   evidence: z.string().max(1000).optional(),
-  matchContext: z.object({ jobCaseId: z.string().uuid(), jobCaseVersion: z.number().int().positive(), profileVersion: z.number().int().positive(), rulesRevision: z.number().int().nonnegative() }).strict().optional(),
+  matchContext: z
+    .object({
+      jobCaseId: z.string().uuid(),
+      jobCaseVersion: z.number().int().positive(),
+      profileVersion: z.number().int().positive(),
+      rulesRevision: z.number().int().nonnegative()
+    })
+    .strict()
+    .optional(),
   id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
   text: z.string().trim().min(2).max(500),
   source: z.enum(candidateInterviewQuestionSources),
@@ -404,9 +469,9 @@ export function extractAllowedInterviewMeetingLinks(value: string): AllowedInter
     const candidate = match[0].replace(trailingUrlPunctuationPattern, '')
     if (!candidate || candidate.length > 1_000 || seen.has(candidate)) continue
     const method = isAllowedZoomMeetingUrl(candidate)
-      ? 'zoom' as const
+      ? ('zoom' as const)
       : isAllowedGoogleMeetUrl(candidate)
-        ? 'google-meet' as const
+        ? ('google-meet' as const)
         : null
     if (!method) continue
     seen.add(candidate)
@@ -423,9 +488,7 @@ export function extractAllowedInterviewMeetingLinks(value: string): AllowedInter
 export function redactInterviewMeetingLinksForCloud(value: string): string {
   let redacted = value
   for (const link of extractAllowedInterviewMeetingLinks(value)) {
-    const placeholder = link.method === 'zoom'
-      ? '[ZOOM_MEETING_LINK_PROVIDED_LOCALLY]'
-      : '[GOOGLE_MEET_LINK_PROVIDED_LOCALLY]'
+    const placeholder = link.method === 'zoom' ? '[ZOOM_MEETING_LINK_PROVIDED_LOCALLY]' : '[GOOGLE_MEET_LINK_PROVIDED_LOCALLY]'
     redacted = redacted.split(link.url).join(placeholder)
   }
   // Unknown or malformed URLs are not useful to the controlled Tool catalog
@@ -433,43 +496,56 @@ export function redactInterviewMeetingLinksForCloud(value: string): string {
   return redacted.replace(httpsUrlInTextPattern, '[URL_PROVIDED_LOCALLY]')
 }
 
-export const zoomMeetingUrlSchema = z.string().trim().min(1).max(1_000).refine(
-  isAllowedZoomMeetingUrl,
-  'Zoom 会议链接必须使用 zoom.us 的 HTTPS 地址。'
-)
+export const zoomMeetingUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1_000)
+  .refine(isAllowedZoomMeetingUrl, 'Zoom 会议链接必须使用 zoom.us 的 HTTPS 地址。')
 
-export const googleMeetUrlSchema = z.string().trim().min(1).max(1_000).refine(
-  isAllowedGoogleMeetUrl,
-  'Google Meet 链接必须使用 meet.google.com 的 HTTPS 地址。'
-)
+export const googleMeetUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1_000)
+  .refine(isAllowedGoogleMeetUrl, 'Google Meet 链接必须使用 meet.google.com 的 HTTPS 地址。')
 
-const meetingUrlSchema = z.string().trim().min(1).max(1_000).refine((value) => {
-  try {
-    return new URL(value).protocol === 'https:'
-  } catch {
-    return false
-  }
-}, '会议链接必须使用 HTTPS 地址。')
+const meetingUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1_000)
+  .refine((value) => {
+    try {
+      return new URL(value).protocol === 'https:'
+    } catch {
+      return false
+    }
+  }, '会议链接必须使用 HTTPS 地址。')
 
-export const openInterviewMeetingInputSchema = z.object({
-  method: z.enum(['zoom', 'google-meet']),
-  url: meetingUrlSchema
-}).superRefine((input, context) => {
-  if (input.method === 'zoom' && !isAllowedZoomMeetingUrl(input.url)) {
-    context.addIssue({ code: 'custom', path: ['url'], message: 'Zoom 会议链接必须使用 zoom.us 的 HTTPS 地址。' })
-  }
-  if (input.method === 'google-meet' && !isAllowedGoogleMeetUrl(input.url)) {
-    context.addIssue({ code: 'custom', path: ['url'], message: 'Google Meet 链接必须使用 meet.google.com 的 HTTPS 地址。' })
-  }
-})
+export const openInterviewMeetingInputSchema = z
+  .object({
+    method: z.enum(['zoom', 'google-meet']),
+    url: meetingUrlSchema
+  })
+  .superRefine((input, context) => {
+    if (input.method === 'zoom' && !isAllowedZoomMeetingUrl(input.url)) {
+      context.addIssue({ code: 'custom', path: ['url'], message: 'Zoom 会议链接必须使用 zoom.us 的 HTTPS 地址。' })
+    }
+    if (input.method === 'google-meet' && !isAllowedGoogleMeetUrl(input.url)) {
+      context.addIssue({ code: 'custom', path: ['url'], message: 'Google Meet 链接必须使用 meet.google.com 的 HTTPS 地址。' })
+    }
+  })
 
-const candidateInterviewMeetingDetailsSchema = z.object({
-  phoneNumber: z.string().optional(),
-  phoneNote: z.string().optional(),
-  onsiteAddress: z.string().optional(),
-  onsiteMeetingPoint: z.string().optional(),
-  onsiteReceptionContact: z.string().optional()
-}).strict()
+const candidateInterviewMeetingDetailsSchema = z
+  .object({
+    phoneNumber: z.string().optional(),
+    phoneNote: z.string().optional(),
+    onsiteAddress: z.string().optional(),
+    onsiteMeetingPoint: z.string().optional(),
+    onsiteReceptionContact: z.string().optional()
+  })
+  .strict()
 
 export const candidateInterviewSnapshotSchema = z.object({
   businessFollowUpId: z.string().uuid().nullable().optional(),
@@ -557,15 +633,20 @@ export const submitCandidateReviewInputSchema = z.object({
       })
     )
     .max(candidateFieldKeys.length),
-  projectExperiences: z.array(z.object({
-    draftId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
-    title: z.string().trim().min(1).max(160),
-    period: z.string().trim().min(1).max(120).nullable(),
-    role: z.string().trim().min(1).max(120).nullable(),
-    technologies: z.array(z.string().trim().min(1).max(80)).max(40),
-    summary: z.string().trim().min(1).max(1_500),
-    confirmed: z.literal(true)
-  })).max(20).default([]),
+  projectExperiences: z
+    .array(
+      z.object({
+        draftId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
+        title: z.string().trim().min(1).max(160),
+        period: z.string().trim().min(1).max(120).nullable(),
+        role: z.string().trim().min(1).max(120).nullable(),
+        technologies: z.array(z.string().trim().min(1).max(80)).max(40),
+        summary: z.string().trim().min(1).max(1_500),
+        confirmed: z.literal(true)
+      })
+    )
+    .max(20)
+    .default([]),
   projectChangeReason: z.string().trim().min(1).max(300).optional()
 })
 
@@ -580,32 +661,32 @@ export const executeCandidateMatchTaskInputSchema = z.string().min(1).max(128)
 const candidateMatchFeedbackDecisionSchema = z.enum(['suitable', 'unsuitable'])
 const candidateMatchFeedbackReasonCodeSchema = z.enum(candidateMatchFeedbackReasonCodes)
 
-export const submitCandidateMatchFeedbackInputSchema = z.object({
-  matchResultId: z.string().uuid(),
-  matchResultHash: z.string().regex(/^[a-f0-9]{64}$/u),
-  expectedRevision: z.number().int().nonnegative(),
-  decision: candidateMatchFeedbackDecisionSchema,
-  reasonCode: candidateMatchFeedbackReasonCodeSchema,
-  note: z.string().trim().min(3).max(500).optional()
-}).superRefine((input, context) => {
-  const allowed = input.decision === 'suitable'
-    ? candidateMatchSuitableReasonCodes
-    : candidateMatchUnsuitableReasonCodes
-  if (!(allowed as readonly string[]).includes(input.reasonCode)) {
-    context.addIssue({
-      code: 'custom',
-      path: ['reasonCode'],
-      message: '評価と理由の組み合わせが一致しません。'
-    })
-  }
-  if (input.reasonCode === 'other' && !input.note) {
-    context.addIssue({
-      code: 'custom',
-      path: ['note'],
-      message: 'その他を選択した場合は補足を入力してください。'
-    })
-  }
-})
+export const submitCandidateMatchFeedbackInputSchema = z
+  .object({
+    matchResultId: z.string().uuid(),
+    matchResultHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    expectedRevision: z.number().int().nonnegative(),
+    decision: candidateMatchFeedbackDecisionSchema,
+    reasonCode: candidateMatchFeedbackReasonCodeSchema,
+    note: z.string().trim().min(3).max(500).optional()
+  })
+  .superRefine((input, context) => {
+    const allowed = input.decision === 'suitable' ? candidateMatchSuitableReasonCodes : candidateMatchUnsuitableReasonCodes
+    if (!(allowed as readonly string[]).includes(input.reasonCode)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['reasonCode'],
+        message: '評価と理由の組み合わせが一致しません。'
+      })
+    }
+    if (input.reasonCode === 'other' && !input.note) {
+      context.addIssue({
+        code: 'custom',
+        path: ['note'],
+        message: 'その他を選択した場合は補足を入力してください。'
+      })
+    }
+  })
 
 export const candidateMatchFeedbackSnapshotSchema = z.object({
   decision: candidateMatchFeedbackDecisionSchema,
@@ -634,20 +715,26 @@ export const candidateMatchRunSummarySchema = z.object({
   algorithmVersion: z.enum(['hard-filter-bm25-v1', 'hard-filter-hybrid-rrf-v1', 'hard-filter-hybrid-local-rerank-v1']),
   hardFilterPolicyVersion: z.enum(['fail-closed-v1', 'tri-state-v2', 'tri-state-v3']).default('fail-closed-v1'),
   resultSetHash: z.string().regex(/^[a-f0-9]{64}$/u),
-  binding: z.object({
-    jobCaseId: z.string().uuid(),
-    jobCaseVersion: z.number().int().positive(),
-    candidatePoolFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
-    candidateProfileVersions: z.array(z.object({
-      id: z.string().uuid(),
-      version: z.number().int().positive()
-    })).max(10_000),
-    embeddingModelId: z.string().min(1).max(200),
-    embeddingModelRevision: z.string().min(1).max(200),
-    rerankerModelId: z.string().min(1).max(200).nullable(),
-    rerankerModelRevision: z.string().min(1).max(200).nullable(),
-    policyVersion: z.literal('match-run-validity-v1')
-  }).nullable(),
+  binding: z
+    .object({
+      jobCaseId: z.string().uuid(),
+      jobCaseVersion: z.number().int().positive(),
+      candidatePoolFingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+      candidateProfileVersions: z
+        .array(
+          z.object({
+            id: z.string().uuid(),
+            version: z.number().int().positive()
+          })
+        )
+        .max(10_000),
+      embeddingModelId: z.string().min(1).max(200),
+      embeddingModelRevision: z.string().min(1).max(200),
+      rerankerModelId: z.string().min(1).max(200).nullable(),
+      rerankerModelRevision: z.string().min(1).max(200).nullable(),
+      policyVersion: z.literal('match-run-validity-v1')
+    })
+    .nullable(),
   createdAt: z.string().datetime(),
   evaluation: candidateMatchEvaluationSummarySchema
 })
@@ -661,46 +748,63 @@ const candidateEvaluationThresholdsSchema = z.object({
   projectEvidenceCoverageAt20: z.number().min(0).max(1).default(0.8)
 })
 
-export const sesCandidateBenchmarkSchema = z.object({
-  version: z.literal('ses-candidate-benchmark-v1'),
-  id: z.string().uuid(),
-  name: z.string().trim().min(3).max(120),
-  createdAt: z.string().datetime(),
-  privacy: z.object({
-    directIdentifiersRemoved: z.literal(true),
-    rawResumeIncluded: z.literal(false),
-    rawMailIncluded: z.literal(false)
-  }),
-  labeling: z.object({
-    method: z.literal('ses-expert'),
-    reviewerCount: z.number().int().min(1).max(20)
-  }),
-  thresholds: candidateEvaluationThresholdsSchema,
-  cases: z.array(z.object({
-    id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
-    query: z.string().trim().min(2).max(500),
-    relevantCandidateLabels: z.array(anonymousCandidateLabelSchema).min(1).max(100),
-    expectedProjectEvidenceLabels: z.array(anonymousCandidateLabelSchema).max(100).default([])
-  }).superRefine((testCase, context) => {
-    const relevant = new Set(testCase.relevantCandidateLabels)
-    if (relevant.size !== testCase.relevantCandidateLabels.length) {
-      context.addIssue({ code: 'custom', path: ['relevantCandidateLabels'], message: '関連候補者番号が重複しています。' })
+export const sesCandidateBenchmarkSchema = z
+  .object({
+    version: z.literal('ses-candidate-benchmark-v1'),
+    id: z.string().uuid(),
+    name: z.string().trim().min(3).max(120),
+    createdAt: z.string().datetime(),
+    privacy: z.object({
+      directIdentifiersRemoved: z.literal(true),
+      rawResumeIncluded: z.literal(false),
+      rawMailIncluded: z.literal(false)
+    }),
+    labeling: z.object({
+      method: z.literal('ses-expert'),
+      reviewerCount: z.number().int().min(1).max(20)
+    }),
+    thresholds: candidateEvaluationThresholdsSchema,
+    cases: z
+      .array(
+        z
+          .object({
+            id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
+            query: z.string().trim().min(2).max(500),
+            relevantCandidateLabels: z.array(anonymousCandidateLabelSchema).min(1).max(100),
+            expectedProjectEvidenceLabels: z.array(anonymousCandidateLabelSchema).max(100).default([])
+          })
+          .superRefine((testCase, context) => {
+            const relevant = new Set(testCase.relevantCandidateLabels)
+            if (relevant.size !== testCase.relevantCandidateLabels.length) {
+              context.addIssue({ code: 'custom', path: ['relevantCandidateLabels'], message: '関連候補者番号が重複しています。' })
+            }
+            if (new Set(testCase.expectedProjectEvidenceLabels).size !== testCase.expectedProjectEvidenceLabels.length) {
+              context.addIssue({
+                code: 'custom',
+                path: ['expectedProjectEvidenceLabels'],
+                message: 'プロジェクト証拠候補者番号が重複しています。'
+              })
+            }
+            for (const label of testCase.expectedProjectEvidenceLabels) {
+              if (!relevant.has(label)) {
+                context.addIssue({
+                  code: 'custom',
+                  path: ['expectedProjectEvidenceLabels'],
+                  message: 'プロジェクト証拠対象は関連候補者に含めてください。'
+                })
+              }
+            }
+          })
+      )
+      .min(1)
+      .max(100)
+  })
+  .superRefine((benchmark, context) => {
+    const caseIds = benchmark.cases.map((testCase) => testCase.id)
+    if (new Set(caseIds).size !== caseIds.length) {
+      context.addIssue({ code: 'custom', path: ['cases'], message: '評価ケースIDが重複しています。' })
     }
-    if (new Set(testCase.expectedProjectEvidenceLabels).size !== testCase.expectedProjectEvidenceLabels.length) {
-      context.addIssue({ code: 'custom', path: ['expectedProjectEvidenceLabels'], message: 'プロジェクト証拠候補者番号が重複しています。' })
-    }
-    for (const label of testCase.expectedProjectEvidenceLabels) {
-      if (!relevant.has(label)) {
-        context.addIssue({ code: 'custom', path: ['expectedProjectEvidenceLabels'], message: 'プロジェクト証拠対象は関連候補者に含めてください。' })
-      }
-    }
-  })).min(1).max(100)
-}).superRefine((benchmark, context) => {
-  const caseIds = benchmark.cases.map((testCase) => testCase.id)
-  if (new Set(caseIds).size !== caseIds.length) {
-    context.addIssue({ code: 'custom', path: ['cases'], message: '評価ケースIDが重複しています。' })
-  }
-})
+  })
 
 export const candidateEvaluationCaseResultSchema = z.object({
   caseId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/u),
@@ -821,27 +925,33 @@ export const createCandidateEvaluationDraftInputSchema = z.object({
   name: z.string().trim().min(3).max(120)
 })
 
-export const saveCandidateEvaluationDraftCaseInputSchema = z.object({
-  draftId: z.string().uuid(),
-  expectedRevision: z.number().int().positive(),
-  jobCaseId: z.string().uuid(),
-  relevantCandidateProfileIds: z.array(z.string().uuid()).min(1).max(100),
-  expectedProjectEvidenceProfileIds: z.array(z.string().uuid()).max(100),
-  poolReviewed: z.literal(true)
-}).superRefine((input, context) => {
-  const relevant = new Set(input.relevantCandidateProfileIds)
-  if (relevant.size !== input.relevantCandidateProfileIds.length) {
-    context.addIssue({ code: 'custom', path: ['relevantCandidateProfileIds'], message: '関連候補者が重複しています。' })
-  }
-  if (new Set(input.expectedProjectEvidenceProfileIds).size !== input.expectedProjectEvidenceProfileIds.length) {
-    context.addIssue({ code: 'custom', path: ['expectedProjectEvidenceProfileIds'], message: 'プロジェクト証拠対象が重複しています。' })
-  }
-  for (const profileId of input.expectedProjectEvidenceProfileIds) {
-    if (!relevant.has(profileId)) {
-      context.addIssue({ code: 'custom', path: ['expectedProjectEvidenceProfileIds'], message: 'プロジェクト証拠対象は関連候補者に含めてください。' })
+export const saveCandidateEvaluationDraftCaseInputSchema = z
+  .object({
+    draftId: z.string().uuid(),
+    expectedRevision: z.number().int().positive(),
+    jobCaseId: z.string().uuid(),
+    relevantCandidateProfileIds: z.array(z.string().uuid()).min(1).max(100),
+    expectedProjectEvidenceProfileIds: z.array(z.string().uuid()).max(100),
+    poolReviewed: z.literal(true)
+  })
+  .superRefine((input, context) => {
+    const relevant = new Set(input.relevantCandidateProfileIds)
+    if (relevant.size !== input.relevantCandidateProfileIds.length) {
+      context.addIssue({ code: 'custom', path: ['relevantCandidateProfileIds'], message: '関連候補者が重複しています。' })
     }
-  }
-})
+    if (new Set(input.expectedProjectEvidenceProfileIds).size !== input.expectedProjectEvidenceProfileIds.length) {
+      context.addIssue({ code: 'custom', path: ['expectedProjectEvidenceProfileIds'], message: 'プロジェクト証拠対象が重複しています。' })
+    }
+    for (const profileId of input.expectedProjectEvidenceProfileIds) {
+      if (!relevant.has(profileId)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['expectedProjectEvidenceProfileIds'],
+          message: 'プロジェクト証拠対象は関連候補者に含めてください。'
+        })
+      }
+    }
+  })
 
 export const deleteCandidateEvaluationDraftCaseInputSchema = z.object({
   draftId: z.string().uuid(),
@@ -854,47 +964,53 @@ export const evaluateCandidateEvaluationDraftInputSchema = z.object({
   expectedRevision: z.number().int().positive()
 })
 
-export const googleWorkspaceOAuthClientIdSchema = z.string()
+export const googleWorkspaceOAuthClientIdSchema = z
+  .string()
   .trim()
   .min(20)
   .max(220)
   .regex(/^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/u, 'Desktop OAuth Client ID の形式が正しくありません。')
 
-export const googleWorkspaceDomainSchema = z.string()
+export const googleWorkspaceDomainSchema = z
+  .string()
   .trim()
   .max(253)
   .transform((value) => value.toLocaleLowerCase('en-US'))
   .pipe(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u, '会社 Workspace ドメインの形式が正しくありません。'))
 
-const operatorDisplayNameSchema = z.string()
+const operatorDisplayNameSchema = z
+  .string()
   .trim()
   .min(2, '表示名は2文字以上で入力してください。')
   .max(80, '表示名は80文字以内で入力してください。')
   .refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), '表示名に制御文字は使用できません。')
 
-const operatorRoleLabelSchema = z.string()
+const operatorRoleLabelSchema = z
+  .string()
   .trim()
   .min(2, '役割は2文字以上で入力してください。')
   .max(40, '役割は40文字以内で入力してください。')
   .refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), '役割に制御文字は使用できません。')
 
-export const localOperatorProfileSchema = z.object({
-  version: z.literal('local-operator-profile-v1'),
-  operatorId: z.string().uuid(),
-  displayName: operatorDisplayNameSchema,
-  roleLabel: operatorRoleLabelSchema,
-  configured: z.boolean(),
-  revision: z.number().int().positive().nullable(),
-  updatedAt: z.string().datetime().nullable(),
-  cloudEligible: z.literal(false)
-}).superRefine((value, context) => {
-  if (value.configured && (value.revision === null || value.updatedAt === null)) {
-    context.addIssue({ code: 'custom', message: '設定済みプロフィールにはRevisionと更新日時が必要です。' })
-  }
-  if (!value.configured && (value.revision !== null || value.updatedAt !== null)) {
-    context.addIssue({ code: 'custom', message: '未設定プロフィールにRevisionまたは更新日時を保存できません。' })
-  }
-})
+export const localOperatorProfileSchema = z
+  .object({
+    version: z.literal('local-operator-profile-v1'),
+    operatorId: z.string().uuid(),
+    displayName: operatorDisplayNameSchema,
+    roleLabel: operatorRoleLabelSchema,
+    configured: z.boolean(),
+    revision: z.number().int().positive().nullable(),
+    updatedAt: z.string().datetime().nullable(),
+    cloudEligible: z.literal(false)
+  })
+  .superRefine((value, context) => {
+    if (value.configured && (value.revision === null || value.updatedAt === null)) {
+      context.addIssue({ code: 'custom', message: '設定済みプロフィールにはRevisionと更新日時が必要です。' })
+    }
+    if (!value.configured && (value.revision !== null || value.updatedAt !== null)) {
+      context.addIssue({ code: 'custom', message: '未設定プロフィールにRevisionまたは更新日時を保存できません。' })
+    }
+  })
 
 export const saveLocalOperatorProfileInputSchema = z.object({
   displayName: operatorDisplayNameSchema,
@@ -902,21 +1018,23 @@ export const saveLocalOperatorProfileInputSchema = z.object({
   expectedRevision: z.number().int().positive().nullable()
 })
 
-export const localApplicationPreferencesSchema = z.object({
-  version: z.literal('local-application-preferences-v1'),
-  locale: z.enum(applicationLocales),
-  configured: z.boolean(),
-  revision: z.number().int().positive().nullable(),
-  updatedAt: z.string().datetime().nullable(),
-  cloudEligible: z.literal(false)
-}).superRefine((value, context) => {
-  if (value.configured && (value.revision === null || value.updatedAt === null)) {
-    context.addIssue({ code: 'custom', message: '保存済み表示設定にはRevisionと更新日時が必要です。' })
-  }
-  if (!value.configured && (value.revision !== null || value.updatedAt !== null)) {
-    context.addIssue({ code: 'custom', message: '未設定表示設定にRevisionまたは更新日時を保存できません。' })
-  }
-})
+export const localApplicationPreferencesSchema = z
+  .object({
+    version: z.literal('local-application-preferences-v1'),
+    locale: z.enum(applicationLocales),
+    configured: z.boolean(),
+    revision: z.number().int().positive().nullable(),
+    updatedAt: z.string().datetime().nullable(),
+    cloudEligible: z.literal(false)
+  })
+  .superRefine((value, context) => {
+    if (value.configured && (value.revision === null || value.updatedAt === null)) {
+      context.addIssue({ code: 'custom', message: '保存済み表示設定にはRevisionと更新日時が必要です。' })
+    }
+    if (!value.configured && (value.revision !== null || value.updatedAt !== null)) {
+      context.addIssue({ code: 'custom', message: '未設定表示設定にRevisionまたは更新日時を保存できません。' })
+    }
+  })
 
 export const saveLocalApplicationPreferencesInputSchema = z.object({
   locale: z.enum(applicationLocales),
@@ -924,105 +1042,139 @@ export const saveLocalApplicationPreferencesInputSchema = z.object({
 })
 
 /** A label as written before the colon: short, single-line, no colon of its own. */
-const jobCaseFieldAliasSchema = z.string().trim().min(1).max(40).regex(/^[^:：\r\n]+$/u)
+const jobCaseFieldAliasSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .regex(/^[^:：\r\n]+$/u)
 
 function normalizedAliasKey(alias: string): string {
-  return alias.normalize('NFKC').replace(/[\s　【】[\]()（）]/gu, '').toLocaleLowerCase('ja-JP')
+  return alias
+    .normalize('NFKC')
+    .replace(/[\s　【】[\]()（）]/gu, '')
+    .toLocaleLowerCase('ja-JP')
 }
 
 /** One alias must mean exactly one field; the same alias on two fields is rejected. */
-export const jobCaseFieldAliasMapSchema = z.object(
-  Object.fromEntries(jobCaseFieldKeys.map((key) => [key, z.array(jobCaseFieldAliasSchema).max(20).optional()]))
-).superRefine((value, context) => {
-  const seen = new Map<string, string>()
-  for (const key of jobCaseFieldKeys) {
-    for (const alias of (value as Record<string, string[] | undefined>)[key] ?? []) {
-      const normalized = normalizedAliasKey(alias)
-      const owner = seen.get(normalized)
-      if (owner && owner !== key) {
-        context.addIssue({ code: 'custom', path: [key], message: `別名「${alias}」は複数の項目に割り当てられています。` })
+export const jobCaseFieldAliasMapSchema = z
+  .object(Object.fromEntries(jobCaseFieldKeys.map((key) => [key, z.array(jobCaseFieldAliasSchema).max(20).optional()])))
+  .superRefine((value, context) => {
+    const seen = new Map<string, string>()
+    for (const key of jobCaseFieldKeys) {
+      for (const alias of (value as Record<string, string[] | undefined>)[key] ?? []) {
+        const normalized = normalizedAliasKey(alias)
+        const owner = seen.get(normalized)
+        if (owner && owner !== key) {
+          context.addIssue({ code: 'custom', path: [key], message: `別名「${alias}」は複数の項目に割り当てられています。` })
+        }
+        seen.set(normalized, key)
       }
-      seen.set(normalized, key)
     }
-  }
-})
+  })
 
-export const jobCaseFieldAliasesSchema = z.object({
-  version: z.literal('job-case-field-aliases-v1'),
-  aliases: jobCaseFieldAliasMapSchema,
-  configured: z.boolean(),
-  revision: z.number().int().positive().nullable(),
-  updatedAt: z.string().datetime().nullable()
-}).superRefine((value, context) => {
-  if (value.configured && (value.revision === null || value.updatedAt === null)) {
-    context.addIssue({ code: 'custom', message: '保存済みの別名設定にはRevisionと更新日時が必要です。' })
-  }
-  if (!value.configured && (value.revision !== null || value.updatedAt !== null)) {
-    context.addIssue({ code: 'custom', message: '未設定の別名設定にRevisionまたは更新日時を保存できません。' })
-  }
-})
+export const jobCaseFieldAliasesSchema = z
+  .object({
+    version: z.literal('job-case-field-aliases-v1'),
+    aliases: jobCaseFieldAliasMapSchema,
+    configured: z.boolean(),
+    revision: z.number().int().positive().nullable(),
+    updatedAt: z.string().datetime().nullable()
+  })
+  .superRefine((value, context) => {
+    if (value.configured && (value.revision === null || value.updatedAt === null)) {
+      context.addIssue({ code: 'custom', message: '保存済みの別名設定にはRevisionと更新日時が必要です。' })
+    }
+    if (!value.configured && (value.revision !== null || value.updatedAt !== null)) {
+      context.addIssue({ code: 'custom', message: '未設定の別名設定にRevisionまたは更新日時を保存できません。' })
+    }
+  })
 
-export const saveJobCaseFieldAliasesInputSchema = z.object({
-  aliases: jobCaseFieldAliasMapSchema,
-  expectedRevision: z.number().int().positive().nullable()
-}).strict()
+export const saveJobCaseFieldAliasesInputSchema = z
+  .object({
+    aliases: jobCaseFieldAliasMapSchema,
+    expectedRevision: z.number().int().positive().nullable()
+  })
+  .strict()
 
-export const prepareAiCommerceCloudPromptInputSchema = z.object({
-  content: z.string().trim().min(1).max(12_000)
-}).strict()
+export const prepareAiCommerceCloudPromptInputSchema = z
+  .object({
+    content: z.string().trim().min(1).max(12_000)
+  })
+  .strict()
 
-export const executeAiCommerceCloudPromptInputSchema = z.object({
-  reviewTicket: z.string().uuid()
-}).strict()
+export const executeAiCommerceCloudPromptInputSchema = z
+  .object({
+    reviewTicket: z.string().uuid()
+  })
+  .strict()
 
 export const businessConversationObjectSchema = z.object({ kind: z.enum(['case', 'person']), id: z.string().uuid() }).strict()
 
-export const aiConversationContextSchema = z.object({
-  businessObject: businessConversationObjectSchema.optional(),
-  assistant: z.enum(['candidate-profile', 'interview', 'sales-agent']),
-  candidateDocumentId: z.string().uuid().nullable(),
-  interviewId: z.string().uuid().nullable(),
-  interviewKind: z.enum(['recruiting', 'client']).nullable(),
-  roundNumber: z.number().int().min(1).max(20).nullable()
-}).superRefine((value, context) => {
-  if (value.businessObject && value.assistant !== 'sales-agent') context.addIssue({ code: 'custom', message: '业务对象只适用于 Agent 会话。' })
-  if (value.assistant === 'sales-agent' && (
-    value.candidateDocumentId !== null || value.interviewId !== null ||
-    value.interviewKind !== null || value.roundNumber !== null
-  )) {
-    context.addIssue({ code: 'custom', message: '営業エージェント会話には候補者または面談コンテキストを保存できません。' })
-  }
-  if (value.assistant !== 'sales-agent' && value.candidateDocumentId === null) {
-    context.addIssue({ code: 'custom', message: '候補者プロフィールまたは面談会話には候補者IDが必要です。' })
-  }
-  if (value.assistant === 'candidate-profile' && (value.interviewId !== null || value.interviewKind !== null || value.roundNumber !== null)) {
-    context.addIssue({ code: 'custom', message: '候補者プロフィール会話に面談コンテキストは保存できません。' })
-  }
-  if (value.assistant === 'interview' && (value.interviewKind === null || value.roundNumber === null)) {
-    context.addIssue({ code: 'custom', message: '面談会話には面談種別と回数が必要です。' })
-  }
-})
+export const aiConversationContextSchema = z
+  .object({
+    businessObject: businessConversationObjectSchema.optional(),
+    assistant: z.enum(['candidate-profile', 'interview', 'sales-agent']),
+    candidateDocumentId: z.string().uuid().nullable(),
+    interviewId: z.string().uuid().nullable(),
+    interviewKind: z.enum(['recruiting', 'client']).nullable(),
+    roundNumber: z.number().int().min(1).max(20).nullable()
+  })
+  .superRefine((value, context) => {
+    if (value.businessObject && value.assistant !== 'sales-agent')
+      context.addIssue({ code: 'custom', message: '业务对象只适用于 Agent 会话。' })
+    if (
+      value.assistant === 'sales-agent' &&
+      (value.candidateDocumentId !== null || value.interviewId !== null || value.interviewKind !== null || value.roundNumber !== null)
+    ) {
+      context.addIssue({ code: 'custom', message: '営業エージェント会話には候補者または面談コンテキストを保存できません。' })
+    }
+    if (value.assistant !== 'sales-agent' && value.candidateDocumentId === null) {
+      context.addIssue({ code: 'custom', message: '候補者プロフィールまたは面談会話には候補者IDが必要です。' })
+    }
+    if (
+      value.assistant === 'candidate-profile' &&
+      (value.interviewId !== null || value.interviewKind !== null || value.roundNumber !== null)
+    ) {
+      context.addIssue({ code: 'custom', message: '候補者プロフィール会話に面談コンテキストは保存できません。' })
+    }
+    if (value.assistant === 'interview' && (value.interviewKind === null || value.roundNumber === null)) {
+      context.addIssue({ code: 'custom', message: '面談会話には面談種別と回数が必要です。' })
+    }
+  })
 
-const aiConversationReferenceSchema = z.object({
-  label: z.string().min(1).max(160),
-  target: z.string().min(1).max(160),
-  kind: z.enum(['job-case', 'match-run', 'match-result']).optional(),
-  objectId: z.string().min(1).max(128).optional(),
-  objectVersion: z.number().int().positive().nullable().optional(),
-  resultHash: z.string().regex(/^[a-f0-9]{64}$/u).nullable().optional(),
-  ordinal: z.number().int().positive().nullable().optional()
-}).superRefine((value, context) => {
-  const typed = value.kind !== undefined || value.objectId !== undefined
-  if (typed && (!value.kind || !value.objectId || value.objectVersion === undefined || value.resultHash === undefined || value.ordinal === undefined)) {
-    context.addIssue({ code: 'custom', message: '类型化案件引用字段不完整。' })
-  }
-})
+const aiConversationReferenceSchema = z
+  .object({
+    label: z.string().min(1).max(160),
+    target: z.string().min(1).max(160),
+    kind: z.enum(['job-case', 'match-run', 'match-result']).optional(),
+    objectId: z.string().min(1).max(128).optional(),
+    objectVersion: z.number().int().positive().nullable().optional(),
+    resultHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable()
+      .optional(),
+    ordinal: z.number().int().positive().nullable().optional()
+  })
+  .superRefine((value, context) => {
+    const typed = value.kind !== undefined || value.objectId !== undefined
+    if (
+      typed &&
+      (!value.kind || !value.objectId || value.objectVersion === undefined || value.resultHash === undefined || value.ordinal === undefined)
+    ) {
+      context.addIssue({ code: 'custom', message: '类型化案件引用字段不完整。' })
+    }
+  })
 
 const typedAiConversationReferenceSchema = aiConversationReferenceSchema.safeExtend({
   kind: z.enum(['job-case', 'match-run', 'match-result']),
   objectId: z.string().min(1).max(128),
   objectVersion: z.number().int().positive().nullable(),
-  resultHash: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
+  resultHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .nullable(),
   ordinal: z.number().int().positive().nullable()
 })
 
@@ -1041,15 +1193,27 @@ const agentJobCaseCardSchema = z.object({
 export const candidateMatchAssessmentSchema = z.object({
   version: z.literal('match-assessment-v1'),
   fit: z.enum(candidateMatchAssessmentFits),
-  met: z.array(z.object({
-    requirement: z.string().min(1).max(200),
-    evidence: z.string().min(1).max(300)
-  })).max(8),
+  met: z
+    .array(
+      z.object({
+        requirement: z.string().min(1).max(200),
+        evidence: z.string().min(1).max(300)
+      })
+    )
+    .max(8),
   gaps: z.array(z.string().min(1).max(200)).max(8),
   confirm: z.array(z.string().min(1).max(200)).max(8),
   reason: z.string().max(400),
   modelKey: z.string().min(1).max(120),
-  assessedAt: z.string().datetime()
+  assessedAt: z.string().datetime(),
+  opinion: z
+    .object({
+      fit: z.enum(candidateMatchAssessmentFits),
+      reason: z.string().max(400),
+      gaps: z.array(z.string().min(1).max(200)).max(8),
+      confirm: z.array(z.string().min(1).max(200)).max(8)
+    })
+    .optional()
 })
 
 const agentCandidateMatchCardSchema = z.object({
@@ -1115,15 +1279,17 @@ const agentSystemAccessBlockSchema = z.discriminatedUnion('destination', [
   z.object({
     type: z.literal('system-access'),
     destination: z.literal('interview-schedule'),
-    receipt: z.object({
-      sourceDocumentId: z.string().uuid(),
-      candidateLabel: z.string().min(1).max(120),
-      scheduledAt: z.string().datetime(),
-      durationMinutes: z.number().int().min(5).max(480),
-      meetingMethod: z.enum(['zoom', 'google-meet', 'phone', 'onsite']),
-      kind: z.enum(['recruiting', 'client']),
-      meetingLinkStoredLocally: z.boolean()
-    }).optional()
+    receipt: z
+      .object({
+        sourceDocumentId: z.string().uuid(),
+        candidateLabel: z.string().min(1).max(120),
+        scheduledAt: z.string().datetime(),
+        durationMinutes: z.number().int().min(5).max(480),
+        meetingMethod: z.enum(['zoom', 'google-meet', 'phone', 'onsite']),
+        kind: z.enum(['recruiting', 'client']),
+        meetingLinkStoredLocally: z.boolean()
+      })
+      .optional()
   })
 ])
 
@@ -1149,45 +1315,56 @@ const agentBlocksSchema = z.union([
     runId: z.string().uuid(),
     resultHash: z.string().regex(/^[a-f0-9]{64}$/u),
     cards: z.array(agentCandidateMatchCardSchema).max(5),
-    cloudReview: z.discriminatedUnion('status', [
-      z.object({ status: z.literal('reviewed'), reviewedCount: z.number().int().nonnegative() }),
-      z.object({
-        status: z.literal('skipped'),
-        code: z.enum(['cloud-unavailable', 'no-job-case', 'no-candidates', 'nothing-matched', 'no-verdict', 'cloud-error']),
-        reason: z.string().max(300).nullable()
-      })
-    ]).nullable().optional()
+    cloudReview: z
+      .discriminatedUnion('status', [
+        z.object({ status: z.literal('reviewed'), reviewedCount: z.number().int().nonnegative() }),
+        z.object({
+          status: z.literal('skipped'),
+          code: z.enum(['cloud-unavailable', 'no-job-case', 'no-candidates', 'nothing-matched', 'no-verdict', 'cloud-error']),
+          reason: z.string().max(300).nullable()
+        })
+      ])
+      .nullable()
+      .optional()
   }),
   z.object({
     type: z.literal('candidate-profile-evidence'),
     facts: z.object({
       runId: z.string().uuid(),
       validity: z.enum(['current', 'stale', 'deleted']),
-      candidate: z.object({
-        candidateProfileId: z.string().uuid(),
-        sourceDocumentId: z.string().uuid().optional(),
-        rank: z.number().int().positive().max(20),
-        anonymousLabel: z.string().min(1).max(120)
-      }).nullable(),
-      profile: z.object({
-        profileVersion: z.number().int().positive(),
-        skills: z.string().max(500).nullable(),
-        experienceYears: z.string().max(500).nullable(),
-        availability: z.string().max(500).nullable(),
-        rate: z.string().max(500).nullable(),
-        japaneseLevel: z.string().max(500).nullable(),
-        workStyle: z.string().max(500).nullable(),
-        role: z.string().max(500).nullable(),
-        location: z.string().max(500).nullable(),
-        workAuthorization: z.string().max(500).nullable(),
-        projectExperiences: z.array(z.object({
-          title: z.string().min(1).max(160),
-          period: z.string().max(120).nullable(),
-          role: z.string().max(120).nullable(),
-          technologies: z.array(z.string().min(1).max(80)).max(40),
-          summary: z.string().min(1).max(1_500)
-        })).max(20)
-      }).nullable()
+      candidate: z
+        .object({
+          candidateProfileId: z.string().uuid(),
+          sourceDocumentId: z.string().uuid().optional(),
+          rank: z.number().int().positive().max(20),
+          anonymousLabel: z.string().min(1).max(120)
+        })
+        .nullable(),
+      profile: z
+        .object({
+          profileVersion: z.number().int().positive(),
+          skills: z.string().max(500).nullable(),
+          experienceYears: z.string().max(500).nullable(),
+          availability: z.string().max(500).nullable(),
+          rate: z.string().max(500).nullable(),
+          japaneseLevel: z.string().max(500).nullable(),
+          workStyle: z.string().max(500).nullable(),
+          role: z.string().max(500).nullable(),
+          location: z.string().max(500).nullable(),
+          workAuthorization: z.string().max(500).nullable(),
+          projectExperiences: z
+            .array(
+              z.object({
+                title: z.string().min(1).max(160),
+                period: z.string().max(120).nullable(),
+                role: z.string().max(120).nullable(),
+                technologies: z.array(z.string().min(1).max(80)).max(40),
+                summary: z.string().min(1).max(1_500)
+              })
+            )
+            .max(20)
+        })
+        .nullable()
     })
   }),
   z.object({
@@ -1195,28 +1372,38 @@ const agentBlocksSchema = z.union([
     facts: z.object({
       runId: z.string().uuid(),
       validity: z.enum(['current', 'stale', 'deleted']),
-      candidate: z.object({
-        candidateProfileId: z.string().uuid(),
-        sourceDocumentId: z.string().uuid().optional(),
-        rank: z.number().int().positive().max(20),
-        anonymousLabel: z.string().min(1).max(120)
-      }).nullable(),
-      interviews: z.array(z.object({
-        interviewId: z.string().uuid().optional(),
-        kind: z.enum(['recruiting', 'client']),
-        roundNumber: z.number().int().positive().max(20),
-        stage: z.string().min(1).max(120),
-        scheduledAt: z.string().datetime().nullable(),
-        durationMinutes: z.number().int().positive().max(24 * 60),
-        meetingMethod: z.string().min(1).max(120),
-        interviewer: z.string().max(120).nullable(),
-        interviewGoal: z.string().max(1_000).nullable(),
-        interviewNotes: z.string().max(8_000).nullable(),
-        unresolvedItems: z.array(z.string().min(1).max(300)).max(20),
-        decision: z.string().max(120).nullable(),
-        decisionReason: z.string().max(1_500).nullable(),
-        updatedAt: z.string().datetime()
-      })).max(40)
+      candidate: z
+        .object({
+          candidateProfileId: z.string().uuid(),
+          sourceDocumentId: z.string().uuid().optional(),
+          rank: z.number().int().positive().max(20),
+          anonymousLabel: z.string().min(1).max(120)
+        })
+        .nullable(),
+      interviews: z
+        .array(
+          z.object({
+            interviewId: z.string().uuid().optional(),
+            kind: z.enum(['recruiting', 'client']),
+            roundNumber: z.number().int().positive().max(20),
+            stage: z.string().min(1).max(120),
+            scheduledAt: z.string().datetime().nullable(),
+            durationMinutes: z
+              .number()
+              .int()
+              .positive()
+              .max(24 * 60),
+            meetingMethod: z.string().min(1).max(120),
+            interviewer: z.string().max(120).nullable(),
+            interviewGoal: z.string().max(1_000).nullable(),
+            interviewNotes: z.string().max(8_000).nullable(),
+            unresolvedItems: z.array(z.string().min(1).max(300)).max(20),
+            decision: z.string().max(120).nullable(),
+            decisionReason: z.string().max(1_500).nullable(),
+            updatedAt: z.string().datetime()
+          })
+        )
+        .max(40)
     })
   }),
   z.object({
@@ -1227,11 +1414,15 @@ const agentBlocksSchema = z.union([
   }),
   z.object({
     type: z.literal('resume-import'),
-    imported: z.array(z.object({
-      documentId: z.string().uuid(),
-      label: z.string().min(1).max(60),
-      ordinal: z.number().int().min(1).max(10)
-    })).max(10),
+    imported: z
+      .array(
+        z.object({
+          documentId: z.string().uuid(),
+          label: z.string().min(1).max(60),
+          ordinal: z.number().int().min(1).max(10)
+        })
+      )
+      .max(10),
     failedCount: z.number().int().min(0).max(10)
   }),
   z.object({
@@ -1241,45 +1432,61 @@ const agentBlocksSchema = z.union([
       label: z.string().min(1).max(60),
       confirmed: z.literal(false),
       reviewStatus: z.enum(['awaiting-review', 'completed']),
-      fields: z.array(z.object({
-        label: z.string().min(1).max(80),
-        value: z.string().max(600).nullable(),
-        confidence: z.number().min(0).max(1),
-        status: z.enum(['needs_review', 'missing', 'confirmed']),
-        sources: z.array(z.string().min(1).max(180)).max(12)
-      })).max(20),
-      projects: z.array(z.object({
-        title: z.string().min(1).max(300),
-        period: z.string().max(120).nullable(),
-        role: z.string().max(180).nullable(),
-        technologies: z.array(z.string().min(1).max(120)).max(40),
-        summary: z.string().max(2_000),
-        confidence: z.number().min(0).max(1),
-        sources: z.array(z.string().min(1).max(180)).max(12)
-      })).max(30)
+      fields: z
+        .array(
+          z.object({
+            label: z.string().min(1).max(80),
+            value: z.string().max(600).nullable(),
+            confidence: z.number().min(0).max(1),
+            status: z.enum(['needs_review', 'missing', 'confirmed']),
+            sources: z.array(z.string().min(1).max(180)).max(12)
+          })
+        )
+        .max(20),
+      projects: z
+        .array(
+          z.object({
+            title: z.string().min(1).max(300),
+            period: z.string().max(120).nullable(),
+            role: z.string().max(180).nullable(),
+            technologies: z.array(z.string().min(1).max(120)).max(40),
+            summary: z.string().max(2_000),
+            confidence: z.number().min(0).max(1),
+            sources: z.array(z.string().min(1).max(180)).max(12)
+          })
+        )
+        .max(30)
     })
   }),
   z.object({
     type: z.literal('job-case-draft-cards'),
     intakeBatchId: z.string().uuid(),
-    cards: z.array(z.object({
-      reviewId: z.string().uuid(),
-      label: z.string().min(1).max(60),
-      ordinal: z.number().int().min(1).max(10),
-      outcome: z.enum(['created', 'existing-review', 'already-imported', 'archived']),
-      title: z.string().max(500).nullable(),
-      reviewStatus: z.enum(['awaiting-review', 'completed']),
-      lifecycle: z.enum(['active', 'archived']),
-      jobCase: z.object({ id: z.string().uuid(), version: z.number().int().positive() }).nullable(),
-      fields: z.array(z.object({
-        key: z.enum(jobCaseFieldKeys),
-        label: z.string().min(1).max(80),
-        value: z.string().max(500).nullable(),
-        status: z.enum(['needs_review', 'missing', 'confirmed'])
-      })).max(20),
-      warningCodes: z.array(z.string().min(1).max(120)).max(100),
-      status: z.enum(['current', 'stale', 'deleted'])
-    })).max(10)
+    cards: z
+      .array(
+        z.object({
+          reviewId: z.string().uuid(),
+          label: z.string().min(1).max(60),
+          ordinal: z.number().int().min(1).max(10),
+          outcome: z.enum(['created', 'existing-review', 'already-imported', 'archived']),
+          title: z.string().max(500).nullable(),
+          reviewStatus: z.enum(['awaiting-review', 'completed']),
+          lifecycle: z.enum(['active', 'archived']),
+          jobCase: z.object({ id: z.string().uuid(), version: z.number().int().positive() }).nullable(),
+          fields: z
+            .array(
+              z.object({
+                key: z.enum(jobCaseFieldKeys),
+                label: z.string().min(1).max(80),
+                value: z.string().max(500).nullable(),
+                status: z.enum(['needs_review', 'missing', 'confirmed'])
+              })
+            )
+            .max(20),
+          warningCodes: z.array(z.string().min(1).max(120)).max(100),
+          status: z.enum(['current', 'stale', 'deleted'])
+        })
+      )
+      .max(10)
   }),
   z.object({
     type: z.literal('job-case-broadcast-cards'),
@@ -1290,34 +1497,43 @@ const agentBlocksSchema = z.union([
     // Cards stored before the sales-group concept left the product still parse:
     // their group fields are unknown keys and are dropped, their pending/sent
     // status reads as copied, and their queue counts default the missing one.
-    cards: z.array(z.object({
-      reviewId: z.string().uuid(),
-      jobCaseId: z.string().uuid(),
-      jobCaseVersion: z.number().int().positive(),
-      ordinal: z.number().int().min(1).max(8),
-      title: z.string().min(1).max(200),
-      status: z.enum(['new', 'pending', 'sent', 'copied', 'attention'])
-        .transform((value) => (value === 'pending' || value === 'sent' ? 'copied' as const : value)),
-      templateId: z.string().uuid(),
-      templateRevision: z.number().int().positive(),
-      textJa: z.string().max(2_000),
-      textZh: z.string().max(2_000),
-      forbiddenJa: z.array(z.string().min(1).max(60)).max(20),
-      forbiddenZh: z.array(z.string().min(1).max(60)).max(20)
-    })).max(8),
-    queue: z.preprocess((value) => {
-      // Counts written before the copy model: 送信待ち meant copied but not yet
-      // claimed as sent, 送信済み meant claimed - both were a copy and nothing
-      // more, so they fold together rather than reading as zero.
-      if (value === null || typeof value !== 'object' || 'copied' in value) return value
-      const legacy = [(value as Record<string, unknown>).pending, (value as Record<string, unknown>).sent]
-        .filter((count) => typeof count === 'number')
-      return legacy.length === 0 ? value : { ...value, copied: legacy.reduce((sum, count) => sum + count, 0) }
-    }, z.object({
-      new: z.number().int().nonnegative(),
-      copied: z.number().int().nonnegative().optional().default(0),
-      attention: z.number().int().nonnegative()
-    }))
+    cards: z
+      .array(
+        z.object({
+          reviewId: z.string().uuid(),
+          jobCaseId: z.string().uuid(),
+          jobCaseVersion: z.number().int().positive(),
+          ordinal: z.number().int().min(1).max(8),
+          title: z.string().min(1).max(200),
+          status: z
+            .enum(['new', 'pending', 'sent', 'copied', 'attention'])
+            .transform((value) => (value === 'pending' || value === 'sent' ? ('copied' as const) : value)),
+          templateId: z.string().uuid(),
+          templateRevision: z.number().int().positive(),
+          textJa: z.string().max(2_000),
+          textZh: z.string().max(2_000),
+          forbiddenJa: z.array(z.string().min(1).max(60)).max(20),
+          forbiddenZh: z.array(z.string().min(1).max(60)).max(20)
+        })
+      )
+      .max(8),
+    queue: z.preprocess(
+      (value) => {
+        // Counts written before the copy model: 送信待ち meant copied but not yet
+        // claimed as sent, 送信済み meant claimed - both were a copy and nothing
+        // more, so they fold together rather than reading as zero.
+        if (value === null || typeof value !== 'object' || 'copied' in value) return value
+        const legacy = [(value as Record<string, unknown>).pending, (value as Record<string, unknown>).sent].filter(
+          (count) => typeof count === 'number'
+        )
+        return legacy.length === 0 ? value : { ...value, copied: legacy.reduce((sum, count) => sum + count, 0) }
+      },
+      z.object({
+        new: z.number().int().nonnegative(),
+        copied: z.number().int().nonnegative().optional().default(0),
+        attention: z.number().int().nonnegative()
+      })
+    )
   }),
   z.object({
     type: z.literal('match-run-explanation'),
@@ -1326,7 +1542,10 @@ const agentBlocksSchema = z.union([
       resultHash: z.string().regex(/^[a-f0-9]{64}$/u),
       validity: z.enum(['current', 'stale', 'deleted']),
       jobCaseVersion: z.number().int().positive().nullable(),
-      candidatePoolFingerprint: z.string().regex(/^[a-f0-9]{64}$/u).nullable(),
+      candidatePoolFingerprint: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/u)
+        .nullable(),
       algorithmVersion: z.string().min(1).max(120),
       hardFilterPolicyVersion: z.string().min(1).max(120),
       candidate: agentCandidateMatchCardSchema.nullable(),
@@ -1351,11 +1570,14 @@ const salesAgentStateSchema = z.object({
   lastMatchRunId: z.string().uuid().nullable(),
   lastSearchMessageId: z.string().min(1).max(128).nullable(),
   // Optional so every conversation stored before it existed still parses.
-  lastIntakeBatch: z.object({
-    intakeBatchId: z.string().uuid(),
-    messageId: z.string().min(1).max(128),
-    reviewIds: z.array(z.string().uuid()).max(10)
-  }).nullable().optional()
+  lastIntakeBatch: z
+    .object({
+      intakeBatchId: z.string().uuid(),
+      messageId: z.string().min(1).max(128),
+      reviewIds: z.array(z.string().uuid()).max(10)
+    })
+    .nullable()
+    .optional()
 })
 
 export const aiConversationMessageSchema = z.object({
@@ -1363,7 +1585,10 @@ export const aiConversationMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().min(1).max(20_000),
   mode: z.enum(['local', 'cloud', 'local-fallback']).optional(),
-  modelKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u).optional(),
+  modelKey: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u)
+    .optional(),
   modelDisplayName: z.string().trim().min(1).max(120).optional(),
   narrativeStatus: z.enum(['local', 'streaming', 'completed', 'failed-local-fallback', 'cancelled']).optional(),
   turnId: z.string().uuid().nullable().optional(),
@@ -1376,85 +1601,110 @@ export const aiConversationMessageSchema = z.object({
   createdAt: z.string().datetime()
 })
 
-export const aiConversationSnapshotSchema = z.object({
-  id: z.string().uuid(),
-  branchRootConversationId: z.string().uuid().optional(),
-  context: aiConversationContextSchema,
-  title: z.string().min(1).max(120),
-  messages: z.array(aiConversationMessageSchema).max(200),
-  salesAgentState: salesAgentStateSchema.optional(),
-  revision: z.number().int().positive(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-}).superRefine((value, context) => {
-  if (value.salesAgentState !== undefined && value.context.assistant !== 'sales-agent') {
-    context.addIssue({ code: 'custom', path: ['salesAgentState'], message: '候補者または面談会話に Sales Agent の状態を保存できません。' })
-  }
-})
+export const aiConversationSnapshotSchema = z
+  .object({
+    id: z.string().uuid(),
+    branchRootConversationId: z.string().uuid().optional(),
+    context: aiConversationContextSchema,
+    title: z.string().min(1).max(120),
+    messages: z.array(aiConversationMessageSchema).max(200),
+    salesAgentState: salesAgentStateSchema.optional(),
+    revision: z.number().int().positive(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .superRefine((value, context) => {
+    if (value.salesAgentState !== undefined && value.context.assistant !== 'sales-agent') {
+      context.addIssue({
+        code: 'custom',
+        path: ['salesAgentState'],
+        message: '候補者または面談会話に Sales Agent の状態を保存できません。'
+      })
+    }
+  })
 
-export const saveAiConversationInputSchema = z.object({
-  conversationId: z.string().uuid(),
-  branchRootConversationId: z.string().uuid().optional(),
-  context: aiConversationContextSchema,
-  messages: z.array(aiConversationMessageSchema).max(200),
-  salesAgentState: salesAgentStateSchema.optional(),
-  expectedRevision: z.number().int().positive().nullable()
-}).superRefine((value, context) => {
-  if (value.salesAgentState !== undefined && value.context.assistant !== 'sales-agent') {
-    context.addIssue({ code: 'custom', path: ['salesAgentState'], message: '候補者または面談会話に Sales Agent の状態を保存できません。' })
-  }
-})
-
-export const executeAgentTurnInputSchema = z.object({
-  businessObject: businessConversationObjectSchema.optional(),
-  intakeOnly: z.boolean().optional(),
-  conversationId: z.string().uuid(),
-  message: z.string().trim().min(1).max(4_000),
-  expectedConversationRevision: z.number().int().positive().nullable(),
-  requestId: z.string().uuid(),
-  modelKey: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u).default('gpt-5.6-luna'),
-  selectedCandidateDocumentId: z.string().uuid().nullable().optional(),
-  selectedJobCaseRef: typedAiConversationReferenceSchema.nullable().optional(),
-  activeSystemAccess: agentSystemAccessBlockSchema.nullable().optional(),
-  /**
-   * Vault tokens for files the operator attached to this turn. Only tokens
-   * cross the boundary; the main process resolves them against staged records
-   * and refuses anything it did not stage itself.
-   */
-  attachmentFileTokens: z.array(z.string().uuid()).max(10)
-    .refine((tokens) => new Set(tokens).size === tokens.length, '附件 Token 不能重复。')
-    .optional(),
-  branchFrom: z.object({
+export const saveAiConversationInputSchema = z
+  .object({
     conversationId: z.string().uuid(),
-    messageId: z.string().trim().min(1).max(160),
-    expectedRevision: z.number().int().positive()
-  }).strict().optional()
-}).strict().superRefine((value, context) => {
-  if (!value.branchFrom) return
-  if (value.branchFrom.conversationId === value.conversationId) {
-    context.addIssue({ code: 'custom', path: ['branchFrom', 'conversationId'], message: '编辑分支必须使用新会话。' })
-  }
-  if (value.expectedConversationRevision !== null) {
-    context.addIssue({ code: 'custom', path: ['expectedConversationRevision'], message: '编辑分支的目标会话必须是新会话。' })
-  }
-  if (value.selectedCandidateDocumentId != null) {
-    context.addIssue({ code: 'custom', path: ['selectedCandidateDocumentId'], message: '编辑分支不能继承当前人员。' })
-  }
-  if (value.selectedJobCaseRef != null) {
-    context.addIssue({ code: 'custom', path: ['selectedJobCaseRef'], message: '编辑分支的案件上下文由主进程从历史恢复。' })
-  }
-  if (value.activeSystemAccess != null) {
-    context.addIssue({ code: 'custom', path: ['activeSystemAccess'], message: '编辑分支不能继承分支点之后打开的右侧工作区。' })
-  }
-  if ((value.attachmentFileTokens?.length ?? 0) > 0) {
-    context.addIssue({ code: 'custom', path: ['attachmentFileTokens'], message: '编辑分支不会自动复制附件。' })
-  }
-})
+    branchRootConversationId: z.string().uuid().optional(),
+    context: aiConversationContextSchema,
+    messages: z.array(aiConversationMessageSchema).max(200),
+    salesAgentState: salesAgentStateSchema.optional(),
+    expectedRevision: z.number().int().positive().nullable()
+  })
+  .superRefine((value, context) => {
+    if (value.salesAgentState !== undefined && value.context.assistant !== 'sales-agent') {
+      context.addIssue({
+        code: 'custom',
+        path: ['salesAgentState'],
+        message: '候補者または面談会話に Sales Agent の状態を保存できません。'
+      })
+    }
+  })
 
-export const agentChatModelOptionSchema = z.object({
-  key: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u),
-  displayName: z.string().trim().min(1).max(120)
-}).strict()
+export const executeAgentTurnInputSchema = z
+  .object({
+    businessObject: businessConversationObjectSchema.optional(),
+    intakeOnly: z.boolean().optional(),
+    conversationId: z.string().uuid(),
+    message: z.string().trim().min(1).max(4_000),
+    expectedConversationRevision: z.number().int().positive().nullable(),
+    requestId: z.string().uuid(),
+    modelKey: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u)
+      .default('gpt-5.6-luna'),
+    selectedCandidateDocumentId: z.string().uuid().nullable().optional(),
+    selectedJobCaseRef: typedAiConversationReferenceSchema.nullable().optional(),
+    activeSystemAccess: agentSystemAccessBlockSchema.nullable().optional(),
+    /**
+     * Vault tokens for files the operator attached to this turn. Only tokens
+     * cross the boundary; the main process resolves them against staged records
+     * and refuses anything it did not stage itself.
+     */
+    attachmentFileTokens: z
+      .array(z.string().uuid())
+      .max(10)
+      .refine((tokens) => new Set(tokens).size === tokens.length, '附件 Token 不能重复。')
+      .optional(),
+    branchFrom: z
+      .object({
+        conversationId: z.string().uuid(),
+        messageId: z.string().trim().min(1).max(160),
+        expectedRevision: z.number().int().positive()
+      })
+      .strict()
+      .optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (!value.branchFrom) return
+    if (value.branchFrom.conversationId === value.conversationId) {
+      context.addIssue({ code: 'custom', path: ['branchFrom', 'conversationId'], message: '编辑分支必须使用新会话。' })
+    }
+    if (value.expectedConversationRevision !== null) {
+      context.addIssue({ code: 'custom', path: ['expectedConversationRevision'], message: '编辑分支的目标会话必须是新会话。' })
+    }
+    if (value.selectedCandidateDocumentId != null) {
+      context.addIssue({ code: 'custom', path: ['selectedCandidateDocumentId'], message: '编辑分支不能继承当前人员。' })
+    }
+    if (value.selectedJobCaseRef != null) {
+      context.addIssue({ code: 'custom', path: ['selectedJobCaseRef'], message: '编辑分支的案件上下文由主进程从历史恢复。' })
+    }
+    if (value.activeSystemAccess != null) {
+      context.addIssue({ code: 'custom', path: ['activeSystemAccess'], message: '编辑分支不能继承分支点之后打开的右侧工作区。' })
+    }
+    if ((value.attachmentFileTokens?.length ?? 0) > 0) {
+      context.addIssue({ code: 'custom', path: ['attachmentFileTokens'], message: '编辑分支不会自动复制附件。' })
+    }
+  })
+
+export const agentChatModelOptionSchema = z
+  .object({
+    key: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,119}$/u),
+    displayName: z.string().trim().min(1).max(120)
+  })
+  .strict()
 
 const agentTurnEventBaseSchema = z.object({
   conversationId: z.string().uuid(),
@@ -1465,43 +1715,62 @@ const agentTurnEventBaseSchema = z.object({
 })
 
 export const agentTurnEventSchema = z.discriminatedUnion('type', [
-  agentTurnEventBaseSchema.extend({
-    type: z.literal('started'),
-    phase: z.enum(['planning', 'local-tool', 'connecting-model', 'streaming', 'stopping'])
-  }).strict(),
-  agentTurnEventBaseSchema.extend({
-    type: z.literal('delta'),
-    text: z.string().min(1).max(2_000)
-  }).strict(),
-  agentTurnEventBaseSchema.extend({
-    type: z.literal('completed')
-  }).strict(),
-  agentTurnEventBaseSchema.extend({
-    type: z.literal('failed'),
-    code: z.string().min(1).max(120),
-    message: z.string().min(1).max(2_000),
-    localFallbackPreserved: z.literal(true)
-  }).strict(),
-  agentTurnEventBaseSchema.extend({
-    type: z.literal('cancelled'),
-    cancelStatus: z.enum(['cancel_requested', 'canceled', 'too_late']).nullable(),
-    message: z.string().min(1).max(2_000)
-  }).strict()
+  agentTurnEventBaseSchema
+    .extend({
+      type: z.literal('started'),
+      phase: z.enum(['planning', 'local-tool', 'connecting-model', 'streaming', 'stopping'])
+    })
+    .strict(),
+  agentTurnEventBaseSchema
+    .extend({
+      type: z.literal('delta'),
+      text: z.string().min(1).max(2_000)
+    })
+    .strict(),
+  agentTurnEventBaseSchema
+    .extend({
+      type: z.literal('completed')
+    })
+    .strict(),
+  agentTurnEventBaseSchema
+    .extend({
+      type: z.literal('failed'),
+      code: z.string().min(1).max(120),
+      message: z.string().min(1).max(2_000),
+      localFallbackPreserved: z.literal(true)
+    })
+    .strict(),
+  agentTurnEventBaseSchema
+    .extend({
+      type: z.literal('cancelled'),
+      cancelStatus: z.enum(['cancel_requested', 'canceled', 'too_late']).nullable(),
+      message: z.string().min(1).max(2_000)
+    })
+    .strict()
 ])
 
-export const cancelAgentTurnInputSchema = z.object({
-  conversationId: z.string().uuid(),
-  requestId: z.string().uuid()
-}).strict()
+export const cancelAgentTurnInputSchema = z
+  .object({
+    conversationId: z.string().uuid(),
+    requestId: z.string().uuid()
+  })
+  .strict()
 
 export const deleteAiConversationsInputSchema = z.object({
-  conversationIds: z.array(z.string().uuid()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, '会話IDが重複しています。')
+  conversationIds: z
+    .array(z.string().uuid())
+    .min(1)
+    .max(50)
+    .refine((ids) => new Set(ids).size === ids.length, '会話IDが重複しています。')
 })
 
 const googleWorkspaceAdminConfigurationFields = {
   version: z.literal('google-workspace-admin-config-v1'),
   clientId: googleWorkspaceOAuthClientIdSchema,
-  labelIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u)).min(1).max(10),
+  labelIds: z
+    .array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u))
+    .min(1)
+    .max(10),
   query: z.string().trim().min(2).max(200),
   lookbackDays: z.number().int().min(1).max(365),
   maxMessagesPerRun: z.number().int().min(1).max(500),
@@ -1529,7 +1798,10 @@ export const googleWorkspaceAdminConfigurationSchema = z.discriminatedUnion('sou
 export const saveGoogleWorkspaceAdminConfigurationInputSchema = z.object({
   clientId: googleWorkspaceOAuthClientIdSchema,
   workspaceDomain: googleWorkspaceDomainSchema,
-  labelIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u)).min(1).max(10),
+  labelIds: z
+    .array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u))
+    .min(1)
+    .max(10),
   query: z
     .string()
     .trim()
@@ -1537,7 +1809,8 @@ export const saveGoogleWorkspaceAdminConfigurationInputSchema = z.object({
     .max(200)
     .refine((value) => !/[\r\n\u0000:()]/u.test(value), 'Gmail 演算子ではなく業務キーワードを使用してください。')
     .refine(
-      (value) => value.split(/\s+OR\s+/iu).every((term) => term.replace(/^['"]|['"]$/gu, '').trim().length >= 2) &&
+      (value) =>
+        value.split(/\s+OR\s+/iu).every((term) => term.replace(/^['"]|['"]$/gu, '').trim().length >= 2) &&
         !/(?:^|\s)(?:AND|NOT)(?:\s|$)/iu.test(value),
       '業務キーワードを OR で区切って指定してください。'
     ),
@@ -1558,23 +1831,27 @@ export const googleWorkspaceOnlineAcceptanceReportSchema = z.object({
   messageContentAccessedDuringCheck: z.literal(false),
   cloudModelUsed: z.literal(false),
   directIdentifierCloudSent: z.literal(false),
-  checks: z.array(z.object({
-    id: z.enum([
-      'live-profile',
-      'readonly-scope',
-      'account-identity',
-      'company-domain',
-      'credential-protection',
-      'bounded-sync',
-      'successful-sync',
-      'local-redaction',
-      'no-cloud-model',
-      'no-send-path'
-    ]),
-    status: z.enum(['passed', 'warning', 'failed']),
-    label: z.string().min(1).max(120),
-    detail: z.string().min(1).max(500)
-  })).length(9),
+  checks: z
+    .array(
+      z.object({
+        id: z.enum([
+          'live-profile',
+          'readonly-scope',
+          'account-identity',
+          'company-domain',
+          'credential-protection',
+          'bounded-sync',
+          'successful-sync',
+          'local-redaction',
+          'no-cloud-model',
+          'no-send-path'
+        ]),
+        status: z.enum(['passed', 'warning', 'failed']),
+        label: z.string().min(1).max(120),
+        detail: z.string().min(1).max(500)
+      })
+    )
+    .length(9),
   evidence: z.object({
     grantedScopeCount: z.number().int().nonnegative().max(20),
     sync: z.object({
@@ -1615,20 +1892,27 @@ export const updateCandidateProfileInputSchema = z.object({
     graduationDate: z.string().trim().min(1).max(80).nullable(),
     degree: z.string().trim().min(1).max(120).nullable()
   }),
-  fields: z.array(z.object({
-    key: z.enum(candidateFieldKeys),
-    value: z.string().trim().min(1).max(500).nullable()
-  })).max(candidateFieldKeys.length),
-  projectExperiences: z.array(z.object({
-    id: z.string().min(1).max(80),
-    title: z.string().trim().min(1).max(160),
-    period: z.string().trim().min(1).max(120).nullable(),
-    role: z.string().trim().min(1).max(120).nullable(),
-    technologies: z.array(z.string().trim().min(1).max(80)).max(40),
-    summary: z.string().trim().min(1).max(1_500)
-  })).max(20)
+  fields: z
+    .array(
+      z.object({
+        key: z.enum(candidateFieldKeys),
+        value: z.string().trim().min(1).max(500).nullable()
+      })
+    )
+    .max(candidateFieldKeys.length),
+  projectExperiences: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(80),
+        title: z.string().trim().min(1).max(160),
+        period: z.string().trim().min(1).max(120).nullable(),
+        role: z.string().trim().min(1).max(120).nullable(),
+        technologies: z.array(z.string().trim().min(1).max(80)).max(40),
+        summary: z.string().trim().min(1).max(1_500)
+      })
+    )
+    .max(20)
 })
-
 
 export const deleteCandidateDataInputSchema = z.object({
   sourceDocumentId: z.string().uuid(),
@@ -1660,9 +1944,7 @@ export const candidateDeletionPreviewSchema = z.object({
   warningCodes: z.array(z.string().min(1).max(120)).max(50)
 })
 
-const deletionComponentStatusSchema = z.enum([
-  'deleted', 'not_present', 'expired_pending', 'crypto_erased', 'failed'
-])
+const deletionComponentStatusSchema = z.enum(['deleted', 'not_present', 'expired_pending', 'crypto_erased', 'failed'])
 
 export const candidateDataDeletionReportSchema = z.object({
   id: z.string().uuid(),
@@ -1712,7 +1994,10 @@ export const jobCaseReviewSnapshotSchema = z.object({
   reviewId: z.string().uuid(),
   sourceId: z.string().uuid(),
   sourceType: jobCaseSourceTypeSchema,
-  providerMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable(),
+  providerMessageId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,128}$/)
+    .nullable(),
   threadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
   fromDomain: z.string().max(253).nullable(),
   messageDate: z.string().datetime(),
@@ -1733,24 +2018,45 @@ export const jobCaseReviewSnapshotSchema = z.object({
 })
 
 export const createManualJobCaseDraftInputSchema = z.object({
-  subject: z.string().trim().min(2).max(2_000).refine((value) => !value.includes('\u0000'), '件名に無効な文字が含まれています。'),
-  body: z.string().trim().min(8).max(100_000).refine((value) => !value.includes('\u0000'), '本文に無効な文字が含まれています。')
+  subject: z
+    .string()
+    .trim()
+    .min(2)
+    .max(2_000)
+    .refine((value) => !value.includes('\u0000'), '件名に無効な文字が含まれています。'),
+  body: z
+    .string()
+    .trim()
+    .min(8)
+    .max(100_000)
+    .refine((value) => !value.includes('\u0000'), '本文に無効な文字が含まれています。')
 })
 
-export const createChatPasteJobCaseDraftInputSchema = z.object({
-  text: z.string().trim().min(8).max(100_000).refine((value) => !value.includes('\u0000'), '貼り付け本文に無効な文字が含まれています。')
-}).strict()
+export const createChatPasteJobCaseDraftInputSchema = z
+  .object({
+    text: z
+      .string()
+      .trim()
+      .min(8)
+      .max(100_000)
+      .refine((value) => !value.includes('\u0000'), '貼り付け本文に無効な文字が含まれています。')
+  })
+  .strict()
 
-export const executeWechatVisibleReadInputSchema = z.object({
-  scopeToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u)
-}).strict()
+export const executeWechatVisibleReadInputSchema = z
+  .object({
+    scopeToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/u)
+  })
+  .strict()
 
-export const setBusinessPriorityOverrideInputSchema = z.object({
-  matchResultId: z.string().uuid(),
-  level: z.enum(['high', 'normal', 'follow_up', 'paused']),
-  reason: z.string().trim().min(3).max(500),
-  expiresAt: z.string().datetime()
-}).strict()
+export const setBusinessPriorityOverrideInputSchema = z
+  .object({
+    matchResultId: z.string().uuid(),
+    level: z.enum(['high', 'normal', 'follow_up', 'paused']),
+    reason: z.string().trim().min(3).max(500),
+    expiresAt: z.string().datetime()
+  })
+  .strict()
 
 export const submitJobCaseReviewInputSchema = z.object({
   reviewId: z.string().uuid(),
@@ -1789,8 +2095,10 @@ export const reopenJobCaseReviewInputSchema = z.object({
  * written - can put the商流 or the支払条件 into a group message.
  */
 const broadcastTemplateFieldKeySchema = z.enum(
-  jobCaseFieldKeys.filter((key) => !(broadcastForbiddenFieldKeys as readonly string[]).includes(key)) as
-    [BroadcastTemplateFieldKey, ...BroadcastTemplateFieldKey[]]
+  jobCaseFieldKeys.filter((key) => !(broadcastForbiddenFieldKeys as readonly string[]).includes(key)) as [
+    BroadcastTemplateFieldKey,
+    ...BroadcastTemplateFieldKey[]
+  ]
 )
 
 export const broadcastTemplateLineSchema: z.ZodType<BroadcastTemplateLine> = z.discriminatedUnion('kind', [
@@ -1923,12 +2231,16 @@ const proposalJobCaseOptionSchema = z.object({
   role: z.string().max(500).nullable(),
   requiredSkills: z.string().max(500).nullable(),
   rate: z.string().max(500).nullable(),
-  fields: z.array(z.object({
-    key: z.enum(jobCaseFieldKeys),
-    label: z.string().min(1).max(80),
-    value: z.string().max(500).nullable(),
-    sourceLabels: z.array(z.string().min(1).max(180)).max(20)
-  })).length(jobCaseFieldKeys.length)
+  fields: z
+    .array(
+      z.object({
+        key: z.enum(jobCaseFieldKeys),
+        label: z.string().min(1).max(80),
+        value: z.string().max(500).nullable(),
+        sourceLabels: z.array(z.string().min(1).max(180)).max(20)
+      })
+    )
+    .length(jobCaseFieldKeys.length)
 })
 
 const proposalCandidateOptionSchema = z.object({
@@ -1942,12 +2254,16 @@ const proposalCandidateOptionSchema = z.object({
   japaneseLevel: z.string().max(500).nullable(),
   workStyle: z.string().max(500).nullable(),
   role: z.string().max(500).nullable(),
-  fields: z.array(z.object({
-    key: z.enum(candidateFieldKeys),
-    label: z.string().min(1).max(80),
-    value: z.string().max(500).nullable(),
-    sourceLabels: z.array(z.string().min(1).max(180)).max(20)
-  })).max(candidateFieldKeys.length),
+  fields: z
+    .array(
+      z.object({
+        key: z.enum(candidateFieldKeys),
+        label: z.string().min(1).max(80),
+        value: z.string().max(500).nullable(),
+        sourceLabels: z.array(z.string().min(1).max(180)).max(20)
+      })
+    )
+    .max(candidateFieldKeys.length),
   projectExperiences: z.array(candidateProjectExperienceSchema).max(20)
 })
 
@@ -1962,26 +2278,38 @@ export const proposalAttachmentPreviewSchema = z.object({
   redacted: z.literal(true),
   sourceDocumentIncluded: z.literal(false),
   anonymousCandidateLabel: z.string().min(1).max(80),
-  fields: z.array(z.object({
-    key: z.enum(candidateFieldKeys),
-    label: z.string().min(1).max(80),
-    value: z.string().min(1).max(500),
-    sourceLabels: z.array(z.string().min(1).max(180)).max(20)
-  })).max(candidateFieldKeys.length),
-  projectExperiences: z.array(z.object({
-    title: z.string().trim().min(1).max(160),
-    period: z.string().trim().min(1).max(120).nullable(),
-    role: z.string().trim().min(1).max(120).nullable(),
-    technologies: z.array(z.string().trim().min(1).max(80)).max(40),
-    summary: z.string().trim().min(1).max(1_500)
-  })).max(20).default([]),
+  fields: z
+    .array(
+      z.object({
+        key: z.enum(candidateFieldKeys),
+        label: z.string().min(1).max(80),
+        value: z.string().min(1).max(500),
+        sourceLabels: z.array(z.string().min(1).max(180)).max(20)
+      })
+    )
+    .max(candidateFieldKeys.length),
+  projectExperiences: z
+    .array(
+      z.object({
+        title: z.string().trim().min(1).max(160),
+        period: z.string().trim().min(1).max(120).nullable(),
+        role: z.string().trim().min(1).max(120).nullable(),
+        technologies: z.array(z.string().trim().min(1).max(80)).max(40),
+        summary: z.string().trim().min(1).max(1_500)
+      })
+    )
+    .max(20)
+    .default([]),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/)
 })
 
-const proposalOccurredOnSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, '日付はYYYY-MM-DD形式で入力してください。').refine((value) => {
-  const date = new Date(`${value}T00:00:00.000Z`)
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
-}, '実在する日付を入力してください。')
+const proposalOccurredOnSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/u, '日付はYYYY-MM-DD形式で入力してください。')
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`)
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  }, '実在する日付を入力してください。')
 
 export const proposalFollowUpEventSchema = z.object({
   id: z.string().uuid(),
@@ -1995,23 +2323,25 @@ export const proposalFollowUpEventSchema = z.object({
   cloudEligible: z.literal(false)
 })
 
-const proposalFollowUpStateSchema = z.object({
-  revision: z.number().int().nonnegative(),
-  stage: z.enum(proposalFollowUpStages).nullable(),
-  events: z.array(proposalFollowUpEventSchema).max(100),
-  cloudEligible: z.literal(false)
-}).superRefine((state, context) => {
-  if (state.revision !== state.events.length) {
-    context.addIssue({ code: 'custom', message: '営業結果のRevisionと履歴件数が一致しません。' })
-  }
-  const latest = state.events.at(-1) ?? null
-  if (state.stage !== (latest?.stage ?? null)) {
-    context.addIssue({ code: 'custom', message: '営業結果の現在状態が最新履歴と一致しません。' })
-  }
-  if (state.events.some((event, index) => event.revision !== index + 1)) {
-    context.addIssue({ code: 'custom', message: '営業結果のRevisionが連続していません。' })
-  }
-})
+const proposalFollowUpStateSchema = z
+  .object({
+    revision: z.number().int().nonnegative(),
+    stage: z.enum(proposalFollowUpStages).nullable(),
+    events: z.array(proposalFollowUpEventSchema).max(100),
+    cloudEligible: z.literal(false)
+  })
+  .superRefine((state, context) => {
+    if (state.revision !== state.events.length) {
+      context.addIssue({ code: 'custom', message: '営業結果のRevisionと履歴件数が一致しません。' })
+    }
+    const latest = state.events.at(-1) ?? null
+    if (state.stage !== (latest?.stage ?? null)) {
+      context.addIssue({ code: 'custom', message: '営業結果の現在状態が最新履歴と一致しません。' })
+    }
+    if (state.events.some((event, index) => event.revision !== index + 1)) {
+      context.addIssue({ code: 'custom', message: '営業結果のRevisionが連続していません。' })
+    }
+  })
 
 export const proposalDraftSnapshotSchema = z.object({
   schemaVersion: z.literal('proposal-draft-v1'),
@@ -2023,19 +2353,40 @@ export const proposalDraftSnapshotSchema = z.object({
   candidateProfileVersion: z.number().int().positive(),
   recipientTo: z.string().email().max(320),
   recipientCc: z.array(z.string().email().max(320)).max(10),
-  candidateDisplayName: z.string().trim().min(1).max(80).refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), '対外表示名に無効な文字が含まれています。'),
-  subject: z.string().trim().min(1).max(200).refine((value) => !/[\r\n\u0000]/u.test(value), '件名に無効な文字が含まれています。'),
-  body: z.string().trim().min(10).max(20_000).refine((value) => !value.includes('\u0000'), '本文に無効な文字が含まれています。'),
+  candidateDisplayName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), '対外表示名に無効な文字が含まれています。'),
+  subject: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((value) => !/[\r\n\u0000]/u.test(value), '件名に無効な文字が含まれています。'),
+  body: z
+    .string()
+    .trim()
+    .min(10)
+    .max(20_000)
+    .refine((value) => !value.includes('\u0000'), '本文に無効な文字が含まれています。'),
   attachment: proposalAttachmentPreviewSchema,
   tone: z.enum(['standard', 'concise', 'formal']),
   status: z.enum(['awaiting_review', 'approved', 'exported', 'export_unknown']),
   revision: z.number().int().positive(),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
-  approvedContentHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  approvedContentHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
   approvedAt: z.string().datetime().nullable(),
   approvedBy: z.string().min(1).max(120).nullable(),
   exportedAt: z.string().datetime().nullable(),
-  exportPackageHash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  exportPackageHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .nullable(),
   followUp: proposalFollowUpStateSchema.default({
     revision: 0,
     stage: null,
@@ -2056,17 +2407,27 @@ export const proposalDraftSnapshotSchema = z.object({
 export const proposalWorkspaceSnapshotSchema = z.object({
   options: proposalPreparationOptionsSchema,
   drafts: z.array(proposalDraftSnapshotSchema).max(1_000),
-  evidence: z.array(z.object({
-    draftId: z.string().uuid(),
-    jobCase: proposalJobCaseOptionSchema,
-    candidate: proposalCandidateOptionSchema
-  })).max(1_000).default([])
+  evidence: z
+    .array(
+      z.object({
+        draftId: z.string().uuid(),
+        jobCase: proposalJobCaseOptionSchema,
+        candidate: proposalCandidateOptionSchema
+      })
+    )
+    .max(1_000)
+    .default([])
 })
 
 const proposalRecipientFields = {
   recipientTo: z.string().trim().email().max(320),
   recipientCc: z.array(z.string().trim().email().max(320)).max(10),
-  candidateDisplayName: z.string().trim().min(1).max(80).refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), '対外表示名に無効な文字が含まれています。')
+  candidateDisplayName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), '対外表示名に無効な文字が含まれています。')
 }
 
 export const createProposalDraftInputSchema = z.object({
@@ -2081,8 +2442,18 @@ export const updateProposalDraftInputSchema = z.object({
   draftId: z.string().uuid(),
   revision: z.number().int().positive(),
   ...proposalRecipientFields,
-  subject: z.string().trim().min(1).max(200).refine((value) => !/[\r\n\u0000]/u.test(value), '件名に無効な文字が含まれています。'),
-  body: z.string().trim().min(10).max(20_000).refine((value) => !value.includes('\u0000'), '本文に無効な文字が含まれています。')
+  subject: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((value) => !/[\r\n\u0000]/u.test(value), '件名に無効な文字が含まれています。'),
+  body: z
+    .string()
+    .trim()
+    .min(10)
+    .max(20_000)
+    .refine((value) => !value.includes('\u0000'), '本文に無効な文字が含まれています。')
 })
 
 export const approveProposalDraftInputSchema = z.object({

@@ -30,7 +30,10 @@ describe('AgentWorkspace', () => {
   })
 
   it('keeps the latest feed compact and restores a draft when the operator opens conversation', async () => {
-    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } })
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) }
+    })
     const onOpenBatch = vi.fn()
     render(<AgentWorkspace latestContent={<div>Today feed</div>} onOpenBatch={onOpenBatch} onOpenMatching={vi.fn()} />)
     expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
@@ -47,8 +50,12 @@ describe('AgentWorkspace', () => {
   })
 
   it('keeps latest information compact even with a selected record and shows its composer only in conversation', async () => {
-    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } })
-    const onMatch = vi.fn(), onPromote = vi.fn()
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) }
+    })
+    const onMatch = vi.fn(),
+      onPromote = vi.fn()
     const base = { latestContent: <div>Today feed</div>, onOpenMatching: vi.fn() }
     const object = { kind: 'person' as const, label: 'TEST Java Engineer', onMatch, onPromote }
     const view = render(<AgentWorkspace {...base} contextPanelOpen composerObject={object} />)
@@ -60,7 +67,8 @@ describe('AgentWorkspace', () => {
     expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toBeVisible()
     fireEvent.click(within(scope).getByRole('button', { name: '案件を探す' }))
     fireEvent.click(within(scope).getByRole('button', { name: '紹介文を作成' }))
-    expect(onMatch).toHaveBeenCalledTimes(1); expect(onPromote).toHaveBeenCalledTimes(1)
+    expect(onMatch).toHaveBeenCalledTimes(1)
+    expect(onPromote).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: '最新情報' }))
     view.rerender(<AgentWorkspace {...base} contextPanelOpen={false} composerObject={object} />)
     expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
@@ -72,12 +80,14 @@ describe('AgentWorkspace', () => {
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onImportResume = vi.fn()
     const onOpenCaseImport = vi.fn()
-    render(<AgentWorkspace
-      onImportResume={onImportResume}
-      onOpenCaseImport={onOpenCaseImport}
-      onOpenMatching={vi.fn()}
-      status={{ activeCaseCount: 2, eligibleCandidateCount: 3, runningJobCount: 1, backupReminder: 'due' }}
-    />)
+    render(
+      <AgentWorkspace
+        onImportResume={onImportResume}
+        onOpenCaseImport={onOpenCaseImport}
+        onOpenMatching={vi.fn()}
+        status={{ activeCaseCount: 2, eligibleCandidateCount: 3, runningJobCount: 1, backupReminder: 'due' }}
+      />
+    )
 
     expect(await screen.findByRole('heading', { name: 'SES Agent' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: '会話' })).toBeInTheDocument()
@@ -89,8 +99,8 @@ describe('AgentWorkspace', () => {
     expect(onOpenCaseImport).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: '履歴書を添付' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '面談を設定できる候補者は？' }))
-    expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toHaveValue('面談を設定できる候補者は？')
+    fireEvent.click(screen.getByRole('button', { name: '面談を設定できる要員は？' }))
+    expect(screen.getByRole('textbox', { name: 'SES Agent への指示' })).toHaveValue('面談を設定できる要員は？')
   })
 
   it('shares the right column between details and Agent and keeps history inside Agent', async () => {
@@ -98,8 +108,12 @@ describe('AgentWorkspace', () => {
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onCloseContextPanel = vi.fn()
     const props = {
-      businessTitle: '案件', latestContent: <div>Business list</div>, onOpenMatching: vi.fn(),
-      contextPanel: <div>Selected case details</div>, contextPanelOpen: true, onCloseContextPanel
+      businessTitle: '案件',
+      latestContent: <div>Business list</div>,
+      onOpenMatching: vi.fn(),
+      contextPanel: <div>Selected case details</div>,
+      contextPanelOpen: true,
+      onCloseContextPanel
     }
     const view = render(<AgentWorkspace {...props} />)
     const workspace = screen.getByRole('main', { name: 'SES Agent' })
@@ -141,7 +155,10 @@ describe('AgentWorkspace', () => {
   })
 
   it('does not let a previous home request override opening Agent on mount', async () => {
-    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } })
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) }
+    })
     const props = { businessTitle: '案件', latestContent: <div>Business list</div>, onOpenMatching: vi.fn(), chatRequest: 1 }
     const view = render(<AgentWorkspace {...props} homeRequestToken={3} />)
     const composer = await screen.findByRole('textbox', { name: 'SES Agent への指示' })
@@ -189,20 +206,56 @@ describe('AgentWorkspace', () => {
 
   it('edits an earlier input by creating a new conversation branch and resending from its prefix', async () => {
     const originalConversation = snapshot([
-      { id: 'user-first', role: 'user', content: '第一个问题', mode: 'local', turnId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', createdAt: '2026-08-18T00:00:00.000Z' },
-      { id: 'assistant-first', role: 'assistant', content: '第一个回答', mode: 'local', turnId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', createdAt: '2026-08-18T00:00:01.000Z' },
-      { id: 'user-second', role: 'user', content: '第二个问题', mode: 'local', turnId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', createdAt: '2026-08-18T00:00:02.000Z' },
-      { id: 'assistant-second', role: 'assistant', content: '第二个回答', mode: 'local', turnId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', createdAt: '2026-08-18T00:00:03.000Z' }
+      {
+        id: 'user-first',
+        role: 'user',
+        content: '第一个问题',
+        mode: 'local',
+        turnId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        createdAt: '2026-08-18T00:00:00.000Z'
+      },
+      {
+        id: 'assistant-first',
+        role: 'assistant',
+        content: '第一个回答',
+        mode: 'local',
+        turnId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        createdAt: '2026-08-18T00:00:01.000Z'
+      },
+      {
+        id: 'user-second',
+        role: 'user',
+        content: '第二个问题',
+        mode: 'local',
+        turnId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        createdAt: '2026-08-18T00:00:02.000Z'
+      },
+      {
+        id: 'assistant-second',
+        role: 'assistant',
+        content: '第二个回答',
+        mode: 'local',
+        turnId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        createdAt: '2026-08-18T00:00:03.000Z'
+      }
     ])
     const saveAiConversation = vi.fn()
     const executeAgentTurn = vi.fn(async (input: ExecuteAgentTurnInput): Promise<ExecuteAgentTurnResult> => {
       const user: AiConversationSnapshot['messages'][number] = {
-        id: 'user-edited', role: 'user', content: input.message, mode: 'local',
-        turnId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', createdAt: '2026-08-18T00:01:01.000Z'
+        id: 'user-edited',
+        role: 'user',
+        content: input.message,
+        mode: 'local',
+        turnId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        createdAt: '2026-08-18T00:01:01.000Z'
       }
       const assistant: AiConversationSnapshot['messages'][number] = {
-        id: 'assistant-edited', role: 'assistant', content: '编辑后的回答', mode: 'local',
-        turnId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', createdAt: '2026-08-18T00:01:02.000Z'
+        id: 'assistant-edited',
+        role: 'assistant',
+        content: '编辑后的回答',
+        mode: 'local',
+        turnId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        createdAt: '2026-08-18T00:01:02.000Z'
       }
       const conversation: AiConversationSnapshot = {
         ...originalConversation,
@@ -213,7 +266,14 @@ describe('AgentWorkspace', () => {
         createdAt: '2026-08-18T00:01:00.000Z',
         updatedAt: '2026-08-18T00:01:02.000Z'
       }
-      return { status: 'completed', requestId: input.requestId, toolName: null, actionRunId: null, assistantMessage: assistant, conversation }
+      return {
+        status: 'completed',
+        requestId: input.requestId,
+        toolName: null,
+        actionRunId: null,
+        assistantMessage: assistant,
+        conversation
+      }
     })
     const deleteAiConversations = vi.fn()
     const api = {
@@ -266,10 +326,16 @@ describe('AgentWorkspace', () => {
         meetingLinkStoredLocally: true
       }
     }
-    const conversation = snapshot([{
-      id: 'assistant-receipt', role: 'assistant', content: '面談を登録しました。', mode: 'local',
-      createdAt: '2026-08-24T05:00:00.000Z', blocks: [access]
-    }])
+    const conversation = snapshot([
+      {
+        id: 'assistant-receipt',
+        role: 'assistant',
+        content: '面談を登録しました。',
+        mode: 'local',
+        createdAt: '2026-08-24T05:00:00.000Z',
+        blocks: [access]
+      }
+    ])
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]) } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onOpenCandidate = vi.fn()
@@ -290,12 +356,14 @@ describe('AgentWorkspace', () => {
     const onCloseContextPanel = vi.fn()
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]) } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
-    render(<AgentWorkspace
-      contextPanel={<div>面试日程内容</div>}
-      contextPanelLabel="面试日程工作区"
-      onCloseContextPanel={onCloseContextPanel}
-      onOpenMatching={vi.fn()}
-    />)
+    render(
+      <AgentWorkspace
+        contextPanel={<div>面试日程内容</div>}
+        contextPanelLabel="面试日程工作区"
+        onCloseContextPanel={onCloseContextPanel}
+        onOpenMatching={vi.fn()}
+      />
+    )
 
     const workspace = await screen.findByRole('main', { name: 'SES Agent' })
     expect(workspace).toHaveClass('has-context-panel')
@@ -308,22 +376,44 @@ describe('AgentWorkspace', () => {
 
   it('keeps a selected person while opening a case and sends both references', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({ status: 'completed', toolName: null, conversation: snapshot([]) })
-    Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn } })
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn }
+    })
     const documentId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-    const { rerender } = render(<AgentWorkspace onOpenMatching={vi.fn()} focusRequest={{ id: 1, caseReference: null, candidateDocumentId: documentId }} />)
-    const reference = { kind: 'job-case' as const, objectId: jobCaseId, objectVersion: 1, resultHash: null, ordinal: null, label: 'Java 案件', target: `job-case:${jobCaseId}` }
+    const { rerender } = render(
+      <AgentWorkspace onOpenMatching={vi.fn()} focusRequest={{ id: 1, caseReference: null, candidateDocumentId: documentId }} />
+    )
+    const reference = {
+      kind: 'job-case' as const,
+      objectId: jobCaseId,
+      objectVersion: 1,
+      resultHash: null,
+      ordinal: null,
+      label: 'Java 案件',
+      target: `job-case:${jobCaseId}`
+    }
     rerender(<AgentWorkspace onOpenMatching={vi.fn()} focusRequest={{ id: 2, caseReference: reference }} />)
-    expect(await screen.findByRole('button', { name: '現在の人材を解除' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '現在の要員を解除' })).toBeInTheDocument()
     const field = screen.getByRole('textbox', { name: 'SES Agent への指示' })
     fireEvent.change(field, { target: { value: '这个案件适合他吗' } })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
-    await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledWith(expect.objectContaining({ selectedCandidateDocumentId: documentId, selectedJobCaseRef: reference })))
+    await waitFor(() =>
+      expect(executeAgentTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ selectedCandidateDocumentId: documentId, selectedJobCaseRef: reference })
+      )
+    )
   })
 
   it('sends the active right workspace reference with the next normal turn', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({
-      status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
-      conversation: snapshot([{ id: 'user-1', role: 'user', content: '总结右侧案件', mode: 'cloud', createdAt: '2026-08-18T00:00:00.000Z' }])
+      status: 'completed',
+      toolName: null,
+      actionRunId: null,
+      assistantMessage: null,
+      conversation: snapshot([
+        { id: 'user-1', role: 'user', content: '总结右侧案件', mode: 'cloud', createdAt: '2026-08-18T00:00:00.000Z' }
+      ])
     })
     Object.defineProperty(window, 'sesAgent', {
       configurable: true,
@@ -335,13 +425,15 @@ describe('AgentWorkspace', () => {
       } as unknown as DesktopApi
     })
     const activeSystemAccess = { type: 'system-access' as const, destination: 'job-cases' as const }
-    render(<AgentWorkspace
-      activeSystemAccess={activeSystemAccess}
-      contextPanel={<div>案件列表</div>}
-      contextPanelLabel="業務ワークスペース"
-      onCloseContextPanel={vi.fn()}
-      onOpenMatching={vi.fn()}
-    />)
+    render(
+      <AgentWorkspace
+        activeSystemAccess={activeSystemAccess}
+        contextPanel={<div>案件列表</div>}
+        contextPanelLabel="業務ワークスペース"
+        onCloseContextPanel={vi.fn()}
+        onOpenMatching={vi.fn()}
+      />
+    )
 
     expect(screen.queryByText('右ワークスペースを参照')).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: 'SES Agent への指示' }), { target: { value: '总结右侧案件' } })
@@ -353,18 +445,41 @@ describe('AgentWorkspace', () => {
 
   it('clears the previous case when a latest-person card supplies the next workspace context', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({
-      status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
+      status: 'completed',
+      toolName: null,
+      actionRunId: null,
+      assistantMessage: null,
       conversation: snapshot([])
     })
-    Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
-      ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn
-    } as unknown as DesktopApi })
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: {
+        ...originalApi,
+        listAiConversations: vi.fn().mockResolvedValue([]),
+        executeAgentTurn
+      } as unknown as DesktopApi
+    })
     const onOpenMatching = vi.fn()
-    const caseReference = { kind: 'job-case' as const, objectId: 'case-before', objectVersion: 1, resultHash: null, ordinal: null, label: 'Prior Java case', target: 'job-case:case-before' }
+    const caseReference = {
+      kind: 'job-case' as const,
+      objectId: 'case-before',
+      objectVersion: 1,
+      resultHash: null,
+      ordinal: null,
+      label: 'Prior Java case',
+      target: 'job-case:case-before'
+    }
     const view = render(<AgentWorkspace onOpenMatching={onOpenMatching} focusRequest={{ id: 1, caseReference }} />)
     await screen.findByRole('textbox', { name: 'SES Agent への指示' })
-    const access = { type: 'system-access' as const, destination: 'candidate' as const, sourceDocumentId: '11111111-1111-4111-8111-111111111111', view: 'overview' as const }
-    view.rerender(<AgentWorkspace onOpenMatching={onOpenMatching} focusRequest={{ id: 2, caseReference: null }} activeSystemAccess={access} />)
+    const access = {
+      type: 'system-access' as const,
+      destination: 'candidate' as const,
+      sourceDocumentId: '11111111-1111-4111-8111-111111111111',
+      view: 'overview' as const
+    }
+    view.rerender(
+      <AgentWorkspace onOpenMatching={onOpenMatching} focusRequest={{ id: 2, caseReference: null }} activeSystemAccess={access} />
+    )
     fireEvent.change(screen.getByRole('textbox', { name: 'SES Agent への指示' }), { target: { value: '总结这位人员' } })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
     await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
@@ -379,11 +494,16 @@ describe('AgentWorkspace', () => {
     let importedConversation: AiConversationSnapshot | null = null
     const analyzeResumeFile = vi.fn(async (input: { conversationId: string }) => {
       importedConversation = {
-        ...snapshot([{
-          id: 'assistant-import', role: 'assistant', content: '履歴書を取り込みました。', mode: 'local',
-          createdAt: '2026-08-18T00:00:00.000Z',
-          blocks: [{ type: 'resume-import', imported: [{ documentId: token, label: 'RESUME_1', ordinal: 1 }], failedCount: 0 }]
-        }]),
+        ...snapshot([
+          {
+            id: 'assistant-import',
+            role: 'assistant',
+            content: '履歴書を取り込みました。',
+            mode: 'local',
+            createdAt: '2026-08-18T00:00:00.000Z',
+            blocks: [{ type: 'resume-import', imported: [{ documentId: token, label: 'RESUME_1', ordinal: 1 }], failedCount: 0 }]
+          }
+        ]),
         id: input.conversationId
       }
       return { conversation: importedConversation }
@@ -399,9 +519,19 @@ describe('AgentWorkspace', () => {
       updatedAt: '2026-08-18T00:00:01.000Z'
     }))
     const executeAgentTurn = vi.fn().mockResolvedValue({
-      status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
+      status: 'completed',
+      toolName: null,
+      actionRunId: null,
+      assistantMessage: null,
       conversation: snapshot([
-        { id: 'user-1', role: 'user', content: '安排面试', mode: 'cloud', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '安排面试',
+          mode: 'cloud',
+          turnId: '33333333-3333-4333-8333-333333333333',
+          createdAt: '2026-08-18T00:00:00.000Z'
+        }
       ])
     })
     const api = {
@@ -414,10 +544,25 @@ describe('AgentWorkspace', () => {
       stageDroppedResumeFiles: vi.fn().mockResolvedValue({
         cancelled: false,
         task: { id: 'task-1' },
-        files: [{ token, name: 'candidate.pdf', format: 'pdf', size: 10, sha256: 'a'.repeat(64), createdAt: '2026-08-18T00:00:00.000Z', privacyStatus: 'awaiting-local-scan' }]
+        files: [
+          {
+            token,
+            name: 'candidate.pdf',
+            format: 'pdf',
+            size: 10,
+            sha256: 'a'.repeat(64),
+            createdAt: '2026-08-18T00:00:00.000Z',
+            privacyStatus: 'awaiting-local-scan'
+          }
+        ]
       }),
       previewStagedResumeFile: vi.fn().mockResolvedValue({
-        documentId: token, label: 'candidate', confirmed: false, reviewStatus: 'awaiting-review', fields: [], projects: []
+        documentId: token,
+        label: 'candidate',
+        confirmed: false,
+        reviewStatus: 'awaiting-review',
+        fields: [],
+        projects: []
       })
     } as unknown as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
@@ -444,9 +589,19 @@ describe('AgentWorkspace', () => {
   it('keeps an attachment across a read-only turn so it can still be imported afterwards', async () => {
     const token = '77777777-7777-4777-8777-777777777777'
     const executeAgentTurn = vi.fn().mockResolvedValue({
-      status: 'completed', toolName: null, actionRunId: null, assistantMessage: null,
+      status: 'completed',
+      toolName: null,
+      actionRunId: null,
+      assistantMessage: null,
       conversation: snapshot([
-        { id: 'user-1', role: 'user', content: '总结一下这个人', mode: 'cloud', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '总结一下这个人',
+          mode: 'cloud',
+          turnId: '33333333-3333-4333-8333-333333333333',
+          createdAt: '2026-08-18T00:00:00.000Z'
+        }
       ])
     })
     const api = {
@@ -457,10 +612,23 @@ describe('AgentWorkspace', () => {
       stageDroppedResumeFiles: vi.fn().mockResolvedValue({
         cancelled: false,
         task: { id: 'task-1' },
-        files: [{ token, name: 'candidate.pdf', format: 'pdf', size: 10, sha256: 'a'.repeat(64), createdAt: '2026-08-18T00:00:00.000Z', privacyStatus: 'awaiting-local-scan' }]
+        files: [
+          {
+            token,
+            name: 'candidate.pdf',
+            format: 'pdf',
+            size: 10,
+            sha256: 'a'.repeat(64),
+            createdAt: '2026-08-18T00:00:00.000Z',
+            privacyStatus: 'awaiting-local-scan'
+          }
+        ]
       }),
       previewStagedResumeFile: vi.fn().mockResolvedValue({
-        documentId: token, label: 'candidate', confirmed: false, reviewStatus: 'awaiting-review',
+        documentId: token,
+        label: 'candidate',
+        confirmed: false,
+        reviewStatus: 'awaiting-review',
         fields: [{ label: 'スキル', value: 'Java', confidence: 0.9, status: 'needs_review', sources: [] }],
         projects: []
       })
@@ -484,12 +652,27 @@ describe('AgentWorkspace', () => {
 
   it('refreshes the local snapshot after the agent imports a resume, so it appears in the candidate list', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({
-      status: 'completed', toolName: 'resume.analyze.local', actionRunId: null, assistantMessage: null,
+      status: 'completed',
+      toolName: 'resume.analyze.local',
+      actionRunId: null,
+      assistantMessage: null,
       conversation: snapshot([
-        { id: 'user-1', role: 'user', content: '导入这份简历', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '导入这份简历',
+          mode: 'local',
+          turnId: '33333333-3333-4333-8333-333333333333',
+          createdAt: '2026-08-18T00:00:00.000Z'
+        }
       ])
     })
-    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn()
+    } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onLocalDataChanged = vi.fn()
     render(<AgentWorkspace onOpenMatching={vi.fn()} onLocalDataChanged={onLocalDataChanged} />)
@@ -502,13 +685,34 @@ describe('AgentWorkspace', () => {
   })
 
   it('keeps timing and cloud call diagnostics collapsed after an answer', async () => {
-    const conversation = snapshot([{ id: 'answer-timings', role: 'assistant', content: 'Java の案件を確認できます。', mode: 'cloud', createdAt: '2026-09-09T00:00:00Z' }])
+    const conversation = snapshot([
+      { id: 'answer-timings', role: 'assistant', content: 'Java の案件を確認できます。', mode: 'cloud', createdAt: '2026-09-09T00:00:00Z' }
+    ])
     conversation.title = '案件の説明'
-    Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
-      ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), cancelAgentTurn: vi.fn(),
-      executeAgentTurn: vi.fn().mockResolvedValue({ status: 'completed', toolName: null, actionRunId: null, assistantMessage: conversation.messages[0], conversation,
-        timings: { totalMs: 9700, planningMs: 3600, localToolMs: null, cloudReviewMs: null, narrativeFirstTokenMs: 3900, narrativeMs: 6000, cloudCalls: 2 } })
-    } })
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: {
+        ...originalApi,
+        listAiConversations: vi.fn().mockResolvedValue([]),
+        cancelAgentTurn: vi.fn(),
+        executeAgentTurn: vi.fn().mockResolvedValue({
+          status: 'completed',
+          toolName: null,
+          actionRunId: null,
+          assistantMessage: conversation.messages[0],
+          conversation,
+          timings: {
+            totalMs: 9700,
+            planningMs: 3600,
+            localToolMs: null,
+            cloudReviewMs: null,
+            narrativeFirstTokenMs: 3900,
+            narrativeMs: 6000,
+            cloudCalls: 2
+          }
+        })
+      }
+    })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
     fireEvent.change(await screen.findByRole('textbox', { name: 'SES Agent への指示' }), { target: { value: '案件を説明して' } })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
@@ -525,12 +729,27 @@ describe('AgentWorkspace', () => {
 
   it('does not refresh the local snapshot for a read-only turn', async () => {
     const executeAgentTurn = vi.fn().mockResolvedValue({
-      status: 'completed', toolName: 'match-run.read.local', actionRunId: null, assistantMessage: null,
+      status: 'completed',
+      toolName: 'match-run.read.local',
+      actionRunId: null,
+      assistantMessage: null,
       conversation: snapshot([
-        { id: 'user-1', role: 'user', content: '为什么第一名排第一？', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' }
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '为什么第一名排第一？',
+          mode: 'local',
+          turnId: '33333333-3333-4333-8333-333333333333',
+          createdAt: '2026-08-18T00:00:00.000Z'
+        }
       ])
     })
-    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn()
+    } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onLocalDataChanged = vi.fn()
     render(<AgentWorkspace onOpenMatching={vi.fn()} onLocalDataChanged={onLocalDataChanged} />)
@@ -544,22 +763,72 @@ describe('AgentWorkspace', () => {
   })
 
   it('sends a turn through the Main-owned API and renders typed case cards', async () => {
-    const executeAgentTurn = vi.fn().mockResolvedValue({ status: 'completed', toolName: 'job-case.search.local', actionRunId: null, assistantMessage: null, conversation: snapshot([
-      { id: 'user-1', role: 'user', content: '最近有什么案件？', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' },
-      {
-        id: 'assistant-1', role: 'assistant', content: '最近 30 天有 1 个 Active 案件。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:01.000Z',
-        blocks: [{
-          type: 'job-case-cards', query: '', dataAsOf: '2026-08-18T00:00:01.000Z',
-          normalizedFilters: { updatedAfter: '2026-07-19T15:00:00.000Z', updatedBefore: '2026-08-18T15:00:00.000Z', lifecycle: 'active', query: null, limit: 20 },
-          totalMatched: 1,
-          cards: [{
-            reference: { kind: 'job-case', objectId: jobCaseId, objectVersion: 2, resultHash: null, ordinal: 1, label: 'Java 案件', target: `job-case:${jobCaseId}` },
-            title: 'Java 案件', version: 2, updatedAt: '2026-08-18T00:00:00.000Z', requiredSkills: 'Java', rate: null, workStyle: 'remote', startDate: null, status: 'current'
-          }]
-        }]
-      }
-    ]) })
-    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    const executeAgentTurn = vi.fn().mockResolvedValue({
+      status: 'completed',
+      toolName: 'job-case.search.local',
+      actionRunId: null,
+      assistantMessage: null,
+      conversation: snapshot([
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '最近有什么案件？',
+          mode: 'local',
+          turnId: '33333333-3333-4333-8333-333333333333',
+          createdAt: '2026-08-18T00:00:00.000Z'
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '最近 30 天有 1 个 Active 案件。',
+          mode: 'local',
+          turnId: '33333333-3333-4333-8333-333333333333',
+          createdAt: '2026-08-18T00:00:01.000Z',
+          blocks: [
+            {
+              type: 'job-case-cards',
+              query: '',
+              dataAsOf: '2026-08-18T00:00:01.000Z',
+              normalizedFilters: {
+                updatedAfter: '2026-07-19T15:00:00.000Z',
+                updatedBefore: '2026-08-18T15:00:00.000Z',
+                lifecycle: 'active',
+                query: null,
+                limit: 20
+              },
+              totalMatched: 1,
+              cards: [
+                {
+                  reference: {
+                    kind: 'job-case',
+                    objectId: jobCaseId,
+                    objectVersion: 2,
+                    resultHash: null,
+                    ordinal: 1,
+                    label: 'Java 案件',
+                    target: `job-case:${jobCaseId}`
+                  },
+                  title: 'Java 案件',
+                  version: 2,
+                  updatedAt: '2026-08-18T00:00:00.000Z',
+                  requiredSkills: 'Java',
+                  rate: null,
+                  workStyle: 'remote',
+                  startDate: null,
+                  status: 'current'
+                }
+              ]
+            }
+          ]
+        }
+      ])
+    })
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn()
+    } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
 
@@ -576,9 +845,21 @@ describe('AgentWorkspace', () => {
 
   it('renders a deleted-reference tombstone without restoring the old card', async () => {
     const deleted = snapshot([
-      { id: 'assistant-1', role: 'assistant', content: '关联案件已删除，历史引用不再显示。', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z', blocks: [{ type: 'error', code: 'ENTITY_DELETED', entityKind: 'job-case', message: '关联案件已删除，历史引用不再显示。' }] }
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '关联案件已删除，历史引用不再显示。',
+        mode: 'local',
+        createdAt: '2026-08-18T00:00:00.000Z',
+        blocks: [{ type: 'error', code: 'ENTITY_DELETED', entityKind: 'job-case', message: '关联案件已删除，历史引用不再显示。' }]
+      }
     ])
-    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([deleted]), executeAgentTurn: vi.fn(), cancelAgentTurn: vi.fn() } as DesktopApi
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([deleted]),
+      executeAgentTurn: vi.fn(),
+      cancelAgentTurn: vi.fn()
+    } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
 
@@ -588,7 +869,9 @@ describe('AgentWorkspace', () => {
 
   it('can cancel the first turn before the conversation has been persisted', async () => {
     const executeAgentTurn = vi.fn(() => new Promise<never>(() => undefined))
-    const cancelAgentTurn = vi.fn().mockResolvedValue({ status: 'cancelled', conversationId, requestId: '33333333-3333-4333-8333-333333333333' })
+    const cancelAgentTurn = vi
+      .fn()
+      .mockResolvedValue({ status: 'cancelled', conversationId, requestId: '33333333-3333-4333-8333-333333333333' })
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
@@ -607,8 +890,15 @@ describe('AgentWorkspace', () => {
 
   it('keeps the composer reachable at 1100px and distinguishes Enter from Shift+Enter', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1100 })
-    const executeAgentTurn = vi.fn().mockResolvedValue({ status: 'clarifying', toolName: null, actionRunId: null, assistantMessage: null, conversation: snapshot([]) })
-    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    const executeAgentTurn = vi
+      .fn()
+      .mockResolvedValue({ status: 'clarifying', toolName: null, actionRunId: null, assistantMessage: null, conversation: snapshot([]) })
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn()
+    } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
 
@@ -633,7 +923,12 @@ describe('AgentWorkspace', () => {
   it('locks the selected model, renders progressive deltas, and ignores foreign or out-of-order events', async () => {
     let eventListener: Parameters<DesktopApi['onAgentTurnEvent']>[0] | null = null
     let resolveTurn!: (value: ExecuteAgentTurnResult) => void
-    const executeAgentTurn = vi.fn((_input: ExecuteAgentTurnInput) => new Promise<ExecuteAgentTurnResult>((resolve) => { resolveTurn = resolve }))
+    const executeAgentTurn = vi.fn(
+      (_input: ExecuteAgentTurnInput) =>
+        new Promise<ExecuteAgentTurnResult>((resolve) => {
+          resolveTurn = resolve
+        })
+    )
     const onAgentTurnEvent = vi.fn((listener: Parameters<DesktopApi['onAgentTurnEvent']>[0]) => {
       eventListener = listener
       return vi.fn()
@@ -677,10 +972,26 @@ describe('AgentWorkspace', () => {
 
     const finalConversation = snapshot([
       { id: 'user-final', role: 'user', content: '最近の案件は？', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' },
-      { id: 'assistant-final', role: 'assistant', content: '最终回答', mode: 'cloud', modelKey: 'gpt-5.6-terra', modelDisplayName: 'GPT-5.6 Terra', narrativeStatus: 'completed', createdAt: '2026-08-18T00:00:01.000Z' }
+      {
+        id: 'assistant-final',
+        role: 'assistant',
+        content: '最终回答',
+        mode: 'cloud',
+        modelKey: 'gpt-5.6-terra',
+        modelDisplayName: 'GPT-5.6 Terra',
+        narrativeStatus: 'completed',
+        createdAt: '2026-08-18T00:00:01.000Z'
+      }
     ])
     await act(async () => {
-      resolveTurn({ status: 'completed', toolName: 'job-case.search.local', actionRunId: null, requestId: submitted.requestId, assistantMessage: finalConversation.messages[1]!, conversation: finalConversation })
+      resolveTurn({
+        status: 'completed',
+        toolName: 'job-case.search.local',
+        actionRunId: null,
+        requestId: submitted.requestId,
+        assistantMessage: finalConversation.messages[1]!,
+        conversation: finalConversation
+      })
     })
     expect(await screen.findByText('最终回答')).toBeInTheDocument()
     expect(screen.queryByTestId('agent-streaming-message')).not.toBeInTheDocument()
@@ -691,13 +1002,21 @@ describe('AgentWorkspace', () => {
     let eventListener: Parameters<DesktopApi['onAgentTurnEvent']>[0] | null = null
     const executeAgentTurn = vi.fn((_input: ExecuteAgentTurnInput) => new Promise<ExecuteAgentTurnResult>(() => undefined))
     const cancelAgentTurn = vi.fn().mockResolvedValue({
-      status: 'cancelled', conversationId, requestId: 'unused', remoteCancelStatus: 'cancel_requested',
+      status: 'cancelled',
+      conversationId,
+      requestId: 'unused',
+      remoteCancelStatus: 'cancel_requested',
       message: 'AICommerce 已受理取消请求，但不代表 Provider 已停止，也不保证免费或退款。'
     })
     const api = {
       ...originalApi,
-      listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn,
-      onAgentTurnEvent: vi.fn((listener) => { eventListener = listener; return vi.fn() })
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn,
+      onAgentTurnEvent: vi.fn((listener) => {
+        eventListener = listener
+        return vi.fn()
+      })
     } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
@@ -707,8 +1026,10 @@ describe('AgentWorkspace', () => {
     await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
     const submitted = executeAgentTurn.mock.calls[0]![0]
     const common = {
-      conversationId: submitted.conversationId, requestId: submitted.requestId,
-      modelKey: 'gpt-5.6-luna', modelDisplayName: 'GPT-5.6 Luna'
+      conversationId: submitted.conversationId,
+      requestId: submitted.requestId,
+      modelKey: 'gpt-5.6-luna',
+      modelDisplayName: 'GPT-5.6 Luna'
     }
     await act(async () => {
       eventListener?.({ ...common, type: 'delta', text: '已显示', sequence: 1 })
@@ -725,7 +1046,12 @@ describe('AgentWorkspace', () => {
 
   it('does not expose the selected model name in transient planning status text', async () => {
     const executeAgentTurn = vi.fn(() => new Promise<never>(() => undefined))
-    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn()
+    } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
 
@@ -742,13 +1068,21 @@ describe('AgentWorkspace', () => {
   it('preserves the specific planning failure instead of overwriting it with a generic stream error', async () => {
     let eventListener: Parameters<DesktopApi['onAgentTurnEvent']>[0] | null = null
     let resolveTurn!: (value: ExecuteAgentTurnResult) => void
-    const executeAgentTurn = vi.fn((_input: ExecuteAgentTurnInput) => new Promise<ExecuteAgentTurnResult>((resolve) => { resolveTurn = resolve }))
+    const executeAgentTurn = vi.fn(
+      (_input: ExecuteAgentTurnInput) =>
+        new Promise<ExecuteAgentTurnResult>((resolve) => {
+          resolveTurn = resolve
+        })
+    )
     const api = {
       ...originalApi,
       listAiConversations: vi.fn().mockResolvedValue([]),
       executeAgentTurn,
       cancelAgentTurn: vi.fn(),
-      onAgentTurnEvent: vi.fn((listener) => { eventListener = listener; return vi.fn() })
+      onAgentTurnEvent: vi.fn((listener) => {
+        eventListener = listener
+        return vi.fn()
+      })
     } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
@@ -759,17 +1093,34 @@ describe('AgentWorkspace', () => {
     const submitted = executeAgentTurn.mock.calls[0]![0]
     const failedConversation = snapshot([
       { id: 'user-failed', role: 'user', content: '日语呢', mode: 'local', createdAt: '2026-08-18T00:00:00.000Z' },
-      { id: 'assistant-failed', role: 'assistant', content: 'AI 无法形成有效的受控 Tool 计划，请重试。', mode: 'local-fallback', narrativeStatus: 'failed-local-fallback', createdAt: '2026-08-18T00:00:01.000Z' }
+      {
+        id: 'assistant-failed',
+        role: 'assistant',
+        content: 'AI 无法形成有效的受控 Tool 计划，请重试。',
+        mode: 'local-fallback',
+        narrativeStatus: 'failed-local-fallback',
+        createdAt: '2026-08-18T00:00:01.000Z'
+      }
     ])
     await act(async () => {
       eventListener?.({
-        type: 'failed', conversationId: submitted.conversationId, requestId: submitted.requestId, sequence: 1,
-        modelKey: 'gpt-5.6-luna', modelDisplayName: 'GPT-5.6 Luna', code: 'AGENT_PLANNING_FAILED',
-        message: 'AI 无法形成有效的受控 Tool 计划。', localFallbackPreserved: true
+        type: 'failed',
+        conversationId: submitted.conversationId,
+        requestId: submitted.requestId,
+        sequence: 1,
+        modelKey: 'gpt-5.6-luna',
+        modelDisplayName: 'GPT-5.6 Luna',
+        code: 'AGENT_PLANNING_FAILED',
+        message: 'AI 无法形成有效的受控 Tool 计划。',
+        localFallbackPreserved: true
       })
       resolveTurn({
-        status: 'failed', toolName: null, actionRunId: null, requestId: submitted.requestId,
-        assistantMessage: failedConversation.messages[1]!, conversation: failedConversation
+        status: 'failed',
+        toolName: null,
+        actionRunId: null,
+        requestId: submitted.requestId,
+        assistantMessage: failedConversation.messages[1]!,
+        conversation: failedConversation
       })
     })
 
@@ -782,39 +1133,67 @@ describe('AgentWorkspace', () => {
     const candidateProfileId = '88888888-8888-4888-8888-888888888888'
     const matchRunId = '99999999-9999-4999-8999-999999999999'
     const interviewId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-    const conversation = snapshot([{
-      id: 'assistant-evidence', role: 'assistant', content: '已读取本地证据。', mode: 'local',
-      createdAt: '2026-08-18T00:00:00.000Z',
-      blocks: [
-        {
-          type: 'candidate-profile-evidence',
-          facts: {
-            runId: matchRunId, validity: 'current',
-            candidate: { candidateProfileId, sourceDocumentId, rank: 1, anonymousLabel: 'CANDIDATE_1' },
-            profile: {
-              profileVersion: 2, skills: 'Java / AWS', experienceYears: '8年', availability: '即日', rate: '90万円',
-              japaneseLevel: 'N1', workStyle: 'リモート', role: 'バックエンド', location: '東京',
-              workAuthorization: '就労制限なし',
-              projectExperiences: [{ title: '決済基盤', period: '2024-2026', role: 'Tech Lead', technologies: ['Java'], summary: '決済基盤を設計。' }]
+    const conversation = snapshot([
+      {
+        id: 'assistant-evidence',
+        role: 'assistant',
+        content: '已读取本地证据。',
+        mode: 'local',
+        createdAt: '2026-08-18T00:00:00.000Z',
+        blocks: [
+          {
+            type: 'candidate-profile-evidence',
+            facts: {
+              runId: matchRunId,
+              validity: 'current',
+              candidate: { candidateProfileId, sourceDocumentId, rank: 1, anonymousLabel: 'CANDIDATE_1' },
+              profile: {
+                profileVersion: 2,
+                skills: 'Java / AWS',
+                experienceYears: '8年',
+                availability: '即日',
+                rate: '90万円',
+                japaneseLevel: 'N1',
+                workStyle: 'リモート',
+                role: 'バックエンド',
+                location: '東京',
+                workAuthorization: '就労制限なし',
+                projectExperiences: [
+                  { title: '決済基盤', period: '2024-2026', role: 'Tech Lead', technologies: ['Java'], summary: '決済基盤を設計。' }
+                ]
+              }
             }
-          }
-        },
-        {
-          type: 'candidate-interview-evidence',
-          facts: {
-            runId: matchRunId, validity: 'current',
-            candidate: { candidateProfileId, sourceDocumentId, rank: 1, anonymousLabel: 'CANDIDATE_1' },
-            interviews: [{
-              interviewId, kind: 'recruiting', roundNumber: 1, stage: 'scheduled',
-              scheduledAt: '2026-08-21T10:00:00.000Z', durationMinutes: 60, meetingMethod: 'zoom',
-              interviewer: '採用担当', interviewGoal: '技術確認', interviewNotes: null, unresolvedItems: [],
-              decision: null, decisionReason: null, updatedAt: '2026-08-18T00:00:00.000Z'
-            }]
-          }
-        },
-        { type: 'resume-import', imported: [{ documentId: sourceDocumentId, label: 'RESUME_1', ordinal: 1 }], failedCount: 0 }
-      ]
-    }])
+          },
+          {
+            type: 'candidate-interview-evidence',
+            facts: {
+              runId: matchRunId,
+              validity: 'current',
+              candidate: { candidateProfileId, sourceDocumentId, rank: 1, anonymousLabel: 'CANDIDATE_1' },
+              interviews: [
+                {
+                  interviewId,
+                  kind: 'recruiting',
+                  roundNumber: 1,
+                  stage: 'scheduled',
+                  scheduledAt: '2026-08-21T10:00:00.000Z',
+                  durationMinutes: 60,
+                  meetingMethod: 'zoom',
+                  interviewer: '採用担当',
+                  interviewGoal: '技術確認',
+                  interviewNotes: null,
+                  unresolvedItems: [],
+                  decision: null,
+                  decisionReason: null,
+                  updatedAt: '2026-08-18T00:00:00.000Z'
+                }
+              ]
+            }
+          },
+          { type: 'resume-import', imported: [{ documentId: sourceDocumentId, label: 'RESUME_1', ordinal: 1 }], failedCount: 0 }
+        ]
+      }
+    ])
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]) } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onOpenCandidate = vi.fn()
@@ -826,7 +1205,7 @@ describe('AgentWorkspace', () => {
     expect(screen.getByText(/採用面談/u)).toBeInTheDocument()
     expect(screen.getAllByText('RESUME_1').length).toBeGreaterThan(0)
 
-    fireEvent.click(screen.getByRole('button', { name: '候補者プロフィールを開く' }))
+    fireEvent.click(screen.getByRole('button', { name: '要員プロフィールを開く' }))
     expect(onOpenCandidate).toHaveBeenCalledWith(sourceDocumentId, 'overview')
     fireEvent.click(screen.getByRole('button', { name: 'この面談を開く' }))
     expect(onOpenCandidate).toHaveBeenCalledWith(sourceDocumentId, 'prepare', interviewId, 'recruiting')
@@ -836,22 +1215,47 @@ describe('AgentWorkspace', () => {
 
   it('opens imported resume facts directly without adding review warnings or review actions', async () => {
     const documentId = '77777777-7777-4777-8777-777777777777'
-    const conversation = snapshot([{
-      id: 'assistant-imported-facts', role: 'assistant', content: '履歴書を取り込みました。', mode: 'local',
-      createdAt: '2026-08-18T00:00:00.000Z',
-      blocks: [
-        { type: 'system-access', destination: 'review-center' },
-        { type: 'resume-import', imported: [{ documentId, label: 'RESUME_1', ordinal: 1 }], failedCount: 1 },
-        { type: 'candidate-draft-facts', facts: {
-          documentId, label: 'RESUME_1', confirmed: false, reviewStatus: 'awaiting-review',
-          fields: [{ label: 'Skills', value: 'Java / SQL', confidence: 0.8, status: 'needs_review', sources: ['Sheet1'] }],
-          projects: [{ title: 'Payment system', period: '2024–2026', role: 'SE', technologies: ['Java'], summary: 'Backend development', confidence: 0.8, sources: ['Sheet1'] }]
-        } }
-      ]
-    }])
-    Object.defineProperty(window, 'sesAgent', { configurable: true, value: {
-      ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation])
-    } })
+    const conversation = snapshot([
+      {
+        id: 'assistant-imported-facts',
+        role: 'assistant',
+        content: '履歴書を取り込みました。',
+        mode: 'local',
+        createdAt: '2026-08-18T00:00:00.000Z',
+        blocks: [
+          { type: 'system-access', destination: 'review-center' },
+          { type: 'resume-import', imported: [{ documentId, label: 'RESUME_1', ordinal: 1 }], failedCount: 1 },
+          {
+            type: 'candidate-draft-facts',
+            facts: {
+              documentId,
+              label: 'RESUME_1',
+              confirmed: false,
+              reviewStatus: 'awaiting-review',
+              fields: [{ label: 'Skills', value: 'Java / SQL', confidence: 0.8, status: 'needs_review', sources: ['Sheet1'] }],
+              projects: [
+                {
+                  title: 'Payment system',
+                  period: '2024–2026',
+                  role: 'SE',
+                  technologies: ['Java'],
+                  summary: 'Backend development',
+                  confidence: 0.8,
+                  sources: ['Sheet1']
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ])
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: {
+        ...originalApi,
+        listAiConversations: vi.fn().mockResolvedValue([conversation])
+      }
+    })
     const onOpenCandidate = vi.fn()
     render(<AgentWorkspace onOpenMatching={vi.fn()} onOpenCandidate={onOpenCandidate} />)
     expect(await screen.findByText('Java / SQL')).toBeVisible()
@@ -869,51 +1273,123 @@ describe('AgentWorkspace', () => {
     const reviewId = '55555555-5555-4555-8555-555555555555'
     const intakeBatchId = '66666666-6666-4666-8666-666666666666'
     const conversation = snapshot([
-      { id: 'user-1', role: 'user', content: '【已提交案件文本】内容摘要 abcdef12，原文未写入会话。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:00.000Z' },
       {
-        id: 'assistant-1', role: 'assistant', content: '已导入 1 条案件草稿。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-18T00:00:01.000Z',
-        blocks: [{
-          type: 'job-case-draft-cards', intakeBatchId,
-          cards: [{
-            reviewId, label: 'DRAFT_1', ordinal: 1, outcome: 'created', title: 'VC++ 開発', reviewStatus: 'awaiting-review', lifecycle: 'active',
-            jobCase: null, status: 'current', warningCodes: [],
-            fields: [
-              { key: 'title', label: '案件名', value: 'VC++ 開発', status: 'needs_review' },
-              { key: 'rate', label: '単価', value: null, status: 'missing' }
+        id: 'user-1',
+        role: 'user',
+        content: '【已提交案件文本】内容摘要 abcdef12，原文未写入会话。',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-18T00:00:00.000Z'
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '已导入 1 条案件草稿。',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-18T00:00:01.000Z',
+        blocks: [
+          {
+            type: 'job-case-draft-cards',
+            intakeBatchId,
+            cards: [
+              {
+                reviewId,
+                label: 'DRAFT_1',
+                ordinal: 1,
+                outcome: 'created',
+                title: 'VC++ 開発',
+                reviewStatus: 'awaiting-review',
+                lifecycle: 'active',
+                jobCase: null,
+                status: 'current',
+                warningCodes: [],
+                fields: [
+                  { key: 'title', label: '案件名', value: 'VC++ 開発', status: 'needs_review' },
+                  { key: 'rate', label: '単価', value: null, status: 'missing' }
+                ]
+              }
             ]
-          }]
-        }]
+          }
+        ]
       }
     ])
     let finish!: (value: unknown) => void
-    const executeAgentTurn = vi.fn().mockImplementation(() => new Promise((resolve) => { finish = resolve }))
-    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]), executeAgentTurn, cancelAgentTurn: vi.fn() } as DesktopApi
+    const executeAgentTurn = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    const api = {
+      ...originalApi,
+      listAiConversations: vi.fn().mockResolvedValue([conversation]),
+      executeAgentTurn,
+      cancelAgentTurn: vi.fn()
+    } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onOpenSystemAccess = vi.fn()
     // The review was confirmed in the Review Center after the paste: the live
     // snapshot, not the persisted card, decides what the card offers.
     const confirmedReview: JobCaseReviewSnapshot = {
-      reviewId, sourceId: '77777777-7777-4777-8777-777777777777', sourceType: 'chat-paste', providerMessageId: null, threadId: 'thread-1',
-      fromDomain: null, messageDate: '2026-08-18T00:00:00.000Z', redactedSubject: 'VC++', redactedPreview: 'VC++', reviewRevision: 2,
-      status: 'completed', privacyReviewed: true,
-      fields: [{ key: 'title', label: '案件名', originalValue: 'VC++ 開発', value: 'VC++ 開発', confidence: 1, status: 'confirmed', sourceLabels: [], changed: false, changeReason: null }],
-      warningCodes: [], completedAt: '2026-08-18T01:00:00.000Z', reviewerDisplayName: 'SES',
-      jobCase: { id: jobCaseId, sourceReviewId: reviewId, version: 3, status: 'active', confirmedAt: '2026-08-18T01:00:00.000Z', confirmedBy: 'SES', containsDirectIdentifiers: false },
-      lifecycle: 'active', cloudEligible: false
+      reviewId,
+      sourceId: '77777777-7777-4777-8777-777777777777',
+      sourceType: 'chat-paste',
+      providerMessageId: null,
+      threadId: 'thread-1',
+      fromDomain: null,
+      messageDate: '2026-08-18T00:00:00.000Z',
+      redactedSubject: 'VC++',
+      redactedPreview: 'VC++',
+      reviewRevision: 2,
+      status: 'completed',
+      privacyReviewed: true,
+      fields: [
+        {
+          key: 'title',
+          label: '案件名',
+          originalValue: 'VC++ 開発',
+          value: 'VC++ 開発',
+          confidence: 1,
+          status: 'confirmed',
+          sourceLabels: [],
+          changed: false,
+          changeReason: null
+        }
+      ],
+      warningCodes: [],
+      completedAt: '2026-08-18T01:00:00.000Z',
+      reviewerDisplayName: 'SES',
+      jobCase: {
+        id: jobCaseId,
+        sourceReviewId: reviewId,
+        version: 3,
+        status: 'active',
+        confirmedAt: '2026-08-18T01:00:00.000Z',
+        confirmedBy: 'SES',
+        containsDirectIdentifiers: false
+      },
+      lifecycle: 'active',
+      cloudEligible: false
     }
     render(<AgentWorkspace jobCaseReviews={[confirmedReview]} onOpenMatching={vi.fn()} onOpenSystemAccess={onOpenSystemAccess} />)
 
     expect(await screen.findByText('VC++ 開発')).toBeInTheDocument()
     expect(screen.getByText('有効')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'レビューセンターで一括処理' }))
-    expect(onOpenSystemAccess).toHaveBeenCalledWith({ type: 'system-access', destination: 'review-center', intakeBatchId, reviewIds: [reviewId] })
-    fireEvent.click(screen.getByRole('button', { name: '候補者を探す' }))
-    const matchButton = screen.getByRole('button', { name: '候補者を探す' })
+    expect(onOpenSystemAccess).toHaveBeenCalledWith({
+      type: 'system-access',
+      destination: 'review-center',
+      intakeBatchId,
+      reviewIds: [reviewId]
+    })
+    fireEvent.click(screen.getByRole('button', { name: '要員を探す' }))
+    const matchButton = screen.getByRole('button', { name: '要員を探す' })
     expect(matchButton).toBeDisabled()
     fireEvent.click(matchButton)
     await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
     expect(executeAgentTurn.mock.calls[0]?.[0]).toMatchObject({
-      message: '現在の案件に合う候補者を探して',
+      message: '現在の案件に合う要員を探して',
       selectedJobCaseRef: { kind: 'job-case', objectId: jobCaseId, objectVersion: 3, ordinal: 1 }
     })
     finish({ status: 'completed', toolName: 'candidate.match.local', actionRunId: null, assistantMessage: null, conversation })
@@ -922,54 +1398,125 @@ describe('AgentWorkspace', () => {
 
   it('shows an unexcluded-but-unmatched candidate as not assessable instead of ranked #1', async () => {
     const conversation = snapshot([
-      { id: 'user-1', role: 'user', content: '给当前案件匹配候选人', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:00.000Z' },
       {
-        id: 'assistant-1', role: 'assistant', content: '匹配结果。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:01.000Z',
-        blocks: [{
-          type: 'candidate-match-cards', runId: '88888888-8888-4888-8888-888888888888', resultHash: 'a'.repeat(64),
-          cards: [{
-            reference: { kind: 'match-result', objectId: '99999999-9999-4999-8999-999999999999', objectVersion: null, resultHash: 'a'.repeat(64), ordinal: 1, label: 'CANDIDATE_1', target: 'match-result:99999999-9999-4999-8999-999999999999' },
-            candidateProfileId: '77777777-7777-4777-8777-777777777777', runId: '88888888-8888-4888-8888-888888888888', rank: 1,
-            anonymousLabel: '候補者 DA67E874', fitScore: 0, matched: [], missing: ['勤務地:常駐'], hardFilterStatus: 'unknown',
-            projectEvidence: null, status: 'current'
-          }]
-        }]
+        id: 'user-1',
+        role: 'user',
+        content: '给当前案件匹配候选人',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:00.000Z'
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '匹配结果。',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:01.000Z',
+        blocks: [
+          {
+            type: 'candidate-match-cards',
+            runId: '88888888-8888-4888-8888-888888888888',
+            resultHash: 'a'.repeat(64),
+            cards: [
+              {
+                reference: {
+                  kind: 'match-result',
+                  objectId: '99999999-9999-4999-8999-999999999999',
+                  objectVersion: null,
+                  resultHash: 'a'.repeat(64),
+                  ordinal: 1,
+                  label: 'CANDIDATE_1',
+                  target: 'match-result:99999999-9999-4999-8999-999999999999'
+                },
+                candidateProfileId: '77777777-7777-4777-8777-777777777777',
+                runId: '88888888-8888-4888-8888-888888888888',
+                rank: 1,
+                anonymousLabel: '候補者 DA67E874',
+                fitScore: 0,
+                matched: [],
+                missing: ['勤務地:常駐'],
+                hardFilterStatus: 'unknown',
+                projectEvidence: null,
+                status: 'current'
+              }
+            ]
+          }
+        ]
       }
     ])
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]) } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     render(<AgentWorkspace onOpenMatching={vi.fn()} />)
 
-    expect(await screen.findByText('現在の案件に確認できる候補者はいません。')).toBeInTheDocument()
+    expect(await screen.findByText('現在の案件に確認できる要員はいません。')).toBeInTheDocument()
     // The reasons wait behind a toggle; a non-candidate is not shown up front.
     expect(screen.queryByText('候補者 DA67E874')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'なぜ結果がないかを見る' }))
     expect(screen.getByText('候補者 DA67E874')).toBeInTheDocument()
     expect(screen.getByText('判定根拠なし・評価不能')).toBeInTheDocument()
-    expect(screen.getByText('不明（候補者に未登録：勤務地:常駐）')).toBeInTheDocument()
+    expect(screen.getByText('不明（要員に未登録：勤務地:常駐）')).toBeInTheDocument()
     expect(screen.queryByText('#1')).not.toBeInTheDocument()
     expect(screen.queryByText('Fit 0')).not.toBeInTheDocument()
   })
 
   it('shows the cloud review next to the local fit without turning it into a score', async () => {
     const conversation = snapshot([
-      { id: 'user-1', role: 'user', content: '给当前案件匹配候选人', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:00.000Z' },
       {
-        id: 'assistant-1', role: 'assistant', content: '匹配结果。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:01.000Z',
-        blocks: [{
-          type: 'candidate-match-cards', runId: '88888888-8888-4888-8888-888888888888', resultHash: 'a'.repeat(64),
-          cards: [{
-            reference: { kind: 'match-result', objectId: '99999999-9999-4999-8999-999999999999', objectVersion: null, resultHash: 'a'.repeat(64), ordinal: 1, label: 'CANDIDATE_1', target: 'match-result:99999999-9999-4999-8999-999999999999' },
-            candidateProfileId: '77777777-7777-4777-8777-777777777777', runId: '88888888-8888-4888-8888-888888888888', rank: 1,
-            anonymousLabel: '候補者 DA67E874', fitScore: 72, matched: ['Java'], missing: [], hardFilterStatus: 'passed',
-            projectEvidence: null, status: 'current',
-            assessment: {
-              version: 'match-assessment-v1', fit: 'possible',
-              met: [{ requirement: 'Java', evidence: 'Java 5年' }], gaps: ['AWS'], confirm: ['日本語レベル'],
-              reason: '主要スキルは一致。', modelKey: 'gpt-5', assessedAt: '2026-08-26T00:00:02.000Z'
-            }
-          }]
-        }]
+        id: 'user-1',
+        role: 'user',
+        content: '给当前案件匹配候选人',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:00.000Z'
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '匹配结果。',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:01.000Z',
+        blocks: [
+          {
+            type: 'candidate-match-cards',
+            runId: '88888888-8888-4888-8888-888888888888',
+            resultHash: 'a'.repeat(64),
+            cards: [
+              {
+                reference: {
+                  kind: 'match-result',
+                  objectId: '99999999-9999-4999-8999-999999999999',
+                  objectVersion: null,
+                  resultHash: 'a'.repeat(64),
+                  ordinal: 1,
+                  label: 'CANDIDATE_1',
+                  target: 'match-result:99999999-9999-4999-8999-999999999999'
+                },
+                candidateProfileId: '77777777-7777-4777-8777-777777777777',
+                runId: '88888888-8888-4888-8888-888888888888',
+                rank: 1,
+                anonymousLabel: '候補者 DA67E874',
+                fitScore: 72,
+                matched: ['Java'],
+                missing: [],
+                hardFilterStatus: 'passed',
+                projectEvidence: null,
+                status: 'current',
+                assessment: {
+                  version: 'match-assessment-v1',
+                  fit: 'possible',
+                  met: [{ requirement: 'Java', evidence: 'Java 5年' }],
+                  gaps: ['AWS'],
+                  confirm: ['日本語レベル'],
+                  reason: '主要スキルは一致。',
+                  modelKey: 'gpt-5',
+                  assessedAt: '2026-08-26T00:00:02.000Z'
+                }
+              }
+            ]
+          }
+        ]
       }
     ])
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]) } as DesktopApi
@@ -989,19 +1536,52 @@ describe('AgentWorkspace', () => {
 
   it('says why the cloud review did not run and that the case set no hard condition', async () => {
     const conversation = snapshot([
-      { id: 'user-1', role: 'user', content: '给当前案件匹配候选人', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:00.000Z' },
       {
-        id: 'assistant-1', role: 'assistant', content: '匹配结果。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:01.000Z',
-        blocks: [{
-          type: 'candidate-match-cards', runId: '88888888-8888-4888-8888-888888888888', resultHash: 'a'.repeat(64),
-          cloudReview: { status: 'skipped', code: 'cloud-error', reason: 'Error: マッチ評価の応答が有効な JSON ではありません。' },
-          cards: [{
-            reference: { kind: 'match-result', objectId: '99999999-9999-4999-8999-999999999999', objectVersion: null, resultHash: 'a'.repeat(64), ordinal: 1, label: 'CANDIDATE_1', target: 'match-result:99999999-9999-4999-8999-999999999999' },
-            candidateProfileId: '77777777-7777-4777-8777-777777777777', runId: '88888888-8888-4888-8888-888888888888', rank: 1,
-            anonymousLabel: '候補者 DA67E874', fitScore: 24, matched: ['Java'], missing: [], hardFilterStatus: 'none',
-            projectEvidence: null, status: 'current'
-          }]
-        }]
+        id: 'user-1',
+        role: 'user',
+        content: '给当前案件匹配候选人',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:00.000Z'
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '匹配结果。',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:01.000Z',
+        blocks: [
+          {
+            type: 'candidate-match-cards',
+            runId: '88888888-8888-4888-8888-888888888888',
+            resultHash: 'a'.repeat(64),
+            cloudReview: { status: 'skipped', code: 'cloud-error', reason: 'Error: マッチ評価の応答が有効な JSON ではありません。' },
+            cards: [
+              {
+                reference: {
+                  kind: 'match-result',
+                  objectId: '99999999-9999-4999-8999-999999999999',
+                  objectVersion: null,
+                  resultHash: 'a'.repeat(64),
+                  ordinal: 1,
+                  label: 'CANDIDATE_1',
+                  target: 'match-result:99999999-9999-4999-8999-999999999999'
+                },
+                candidateProfileId: '77777777-7777-4777-8777-777777777777',
+                runId: '88888888-8888-4888-8888-888888888888',
+                rank: 1,
+                anonymousLabel: '候補者 DA67E874',
+                fitScore: 24,
+                matched: ['Java'],
+                missing: [],
+                hardFilterStatus: 'none',
+                projectEvidence: null,
+                status: 'current'
+              }
+            ]
+          }
+        ]
       }
     ])
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]) } as DesktopApi
@@ -1018,27 +1598,68 @@ describe('AgentWorkspace', () => {
   it('deletes an intake draft from its card only through the impact preview and typed confirmation', async () => {
     const reviewId = '55555555-5555-4555-8555-555555555555'
     const conversation = snapshot([
-      { id: 'user-1', role: 'user', content: '【已提交案件文本】内容摘要 abcdef12，原文未写入会话。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:00.000Z' },
       {
-        id: 'assistant-1', role: 'assistant', content: '已导入 1 条案件草稿。', mode: 'local', turnId: '33333333-3333-4333-8333-333333333333', createdAt: '2026-08-26T00:00:01.000Z',
-        blocks: [{
-          type: 'job-case-draft-cards', intakeBatchId: '66666666-6666-4666-8666-666666666666',
-          cards: [{
-            reviewId, label: 'DRAFT_1', ordinal: 1, outcome: 'created', title: 'Spark', reviewStatus: 'awaiting-review', lifecycle: 'active',
-            jobCase: null, status: 'current', warningCodes: [],
-            fields: [{ key: 'title', label: '案件名', value: 'Spark', status: 'needs_review' }]
-          }]
-        }]
+        id: 'user-1',
+        role: 'user',
+        content: '【已提交案件文本】内容摘要 abcdef12，原文未写入会话。',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:00.000Z'
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '已导入 1 条案件草稿。',
+        mode: 'local',
+        turnId: '33333333-3333-4333-8333-333333333333',
+        createdAt: '2026-08-26T00:00:01.000Z',
+        blocks: [
+          {
+            type: 'job-case-draft-cards',
+            intakeBatchId: '66666666-6666-4666-8666-666666666666',
+            cards: [
+              {
+                reviewId,
+                label: 'DRAFT_1',
+                ordinal: 1,
+                outcome: 'created',
+                title: 'Spark',
+                reviewStatus: 'awaiting-review',
+                lifecycle: 'active',
+                jobCase: null,
+                status: 'current',
+                warningCodes: [],
+                fields: [{ key: 'title', label: '案件名', value: 'Spark', status: 'needs_review' }]
+              }
+            ]
+          }
+        ]
       }
     ])
     const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]) } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const onPreviewJobCaseDeletion = vi.fn().mockResolvedValue({
-      reviewId, sourceId: 'source', title: 'Spark', sourceType: 'chat-paste', confirmationHash: 'c'.repeat(64),
-      counts: { caseVersions: 0, reviewAudits: 0, taskRecords: 0, proposalDrafts: 0, evaluationDraftCases: 0, piiMappings: 2, sourceRecords: 1, gmailMessages: 0, agentReferences: { conversations: 1, messages: 1 } }
+      reviewId,
+      sourceId: 'source',
+      title: 'Spark',
+      sourceType: 'chat-paste',
+      confirmationHash: 'c'.repeat(64),
+      counts: {
+        caseVersions: 0,
+        reviewAudits: 0,
+        taskRecords: 0,
+        proposalDrafts: 0,
+        evaluationDraftCases: 0,
+        piiMappings: 2,
+        sourceRecords: 1,
+        gmailMessages: 0,
+        agentReferences: { conversations: 1, messages: 1 }
+      }
     })
     const onDeleteJobCase = vi.fn().mockResolvedValue({ report: {} })
-    render(<AgentWorkspace onDeleteJobCase={onDeleteJobCase} onOpenMatching={vi.fn()} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} />)
+    render(
+      <AgentWorkspace onDeleteJobCase={onDeleteJobCase} onOpenMatching={vi.fn()} onPreviewJobCaseDeletion={onPreviewJobCaseDeletion} />
+    )
 
     expect(await screen.findByText('Spark')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '削除' }))
@@ -1049,27 +1670,44 @@ describe('AgentWorkspace', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '案件削除確認入力' }), { target: { value: '削除' } })
     expect(confirmButton).toBeEnabled()
     fireEvent.click(confirmButton)
-    await waitFor(() => expect(onDeleteJobCase).toHaveBeenCalledWith({ reviewId, confirmationHash: 'c'.repeat(64), confirmationText: '削除' }))
+    await waitFor(() =>
+      expect(onDeleteJobCase).toHaveBeenCalledWith({ reviewId, confirmationHash: 'c'.repeat(64), confirmationText: '削除' })
+    )
   })
   it('offers a drafted group message per language and records what the operator does with it', async () => {
     const reviewId = '55555555-5555-4555-8555-555555555555'
     const templateId = '88888888-8888-4888-8888-888888888888'
     const card = (ordinal: number, overrides: Record<string, unknown> = {}) => ({
-      reviewId, jobCaseId, jobCaseVersion: 2, ordinal, title: `Java 案件 ${ordinal}`, status: 'new' as const,
-      templateId, templateRevision: 1,
-      textJa: '【案件】Java 案件\n必須：Java', textZh: '【案件】Java 案件\n必须：Java',
-      forbiddenJa: [], forbiddenZh: [], ...overrides
+      reviewId,
+      jobCaseId,
+      jobCaseVersion: 2,
+      ordinal,
+      title: `Java 案件 ${ordinal}`,
+      status: 'new' as const,
+      templateId,
+      templateRevision: 1,
+      textJa: '【案件】Java 案件\n必須：Java',
+      textZh: '【案件】Java 案件\n必须：Java',
+      forbiddenJa: [],
+      forbiddenZh: [],
+      ...overrides
     })
     const conversation = snapshot([
       { id: 'user-1', role: 'user', content: '把今天的新案件整理成群消息', mode: 'local', createdAt: '2026-08-25T00:00:00.000Z' },
       {
-        id: 'assistant-1', role: 'assistant', content: '群メッセージを2件作成しました。', mode: 'local', createdAt: '2026-08-25T00:00:01.000Z',
-        blocks: [{
-          type: 'job-case-broadcast-cards',
-          queue: { new: 2, copied: 4, attention: 0 },
-          // The second card still carries an identifier, so it cannot be copied.
-          cards: [card(1), card(2, { forbiddenZh: ['email'], forbiddenJa: ['email'] })]
-        }]
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '群メッセージを2件作成しました。',
+        mode: 'local',
+        createdAt: '2026-08-25T00:00:01.000Z',
+        blocks: [
+          {
+            type: 'job-case-broadcast-cards',
+            queue: { new: 2, copied: 4, attention: 0 },
+            // The second card still carries an identifier, so it cannot be copied.
+            cards: [card(1), card(2, { forbiddenZh: ['email'], forbiddenJa: ['email'] })]
+          }
+        ]
       }
     ])
     const recordCaseBroadcastCopy = vi.fn().mockResolvedValue({ copy: { id: 'copy-1' } })
@@ -1097,14 +1735,24 @@ describe('AgentWorkspace', () => {
       fireEvent.click(within(first).getByRole('button', { name: 'コピーする' }))
       await waitFor(() => expect(writeText).toHaveBeenCalledWith('【案件】Java 案件\n必須：Java'))
       expect(recordCaseBroadcastCopy).toHaveBeenCalledWith({
-        reviewId, lang: 'ja', kind: 'new', templateId, text: '【案件】Java 案件\n必須：Java'
+        reviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId,
+        text: '【案件】Java 案件\n必須：Java'
       })
       expect(await within(first).findByRole('status')).toHaveTextContent('コピーしました。微信に貼り付けてください。')
 
       fireEvent.click(within(first).getByRole('button', { name: 'メールを開く' }))
-      await waitFor(() => expect(openCaseBroadcastEmail).toHaveBeenCalledWith({
-        reviewId, lang: 'ja', kind: 'new', templateId, text: '【案件】Java 案件\n必須：Java'
-      }))
+      await waitFor(() =>
+        expect(openCaseBroadcastEmail).toHaveBeenCalledWith({
+          reviewId,
+          lang: 'ja',
+          kind: 'new',
+          templateId,
+          text: '【案件】Java 案件\n必須：Java'
+        })
+      )
       expect(await within(first).findByRole('status')).toHaveTextContent('宛先と本文を確認して送信してください。')
 
       // Switching the tab switches which version is copied and recorded.
@@ -1112,7 +1760,9 @@ describe('AgentWorkspace', () => {
       fireEvent.click(within(first).getByRole('button', { name: '中文' }))
       expect(within(first).getByRole('textbox', { name: '群メッセージ本文' })).toHaveValue('【案件】Java 案件\n必须：Java')
       fireEvent.click(within(first).getByRole('button', { name: 'コピーする' }))
-      await waitFor(() => expect(recordCaseBroadcastCopy).toHaveBeenCalledWith(expect.objectContaining({ lang: 'zh', text: '【案件】Java 案件\n必须：Java' })))
+      await waitFor(() =>
+        expect(recordCaseBroadcastCopy).toHaveBeenCalledWith(expect.objectContaining({ lang: 'zh', text: '【案件】Java 案件\n必须：Java' }))
+      )
 
       // Nothing on the card can claim a message reached anyone.
       expect(within(first).queryByRole('button', { name: '已発' })).toBeNull()
@@ -1129,5 +1779,39 @@ describe('AgentWorkspace', () => {
       if (previousClipboard) Object.defineProperty(navigator, 'clipboard', previousClipboard)
       else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
     }
+  })
+
+  it('sends the case a conversation was opened on as "this case" even after the selection was cleared', async () => {
+    const executeAgentTurn = vi.fn().mockResolvedValue({ status: 'completed', toolName: null, conversation: snapshot([]) })
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([]), executeAgentTurn } as unknown as DesktopApi
+    })
+    const scopedReviewId = '99999999-9999-4999-8999-999999999901'
+    const scoped = {
+      reviewId: scopedReviewId,
+      status: 'completed',
+      lifecycle: 'active',
+      redactedSubject: 'Java追加機能開発',
+      fields: [{ key: 'title', value: 'Java追加機能開発' }],
+      jobCase: { id: jobCaseId, sourceReviewId: scopedReviewId, version: 4, status: 'active' }
+    } as unknown as JobCaseReviewSnapshot
+    render(
+      <AgentWorkspace
+        onOpenMatching={vi.fn()}
+        jobCaseReviews={[scoped]}
+        businessObject={{ kind: 'case', id: scopedReviewId }}
+        focusRequest={{ id: 1, caseReference: null }}
+      />
+    )
+    fireEvent.change(await screen.findByRole('textbox', { name: 'SES Agent への指示' }), {
+      target: { value: '目前这个案件有哪些匹配的人员' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    await waitFor(() => expect(executeAgentTurn).toHaveBeenCalledTimes(1))
+    expect(executeAgentTurn.mock.calls[0]?.[0]).toMatchObject({
+      businessObject: { kind: 'case', id: scopedReviewId },
+      selectedJobCaseRef: { kind: 'job-case', objectId: jobCaseId, objectVersion: 4 }
+    })
   })
 })

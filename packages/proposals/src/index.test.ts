@@ -42,15 +42,17 @@ const candidate: CandidateProfile = {
     { key: 'location', label: '希望勤務地', value: '東京都内', sourceLabels: ['Page 1'] },
     { key: 'work_authorization', label: '就労資格', value: '就労制限なし', sourceLabels: ['Page 1'] }
   ],
-  projectExperiences: [{
-    id: '9a8d556d-5052-4b7d-b3db-947b65f2e7c2',
-    title: '決済基盤クラウド刷新',
-    period: '2024/01–2025/06',
-    role: 'バックエンドリード',
-    technologies: ['Java', 'AWS'],
-    summary: '決済APIの再設計とクラウド移行を担当。',
-    sourceLabels: ['Page 2']
-  }],
+  projectExperiences: [
+    {
+      id: '9a8d556d-5052-4b7d-b3db-947b65f2e7c2',
+      title: '決済基盤クラウド刷新',
+      period: '2024/01–2025/06',
+      role: 'バックエンドリード',
+      technologies: ['Java', 'AWS'],
+      summary: '決済APIの再設計とクラウド移行を担当。',
+      sourceLabels: ['Page 2']
+    }
+  ],
   confirmedAt: '2026-07-17T00:00:00.000Z',
   confirmedBy: 'HR',
   containsDirectIdentifiers: false
@@ -71,7 +73,20 @@ const jobCase: ConfirmedJobCaseV2 = {
     { key: 'role', label: '募集ロール', value: 'バックエンド', sourceLabels: ['Manual Body'] },
     { key: 'required_skills', label: '必須スキル', value: 'Java / AWS', sourceLabels: ['Manual Body'] },
     { key: 'rate', label: '単価', value: '90万円/月', sourceLabels: ['Manual Body'] },
-    ...(['settlement', 'location', 'remote', 'start_date', 'working_hours', 'japanese_level', 'interview', 'contract_chain', 'payment_terms', 'work_authorization'] as const).map((key) => ({ key, label: key, value: null, sourceLabels: [] }))
+    ...(
+      [
+        'settlement',
+        'location',
+        'remote',
+        'start_date',
+        'working_hours',
+        'japanese_level',
+        'interview',
+        'contract_chain',
+        'payment_terms',
+        'work_authorization'
+      ] as const
+    ).map((key) => ({ key, label: key, value: null, sourceLabels: [] }))
   ],
   confirmedAt: '2026-07-17T00:00:00.000Z',
   confirmedBy: 'Sales',
@@ -80,15 +95,21 @@ const jobCase: ConfirmedJobCaseV2 = {
 
 describe('local proposal drafting', () => {
   it('generates an anonymous PDF attachment and keeps outbound identity local-only', () => {
-    const draft = createLocalProposalDraft({
-      taskId: 'proposal-task-001',
-      jobCaseId: jobCase.id,
-      candidateProfileId: candidate.id,
-      recipientTo: 'bp@example.co.jp',
-      recipientCc: [],
-      candidateDisplayName: '候補者A',
-      tone: 'standard'
-    }, jobCase, candidate, 'a86b564b-34ad-4632-927e-47db14c56aaf', new Date('2026-07-17T00:00:00.000Z'))
+    const draft = createLocalProposalDraft(
+      {
+        taskId: 'proposal-task-001',
+        jobCaseId: jobCase.id,
+        candidateProfileId: candidate.id,
+        recipientTo: 'bp@example.co.jp',
+        recipientCc: [],
+        candidateDisplayName: '候補者A',
+        tone: 'standard'
+      },
+      jobCase,
+      candidate,
+      'a86b564b-34ad-4632-927e-47db14c56aaf',
+      new Date('2026-07-17T00:00:00.000Z')
+    )
 
     expect(draft.body).toContain('候補者A')
     expect(draft.attachment.anonymousCandidateLabel).toBe('候補者 8055BE48')
@@ -101,10 +122,20 @@ describe('local proposal drafting', () => {
   })
 
   it('invalidates approval whenever recipient or content changes', () => {
-    const draft = createLocalProposalDraft({
-      taskId: 'proposal-task-001', jobCaseId: jobCase.id, candidateProfileId: candidate.id,
-      recipientTo: 'bp@example.co.jp', recipientCc: [], candidateDisplayName: '候補者A', tone: 'formal'
-    }, jobCase, candidate, 'a86b564b-34ad-4632-927e-47db14c56aaf')
+    const draft = createLocalProposalDraft(
+      {
+        taskId: 'proposal-task-001',
+        jobCaseId: jobCase.id,
+        candidateProfileId: candidate.id,
+        recipientTo: 'bp@example.co.jp',
+        recipientCc: [],
+        candidateDisplayName: '候補者A',
+        tone: 'formal'
+      },
+      jobCase,
+      candidate,
+      'a86b564b-34ad-4632-927e-47db14c56aaf'
+    )
     const approved = approveLocalProposalDraft(draft, draft.contentHash, '営業担当')
     const updated = updateLocalProposalDraft(approved, {
       draftId: approved.id,
@@ -123,64 +154,150 @@ describe('local proposal drafting', () => {
   })
 
   it('blocks direct identifiers inside confirmed project experience before export', () => {
-    expect(() => createLocalProposalDraft({
-      taskId: 'proposal-task-001', jobCaseId: jobCase.id, candidateProfileId: candidate.id,
-      recipientTo: 'bp@example.co.jp', recipientCc: [], candidateDisplayName: '候補者A', tone: 'standard'
-    }, jobCase, {
-      ...candidate,
-      projectExperiences: candidate.projectExperiences.map((project) => ({
-        ...project,
-        summary: '担当者連絡先 090-1234-5678'
-      }))
-    }, 'a86b564b-34ad-4632-927e-47db14c56aaf')).toThrow(/direct identifiers/iu)
+    expect(() =>
+      createLocalProposalDraft(
+        {
+          taskId: 'proposal-task-001',
+          jobCaseId: jobCase.id,
+          candidateProfileId: candidate.id,
+          recipientTo: 'bp@example.co.jp',
+          recipientCc: [],
+          candidateDisplayName: '候補者A',
+          tone: 'standard'
+        },
+        jobCase,
+        {
+          ...candidate,
+          projectExperiences: candidate.projectExperiences.map((project) => ({
+            ...project,
+            summary: '担当者連絡先 090-1234-5678'
+          }))
+        },
+        'a86b564b-34ad-4632-927e-47db14c56aaf'
+      )
+    ).toThrow(/direct identifiers/iu)
   })
 
   it('records an append-only manual sales outcome only after export', () => {
-    const draft = createLocalProposalDraft({
-      taskId: 'proposal-task-001', jobCaseId: jobCase.id, candidateProfileId: candidate.id,
-      recipientTo: 'bp@example.co.jp', recipientCc: [], candidateDisplayName: '候補者A', tone: 'standard'
-    }, jobCase, candidate, 'a86b564b-34ad-4632-927e-47db14c56aaf')
-    expect(() => recordLocalProposalFollowUp(draft, {
-      draftId: draft.id, expectedRevision: 0, stage: 'sent', occurredOn: '2026-07-17', manuallyConfirmed: true
-    }, '5cac741a-205c-4c3b-a1d0-2ef90be74475', '営業担当')).toThrow(/after.*export/iu)
+    const draft = createLocalProposalDraft(
+      {
+        taskId: 'proposal-task-001',
+        jobCaseId: jobCase.id,
+        candidateProfileId: candidate.id,
+        recipientTo: 'bp@example.co.jp',
+        recipientCc: [],
+        candidateDisplayName: '候補者A',
+        tone: 'standard'
+      },
+      jobCase,
+      candidate,
+      'a86b564b-34ad-4632-927e-47db14c56aaf'
+    )
+    expect(() =>
+      recordLocalProposalFollowUp(
+        draft,
+        {
+          draftId: draft.id,
+          expectedRevision: 0,
+          stage: 'sent',
+          occurredOn: '2026-07-17',
+          manuallyConfirmed: true
+        },
+        '5cac741a-205c-4c3b-a1d0-2ef90be74475',
+        '営業担当'
+      )
+    ).toThrow(/after.*export/iu)
 
     const approved = approveLocalProposalDraft(draft, draft.contentHash, '営業担当')
     const exported = markProposalExported(approved, 'c'.repeat(64), new Date('2026-07-17T01:00:00.000Z'))
-    expect(() => recordLocalProposalFollowUp(exported, {
-      draftId: draft.id, expectedRevision: 0, stage: 'replied', occurredOn: '2026-07-17', manuallyConfirmed: true
-    }, '5cac741a-205c-4c3b-a1d0-2ef90be74475', '営業担当')).toThrow(/confirmed external send/iu)
+    expect(() =>
+      recordLocalProposalFollowUp(
+        exported,
+        {
+          draftId: draft.id,
+          expectedRevision: 0,
+          stage: 'replied',
+          occurredOn: '2026-07-17',
+          manuallyConfirmed: true
+        },
+        '5cac741a-205c-4c3b-a1d0-2ef90be74475',
+        '営業担当'
+      )
+    ).toThrow(/confirmed external send/iu)
 
-    const sent = recordLocalProposalFollowUp(exported, {
-      draftId: draft.id, expectedRevision: 0, stage: 'sent', occurredOn: '2026-07-17',
-      note: '翌営業日に状況確認', manuallyConfirmed: true
-    }, '5cac741a-205c-4c3b-a1d0-2ef90be74475', '営業担当', new Date('2026-07-17T01:05:00.000Z'))
+    const sent = recordLocalProposalFollowUp(
+      exported,
+      {
+        draftId: draft.id,
+        expectedRevision: 0,
+        stage: 'sent',
+        occurredOn: '2026-07-17',
+        note: '翌営業日に状況確認',
+        manuallyConfirmed: true
+      },
+      '5cac741a-205c-4c3b-a1d0-2ef90be74475',
+      '営業担当',
+      new Date('2026-07-17T01:05:00.000Z')
+    )
     expect(sent.draft.followUp).toMatchObject({ revision: 1, stage: 'sent', cloudEligible: false })
     expect(sent.event).toMatchObject({ note: '翌営業日に状況確認', recordedBy: '営業担当', cloudEligible: false })
 
-    const accepted = recordLocalProposalFollowUp(sent.draft, {
-      draftId: draft.id, expectedRevision: 1, stage: 'accepted', occurredOn: '2026-07-20', manuallyConfirmed: true
-    }, 'e536183c-2a8f-420f-94df-bc3a00fb77fa', '営業担当')
+    const accepted = recordLocalProposalFollowUp(
+      sent.draft,
+      {
+        draftId: draft.id,
+        expectedRevision: 1,
+        stage: 'accepted',
+        occurredOn: '2026-07-20',
+        manuallyConfirmed: true
+      },
+      'e536183c-2a8f-420f-94df-bc3a00fb77fa',
+      '営業担当'
+    )
     expect(accepted.draft.followUp.events.map((event) => event.stage)).toEqual(['sent', 'accepted'])
-    expect(() => updateLocalProposalDraft(accepted.draft, {
-      draftId: draft.id,
-      revision: draft.revision,
-      recipientTo: draft.recipientTo,
-      recipientCc: draft.recipientCc,
-      candidateDisplayName: draft.candidateDisplayName,
-      subject: draft.subject,
-      body: draft.body
-    })).toThrow(/cannot be edited/iu)
-    expect(() => recordLocalProposalFollowUp(exported, {
-      draftId: draft.id, expectedRevision: 0, stage: 'sent', occurredOn: '2026-07-17',
-      note: '連絡先 090-1234-5678', manuallyConfirmed: true
-    }, '12a7c1ae-58fa-4bcc-bc4f-87e268a3788a', '営業担当')).toThrow(/direct identifiers/iu)
+    expect(() =>
+      updateLocalProposalDraft(accepted.draft, {
+        draftId: draft.id,
+        revision: draft.revision,
+        recipientTo: draft.recipientTo,
+        recipientCc: draft.recipientCc,
+        candidateDisplayName: draft.candidateDisplayName,
+        subject: draft.subject,
+        body: draft.body
+      })
+    ).toThrow(/cannot be edited/iu)
+    expect(() =>
+      recordLocalProposalFollowUp(
+        exported,
+        {
+          draftId: draft.id,
+          expectedRevision: 0,
+          stage: 'sent',
+          occurredOn: '2026-07-17',
+          note: '連絡先 090-1234-5678',
+          manuallyConfirmed: true
+        },
+        '12a7c1ae-58fa-4bcc-bc4f-87e268a3788a',
+        '営業担当'
+      )
+    ).toThrow(/direct identifiers/iu)
   })
 
   it('builds a verifiable exported-not-sent package without source documents', async () => {
-    const draft = createLocalProposalDraft({
-      taskId: 'proposal-task-001', jobCaseId: jobCase.id, candidateProfileId: candidate.id,
-      recipientTo: 'bp@example.co.jp', recipientCc: [], candidateDisplayName: '候補者A', tone: 'standard'
-    }, jobCase, candidate, 'a86b564b-34ad-4632-927e-47db14c56aaf')
+    const draft = createLocalProposalDraft(
+      {
+        taskId: 'proposal-task-001',
+        jobCaseId: jobCase.id,
+        candidateProfileId: candidate.id,
+        recipientTo: 'bp@example.co.jp',
+        recipientCc: [],
+        candidateDisplayName: '候補者A',
+        tone: 'standard'
+      },
+      jobCase,
+      candidate,
+      'a86b564b-34ad-4632-927e-47db14c56aaf'
+    )
     const html = proposalAttachmentHtml({
       ...draft,
       attachment: {

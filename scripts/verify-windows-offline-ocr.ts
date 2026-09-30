@@ -155,25 +155,34 @@ if (process.platform === 'win32' && process.arch === 'x64') {
     socket.once('error', reject)
   })
   const probe = await new Promise<{ loopbackDenied: boolean; errorCode: string | null }>((resolve, reject) => {
-    const child = spawn(sandboxLauncherPath, [
-      '--profile', 'jp.sesai.agentdesktop.ocr',
-      '--grant-read', root,
-      '--grant-read', dirname(process.execPath),
-      '--', process.execPath, `${root}/out/main/windows-network-probe.js`
-    ], {
-      env: {
-        ELECTRON_RUN_AS_NODE: '1',
-        NODE_ENV: 'production',
-        SystemRoot: process.env.SystemRoot,
-        WINDIR: process.env.WINDIR,
-        ComSpec: process.env.ComSpec,
-        PATHEXT: process.env.PATHEXT,
-        PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
-        SES_NETWORK_PROBE_PORT: String(port)
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
-    })
+    const child = spawn(
+      sandboxLauncherPath,
+      [
+        '--profile',
+        'jp.sesai.agentdesktop.ocr',
+        '--grant-read',
+        root,
+        '--grant-read',
+        dirname(process.execPath),
+        '--',
+        process.execPath,
+        `${root}/out/main/windows-network-probe.js`
+      ],
+      {
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          NODE_ENV: 'production',
+          SystemRoot: process.env.SystemRoot,
+          WINDIR: process.env.WINDIR,
+          ComSpec: process.env.ComSpec,
+          PATHEXT: process.env.PATHEXT,
+          PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
+          SES_NETWORK_PROBE_PORT: String(port)
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      }
+    )
     const output: Buffer[] = []
     const errors: Buffer[] = []
     child.stdout.on('data', (chunk: Buffer) => output.push(chunk))
@@ -204,20 +213,28 @@ if (process.platform === 'win32' && process.arch === 'x64') {
   assert.match(sandboxedResult.pages[0]!.textBlocks.map((block) => block.text).join(' '), /Java/u)
   const launcherBytes = await readFile(sandboxLauncherPath)
   await mkdir(`${root}/build/windows-verification`, { recursive: true })
-  await writeFile(`${root}/build/windows-verification/ocr-worker-network-policy.json`, `${JSON.stringify({
-    version: 'windows-release-evidence-v1',
-    kind: 'ocr-worker-kernel-network-deny',
-    verified: true,
-    platform: process.platform,
-    arch: process.arch,
-    mechanism: 'appcontainer-no-network-capabilities',
-    appContainerProfile: 'jp.sesai.agentdesktop.ocr',
-    appContainerCapabilities: [],
-    unsandboxedLoopbackReachable: true,
-    sandboxedLoopbackDenied: true,
-    sandboxedOcrCompleted: true,
-    launcherSha256: createHash('sha256').update(launcherBytes).digest('hex')
-  }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  await writeFile(
+    `${root}/build/windows-verification/ocr-worker-network-policy.json`,
+    `${JSON.stringify(
+      {
+        version: 'windows-release-evidence-v1',
+        kind: 'ocr-worker-kernel-network-deny',
+        verified: true,
+        platform: process.platform,
+        arch: process.arch,
+        mechanism: 'appcontainer-no-network-capabilities',
+        appContainerProfile: 'jp.sesai.agentdesktop.ocr',
+        appContainerCapabilities: [],
+        unsandboxedLoopbackReachable: true,
+        sandboxedLoopbackDenied: true,
+        sandboxedOcrCompleted: true,
+        launcherSha256: createHash('sha256').update(launcherBytes).digest('hex')
+      },
+      null,
+      2
+    )}\n`,
+    { encoding: 'utf8', mode: 0o600 }
+  )
   appContainerVerified = true
 }
 
@@ -236,23 +253,24 @@ const evidence = {
   appContainerVerified
 }
 await mkdir(`${root}/build/windows-verification`, { recursive: true })
-await writeFile(
-  `${root}/build/windows-verification/offline-ocr-runtime.json`,
-  `${JSON.stringify(evidence, null, 2)}\n`,
-  { encoding: 'utf8', mode: 0o600 }
-)
+await writeFile(`${root}/build/windows-verification/offline-ocr-runtime.json`, `${JSON.stringify(evidence, null, 2)}\n`, {
+  encoding: 'utf8',
+  mode: 0o600
+})
 
-process.stdout.write(`${JSON.stringify({
-  engine: result.engine,
-  runtime: result.coverage.textRecognition,
-  languages: ['jpn', 'eng'],
-  pages: result.pages.length,
-  textBlocks: result.pages[0]!.textBlocks.length,
-  javaRecognized: /Java/u.test(recognizedText),
-  awsRecognized: /AWS/u.test(recognizedText),
-  networkAccess: result.networkAccess,
-  nodeNetworkDenyGuard: true,
-  stdioProtocolVerified: true,
-  kernelNetworkIsolationVerified: appContainerVerified,
-  releaseEligible: process.platform === 'win32' && process.arch === 'x64' && appContainerVerified
-})}\n`)
+process.stdout.write(
+  `${JSON.stringify({
+    engine: result.engine,
+    runtime: result.coverage.textRecognition,
+    languages: ['jpn', 'eng'],
+    pages: result.pages.length,
+    textBlocks: result.pages[0]!.textBlocks.length,
+    javaRecognized: /Java/u.test(recognizedText),
+    awsRecognized: /AWS/u.test(recognizedText),
+    networkAccess: result.networkAccess,
+    nodeNetworkDenyGuard: true,
+    stdioProtocolVerified: true,
+    kernelNetworkIsolationVerified: appContainerVerified,
+    releaseEligible: process.platform === 'win32' && process.arch === 'x64' && appContainerVerified
+  })}\n`
+)

@@ -34,7 +34,9 @@ if (metadata.size <= 0 || metadata.size > 10 * 1024 * 1024) {
   process.exit(1)
 }
 if (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0) {
-  process.stderr.write('[privacy-expert] The dataset must not be readable or writable by group/other users. Run chmod 600 on the local file.\n')
+  process.stderr.write(
+    '[privacy-expert] The dataset must not be readable or writable by group/other users. Run chmod 600 on the local file.\n'
+  )
   process.exit(1)
 }
 const datasetBytes = await readFile(datasetPath)
@@ -68,9 +70,7 @@ try {
 if (!socketBlocked || !fetchBlocked) throw new Error('The local expert evaluator network guard is not active.')
 
 const automaticNamesByCase: Record<string, string[]> = {}
-const appleNer = process.platform === 'darwin'
-  ? new MacNaturalLanguageNerClient(resolve(root, 'build/native/macos/ses-vision-ocr'))
-  : null
+const appleNer = process.platform === 'darwin' ? new MacNaturalLanguageNerClient(resolve(root, 'build/native/macos/ses-vision-ocr')) : null
 for (const testCase of [...parsed.data.cases, ...parsed.data.safeCases]) {
   const localNerResult = appleNer ? await appleNer.detectNames(testCase.text) : undefined
   if (localNerResult && localNerResult.networkAccess !== false) {
@@ -96,9 +96,7 @@ const report = {
   reviewedAt: parsed.data.review.reviewedAt,
   evaluatedAt: new Date().toISOString(),
   ...evaluation,
-  nameDetectionEngines: process.platform === 'darwin'
-    ? ['label-and-form-rules', 'apple-natural-language']
-    : ['label-and-form-rules'],
+  nameDetectionEngines: process.platform === 'darwin' ? ['label-and-form-rules', 'apple-natural-language'] : ['label-and-form-rules'],
   manualPersonNameReviewRequired: true,
   containsCaseContent: false,
   cloudDirectIdentifiers: 0,
@@ -111,9 +109,10 @@ const reportFailures = privacyExpertReportFailures(report, {
   privacyImplementationSha256,
   cloudEnforcementSha256
 })
-const finalReport = reportFailures.length === 0
-  ? report
-  : { ...report, releaseEligible: false, failures: [...new Set([...report.failures, ...reportFailures])] }
+const finalReport =
+  reportFailures.length === 0
+    ? report
+    : { ...report, releaseEligible: false, failures: [...new Set([...report.failures, ...reportFailures])] }
 await writeFile(reportPath, `${JSON.stringify(finalReport, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
 await chmod(reportPath, 0o600)
 process.stdout.write(`${JSON.stringify(finalReport)}\n`)

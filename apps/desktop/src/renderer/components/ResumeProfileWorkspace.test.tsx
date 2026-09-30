@@ -19,17 +19,19 @@ const fieldValues = {
 
 const fields: CandidateReviewSnapshot['fields'] = Object.entries(fieldValues).map(([key, value]) => ({
   key: key as CandidateReviewSnapshot['fields'][number]['key'],
-  label: ({
-    skills: 'スキル',
-    experience_years: '経験年数',
-    availability: '稼働時期',
-    rate: '希望単価',
-    japanese_level: '日本語レベル',
-    work_style: '勤務形態',
-    role: '役割',
-    location: '希望勤務地',
-    work_authorization: '就労資格'
-  } as Record<string, string>)[key]!,
+  label: (
+    {
+      skills: 'スキル',
+      experience_years: '経験年数',
+      availability: '稼働時期',
+      rate: '希望単価',
+      japanese_level: '日本語レベル',
+      work_style: '勤務形態',
+      role: '役割',
+      location: '希望勤務地',
+      work_authorization: '就労資格'
+    } as Record<string, string>
+  )[key]!,
   originalValue: value,
   value,
   confidence: 0.9,
@@ -61,18 +63,20 @@ const review: CandidateReviewSnapshot = {
     cloudEligible: false
   },
   fields,
-  projectExperiences: [{
-    draftId: 'project-finance-001',
-    title: '決済プラットフォーム刷新',
-    period: '2023年7月〜2026年6月',
-    role: 'バックエンドSE',
-    technologies: ['Java', 'Spring Boot', 'AWS'],
-    summary: '金融決済基盤の要件分析、設計、開発とクラウド移行を担当。',
-    confidence: 0.9,
-    sourceLabels: ['Projects!A2'],
-    changed: false,
-    changeReason: null
-  }],
+  projectExperiences: [
+    {
+      draftId: 'project-finance-001',
+      title: '決済プラットフォーム刷新',
+      period: '2023年7月〜2026年6月',
+      role: 'バックエンドSE',
+      technologies: ['Java', 'Spring Boot', 'AWS'],
+      summary: '金融決済基盤の要件分析、設計、開発とクラウド移行を担当。',
+      confidence: 0.9,
+      sourceLabels: ['Projects!A2'],
+      changed: false,
+      changeReason: null
+    }
+  ],
   completedAt: null,
   reviewerDisplayName: null,
   profile: null,
@@ -105,11 +109,9 @@ const analysis: ResumeAnalysisSummary = {
 }
 
 const task = materializeWorkTask(
-  createWorkTaskPreview(
-    '選択したスキルシートを安全に取り込み、候補者プロフィールを作成したい',
-    getDataScope('selected-files'),
-    [{ objectType: 'staged-file', objectId: documentId, version: 'a'.repeat(64) }]
-  ),
+  createWorkTaskPreview('選択したスキルシートを安全に取り込み、候補者プロフィールを作成したい', getDataScope('selected-files'), [
+    { objectType: 'staged-file', objectId: documentId, version: 'a'.repeat(64) }
+  ]),
   'resume-profile-task',
   '2026-07-21T01:00:00.000Z'
 )
@@ -136,14 +138,16 @@ const originalSpreadsheetPreview = {
   sha256: 'f'.repeat(64),
   viewMode: 'spreadsheet',
   previewUrl: null,
-  sheets: [{
-    name: 'Skills',
-    printArea: 'A1:B3',
-    cells: [
-      { address: 'A1', text: '分类', mergedRange: null, inPrintArea: true },
-      { address: 'B2', text: 'Java / Spring Boot / AWS', mergedRange: null, inPrintArea: true }
-    ]
-  }],
+  sheets: [
+    {
+      name: 'Skills',
+      printArea: 'A1:B3',
+      cells: [
+        { address: 'A1', text: '分类', mergedRange: null, inPrintArea: true },
+        { address: 'B2', text: 'Java / Spring Boot / AWS', mergedRange: null, inPrintArea: true }
+      ]
+    }
+  ],
   pages: [],
   paragraphs: [],
   personalFieldSources: {},
@@ -162,8 +166,16 @@ describe('ResumeProfileWorkspace', () => {
       <UiLocaleProvider locale="zh-CN">
         <ResumeProfileWorkspace
           aiCommerce={{
-            configuration: 'ready', connection: 'not-connected', productCode: 'sesAgent', billingMode: 'automatic',
-            memberDisplayName: null, accountId: null, accountAiTokenExpiresAt: null, wallet: null, capabilities: [], refreshedAt: null
+            configuration: 'ready',
+            connection: 'not-connected',
+            productCode: 'sesAgent',
+            billingMode: 'automatic',
+            memberDisplayName: null,
+            accountId: null,
+            accountAiTokenExpiresAt: null,
+            wallet: null,
+            capabilities: [],
+            refreshedAt: null
           }}
           analyses={[analysis]}
           lifecycleBusy={false}
@@ -183,17 +195,21 @@ describe('ResumeProfileWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '查看原始简历' }))
 
-    expect(await screen.findByText('核对原件与人才档案')).toBeInTheDocument()
+    expect(await screen.findByText('核对原件与人员档案')).toBeInTheDocument()
     expect(onLoadOriginalDocument).toHaveBeenCalledWith(documentId)
     expect(screen.getByRole('table', { name: 'Skills' })).toBeInTheDocument()
     expect(screen.getByText('Java / Spring Boot / AWS')).toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('textbox', { name: '技能' }), { target: { value: 'Java, AWS, React' } })
-    fireEvent.click(screen.getByRole('button', { name: '确认候选人资料' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认人员资料' }))
 
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      fields: expect.arrayContaining([expect.objectContaining({ key: 'skills', value: 'Java, AWS, React' })])
-    })))
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fields: expect.arrayContaining([expect.objectContaining({ key: 'skills', value: 'Java, AWS, React' })])
+        })
+      )
+    )
   })
 
   it('allows a sparse imported resume to enter the talent library without filling optional fields', async () => {
@@ -252,24 +268,26 @@ describe('ResumeProfileWorkspace', () => {
       </UiLocaleProvider>
     )
 
-    const confirm = screen.getByRole('button', { name: '确认候选人资料' })
+    const confirm = screen.getByRole('button', { name: '确认人员资料' })
     expect(confirm).toBeEnabled()
     fireEvent.click(screen.getByRole('tab', { name: /数据检查/ }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'スキル の確認値' }), { target: { value: 'Java' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '技能确认值' }), { target: { value: 'Java' } })
     expect(screen.getByPlaceholderText('修改备注（可选）')).toBeInTheDocument()
     expect(confirm).toBeEnabled()
     fireEvent.click(confirm)
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      piiReviewed: false,
-      fields: sparseFields.map((field) => ({
-        key: field.key,
-        value: field.key === 'skills' ? 'Java' : null,
-        confirmed: true
-      })),
-      projectExperiences: []
-    }))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        piiReviewed: false,
+        fields: sparseFields.map((field) => ({
+          key: field.key,
+          value: field.key === 'skills' ? 'Java' : null,
+          confirmed: true
+        })),
+        projectExperiences: []
+      })
+    )
   })
 
   it('supports Chinese tabs, private local questions, evidence navigation and final confirmation', async () => {
@@ -315,32 +333,34 @@ describe('ResumeProfileWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /技能矩阵 · 3项/ }))
     expect(screen.getByRole('tab', { name: '技能矩阵' })).toHaveAttribute('aria-selected', 'true')
 
-    fireEvent.change(screen.getByRole('textbox', { name: '向 AI 询问当前人才' }), { target: { value: '这个人是哪里人？' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '向 AI 询问当前人员' }), { target: { value: '这个人是哪里人？' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
     expect(await screen.findByText(/不会根据姓名和语言进行推测/)).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole('textbox', { name: '向 AI 询问当前人才' }), { target: { value: '请综合判断这个人的领导力风险' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '向 AI 询问当前人员' }), { target: { value: '请综合判断这个人的领导力风险' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
     expect(await screen.findByText(/这个开放性问题需要使用云端 AI 分析/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '使用云端 AI 分析此问题' }))
     expect(screen.getByRole('button', { name: '云端 AI 分析' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('textbox', { name: '向 AI 询问当前人才' })).toHaveValue('请综合判断这个人的领导力风险')
+    expect(screen.getByRole('textbox', { name: '向 AI 询问当前人员' })).toHaveValue('请综合判断这个人的领导力风险')
 
     fireEvent.click(screen.getByRole('tab', { name: /数据检查/ }))
     expect(screen.getByText('所有档案字段均为可选；可以保留空白入库，之后再补充需要的信息。')).toBeInTheDocument()
     expect(screen.getAllByText(/项可选确认/).length).toBeGreaterThan(0)
 
-    const confirm = screen.getByRole('button', { name: '确认候选人资料' })
+    const confirm = screen.getByRole('button', { name: '确认人员资料' })
     expect(confirm).toBeEnabled()
     fireEvent.click(confirm)
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      documentId,
-      piiReviewed: false,
-      fields: expect.arrayContaining([expect.objectContaining({ key: 'skills', value: 'Java, Spring Boot, AWS', confirmed: true })]),
-      projectExperiences: [expect.objectContaining({ draftId: 'project-finance-001', confirmed: true })]
-    }))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId,
+        piiReviewed: false,
+        fields: expect.arrayContaining([expect.objectContaining({ key: 'skills', value: 'Java, Spring Boot, AWS', confirmed: true })]),
+        projectExperiences: [expect.objectContaining({ draftId: 'project-finance-001', confirmed: true })]
+      })
+    )
   })
 
   it('sends only confirmed anonymous context through the cloud gateway and labels the answer', async () => {
@@ -398,9 +418,13 @@ describe('ResumeProfileWorkspace', () => {
   })
 
   it('falls back to a local answer when the cloud request fails', async () => {
-    const onSendCloudPrompt = vi.fn().mockRejectedValue(new Error(
-      "Error invoking remote method 'aicommerce:execute-cloud-prompt': Error: ローカルのプライバシー品質ゲートを確認できないため、Cloud AI を停止しました。データ安全画面で状態を確認してください。"
-    ))
+    const onSendCloudPrompt = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "Error invoking remote method 'aicommerce:execute-cloud-prompt': Error: ローカルのプライバシー品質ゲートを確認できないため、Cloud AI を停止しました。データ安全画面で状態を確認してください。"
+        )
+      )
     const completedReview: CandidateReviewSnapshot = {
       ...review,
       status: 'completed',

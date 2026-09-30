@@ -32,10 +32,12 @@ const preflight = {
 
 describe('MacWechatVisibleReader', () => {
   it('resolves source and packaged helper paths without probing user data', () => {
-    expect(resolveWechatAccessibilityHelperPath({ packaged: false, resourcesPath: '/Resources', appPath: '/repo' }))
-      .toBe('/repo/build/native/macos/ses-wechat-accessibility')
-    expect(resolveWechatAccessibilityHelperPath({ packaged: true, resourcesPath: '/Resources', appPath: '/repo' }))
-      .toBe('/Resources/native/macos/ses-wechat-accessibility')
+    expect(resolveWechatAccessibilityHelperPath({ packaged: false, resourcesPath: '/Resources', appPath: '/repo' })).toBe(
+      '/repo/build/native/macos/ses-wechat-accessibility'
+    )
+    expect(resolveWechatAccessibilityHelperPath({ packaged: true, resourcesPath: '/Resources', appPath: '/repo' })).toBe(
+      '/Resources/native/macos/ses-wechat-accessibility'
+    )
   })
 
   it('accepts only the signed Tencent primary WeChat process as a target', async () => {
@@ -43,9 +45,12 @@ describe('MacWechatVisibleReader', () => {
     const reader = new MacWechatVisibleReader('/tmp/helper', runner)
     const result = await reader.preflight()
     expect(reader.primaryTarget(result)).toEqual(target)
-    expect(runner).toHaveBeenCalledWith(expect.objectContaining({
-      arguments: ['--preflight'], timeoutMs: 5_000
-    }))
+    expect(runner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        arguments: ['--preflight'],
+        timeoutMs: 5_000
+      })
+    )
   })
 
   it('rejects a same-bundle process without the pinned Tencent team identity', async () => {
@@ -81,9 +86,7 @@ describe('MacWechatVisibleReader', () => {
   })
 
   it('propagates a stable safe error code from the helper boundary', async () => {
-    const runner = vi.fn<WechatHelperRunner>().mockRejectedValue(
-      new WechatVisibleReadError('WECHAT_NOT_FRONTMOST')
-    )
+    const runner = vi.fn<WechatHelperRunner>().mockRejectedValue(new WechatVisibleReadError('WECHAT_NOT_FRONTMOST'))
     const reader = new MacWechatVisibleReader('/tmp/helper', runner)
     await expect(reader.readVisible(target)).rejects.toMatchObject({ code: 'WECHAT_NOT_FRONTMOST' })
   })
@@ -101,17 +104,21 @@ describe('WechatVisibleScopeTokenStore', () => {
     })
     expect(issued.scopeToken).toMatch(/^[A-Za-z0-9_-]{43}$/u)
     expect(issued.expiresAt).toBe('2026-08-18T06:00:30.000Z')
-    expect(store.consume({
-      scopeToken: issued.scopeToken,
-      webContentsId: 7,
-      actorId: 'operator-1',
-      now: new Date('2026-08-18T06:00:29.000Z')
-    })).toEqual({ target, actionRunId: 'action-1' })
-    expect(() => store.consume({
-      scopeToken: issued.scopeToken,
-      webContentsId: 7,
-      actorId: 'operator-1'
-    })).toThrowError(WechatVisibleReadError)
+    expect(
+      store.consume({
+        scopeToken: issued.scopeToken,
+        webContentsId: 7,
+        actorId: 'operator-1',
+        now: new Date('2026-08-18T06:00:29.000Z')
+      })
+    ).toEqual({ target, actionRunId: 'action-1' })
+    expect(() =>
+      store.consume({
+        scopeToken: issued.scopeToken,
+        webContentsId: 7,
+        actorId: 'operator-1'
+      })
+    ).toThrowError(WechatVisibleReadError)
   })
 
   it('fails closed on actor mismatch and expiry while consuming the token', () => {
@@ -123,12 +130,14 @@ describe('WechatVisibleScopeTokenStore', () => {
       actionRunId: 'action-1',
       now: new Date('2026-08-18T06:00:00.000Z')
     })
-    expect(() => store.consume({
-      scopeToken: issued.scopeToken,
-      webContentsId: 8,
-      actorId: 'operator-1',
-      now: new Date('2026-08-18T06:00:01.000Z')
-    })).toThrow(/操作者/u)
+    expect(() =>
+      store.consume({
+        scopeToken: issued.scopeToken,
+        webContentsId: 8,
+        actorId: 'operator-1',
+        now: new Date('2026-08-18T06:00:01.000Z')
+      })
+    ).toThrow(/操作者/u)
 
     const expired = store.issue({
       webContentsId: 7,
@@ -137,11 +146,13 @@ describe('WechatVisibleScopeTokenStore', () => {
       actionRunId: 'action-2',
       now: new Date('2026-08-18T06:01:00.000Z')
     })
-    expect(() => store.consume({
-      scopeToken: expired.scopeToken,
-      webContentsId: 7,
-      actorId: 'operator-1',
-      now: new Date('2026-08-18T06:01:31.000Z')
-    })).toThrow(/过期/u)
+    expect(() =>
+      store.consume({
+        scopeToken: expired.scopeToken,
+        webContentsId: 7,
+        actorId: 'operator-1',
+        now: new Date('2026-08-18T06:01:31.000Z')
+      })
+    ).toThrow(/过期/u)
   })
 })

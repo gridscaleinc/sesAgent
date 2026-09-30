@@ -1,0 +1,236 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, expect, it, vi } from 'vitest'
+import {
+  builtInPersonnelTemplates,
+  type CandidateBusinessState,
+  type CandidateReviewSnapshot,
+  type DesktopApi,
+  type JobCaseReviewSnapshot,
+  type PersonnelCaseMatchResult
+} from '@shared'
+import { HrMatchingWorkspace } from './HrMatchingWorkspace'
+import { clearPersonCaseMatchCache, hydratePersonCaseMatches, personCaseMatchCount } from '../person-case-match-cache'
+
+const documentId = '11111111-1111-4111-8111-111111111111'
+const reviewId = '22222222-2222-4222-8222-222222222222'
+const person = {
+  documentId,
+  fileName: 'Test Engineer',
+  fields: [],
+  projectExperiences: [],
+  reviewRevision: 1,
+  recordStatus: 'active',
+  profile: { version: 1 },
+  isOwnCompany: null
+} as unknown as CandidateReviewSnapshot
+const job = {
+  reviewId,
+  redactedSubject: 'Java project',
+  fields: [],
+  lifecycle: 'active',
+  status: 'completed',
+  reviewRevision: 1,
+  jobCase: { id: '33333333-3333-4333-8333-333333333333', version: 1 }
+} as unknown as JobCaseReviewSnapshot
+const result: PersonnelCaseMatchResult = {
+  documentId,
+  profileVersion: 1,
+  rulesRevision: 4,
+  localMatchCount: 1,
+  searchedCount: 3,
+  excludedCount: 2,
+  excludedRequirements: ['Scala'],
+  ownCompanyExcludedCount: 1,
+  cloud: { status: 'reviewed', reviewedCount: 1, modelName: 'test-model' },
+  items: [
+    {
+      reviewId,
+      jobCaseId: job.jobCase!.id,
+      jobCaseVersion: 1,
+      title: 'Java project',
+      score: 5,
+      matched: ['Java'],
+      missing: [],
+      hardFilters: [],
+      qualification: {
+        policyVersion: 'technical-language-v5',
+        status: 'recommended',
+        requirements: [
+          {
+            requirement: {
+              id: 'R1',
+              key: 'required_skills',
+              label: 'Java',
+              category: 'core',
+              alternatives: [['Java']],
+              minimumYears: null,
+              requiresPractice: false
+            },
+            outcome: 'met',
+            evidence: 'Java',
+            source: 'Project A'
+          }
+        ]
+      },
+      appliedRules: [{ id: 'rule', revision: 4, kind: 'prefer', text: 'Prefer Java' }] as never
+    }
+  ]
+}
+const api = (states: CandidateBusinessState[] = []) => {
+  const value = {
+    getPersonnelWorkspace: vi.fn(async () => ({ templates: builtInPersonnelTemplates(), states, copies: [] })),
+    listWorkRules: vi.fn(async () => ({ revision: 4 })),
+    onBusinessMatchingProgress: vi.fn(() => () => {}),
+    cancelBusinessMatching: vi.fn(async () => {}),
+    findCasesForPersonnel: vi.fn(async () => result)
+  }
+  Object.defineProperty(window, 'sesAgent', { configurable: true, value: value as unknown as Partial<DesktopApi> })
+  return value
+}
+const props = (requestId: number) => ({
+  source: { kind: 'person' as const, id: documentId, requestId },
+  cases: [job],
+  people: [person],
+  onView: vi.fn(),
+  onPrepare: vi.fn(),
+  onBack: vi.fn(),
+  onFollowUp: vi.fn()
+})
+beforeEach(() => clearPersonCaseMatchCache())
+
+it('keeps the result for the next click, reports only this person as busy and exposes the case count', async () => {
+  const sesAgent = api()
+  const onBusyChange = vi.fn()
+  const first = render(<HrMatchingWorkspace {...props(1)} onBusyChange={onBusyChange} />)
+  await screen.findByRole('article')
+  expect(onBusyChange).toHaveBeenNthCalledWith(1, [documentId])
+  expect(onBusyChange).toHaveBeenLastCalledWith([])
+  expect(personCaseMatchCount(documentId)).toBe(1)
+  expect(personCaseMatchCount(documentId, 2)).toBeNull()
+  first.unmount()
+  // A new 找案件 click for the same unchanged person shows the kept result instead of re-running.
+  render(<HrMatchingWorkspace {...props(2)} onBusyChange={onBusyChange} />)
+  expect(screen.getByRole('article')).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('button', { name: '案件を再検索' })).toBeEnabled())
+  expect(sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1)
+})
+
+it('counts the person as busy from the click until the stored run is read, so 找案件 cannot start twice', async () => {
+  let release!: (value: null) => void
+  const sesAgent = Object.assign(api(), {
+    getPersonnelCaseMatchRun: vi.fn(
+      () =>
+        new Promise<null>((resolve) => {
+          release = resolve
+        })
+    )
+  })
+  const onBusyChange = vi.fn()
+  render(<HrMatchingWorkspace {...props(1)} onBusyChange={onBusyChange} />)
+  await waitFor(() => expect(onBusyChange).toHaveBeenCalledWith([documentId]))
+  expect(screen.getByRole('button', { name: '案件を探す' })).toBeDisabled()
+  expect(sesAgent.findCasesForPersonnel).not.toHaveBeenCalled()
+  release(null)
+  await screen.findByRole('article')
+  expect(sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1)
+  expect(onBusyChange).toHaveBeenLastCalledWith([])
+})
+
+it('after a restart shows the stored run with 「前回の検索」 instead of re-running, and badges come from stored summaries', async () => {
+  const sesAgent = Object.assign(api(), {
+    getPersonnelCaseMatchRun: vi.fn(async () => ({
+      result,
+      searchedAt: '2026-09-30T01:00:00.000Z',
+      caseSignature: `${job.jobCase!.id}:1`,
+      policyVersion: 'technical-language-v5'
+    })),
+    listPersonnelCaseMatchRunSummaries: vi.fn(async () => [
+      {
+        documentId,
+        profileVersion: 1,
+        rulesRevision: 4,
+        policyVersion: 'technical-language-v5',
+        caseSignature: `${job.jobCase!.id}:1`,
+        searchedAt: '2026-09-30T01:00:00.000Z',
+        listedCount: 1
+      }
+    ])
+  })
+  render(<HrMatchingWorkspace {...props(10)} />)
+  expect(await screen.findByRole('article')).toBeVisible()
+  expect(screen.getByText(/前回の検索/)).toBeVisible()
+  await waitFor(() => expect(screen.getByRole('button', { name: '案件を再検索' })).toBeEnabled())
+  expect(sesAgent.findCasesForPersonnel).not.toHaveBeenCalled()
+  expect(sesAgent.getPersonnelCaseMatchRun).toHaveBeenCalledWith(documentId)
+  expect(sesAgent.listPersonnelCaseMatchRunSummaries).toHaveBeenCalledTimes(1)
+  // 「案件を再検索」 forces a new run.
+  fireEvent.click(screen.getByRole('button', { name: '案件を再検索' }))
+  await waitFor(() => expect(sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1))
+})
+
+it('reruns automatically when the stored run is stale (a case changed since it ran)', async () => {
+  const sesAgent = Object.assign(api(), {
+    getPersonnelCaseMatchRun: vi.fn(async () => ({
+      result,
+      searchedAt: '2026-09-30T01:00:00.000Z',
+      caseSignature: `${job.jobCase!.id}:1,44444444-4444-4444-8444-444444444444:1`,
+      policyVersion: 'technical-language-v5'
+    }))
+  })
+  render(<HrMatchingWorkspace {...props(11)} />)
+  await waitFor(() => expect(sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1))
+})
+
+it('hydrates list badge counts from stored summaries on first use', async () => {
+  Object.assign(api(), {
+    listPersonnelCaseMatchRunSummaries: vi.fn(async () => [
+      {
+        documentId,
+        profileVersion: 1,
+        rulesRevision: 4,
+        policyVersion: 'technical-language-v5',
+        caseSignature: '',
+        searchedAt: '2026-09-30T01:00:00.000Z',
+        listedCount: 3
+      }
+    ])
+  })
+  await hydratePersonCaseMatches()
+  expect(personCaseMatchCount(documentId)).toBe(3)
+  expect(personCaseMatchCount(documentId, 2)).toBeNull()
+})
+
+it('puts primary actions first and AI internals under details with natural exclusion wording', async () => {
+  api()
+  render(<HrMatchingWorkspace {...props(3)} />)
+  const card = await screen.findByRole('article')
+  const buttons = [...card.querySelectorAll('.hr-result-actions button')].map((button) => button.textContent)
+  expect(buttons).toEqual(['紹介を準備', '対応を開始', '案件を見る'])
+  expect(screen.queryByText(/test-model/)).not.toBeVisible()
+  expect(screen.getByText(/Prefer Java/)).not.toBeVisible()
+  expect(screen.getByText('自社要員限定のため 1 件を除外')).not.toBeVisible()
+  expect(screen.getByText(/除外 2/)).toBeVisible()
+})
+
+it('waits for business states, then names why an assigned person cannot be matched', async () => {
+  const sesAgent = api([{ documentId, profileVersion: 1, status: 'assigned', confirmedAt: '2026-09-01T00:00:00Z', actorId: 'hr' }])
+  const callbacks = props(4)
+  render(<HrMatchingWorkspace {...callbacks} />)
+  expect(screen.getByText('要員の状態を確認しています…')).toBeVisible()
+  expect(await screen.findByText(/この要員は参画中のため/)).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: '営業状態を変更' }))
+  expect(callbacks.onView).toHaveBeenCalledWith('person', documentId)
+  expect(sesAgent.findCasesForPersonnel).not.toHaveBeenCalled()
+})
+
+it('offers a rules retry without leaving the result permanently stale', async () => {
+  const sesAgent = api()
+  sesAgent.listWorkRules.mockRejectedValueOnce(new Error('offline'))
+  render(<HrMatchingWorkspace {...props(5)} />)
+  await screen.findByRole('article')
+  expect(screen.getByText(/ルールを読み込めなかった/)).toBeVisible()
+  expect(screen.queryByText(/案件を再検索してください/)).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '再試行' }))
+  await waitFor(() => expect(screen.queryByText(/ルールを読み込めなかった/)).not.toBeInTheDocument())
+  expect(screen.getByRole('article')).toBeVisible()
+})

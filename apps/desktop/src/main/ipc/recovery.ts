@@ -70,9 +70,7 @@ export function registerRecoveryHandlers(context: MainIpcContext) {
       if (selection.canceled || !selection.filePath) {
         return { cancelled: true, fileName: null, packageHash: null, summary: null }
       }
-      const outputPath = selection.filePath.endsWith('.ses-recovery')
-        ? selection.filePath
-        : `${selection.filePath}.ses-recovery`
+      const outputPath = selection.filePath.endsWith('.ses-recovery') ? selection.filePath : `${selection.filePath}.ses-recovery`
       const snapshotPath = join(temporaryDirectory, 'ses-agent.db')
       const snapshot = await repository.createConsistentSnapshot(snapshotPath)
       snapshotKeys = deriveApplicationKeys(masterKey)
@@ -104,9 +102,7 @@ export function registerRecoveryHandlers(context: MainIpcContext) {
         }
       })
       try {
-        repository.recordRecoveryEvent(
-          'backup-created', created.summary, created.packageHash, new Date(), snapshot.dataRevision
-        )
+        repository.recordRecoveryEvent('backup-created', created.summary, created.packageHash, new Date(), snapshot.dataRevision)
       } catch (error) {
         await rm(outputPath, { force: true })
         throw error
@@ -194,7 +190,8 @@ export function registerRecoveryHandlers(context: MainIpcContext) {
       await expireRecoveryPreview()
       const preview = recoveryPreview
       if (!preview || preview.token !== input.restoreToken) throw new Error('復元確認の有効期限が切れました。もう一度検証してください。')
-      if (preview.staged.confirmationHash !== input.confirmationHash) throw new Error('復元対象が変更されました。もう一度検証してください。')
+      if (preview.staged.confirmationHash !== input.confirmationHash)
+        throw new Error('復元対象が変更されました。もう一度検証してください。')
       const protectedMasterKeyPath = join(dirname(preview.staged.databasePath), '..', 'security', 'master-key.v1')
       await masterKeyProvider.writeProtectedMasterKey(protectedMasterKeyPath, preview.staged.masterKey)
       await schedulePendingRestore({

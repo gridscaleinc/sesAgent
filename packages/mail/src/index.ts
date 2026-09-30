@@ -51,17 +51,19 @@ const forbiddenReadonlyScopes = new Set([
   'https://mail.google.com/'
 ])
 
-export const googleWorkspaceCredentialSchema = z.object({
-  version: z.literal('google-workspace-credential-v1'),
-  accessToken: z.string().min(20).max(16_384),
-  refreshToken: z.string().min(10).max(16_384),
-  expiresAt: z.string().datetime(),
-  scopes: z.tuple([z.literal(gmailReadonlyScope)]),
-  accountEmail: z.string().email().max(254),
-  workspaceDomain: googleWorkspaceDomainSchema,
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-}).strict()
+export const googleWorkspaceCredentialSchema = z
+  .object({
+    version: z.literal('google-workspace-credential-v1'),
+    accessToken: z.string().min(20).max(16_384),
+    refreshToken: z.string().min(10).max(16_384),
+    expiresAt: z.string().datetime(),
+    scopes: z.tuple([z.literal(gmailReadonlyScope)]),
+    accountEmail: z.string().email().max(254),
+    workspaceDomain: googleWorkspaceDomainSchema,
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict()
 
 export type GoogleWorkspaceCredential = z.infer<typeof googleWorkspaceCredentialSchema>
 
@@ -101,10 +103,7 @@ export function createPkceChallenge(verifier: string): string {
   return createHash('sha256').update(verifier, 'ascii').digest('base64url')
 }
 
-export function buildGoogleAuthorizationUrl(
-  request: AuthorizationCodeRequest,
-  redirectUri: string
-): string {
+export function buildGoogleAuthorizationUrl(request: AuthorizationCodeRequest, redirectUri: string): string {
   assertReadonlyScopes(request.scopes)
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   url.searchParams.set('client_id', request.clientId)
@@ -136,10 +135,17 @@ export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvi
       let redirectUri = configuredRedirect?.toString() ?? ''
       const server = createServer((incoming, response) => {
         response.setHeader('connection', 'close')
-        if (settled) { response.writeHead(410); response.end('Authorization callback has ended.'); return }
+        if (settled) {
+          response.writeHead(410)
+          response.end('Authorization callback has ended.')
+          return
+        }
         const requestUrl = new URL(incoming.url ?? '/', 'http://127.0.0.1')
-        if (incoming.method !== 'GET' || requestUrl.pathname !== (configuredRedirect?.pathname ?? '/oauth2/callback') ||
-          incoming.headers.host !== new URL(redirectUri).host) {
+        if (
+          incoming.method !== 'GET' ||
+          requestUrl.pathname !== (configuredRedirect?.pathname ?? '/oauth2/callback') ||
+          incoming.headers.host !== new URL(redirectUri).host
+        ) {
           response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
           response.end('Not found')
           return
@@ -176,9 +182,8 @@ export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvi
             'x-content-type-options': 'nosniff'
           })
           response.end('Google Workspace authorization was not completed. Return to SES Agent Desktop.')
-          const safeProviderError = providerError && /^[a-z_]{1,64}$/u.test(providerError)
-            ? providerError
-            : providerError ? 'provider_error' : 'missing_code'
+          const safeProviderError =
+            providerError && /^[a-z_]{1,64}$/u.test(providerError) ? providerError : providerError ? 'provider_error' : 'missing_code'
           finish(() => reject(new Error(`Google OAuth was not completed (${safeProviderError}).`)))
           return
         }
@@ -189,7 +194,9 @@ export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvi
           'referrer-policy': 'no-referrer',
           'x-content-type-options': 'nosniff'
         })
-        response.end('<!doctype html><meta charset="utf-8"><title>SES Agent Desktop</title><style>body{font-family:system-ui;padding:48px;color:#172036}h1{font-size:22px}</style><h1>Google 認証の応答を受け取りました</h1><p>SES Agent Desktop に戻り、メール接続と同期の結果を確認してください。このタブは閉じられます。</p>')
+        response.end(
+          '<!doctype html><meta charset="utf-8"><title>SES Agent Desktop</title><style>body{font-family:system-ui;padding:48px;color:#172036}h1{font-size:22px}</style><h1>Google 認証の応答を受け取りました</h1><p>SES Agent Desktop に戻り、メール接続と同期の結果を確認してください。このタブは閉じられます。</p>'
+        )
         finish(() => resolve({ code: validCode, redirectUri }))
       })
       const timeout = setTimeout(() => {
@@ -263,10 +270,14 @@ export async function diagnoseGoogleWorkspaceReadiness(options: {
   const clientIdValid = Boolean(configuration && /^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/u.test(configuration.clientId))
   const boundedScope = Boolean(
     configuration &&
-    configuration.labelIds.length >= 1 && configuration.labelIds.length <= 10 &&
-    configuration.query.length >= 2 && configuration.query.length <= 200 &&
-    configuration.lookbackDays >= 1 && configuration.lookbackDays <= 365 &&
-    configuration.maxMessagesPerRun >= 1 && configuration.maxMessagesPerRun <= 500
+    configuration.labelIds.length >= 1 &&
+    configuration.labelIds.length <= 10 &&
+    configuration.query.length >= 2 &&
+    configuration.query.length <= 200 &&
+    configuration.lookbackDays >= 1 &&
+    configuration.lookbackDays <= 365 &&
+    configuration.maxMessagesPerRun >= 1 &&
+    configuration.maxMessagesPerRun <= 500
   )
   const [loopbackAvailable, oauthReachable, gmailApiReachable] = await Promise.all([
     probeGoogleOAuthLoopbackBinding(),
@@ -279,7 +290,9 @@ export async function diagnoseGoogleWorkspaceReadiness(options: {
       id: 'configuration',
       status: configuration ? 'passed' : 'failed',
       label: '管理者設定',
-      detail: configuration ? '製品の Client ID と有界同期範囲を読み込みました。' : 'このビルドには Google OAuth Client ID が組み込まれていません。'
+      detail: configuration
+        ? '製品の Client ID と有界同期範囲を読み込みました。'
+        : 'このビルドには Google OAuth Client ID が組み込まれていません。'
     },
     {
       id: 'desktop-client-format',
@@ -291,31 +304,41 @@ export async function diagnoseGoogleWorkspaceReadiness(options: {
       id: 'bounded-sync-scope',
       status: boundedScope ? 'passed' : 'failed',
       label: '同期データ範囲',
-      detail: boundedScope ? 'Label・業務キーワード・期間・件数に上限があります。' : 'Label・キーワード・取得期間・最大件数を設定してください。'
+      detail: boundedScope
+        ? 'Label・業務キーワード・期間・件数に上限があります。'
+        : 'Label・キーワード・取得期間・最大件数を設定してください。'
     },
     {
       id: 'loopback-callback',
       status: loopbackAvailable ? 'passed' : 'failed',
       label: 'ローカル OAuth コールバック',
-      detail: loopbackAvailable ? '127.0.0.1 のランダムポートを安全にバインドできます。' : '127.0.0.1 のローカルポートを開けません。端末ポリシーを確認してください。'
+      detail: loopbackAvailable
+        ? '127.0.0.1 のランダムポートを安全にバインドできます。'
+        : '127.0.0.1 のローカルポートを開けません。端末ポリシーを確認してください。'
     },
     {
       id: 'google-oauth-reachability',
       status: oauthReachable ? 'passed' : 'failed',
       label: 'Google OAuth 到達性',
-      detail: oauthReachable ? 'Google OAuth 公開メタデータへ HTTPS 接続できました。' : 'Google OAuth へ接続できません。Proxy・Firewall・DNS を確認してください。'
+      detail: oauthReachable
+        ? 'Google OAuth 公開メタデータへ HTTPS 接続できました。'
+        : 'Google OAuth へ接続できません。Proxy・Firewall・DNS を確認してください。'
     },
     {
       id: 'gmail-api-reachability',
       status: gmailApiReachable ? 'passed' : 'failed',
       label: 'Gmail API 到達性',
-      detail: gmailApiReachable ? 'Gmail API Discovery へ HTTPS 接続できました。メールボックスは読んでいません。' : 'Gmail API へ接続できません。Proxy・Firewall・DNS を確認してください。'
+      detail: gmailApiReachable
+        ? 'Gmail API Discovery へ HTTPS 接続できました。メールボックスは読んでいません。'
+        : 'Gmail API へ接続できません。Proxy・Firewall・DNS を確認してください。'
     },
     {
       id: 'credential-protection',
       status: credentialProtectionReady ? 'passed' : 'failed',
       label: 'OAuth Token 保護',
-      detail: credentialProtectionReady ? `${options.credentialProtection} による端末保護を使用できます。` : 'この OS では OAuth Token の保護方式を確認できません。'
+      detail: credentialProtectionReady
+        ? `${options.credentialProtection} による端末保護を使用できます。`
+        : 'この OS では OAuth Token の保護方式を確認できません。'
     },
     {
       id: 'admin-console-confirmation',
@@ -369,10 +392,12 @@ const tokenResponseSchema = z.object({
   token_type: z.literal('Bearer')
 })
 
-const oauthErrorResponseSchema = z.object({
-  error: z.string().regex(/^[a-z_]{1,64}$/u),
-  error_description: z.string().max(2_000).optional()
-}).passthrough()
+const oauthErrorResponseSchema = z
+  .object({
+    error: z.string().regex(/^[a-z_]{1,64}$/u),
+    error_description: z.string().max(2_000).optional()
+  })
+  .passthrough()
 
 async function oauthErrorCode(response: Response): Promise<string> {
   try {
@@ -394,12 +419,16 @@ async function oauthErrorCode(response: Response): Promise<string> {
 
 async function gmailProfileForbiddenReason(response: Response): Promise<string> {
   try {
-    const body = await response.json() as { error?: { errors?: { reason?: string }[]; details?: { reason?: string }[] } }
-    const reasons = [...(body.error?.errors ?? []), ...(body.error?.details ?? [])].map(item => item.reason)
-    if (reasons.some(reason => reason === 'SERVICE_DISABLED' || reason === 'accessNotConfigured')) return 'GMAIL_API_DISABLED'
-    if (reasons.some(reason => reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' || reason === 'insufficientPermissions')) return 'GMAIL_SCOPE_INSUFFICIENT'
-    if (reasons.some(reason => reason === 'ORG_RESTRICTION_VIOLATION' || reason === 'domainPolicy')) return 'GMAIL_ORGANIZATION_RESTRICTED'
-  } catch { /* Return a fixed fallback without provider payload or account data. */ }
+    const body = (await response.json()) as { error?: { errors?: { reason?: string }[]; details?: { reason?: string }[] } }
+    const reasons = [...(body.error?.errors ?? []), ...(body.error?.details ?? [])].map((item) => item.reason)
+    if (reasons.some((reason) => reason === 'SERVICE_DISABLED' || reason === 'accessNotConfigured')) return 'GMAIL_API_DISABLED'
+    if (reasons.some((reason) => reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' || reason === 'insufficientPermissions'))
+      return 'GMAIL_SCOPE_INSUFFICIENT'
+    if (reasons.some((reason) => reason === 'ORG_RESTRICTION_VIOLATION' || reason === 'domainPolicy'))
+      return 'GMAIL_ORGANIZATION_RESTRICTED'
+  } catch {
+    /* Return a fixed fallback without provider payload or account data. */
+  }
   return 'GMAIL_PROFILE_FORBIDDEN'
 }
 
@@ -407,7 +436,10 @@ const gmailProfileSchema = z.object({
   emailAddress: z.string().email().max(254),
   messagesTotal: z.number().int().nonnegative().optional(),
   threadsTotal: z.number().int().nonnegative().optional(),
-  historyId: z.string().regex(/^\d{1,40}$/u).optional()
+  historyId: z
+    .string()
+    .regex(/^\d{1,40}$/u)
+    .optional()
 })
 
 function assertReadonlyScopes(scopes: string[]): void {
@@ -418,22 +450,41 @@ function assertReadonlyScopes(scopes: string[]): void {
   }
 }
 
-export const privateGoogleLoopbackRedirectSchema = z.string().max(512).refine(value => {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname) &&
-      Number(url.port) >= 1024 && Number(url.port) <= 65_535 && /^\/[A-Za-z0-9/_-]+$/u.test(url.pathname) &&
-      !url.username && !url.password && !url.search && !url.hash && url.toString() === value
-  } catch { return false }
-}, 'Private Google callback must be an exact local HTTP address with a fixed port and path.')
+export const privateGoogleLoopbackRedirectSchema = z
+  .string()
+  .max(512)
+  .refine((value) => {
+    try {
+      const url = new URL(value)
+      return (
+        url.protocol === 'http:' &&
+        ['localhost', '127.0.0.1'].includes(url.hostname) &&
+        Number(url.port) >= 1024 &&
+        Number(url.port) <= 65_535 &&
+        /^\/[A-Za-z0-9/_-]+$/u.test(url.pathname) &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash &&
+        url.toString() === value
+      )
+    } catch {
+      return false
+    }
+  }, 'Private Google callback must be an exact local HTTP address with a fixed port and path.')
 
-const googleWorkspaceOAuthConfigSchema = z.object({
-  clientId: googleWorkspaceOAuthClientIdSchema,
-  clientSecret: z.string().min(8).max(512).optional(),
-  workspaceDomain: googleWorkspaceDomainSchema.nullable(),
-  accountEmail: z.string().email().max(254).optional(),
-  privateLocalWeb: z.object({ redirectUri: privateGoogleLoopbackRedirectSchema, accountEmail: z.string().email().max(254) }).strict().optional()
-}).strict()
+const googleWorkspaceOAuthConfigSchema = z
+  .object({
+    clientId: googleWorkspaceOAuthClientIdSchema,
+    clientSecret: z.string().min(8).max(512).optional(),
+    workspaceDomain: googleWorkspaceDomainSchema.nullable(),
+    accountEmail: z.string().email().max(254).optional(),
+    privateLocalWeb: z
+      .object({ redirectUri: privateGoogleLoopbackRedirectSchema, accountEmail: z.string().email().max(254) })
+      .strict()
+      .optional()
+  })
+  .strict()
 
 function accountDomain(emailAddress: string): string {
   const separator = emailAddress.lastIndexOf('@')
@@ -443,10 +494,18 @@ function accountDomain(emailAddress: string): string {
 function assertLoopbackRedirectUri(value: string): string {
   const url = new URL(value)
   if (
-    url.protocol !== 'http:' || url.hostname !== '127.0.0.1' ||
-    !/^\d{1,5}$/u.test(url.port) || Number(url.port) < 1 || Number(url.port) > 65_535 ||
-    url.pathname !== '/oauth2/callback' || url.username || url.password || url.search || url.hash
-  ) throw new Error('Google OAuth callback did not return the expected loopback redirect URI.')
+    url.protocol !== 'http:' ||
+    url.hostname !== '127.0.0.1' ||
+    !/^\d{1,5}$/u.test(url.port) ||
+    Number(url.port) < 1 ||
+    Number(url.port) > 65_535 ||
+    url.pathname !== '/oauth2/callback' ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  )
+    throw new Error('Google OAuth callback did not return the expected loopback redirect URI.')
   return url.toString()
 }
 
@@ -460,7 +519,8 @@ export class GoogleWorkspaceOAuthClient {
     private readonly dependencies: GoogleWorkspaceOAuthDependencies
   ) {
     this.config = googleWorkspaceOAuthConfigSchema.parse(config)
-    if (this.config.privateLocalWeb && !this.config.clientSecret) throw new Error('Private Google Web client requires its local client secret.')
+    if (this.config.privateLocalWeb && !this.config.clientSecret)
+      throw new Error('Private Google Web client requires its local client secret.')
   }
 
   async getState(): Promise<GoogleWorkspaceState> {
@@ -504,10 +564,7 @@ export class GoogleWorkspaceOAuthClient {
     const credential = await this.dependencies.credentialStore.load()
     if (!credential) throw new Error('Google Workspace is not connected.')
     assertReadonlyScopes(credential.scopes)
-    const profile = await new GmailReadClient(
-      (forceRefresh) => this.getAccessToken(forceRefresh),
-      this.dependencies.fetch
-    ).getProfile()
+    const profile = await new GmailReadClient((forceRefresh) => this.getAccessToken(forceRefresh), this.dependencies.fetch).getProfile()
     if (profile.emailAddress.toLocaleLowerCase('en-US') !== credential.accountEmail.toLocaleLowerCase('en-US')) {
       throw new Error('Gmail account changed after authorization.')
     }
@@ -579,14 +636,11 @@ export class GoogleWorkspaceOAuthClient {
     const credential = await this.dependencies.credentialStore.load()
     if (!credential) return this.disconnectedState()
     try {
-      const response = await this.dependencies.fetch(
-        'https://oauth2.googleapis.com/revoke',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ token: credential.refreshToken })
-        }
-      )
+      const response = await this.dependencies.fetch('https://oauth2.googleapis.com/revoke', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: credential.refreshToken })
+      })
       if (!response.ok) throw new Error(`Google token revocation failed (${response.status}).`)
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('Google token revocation failed (')) throw error
@@ -610,7 +664,8 @@ export class GoogleWorkspaceOAuthClient {
       codeChallenge: createPkceChallenge(verifier)
     })
     const privateRedirect = this.config.privateLocalWeb?.redirectUri
-    if (privateRedirect && authorization.redirectUri !== privateRedirect) throw new Error('Google OAuth callback did not match the configured private loopback address.')
+    if (privateRedirect && authorization.redirectUri !== privateRedirect)
+      throw new Error('Google OAuth callback did not match the configured private loopback address.')
     const redirectUri = privateRedirect ?? assertLoopbackRedirectUri(authorization.redirectUri)
     const body = new URLSearchParams({
       client_id: this.config.clientId,
@@ -639,9 +694,12 @@ export class GoogleWorkspaceOAuthClient {
     })
     if (profileResponse.status === 403) {
       const reason = await gmailProfileForbiddenReason(profileResponse)
-      if (reason === 'GMAIL_API_DISABLED') throw new Error('GMAIL_API_DISABLED: Google 项目尚未启用 Gmail API，请在该项目中启用后重新连接。')
+      if (reason === 'GMAIL_API_DISABLED')
+        throw new Error('GMAIL_API_DISABLED: Google 项目尚未启用 Gmail API，请在该项目中启用后重新连接。')
       if (reason === 'GMAIL_SCOPE_INSUFFICIENT') throw new Error('GMAIL_SCOPE_INSUFFICIENT: Google 未授予所需的邮件读取权限，请重新授权。')
-      throw new Error(`${reason}: Gmail の読取権限を取得できませんでした。個人アカウントは Gmail が有効な Google アカウントを使用してください。会社アカウントは Workspace 管理者に本製品の許可を依頼してください。`)
+      throw new Error(
+        `${reason}: Gmail の読取権限を取得できませんでした。個人アカウントは Gmail が有効な Google アカウントを使用してください。会社アカウントは Workspace 管理者に本製品の許可を依頼してください。`
+      )
     }
     if (!profileResponse.ok) throw new Error(`Gmail profile verification failed (${profileResponse.status}).`)
     const profile = gmailProfileSchema.parse(await profileResponse.json())
@@ -689,7 +747,10 @@ export class GoogleWorkspaceOAuthClient {
 
 export const gmailSyncConfigurationSchema = z.object({
   version: z.literal('gmail-sync-config-v1'),
-  labelIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/)).min(1).max(10),
+  labelIds: z
+    .array(z.string().regex(/^[A-Za-z0-9_-]{1,128}$/))
+    .min(1)
+    .max(10),
   query: z
     .string()
     .trim()
@@ -698,9 +759,7 @@ export const gmailSyncConfigurationSchema = z.object({
     .refine((value) => !/[\r\n\u0000:()]/u.test(value), 'Use business keywords, not Gmail operators.')
     .refine(
       (value) =>
-        value
-          .split(/\s+OR\s+/iu)
-          .every((term) => term.replace(/^['"]|['"]$/gu, '').trim().length >= 2) &&
+        value.split(/\s+OR\s+/iu).every((term) => term.replace(/^['"]|['"]$/gu, '').trim().length >= 2) &&
         !/(?:^|\s)(?:AND|NOT)(?:\s|$)/iu.test(value),
       'Use one or more business keywords separated by OR.'
     ),
@@ -722,7 +781,12 @@ export interface GmailDiscoveryResult {
   nextPageToken?: string
 }
 
-export interface GmailResumeAttachment { id: string; name: string; size: number; data?: string }
+export interface GmailResumeAttachment {
+  id: string
+  name: string
+  size: number
+  data?: string
+}
 
 /** Header-derived, single mailbox only; never accepts mailto query/header injection. */
 export function gmailReplyMailbox(value: string): string | null {
@@ -774,13 +838,22 @@ const historyResponseSchema = z.object({
     .array(
       z.object({
         id: z.string().regex(/^\d{1,40}$/u),
-        messagesAdded: z.array(z.object({ message: messageReferenceSchema })).max(1_000).optional(),
-        labelsAdded: z.array(z.object({
-          message: messageReferenceSchema,
-          labelIds: z.array(z.string().max(128)).max(100).optional()
-        })).max(1_000).optional()
+        messagesAdded: z
+          .array(z.object({ message: messageReferenceSchema }))
+          .max(1_000)
+          .optional(),
+        labelsAdded: z
+          .array(
+            z.object({
+              message: messageReferenceSchema,
+              labelIds: z.array(z.string().max(128)).max(100).optional()
+            })
+          )
+          .max(1_000)
+          .optional()
       })
-    ).max(1_000)
+    )
+    .max(1_000)
     .optional(),
   nextPageToken: z.string().min(1).optional(),
   historyId: z.string().regex(/^\d{1,40}$/u)
@@ -797,12 +870,21 @@ interface GmailMessagePart {
 const messagePartSchema: z.ZodType<GmailMessagePart> = z.object({
   mimeType: z.string().max(200).optional(),
   filename: z.string().max(500).optional(),
-  headers: z.array(z.object({ name: z.string().max(200), value: z.string().max(10_000) })).max(500).optional(),
-  body: z.object({
-    size: z.number().int().nonnegative().optional(),
-    data: z.string().max(3_000_000).regex(/^[A-Za-z0-9_-]*={0,2}$/u).optional(),
-    attachmentId: z.string().max(500).optional()
-  }).optional(),
+  headers: z
+    .array(z.object({ name: z.string().max(200), value: z.string().max(10_000) }))
+    .max(500)
+    .optional(),
+  body: z
+    .object({
+      size: z.number().int().nonnegative().optional(),
+      data: z
+        .string()
+        .max(3_000_000)
+        .regex(/^[A-Za-z0-9_-]*={0,2}$/u)
+        .optional(),
+      attachmentId: z.string().max(500).optional()
+    })
+    .optional(),
   parts: z.array(z.unknown()).max(500).optional()
 })
 
@@ -812,7 +894,12 @@ const gmailFullMessageSchema = z.object({
   labelIds: z.array(z.string().max(128)).max(100).default([]),
   historyId: z.string().regex(/^\d{1,40}$/u),
   internalDate: z.string().regex(/^\d{1,20}$/),
-  sizeEstimate: z.number().int().nonnegative().max(50 * 1024 * 1024).optional(),
+  sizeEstimate: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(50 * 1024 * 1024)
+    .optional(),
   payload: messagePartSchema
 })
 
@@ -822,10 +909,7 @@ function decodeBase64UrlText(data: string): { text: string; bytes: number } {
   return { text: bytes.toString('utf8'), bytes: bytes.length }
 }
 
-function messageHeader(
-  headers: Array<{ name: string; value: string }> | undefined,
-  name: string
-): string | null {
+function messageHeader(headers: Array<{ name: string; value: string }> | undefined, name: string): string | null {
   return headers?.find((header) => header.name.toLocaleLowerCase('en-US') === name.toLocaleLowerCase('en-US'))?.value ?? null
 }
 
@@ -851,8 +935,12 @@ function collectMessageContent(part: z.infer<typeof messagePartSchema>): {
     if (depth > 20 || visitedParts > 1_000) throw new Error('Gmail MIME structure exceeds the local complexity limit.')
     if (current.body?.attachmentId || current.filename) collected.attachments += 1
     if (current.filename && /\.(pdf|docx|xlsx|xls|xlsb)$/iu.test(current.filename)) {
-      collected.resumeAttachments.push({ id: current.body?.attachmentId ?? `inline-${visitedParts}`, name: current.filename, size: current.body?.size ?? 0,
-        ...(current.body?.data ? { data: current.body.data } : {}) })
+      collected.resumeAttachments.push({
+        id: current.body?.attachmentId ?? `inline-${visitedParts}`,
+        name: current.filename,
+        size: current.body?.size ?? 0,
+        ...(current.body?.data ? { data: current.body.data } : {})
+      })
     }
     if (current.body?.data && (current.mimeType === 'text/plain' || current.mimeType === 'text/html')) {
       const decoded = decodeBase64UrlText(current.body.data)
@@ -875,11 +963,19 @@ function domainFromMailbox(value: string): string | null {
 function displayNameFromMailbox(value: string): string | null {
   const bracket = value.lastIndexOf('<')
   if (bracket <= 0 || !value.slice(bracket).includes('@')) return null
-  const candidate = value.slice(0, bracket).trim().replace(/^['"]|['"]$/gu, '').trim()
+  const candidate = value
+    .slice(0, bracket)
+    .trim()
+    .replace(/^['"]|['"]$/gu, '')
+    .trim()
   if (
-    candidate.length < 2 || candidate.length > 120 || candidate.includes('@') ||
-    /[\r\n\u0000<>]/u.test(candidate) || /^(?:noreply|no-reply|support|sales|info)$/iu.test(candidate)
-  ) return null
+    candidate.length < 2 ||
+    candidate.length > 120 ||
+    candidate.includes('@') ||
+    /[\r\n\u0000<>]/u.test(candidate) ||
+    /^(?:noreply|no-reply|support|sales|info)$/iu.test(candidate)
+  )
+    return null
   return candidate
 }
 
@@ -936,7 +1032,10 @@ export function classifyGmailMessage(message: GmailMessageEnvelope): 'job-case' 
   const attachmentNames = (message.resumeAttachments ?? []).map((item) => item.name).join(' ')
   // A short covering letter may contain only a rate or availability. Explicit
   // resume filenames take precedence over those shared commercial fields.
-  if (!/(?:案件|募集|求人)/u.test(message.subject) && /(?:スキルシート|経歴書|履歴書|简历|履历|resume|\bcv[._\s-])/iu.test(attachmentNames)) {
+  if (
+    !/(?:案件|募集|求人)/u.test(message.subject) &&
+    /(?:スキルシート|経歴書|履歴書|简历|履历|resume|\bcv[._\s-])/iu.test(attachmentNames)
+  ) {
     return 'candidate-proposal'
   }
   if (classification === 'unclassified') {
@@ -993,9 +1092,7 @@ export function redactGmailMessageForLocalStorage(
       historyId: message.historyId,
       internalDate: message.internalDate,
       labelIds: message.labelIds,
-      rfcMessageId: message.rfcMessageId
-        ? createHash('sha256').update(message.rfcMessageId).digest('hex')
-        : null,
+      rfcMessageId: message.rfcMessageId ? createHash('sha256').update(message.rfcMessageId).digest('hex') : null,
       fromDomain: message.fromDomain,
       redactedSubject,
       redactedBody,
@@ -1027,15 +1124,19 @@ export class GmailReadClient {
     return gmailProfileSchema.parse(await this.request('/gmail/v1/users/me/profile'))
   }
 
-  async discoverBaseline(configInput: GmailSyncConfiguration, window?: { startedAt: string; pageToken?: string }): Promise<GmailDiscoveryResult> {
+  async discoverBaseline(
+    configInput: GmailSyncConfiguration,
+    window?: { startedAt: string; pageToken?: string }
+  ): Promise<GmailDiscoveryResult> {
     const config = gmailSyncConfigurationSchema.parse(configInput)
     const references = new Map<string, GmailMessageReference>()
     let pageToken = window?.pageToken
     let pageCount = 0
     const startedAt = window ? new Date(z.iso.datetime().parse(window.startedAt)).getTime() : null
-    const timeQuery = startedAt === null
-      ? `newer_than:${config.lookbackDays}d`
-      : `after:${Math.floor(startedAt / 1000) - config.lookbackDays * 86400 - 1} before:${Math.ceil(startedAt / 1000) + 1}`
+    const timeQuery =
+      startedAt === null
+        ? `newer_than:${config.lookbackDays}d`
+        : `after:${Math.floor(startedAt / 1000) - config.lookbackDays * 86400 - 1} before:${Math.ceil(startedAt / 1000) + 1}`
     do {
       const query = new URLSearchParams({
         maxResults: String(Math.min(100, config.maxMessagesPerRun - references.size)),
@@ -1052,12 +1153,20 @@ export class GmailReadClient {
       pageToken = response.nextPageToken
       pageCount += 1
     } while (pageToken && references.size < config.maxMessagesPerRun && pageCount < 10)
-    return { messageReferences: [...references.values()], historyId: null, truncated: Boolean(pageToken), ...(pageToken ? { nextPageToken: pageToken } : {}) }
+    return {
+      messageReferences: [...references.values()],
+      historyId: null,
+      truncated: Boolean(pageToken),
+      ...(pageToken ? { nextPageToken: pageToken } : {})
+    }
   }
 
   async discoverHistory(startHistoryId: string, configInput: GmailSyncConfiguration): Promise<GmailDiscoveryResult> {
     const config = gmailSyncConfigurationSchema.parse(configInput)
-    const validatedStartHistoryId = z.string().regex(/^\d{1,40}$/u).parse(startHistoryId)
+    const validatedStartHistoryId = z
+      .string()
+      .regex(/^\d{1,40}$/u)
+      .parse(startHistoryId)
     const references = new Map<string, GmailMessageReference>()
     let latestHistoryId = validatedStartHistoryId
     let truncated = false
@@ -1108,12 +1217,26 @@ export class GmailReadClient {
     const maximum = 25 * 1024 * 1024
     if (attachment.size > maximum) throw new Error('GMAIL_ATTACHMENT_TOO_LARGE')
     const id = messageReferenceSchema.shape.id.parse(messageId)
-    const body = attachment.data ? { data: attachment.data, size: attachment.size } : z.object({
-      data: z.string().max(Math.ceil(maximum * 4 / 3) + 4), size: z.number().int().min(0).max(maximum)
-    }).parse(await this.request(`/gmail/v1/users/me/messages/${id}/attachments/${z.string().regex(/^[A-Za-z0-9_-]{1,2048}$/u).parse(attachment.id)}`))
-    if (!/^[A-Za-z0-9_-]*={0,2}$/u.test(body.data) || body.data.length > Math.ceil(maximum * 4 / 3) + 4) throw new Error('GMAIL_ATTACHMENT_INVALID')
+    const body = attachment.data
+      ? { data: attachment.data, size: attachment.size }
+      : z
+          .object({
+            data: z.string().max(Math.ceil((maximum * 4) / 3) + 4),
+            size: z.number().int().min(0).max(maximum)
+          })
+          .parse(
+            await this.request(
+              `/gmail/v1/users/me/messages/${id}/attachments/${z
+                .string()
+                .regex(/^[A-Za-z0-9_-]{1,2048}$/u)
+                .parse(attachment.id)}`
+            )
+          )
+    if (!/^[A-Za-z0-9_-]*={0,2}$/u.test(body.data) || body.data.length > Math.ceil((maximum * 4) / 3) + 4)
+      throw new Error('GMAIL_ATTACHMENT_INVALID')
     const bytes = Buffer.from(body.data, 'base64url')
-    if (!bytes.length || bytes.length > maximum || (body.size > 0 && bytes.length !== body.size)) throw new Error('GMAIL_ATTACHMENT_SIZE_MISMATCH')
+    if (!bytes.length || bytes.length > maximum || (body.size > 0 && bytes.length !== body.size))
+      throw new Error('GMAIL_ATTACHMENT_SIZE_MISMATCH')
     return bytes
   }
 
@@ -1192,15 +1315,19 @@ export function syncConfigurationHash(config: GmailSyncConfiguration): string {
 }
 
 export function googleWorkspaceConfigurationFingerprint(config: GoogleWorkspaceAdminConfiguration): string {
-  return createHash('sha256').update(JSON.stringify({
-    clientId: config.clientId,
-    workspaceDomain: config.workspaceDomain,
-    labelIds: config.labelIds,
-    query: config.query,
-    lookbackDays: config.lookbackDays,
-    maxMessagesPerRun: config.maxMessagesPerRun,
-    revision: config.revision
-  })).digest('hex')
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        clientId: config.clientId,
+        workspaceDomain: config.workspaceDomain,
+        labelIds: config.labelIds,
+        query: config.query,
+        lookbackDays: config.lookbackDays,
+        maxMessagesPerRun: config.maxMessagesPerRun,
+        revision: config.revision
+      })
+    )
+    .digest('hex')
 }
 
 export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
@@ -1232,12 +1359,20 @@ export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
   const exactReadonlyScope = options.live.grantedScopes.length === 1 && options.live.grantedScopes[0] === gmailReadonlyScope
   const syncMatchesConfiguration = options.sync.configHash === currentSyncHash
   const intake = options.sync.lastRun?.intake
-  const syncSucceeded = options.sync.status === 'idle' && Boolean(options.sync.lastSyncedAt) && Boolean(options.sync.lastRun) &&
-    !options.sync.lastRun?.moreAvailable && !(intake && (intake.casesFailed || intake.personnelFailed || intake.pendingCases || intake.pendingPersonnel))
-  const redactionCountReconciled = options.redaction.passed + options.redaction.uncertain + options.redaction.blocked === options.redaction.storedMessages
-  const redactionStatus = options.redaction.storedMessages === 0 || !redactionCountReconciled || options.redaction.blocked > 0
-    ? 'failed'
-    : options.redaction.uncertain > 0 ? 'warning' : 'passed'
+  const syncSucceeded =
+    options.sync.status === 'idle' &&
+    Boolean(options.sync.lastSyncedAt) &&
+    Boolean(options.sync.lastRun) &&
+    !options.sync.lastRun?.moreAvailable &&
+    !(intake && (intake.casesFailed || intake.personnelFailed || intake.pendingCases || intake.pendingPersonnel))
+  const redactionCountReconciled =
+    options.redaction.passed + options.redaction.uncertain + options.redaction.blocked === options.redaction.storedMessages
+  const redactionStatus =
+    options.redaction.storedMessages === 0 || !redactionCountReconciled || options.redaction.blocked > 0
+      ? 'failed'
+      : options.redaction.uncertain > 0
+        ? 'warning'
+        : 'passed'
   const lastRun = options.sync.lastRun
   const checks: GoogleWorkspaceOnlineAcceptanceReport['checks'] = [
     {
@@ -1250,7 +1385,9 @@ export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
       id: 'readonly-scope',
       status: exactReadonlyScope ? 'passed' : 'failed',
       label: '読取専用 Scope',
-      detail: exactReadonlyScope ? '付与 Scope は gmail.readonly のみです。' : 'gmail.readonly 以外の Scope が含まれています。再接続してください。'
+      detail: exactReadonlyScope
+        ? '付与 Scope は gmail.readonly のみです。'
+        : 'gmail.readonly 以外の Scope が含まれています。再接続してください。'
     },
     {
       id: 'account-identity',
@@ -1268,27 +1405,31 @@ export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
       id: 'bounded-sync',
       status: syncMatchesConfiguration ? 'passed' : 'failed',
       label: '管理者指定の同期範囲',
-      detail: syncMatchesConfiguration ? '最近の同期は現在の Label・期間・件数上限と一致します。' : '現在の管理設定で同期を再実行してください。'
+      detail: syncMatchesConfiguration
+        ? '最近の同期は現在の Label・期間・件数上限と一致します。'
+        : '現在の管理設定で同期を再実行してください。'
     },
     {
       id: 'successful-sync',
       status: syncSucceeded && (lastRun?.failed ?? 0) === 0 ? 'passed' : 'failed',
       label: 'Gmail の有界同期',
-      detail: syncSucceeded && lastRun
-        ? `最終同期: 取得候補 ${lastRun.discovered}件、保存 ${lastRun.imported}件、失敗 ${lastRun.failed}件。`
-        : '接続後に「今すぐ同期」を実行してから再度検証してください。'
+      detail:
+        syncSucceeded && lastRun
+          ? `最終同期: 取得候補 ${lastRun.discovered}件、保存 ${lastRun.imported}件、失敗 ${lastRun.failed}件。`
+          : '接続後に「今すぐ同期」を実行してから再度検証してください。'
     },
     {
       id: 'local-redaction',
       status: redactionStatus,
       label: 'ローカル脱敏証跡',
-      detail: options.redaction.storedMessages === 0
-        ? '脱敏済み Gmail レコードがまだありません。対象 Label に検証用メールを用意してください。'
-        : options.redaction.blocked > 0 || !redactionCountReconciled
-          ? '脱敏証跡が欠損または無効です。対象レコードをクラウド処理へ渡せません。'
-          : options.redaction.uncertain > 0
-            ? `${options.redaction.passed}件通過、${options.redaction.uncertain}件は要確認として端末内に留めています。`
-            : `${options.redaction.passed}件すべてに通過済みのローカル脱敏証跡があります。`
+      detail:
+        options.redaction.storedMessages === 0
+          ? '脱敏済み Gmail レコードがまだありません。対象 Label に検証用メールを用意してください。'
+          : options.redaction.blocked > 0 || !redactionCountReconciled
+            ? '脱敏証跡が欠損または無効です。対象レコードをクラウド処理へ渡せません。'
+            : options.redaction.uncertain > 0
+              ? `${options.redaction.passed}件通過、${options.redaction.uncertain}件は要確認として端末内に留めています。`
+              : `${options.redaction.passed}件すべてに通過済みのローカル脱敏証跡があります。`
     },
     {
       id: 'no-cloud-model',
@@ -1440,10 +1581,7 @@ export class GmailSyncCoordinator {
             const stored = this.store.saveGmailMessage({
               ...processed,
               duplicateOfMessageId: duplicateOf,
-              warningCodes: [
-                ...processed.warningCodes,
-                ...(duplicateOf ? ['BUSINESS_DUPLICATE'] : [])
-              ]
+              warningCodes: [...processed.warningCodes, ...(duplicateOf ? ['BUSINESS_DUPLICATE'] : [])]
             })
             if (stored) lastRun.imported += 1
             else lastRun.duplicates += 1
@@ -1462,7 +1600,7 @@ export class GmailSyncCoordinator {
         lastRun.moreAvailable = true
         lastRun.continuation = { ...baselineWindow, pageToken: discovery.nextPageToken }
       }
-      const nextHistoryId = mode === 'incremental' ? discovery.historyId ?? profile.historyId : baselineWindow.historyId
+      const nextHistoryId = mode === 'incremental' ? (discovery.historyId ?? profile.historyId) : baselineWindow.historyId
       this.store.saveGmailSyncSuccess(accountEmail, configHash, nextHistoryId, lastRun, now.toISOString())
       return { lastRun, errorCode: null }
     } catch (error) {

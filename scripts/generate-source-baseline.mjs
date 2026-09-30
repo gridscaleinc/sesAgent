@@ -10,7 +10,16 @@ if (!outputPath || basename(outputPath) !== 'source-manifest.json') {
 }
 
 const excludedDirectories = new Set([
-  '.git', '.playwright-cli', 'build', 'coverage', 'dist', 'local', 'node_modules', 'out', 'output', 'release'
+  '.git',
+  '.playwright-cli',
+  'build',
+  'coverage',
+  'dist',
+  'local',
+  'node_modules',
+  'out',
+  'output',
+  'release'
 ])
 const excludedExtensions = new Set(['.cer', '.crt', '.key', '.p12', '.pem', '.pfx'])
 
@@ -31,7 +40,7 @@ async function collect(directory) {
   for (const entry of entries) {
     if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue
     const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) files.push(...await collect(path))
+    if (entry.isDirectory()) files.push(...(await collect(path)))
     else if (entry.isFile() && !isExcludedFile(path)) files.push(path)
   }
   return files
@@ -74,9 +83,11 @@ await mkdir(dirname(outputPath), { recursive: true, mode: 0o755 })
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o444, flag: 'wx' })
 await chmod(outputPath, 0o444)
 await chmod(dirname(outputPath), 0o555)
-process.stdout.write(`${JSON.stringify({
-  outputPath,
-  fileCount: manifest.fileCount,
-  aggregateSha256: manifest.aggregateSha256,
-  releaseEligible: manifest.releaseEligible
-})}\n`)
+process.stdout.write(
+  `${JSON.stringify({
+    outputPath,
+    fileCount: manifest.fileCount,
+    aggregateSha256: manifest.aggregateSha256,
+    releaseEligible: manifest.releaseEligible
+  })}\n`
+)

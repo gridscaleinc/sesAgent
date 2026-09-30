@@ -47,10 +47,7 @@ export function activeCaseTitle(review: JobCaseReviewSnapshot): string {
   return review.fields.find((field) => field.key === 'title')?.value ?? review.redactedSubject
 }
 
-export function resolveBroadcastTemplate(
-  repository: BroadcastServiceRepository,
-  templateId?: string
-): BroadcastTemplate {
+export function resolveBroadcastTemplate(repository: BroadcastServiceRepository, templateId?: string): BroadcastTemplate {
   const templates = repository.listBroadcastTemplates()
   const template = templateId ? templates.find((item) => item.id === templateId) : templates[0]
   if (!template) throw new Error('紹介文テンプレートが見つかりません。')
@@ -58,10 +55,7 @@ export function resolveBroadcastTemplate(
 }
 
 /** A case is broadcastable only once a person confirmed it and it is still valid. */
-export function requireSendableReview(
-  repository: BroadcastServiceRepository,
-  reviewId: string
-): SendableJobCaseReview {
+export function requireSendableReview(repository: BroadcastServiceRepository, reviewId: string): SendableJobCaseReview {
   const review = repository.getJobCaseReview(reviewId)
   if (!review) throw new Error('案件レコードが見つかりません。')
   if (review.lifecycle !== 'active') throw new Error('無効になった案件は配信できません。')
@@ -85,10 +79,7 @@ export function loadBroadcastWorkspace(repository: BroadcastServiceRepository): 
  * plus the pre-v43 ledger rows, which claimed more than the app could know but
  * still mark a moment the case was worked on. No entry carries message text.
  */
-export function loadCaseBroadcastHistory(
-  repository: BroadcastServiceRepository,
-  reviewId: string
-): CaseBroadcastHistoryEntry[] {
+export function loadCaseBroadcastHistory(repository: BroadcastServiceRepository, reviewId: string): CaseBroadcastHistoryEntry[] {
   const entries: CaseBroadcastHistoryEntry[] = [
     ...repository.listCaseBroadcastCopies(reviewId).map((copy): CaseBroadcastHistoryEntry => ({
       id: copy.id,
@@ -114,10 +105,7 @@ export function loadCaseBroadcastHistory(
   return entries.toSorted((left, right) => right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
 }
 
-export function draftCaseBroadcast(
-  repository: BroadcastServiceRepository,
-  input: DraftCaseBroadcastInput
-): DraftCaseBroadcastResult {
+export function draftCaseBroadcast(repository: BroadcastServiceRepository, input: DraftCaseBroadcastInput): DraftCaseBroadcastResult {
   const review = requireSendableReview(repository, input.reviewId)
   const template = resolveBroadcastTemplate(repository, input.templateId)
   return draftCaseBroadcastForReview(review, template)
@@ -129,10 +117,7 @@ export function draftCaseBroadcast(
  * here: the operator has to see which identifier types are still in the text
  * before it can go out.
  */
-export function draftCaseBroadcastForReview(
-  review: SendableJobCaseReview,
-  template: BroadcastTemplate
-): DraftCaseBroadcastResult {
+export function draftCaseBroadcastForReview(review: SendableJobCaseReview, template: BroadcastTemplate): DraftCaseBroadcastResult {
   const fields = review.fields.map((field) => ({ key: field.key, value: field.value }))
   const title = activeCaseTitle(review)
   const textJa = generateBroadcastText(fields, title, template, 'ja')
@@ -183,8 +168,11 @@ export function recordCaseBroadcastCopy(
 ): RecordCaseBroadcastCopyResult {
   const review = requireSendableReview(repository, input.reviewId)
   const template = resolveBroadcastTemplate(repository, input.templateId)
-  if ((input.expectedJobCaseVersion !== undefined && input.expectedJobCaseVersion !== review.jobCase.version)
-    || (input.expectedTemplateRevision !== undefined && input.expectedTemplateRevision !== template.revision)) throw new Error('资料或模板已更新，请重新打开介绍。 / 情報またはテンプレートが更新されました。紹介画面を開き直してください。')
+  if (
+    (input.expectedJobCaseVersion !== undefined && input.expectedJobCaseVersion !== review.jobCase.version) ||
+    (input.expectedTemplateRevision !== undefined && input.expectedTemplateRevision !== template.revision)
+  )
+    throw new Error('资料或模板已更新，请重新打开介绍。 / 情報またはテンプレートが更新されました。紹介画面を開き直してください。')
   const identifiers = detectDirectIdentifiers(input.text)
   if (identifiers.length > 0) {
     throw new Error(`本文に識別子が残っています（${identifiers.join('、')}）。削除してからもう一度操作してください。`)
@@ -215,8 +203,7 @@ function encodeMailtoQueryValue(value: string): string {
   // Some native mail clients display URLSearchParams' `+` literally instead
   // of treating it as a space in mailto fields. RFC 3986 percent encoding is
   // accepted consistently and also prevents query-parameter injection.
-  return encodeURIComponent(value).replace(/[!'()*]/gu, (character) =>
-    `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+  return encodeURIComponent(value).replace(/[!'()*]/gu, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
 }
 
 /**
@@ -230,9 +217,15 @@ export function prepareCaseBroadcastEmail(
 ): PreparedCaseBroadcastEmail {
   const review = requireSendableReview(repository, input.reviewId)
   const template = resolveBroadcastTemplate(repository, input.templateId)
-  if ((input.expectedJobCaseVersion !== undefined && input.expectedJobCaseVersion !== review.jobCase.version)
-    || (input.expectedTemplateRevision !== undefined && input.expectedTemplateRevision !== template.revision)) throw new Error('资料或模板已更新，请重新打开介绍。 / 情報またはテンプレートが更新されました。紹介画面を開き直してください。')
-  const title = activeCaseTitle(review).replace(/[\r\n]+/gu, ' ').replace(/\s+/gu, ' ').trim()
+  if (
+    (input.expectedJobCaseVersion !== undefined && input.expectedJobCaseVersion !== review.jobCase.version) ||
+    (input.expectedTemplateRevision !== undefined && input.expectedTemplateRevision !== template.revision)
+  )
+    throw new Error('资料或模板已更新，请重新打开介绍。 / 情報またはテンプレートが更新されました。紹介画面を開き直してください。')
+  const title = activeCaseTitle(review)
+    .replace(/[\r\n]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
   const subject = `${input.kind === 'update' ? '【案件更新】' : '【案件】'}${title}`
   const identifiers = detectDirectIdentifiers(`${subject}\n${input.text}`)
   if (identifiers.length > 0) {

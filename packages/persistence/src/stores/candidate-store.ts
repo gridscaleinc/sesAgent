@@ -65,22 +65,13 @@ export class CandidateStore extends DomainStore {
 
   saveStagedFiles(files: StagedFileRecord[]): void {
     const insert = this.database.prepare(
-        `INSERT INTO staged_files(
+      `INSERT INTO staged_files(
            token, name, format, size, sha256, encrypted_path, privacy_status, created_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      )
+    )
     const save = this.database.transaction(() => {
       for (const file of files) {
-        insert.run(
-          file.token,
-          file.name,
-          file.format,
-          file.size,
-          file.sha256,
-          file.encryptedPath,
-          file.privacyStatus,
-          file.createdAt
-        )
+        insert.run(file.token, file.name, file.format, file.size, file.sha256, file.encryptedPath, file.privacyStatus, file.createdAt)
       }
     })
     save()
@@ -96,20 +87,29 @@ export class CandidateStore extends DomainStore {
     )
     const save = this.database.transaction(() => {
       for (const file of files) {
-        const duplicate = this.database.prepare<[string], { token: string }>('SELECT token FROM staged_files WHERE sha256 = ? LIMIT 1').get(file.sha256)
+        const duplicate = this.database
+          .prepare<[string], { token: string }>('SELECT token FROM staged_files WHERE sha256 = ? LIMIT 1')
+          .get(file.sha256)
         if (duplicate) throw new DuplicateCandidateError(duplicate.token)
         insertFile.run(file.token, file.name, file.format, file.size, file.sha256, file.encryptedPath, file.privacyStatus, file.createdAt)
       }
-      this.database.prepare(
-        `INSERT INTO work_tasks(id, type, status, title, payload_json, revision, tombstone, created_at, updated_at)
+      this.database
+        .prepare(
+          `INSERT INTO work_tasks(id, type, status, title, payload_json, revision, tombstone, created_at, updated_at)
          VALUES (@id, @type, @status, @title, @payload, 1, 0, @createdAt, @updatedAt)`
-      ).run({
-        id: validatedTask.id, type: validatedTask.type, status: validatedTask.status, title: validatedTask.title,
-        payload: JSON.stringify(validatedTask), createdAt: validatedTask.createdAt, updatedAt: validatedTask.updatedAt
-      })
-      this.database.prepare(
-        'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(randomUUID(), 'work_task', validatedTask.id, 1, 'upsert', new Date().toISOString())
+        )
+        .run({
+          id: validatedTask.id,
+          type: validatedTask.type,
+          status: validatedTask.status,
+          title: validatedTask.title,
+          payload: JSON.stringify(validatedTask),
+          createdAt: validatedTask.createdAt,
+          updatedAt: validatedTask.updatedAt
+        })
+      this.database
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(randomUUID(), 'work_task', validatedTask.id, 1, 'upsert', new Date().toISOString())
     })
     save()
   }
@@ -174,9 +174,7 @@ export class CandidateStore extends DomainStore {
   }
 
   listStagedFileRecords(): StagedFileRecord[] {
-    const rows = this.database
-      .prepare<[], StagedFileRow>('SELECT * FROM staged_files ORDER BY token')
-      .all()
+    const rows = this.database.prepare<[], StagedFileRow>('SELECT * FROM staged_files ORDER BY token').all()
     return rows.map((row) => ({
       token: row.token,
       name: row.name,
@@ -202,12 +200,14 @@ export class CandidateStore extends DomainStore {
   findCandidateByDocumentContent(document: DocumentIR): CandidateReviewSnapshot | null {
     const fingerprint = candidateContentFingerprint(document)
     if (!fingerprint) return null
-    const duplicate = this.database.prepare<[string, string], { document_id: string }>(
-      `SELECT parsed.document_id FROM parsed_documents parsed
+    const duplicate = this.database
+      .prepare<[string, string], { document_id: string }>(
+        `SELECT parsed.document_id FROM parsed_documents parsed
        JOIN candidate_review_states review ON review.document_id = parsed.document_id
        WHERE parsed.intake_fingerprint = ? AND parsed.document_id != ?
        ORDER BY parsed.analyzed_at, parsed.document_id LIMIT 1`
-    ).get(fingerprint, document.documentId)
+      )
+      .get(fingerprint, document.documentId)
     return duplicate ? this.getCandidateReview(duplicate.document_id) : null
   }
 
@@ -252,7 +252,8 @@ export class CandidateStore extends DomainStore {
           validatedDocument.version,
           validatedSummary.analyzedAt
         )
-      this.database.prepare('UPDATE parsed_documents SET intake_fingerprint = ? WHERE document_id = ?')
+      this.database
+        .prepare('UPDATE parsed_documents SET intake_fingerprint = ? WHERE document_id = ?')
         .run(candidateContentFingerprint(validatedDocument), validatedDocument.documentId)
       if (validatedExtraction) {
         const recordTimestamp = validatedExtraction.createdAt
@@ -272,11 +273,7 @@ export class CandidateStore extends DomainStore {
                review_status = excluded.review_status,
                updated_at = excluded.updated_at`
           )
-          .run(
-            validatedExtraction.documentId,
-            JSON.stringify(validatedExtraction),
-            validatedExtraction.createdAt
-          )
+          .run(validatedExtraction.documentId, JSON.stringify(validatedExtraction), validatedExtraction.createdAt)
         const reviewState = this.database
           .prepare<[string], CandidateReviewStateRow>('SELECT * FROM candidate_review_states WHERE document_id = ?')
           .get(validatedExtraction.documentId)
@@ -287,12 +284,7 @@ export class CandidateStore extends DomainStore {
                  document_id, extraction_version, extraction_created_at, status, pii_reviewed, revision, updated_at
                ) VALUES (?, ?, ?, 'awaiting-review', 0, 1, ?)`
             )
-            .run(
-              validatedExtraction.documentId,
-              validatedExtraction.version,
-              validatedExtraction.createdAt,
-              validatedExtraction.createdAt
-            )
+            .run(validatedExtraction.documentId, validatedExtraction.version, validatedExtraction.createdAt, validatedExtraction.createdAt)
         } else if (reviewState.extraction_created_at !== validatedExtraction.createdAt) {
           // A new resume starts another profile review, but candidate identity,
           // recruiting history, and earned talent-pool membership are durable.
@@ -304,12 +296,7 @@ export class CandidateStore extends DomainStore {
                  reviewer_display_name = NULL, completed_at = NULL, updated_at = ?
                WHERE document_id = ?`
             )
-            .run(
-              validatedExtraction.version,
-              validatedExtraction.createdAt,
-              validatedExtraction.createdAt,
-              validatedExtraction.documentId
-            )
+            .run(validatedExtraction.version, validatedExtraction.createdAt, validatedExtraction.createdAt, validatedExtraction.documentId)
           this.database
             .prepare("UPDATE candidate_profiles SET status = 'stale' WHERE source_document_id = ? AND status = 'current'")
             .run(validatedExtraction.documentId)
@@ -322,30 +309,84 @@ export class CandidateStore extends DomainStore {
 
   /** Make extracted personnel usable immediately without claiming an HR review. */
   private materializeImportedProfile(documentId: string): void {
-    if (this.database.prepare<[string], { id: string }>("SELECT id FROM candidate_profiles WHERE source_document_id = ? AND status = 'current'").get(documentId)) return
+    if (
+      this.database
+        .prepare<[string], { id: string }>("SELECT id FROM candidate_profiles WHERE source_document_id = ? AND status = 'current'")
+        .get(documentId)
+    )
+      return
     const draft = this.getCandidateExtraction(documentId)
-    const review = this.database.prepare<[string], CandidateReviewStateRow>('SELECT * FROM candidate_review_states WHERE document_id = ?').get(documentId)
+    const review = this.database
+      .prepare<[string], CandidateReviewStateRow>('SELECT * FROM candidate_review_states WHERE document_id = ?')
+      .get(documentId)
     if (!draft || !review || review.status === 'completed') return
-    const fields = draft.fields.map((field) => ({ key: field.key, label: field.label, value: field.value, sourceLabels: [...new Set(field.sources.map((source) => source.sourceLabel))] }))
-    const projectExperiences = draft.projectExperiences.map((project) => ({ id: randomUUID(), title: project.title, period: project.period, role: project.role,
-      technologies: project.technologies, summary: project.summary, sourceLabels: [...new Set(project.sources.map((source) => source.sourceLabel))] }))
-    const version = (this.database.prepare<[string], { version: number | null }>('SELECT MAX(version) AS version FROM candidate_profiles WHERE source_document_id = ?').get(documentId)?.version ?? 0) + 1
+    const fields = draft.fields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      value: field.value,
+      sourceLabels: [...new Set(field.sources.map((source) => source.sourceLabel))]
+    }))
+    const projectExperiences = draft.projectExperiences.map((project) => ({
+      id: randomUUID(),
+      title: project.title,
+      period: project.period,
+      role: project.role,
+      technologies: project.technologies,
+      summary: project.summary,
+      sourceLabels: [...new Set(project.sources.map((source) => source.sourceLabel))]
+    }))
+    const version =
+      (this.database
+        .prepare<[string], { version: number | null }>(
+          'SELECT MAX(version) AS version FROM candidate_profiles WHERE source_document_id = ?'
+        )
+        .get(documentId)?.version ?? 0) + 1
     const { storage: _storage, cloudEligible: _cloudEligible, ...localPersonalDetails } = this.getCandidateLocalIdentity(documentId)
-    const profile = candidateProfileSchema.parse({ schemaVersion: 'candidate-profile-v1', id: randomUUID(), sourceDocumentId: documentId,
-      profileVersion: version, reviewRevision: review.revision, localPersonalDetails, fields, projectExperiences,
-      confirmedAt: draft.createdAt, confirmedBy: '本机导入',
-      containsDirectIdentifiers: detectDirectIdentifiers([...fields.map((field) => field.value ?? ''), ...projectExperiences.flatMap((project) => [project.title, project.period ?? '', project.role ?? '', ...project.technologies, project.summary])].join('\n')).length > 0 })
-    this.database.prepare("INSERT INTO candidate_profiles(id,source_document_id,version,profile_json,status,confirmed_at,confirmed_by) VALUES (?,?,?,?,'current',?,?)")
+    const profile = candidateProfileSchema.parse({
+      schemaVersion: 'candidate-profile-v1',
+      id: randomUUID(),
+      sourceDocumentId: documentId,
+      profileVersion: version,
+      reviewRevision: review.revision,
+      localPersonalDetails,
+      fields,
+      projectExperiences,
+      confirmedAt: draft.createdAt,
+      confirmedBy: '本机导入',
+      containsDirectIdentifiers:
+        detectDirectIdentifiers(
+          [
+            ...fields.map((field) => field.value ?? ''),
+            ...projectExperiences.flatMap((project) => [
+              project.title,
+              project.period ?? '',
+              project.role ?? '',
+              ...project.technologies,
+              project.summary
+            ])
+          ].join('\n')
+        ).length > 0
+    })
+    this.database
+      .prepare(
+        "INSERT INTO candidate_profiles(id,source_document_id,version,profile_json,status,confirmed_at,confirmed_by) VALUES (?,?,?,?,'current',?,?)"
+      )
       .run(profile.id, documentId, version, JSON.stringify(profile), profile.confirmedAt, profile.confirmedBy)
   }
 
   /** Upgrade existing imported personnel as well as newly imported records. */
   prepareImportedPersonnel(): void {
-    const pending = this.database.prepare<[], { document_id: string }>(`SELECT review.document_id FROM candidate_review_states review
+    const pending = this.database
+      .prepare<[], { document_id: string }>(
+        `SELECT review.document_id FROM candidate_review_states review
       JOIN candidate_records record ON record.source_document_id = review.document_id
       WHERE review.status = 'awaiting-review' AND record.record_status = 'active'
-      AND NOT EXISTS (SELECT 1 FROM candidate_profiles profile WHERE profile.source_document_id = review.document_id AND profile.status = 'current')`).all()
-    this.database.transaction(() => { for (const row of pending) this.materializeImportedProfile(row.document_id) })()
+      AND NOT EXISTS (SELECT 1 FROM candidate_profiles profile WHERE profile.source_document_id = review.document_id AND profile.status = 'current')`
+      )
+      .all()
+    this.database.transaction(() => {
+      for (const row of pending) this.materializeImportedProfile(row.document_id)
+    })()
   }
 
   getCandidateExtraction(documentId: string): CandidateExtractionDraft | null {
@@ -365,7 +406,7 @@ export class CandidateStore extends DomainStore {
         'SELECT profile_json, status FROM candidate_profiles WHERE source_document_id = ? ORDER BY version DESC LIMIT 1'
       )
       .get(documentId)
-    const rawProfile = profileRow ? JSON.parse(profileRow.profile_json) as Record<string, unknown> : null
+    const rawProfile = profileRow ? (JSON.parse(profileRow.profile_json) as Record<string, unknown>) : null
     const profile = rawProfile ? candidateProfileSchema.parse(rawProfile) : null
     const hasManuallySavedDetails = Boolean(rawProfile && Object.prototype.hasOwnProperty.call(rawProfile, 'localPersonalDetails'))
     const draft = this.getCandidateExtraction(documentId)
@@ -400,9 +441,7 @@ export class CandidateStore extends DomainStore {
    */
   getCandidateSourceDocumentId(candidateProfileId: string): string | null {
     const row = this.database
-      .prepare<[string], { source_document_id: string }>(
-        'SELECT source_document_id FROM candidate_profiles WHERE id = ?'
-      )
+      .prepare<[string], { source_document_id: string }>('SELECT source_document_id FROM candidate_profiles WHERE id = ?')
       .get(candidateProfileId)
     return row?.source_document_id ?? null
   }
@@ -446,25 +485,27 @@ export class CandidateStore extends DomainStore {
       .get(documentId)
     if (!row) return null
     const draft = candidateExtractionDraftSchema.parse(JSON.parse(row.draft_json))
-    const auditRows = row.status === 'completed'
-      ? this.database
-          .prepare<[string, number], CandidateFieldAuditRow>(
-            `SELECT field_key, original_value, confirmed_value, change_reason, source_labels_json
+    const auditRows =
+      row.status === 'completed'
+        ? this.database
+            .prepare<[string, number], CandidateFieldAuditRow>(
+              `SELECT field_key, original_value, confirmed_value, change_reason, source_labels_json
              FROM candidate_field_review_audits
              WHERE document_id = ? AND review_revision = ?`
-          )
-          .all(documentId, row.revision)
-      : []
+            )
+            .all(documentId, row.revision)
+        : []
     const auditByKey = new Map(auditRows.map((audit) => [audit.field_key, audit]))
-    const projectAuditRows = row.status === 'completed'
-      ? this.database
-          .prepare<[string, number], CandidateProjectAuditRow>(
-            `SELECT draft_id, project_id, original_json, confirmed_json, change_reason, source_labels_json
+    const projectAuditRows =
+      row.status === 'completed'
+        ? this.database
+            .prepare<[string, number], CandidateProjectAuditRow>(
+              `SELECT draft_id, project_id, original_json, confirmed_json, change_reason, source_labels_json
              FROM candidate_project_review_audits
              WHERE document_id = ? AND review_revision = ?`
-          )
-          .all(documentId, row.revision)
-      : []
+            )
+            .all(documentId, row.revision)
+        : []
     const profileRow = this.database
       .prepare<[string], CandidateProfileRow>(
         'SELECT profile_json, status FROM candidate_profiles WHERE source_document_id = ? ORDER BY version DESC LIMIT 1'
@@ -473,12 +514,18 @@ export class CandidateStore extends DomainStore {
     const profile = profileRow ? candidateProfileSchema.parse(JSON.parse(profileRow.profile_json)) : null
     const profileFieldByKey = new Map(profile?.fields.map((field) => [field.key, field]) ?? [])
     const record = this.database
-      .prepare<[string], CandidateRecordRow>('SELECT record_status, recruiting_status, in_talent_library FROM candidate_records WHERE source_document_id = ?')
+      .prepare<[string], CandidateRecordRow>(
+        'SELECT record_status, recruiting_status, in_talent_library FROM candidate_records WHERE source_document_id = ?'
+      )
       .get(documentId)
     const membership = this.database
       .prepare<[string], TalentPoolMembershipRow>('SELECT status FROM talent_pool_memberships WHERE source_document_id = ?')
       .get(documentId)
-    const business = this.database.prepare<[string], { status: string; profile_version: number }>('SELECT status, profile_version FROM candidate_business_states WHERE document_id = ?').get(documentId)
+    const business = this.database
+      .prepare<[string], { status: string; profile_version: number }>(
+        'SELECT status, profile_version FROM candidate_business_states WHERE document_id = ?'
+      )
+      .get(documentId)
     return candidateReviewSnapshotSchema.parse({
       documentId,
       fileName: row.file_name,
@@ -490,7 +537,7 @@ export class CandidateStore extends DomainStore {
       fields: draft.fields.map((field) => {
         const audit = auditByKey.get(field.key)
         const profileField = profileFieldByKey.get(field.key)
-        const value = profileField ? profileField.value : (audit ? audit.confirmed_value : field.value)
+        const value = profileField ? profileField.value : audit ? audit.confirmed_value : field.value
         return {
           key: field.key,
           label: field.label,
@@ -498,43 +545,51 @@ export class CandidateStore extends DomainStore {
           value,
           confidence: field.confidence,
           status: audit ? 'confirmed' : field.status,
-          sourceLabels: profileField?.sourceLabels ?? (audit ? JSON.parse(audit.source_labels_json) as string[] : field.sources.map((source) => source.sourceLabel)),
+          sourceLabels:
+            profileField?.sourceLabels ??
+            (audit ? (JSON.parse(audit.source_labels_json) as string[]) : field.sources.map((source) => source.sourceLabel)),
           changed: profileField ? field.value !== profileField.value : audit ? audit.original_value !== audit.confirmed_value : false,
           changeReason: audit?.change_reason ?? null
         }
       }),
-      projectExperiences: profileRow?.status === 'current' && profile
-        ? profile.projectExperiences.map((project) => {
-            const audit = projectAuditRows.find((entry) => entry.project_id === project.id)
-            const original = audit?.original_json ? JSON.parse(audit.original_json) as { confidence?: number } : null
-            const extracted = draft.projectExperiences.find((entry) => entry.title === project.title &&
-              entry.period === project.period && entry.role === project.role && entry.summary === project.summary &&
-              JSON.stringify(entry.technologies) === JSON.stringify(project.technologies))
-            return {
-              draftId: audit?.draft_id ?? extracted?.draftId ?? `profile-${project.id}`,
+      projectExperiences:
+        profileRow?.status === 'current' && profile
+          ? profile.projectExperiences.map((project) => {
+              const audit = projectAuditRows.find((entry) => entry.project_id === project.id)
+              const original = audit?.original_json ? (JSON.parse(audit.original_json) as { confidence?: number }) : null
+              const extracted = draft.projectExperiences.find(
+                (entry) =>
+                  entry.title === project.title &&
+                  entry.period === project.period &&
+                  entry.role === project.role &&
+                  entry.summary === project.summary &&
+                  JSON.stringify(entry.technologies) === JSON.stringify(project.technologies)
+              )
+              return {
+                draftId: audit?.draft_id ?? extracted?.draftId ?? `profile-${project.id}`,
+                title: project.title,
+                period: project.period,
+                role: project.role,
+                technologies: project.technologies,
+                summary: project.summary,
+                confidence: original?.confidence ?? extracted?.confidence ?? 1,
+                sourceLabels: project.sourceLabels,
+                changed: Boolean(audit?.change_reason),
+                changeReason: audit?.change_reason ?? null
+              }
+            })
+          : draft.projectExperiences.map((project) => ({
+              draftId: project.draftId,
               title: project.title,
               period: project.period,
               role: project.role,
               technologies: project.technologies,
               summary: project.summary,
-              confidence: original?.confidence ?? extracted?.confidence ?? 1,
-              sourceLabels: project.sourceLabels,
-              changed: Boolean(audit?.change_reason),
-              changeReason: audit?.change_reason ?? null
-            }
-          })
-        : draft.projectExperiences.map((project) => ({
-            draftId: project.draftId,
-            title: project.title,
-            period: project.period,
-            role: project.role,
-            technologies: project.technologies,
-            summary: project.summary,
-            confidence: project.confidence,
-            sourceLabels: project.sources.map((source) => source.sourceLabel),
-            changed: false,
-            changeReason: null
-          })),
+              confidence: project.confidence,
+              sourceLabels: project.sources.map((source) => source.sourceLabel),
+              changed: false,
+              changeReason: null
+            })),
       completedAt: row.completed_at,
       reviewerDisplayName: row.reviewer_display_name,
       profile: profile
@@ -550,7 +605,16 @@ export class CandidateStore extends DomainStore {
           }
         : null,
       recruitingStatus: record?.recruiting_status ?? 'pending-review',
-      talentPoolStatus: record?.in_talent_library === 0 ? 'none' : (record?.record_status ?? 'active') === 'active' && profileRow?.status === 'current' && (!business || ['available', 'soon'].includes(business.status)) ? 'eligible' : business ? 'none' : membership?.status ?? 'none',
+      talentPoolStatus:
+        record?.in_talent_library === 0
+          ? 'none'
+          : (record?.record_status ?? 'active') === 'active' &&
+              profileRow?.status === 'current' &&
+              (!business || ['available', 'soon'].includes(business.status))
+            ? 'eligible'
+            : business
+              ? 'none'
+              : (membership?.status ?? 'none'),
       inTalentLibrary: record?.in_talent_library !== 0,
       recordStatus: record?.record_status ?? 'active'
     })
@@ -559,10 +623,19 @@ export class CandidateStore extends DomainStore {
   addCandidateToLibrary(documentId: string, profileVersion: number): CandidateReviewSnapshot {
     return this.database.transaction(() => {
       const person = this.getCandidateReview(documentId)
-      if (!person || person.recordStatus === 'deleted' || !person.profile || person.profile.status !== 'current' || person.profile.version !== profileVersion) {
+      if (
+        !person ||
+        person.recordStatus === 'deleted' ||
+        !person.profile ||
+        person.profile.status !== 'current' ||
+        person.profile.version !== profileVersion
+      ) {
         throw new Error('人员资料已更新或不可用，请刷新后入库。 / 要員情報を再読込してから登録してください。')
       }
-      this.database.prepare('UPDATE candidate_records SET in_talent_library = 1, updated_at = ? WHERE source_document_id = ? AND in_talent_library = 0')
+      this.database
+        .prepare(
+          'UPDATE candidate_records SET in_talent_library = 1, updated_at = ? WHERE source_document_id = ? AND in_talent_library = 0'
+        )
         .run(new Date().toISOString(), documentId)
       return this.getCandidateReview(documentId)!
     })()
@@ -579,19 +652,35 @@ export class CandidateStore extends DomainStore {
   }
 
   getCurrentCandidateProfile(documentId: string): CandidateProfile | null {
-    const row = this.database.prepare<[string], CandidateProfileRow>(`SELECT profile.profile_json, profile.status
+    const row = this.database
+      .prepare<[string], CandidateProfileRow>(
+        `SELECT profile.profile_json, profile.status
       FROM candidate_profiles profile JOIN candidate_records record ON record.source_document_id = profile.source_document_id
-      WHERE profile.source_document_id = ? AND profile.status = 'current' AND record.record_status = 'active'`).get(documentId)
-    return row ? enrichCandidateJapaneseEvidence(candidateProfileSchema.parse(JSON.parse(row.profile_json)), () => this.getParsedDocument(documentId)) : null
+      WHERE profile.source_document_id = ? AND profile.status = 'current' AND record.record_status = 'active'`
+      )
+      .get(documentId)
+    return row
+      ? enrichCandidateJapaneseEvidence(candidateProfileSchema.parse(JSON.parse(row.profile_json)), () =>
+          this.getParsedDocument(documentId)
+        )
+      : null
   }
 
   /** Explicit person × case assessment may read an archived resume without restoring it. */
   getCandidateProfileForAssessment(documentId: string): CandidateProfile | null {
-    const row = this.database.prepare<[string], CandidateProfileRow>(`SELECT profile.profile_json, profile.status
+    const row = this.database
+      .prepare<[string], CandidateProfileRow>(
+        `SELECT profile.profile_json, profile.status
       FROM candidate_profiles profile JOIN candidate_records record ON record.source_document_id = profile.source_document_id
       WHERE profile.source_document_id = ? AND profile.status = 'current'
-        AND record.record_status IN ('active', 'archived')`).get(documentId)
-    return row ? enrichCandidateJapaneseEvidence(candidateProfileSchema.parse(JSON.parse(row.profile_json)), () => this.getParsedDocument(documentId)) : null
+        AND record.record_status IN ('active', 'archived')`
+      )
+      .get(documentId)
+    return row
+      ? enrichCandidateJapaneseEvidence(candidateProfileSchema.parse(JSON.parse(row.profile_json)), () =>
+          this.getParsedDocument(documentId)
+        )
+      : null
   }
 
   /** Only admitted, active and available library members participate in automatic matching. */
@@ -609,7 +698,10 @@ export class CandidateStore extends DomainStore {
          ORDER BY profile.confirmed_at DESC`
       )
       .all()
-      .map((row) => { const profile = candidateProfileSchema.parse(JSON.parse(row.profile_json)); return enrichCandidateJapaneseEvidence(profile, () => this.getParsedDocument(profile.sourceDocumentId)) })
+      .map((row) => {
+        const profile = candidateProfileSchema.parse(JSON.parse(row.profile_json))
+        return enrichCandidateJapaneseEvidence(profile, () => this.getParsedDocument(profile.sourceDocumentId))
+      })
   }
 
   listCandidateProfileEmbeddings(modelId: string, modelRevision: string): CandidateProfileEmbeddingRecord[] {
@@ -729,9 +821,10 @@ export class CandidateStore extends DomainStore {
   }
 
   countEligibleTalentProfiles(): number {
-    return this.database
-      .prepare<[], { count: number }>(
-        `SELECT count(*) AS count
+    return (
+      this.database
+        .prepare<[], { count: number }>(
+          `SELECT count(*) AS count
          FROM candidate_profiles profile
          JOIN candidate_records record ON record.source_document_id = profile.source_document_id
          LEFT JOIN candidate_business_states business ON business.document_id = profile.source_document_id
@@ -739,8 +832,9 @@ export class CandidateStore extends DomainStore {
            AND record.record_status = 'active'
            AND record.in_talent_library = 1
            AND (business.document_id IS NULL OR business.status IN ('available','soon'))`
-      )
-      .get()?.count ?? 0
+        )
+        .get()?.count ?? 0
+    )
   }
 
   getCandidateProfileHistory(sourceDocumentId: string): CandidateProfileVersionDetail[] {
@@ -772,64 +866,74 @@ export class CandidateStore extends DomainStore {
     if (!file) throw new Error('Candidate source file was not found.')
     const history = this.getCandidateProfileHistory(sourceDocumentId)
     if (history.length === 0) throw new Error('Candidate profile was not found.')
-    const taskRecords = this.stores.workTasks.listWorkTasks().filter((task) =>
-      task.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === sourceDocumentId)
-    ).length
-    const reviewAudits = this.database
-      .prepare<[string, string], { count: number }>(
-        `SELECT
+    const taskRecords = this.stores.workTasks
+      .listWorkTasks()
+      .filter((task) =>
+        task.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === sourceDocumentId)
+      ).length
+    const reviewAudits =
+      this.database
+        .prepare<[string, string], { count: number }>(
+          `SELECT
            (SELECT count(*) FROM candidate_field_review_audits WHERE document_id = ?) +
            (SELECT count(*) FROM candidate_project_review_audits WHERE document_id = ?) AS count`
-      )
-      .get(sourceDocumentId, sourceDocumentId)?.count ?? 0
-    const matchRecords = this.database
-      .prepare<[string], { count: number }>(
-        `SELECT count(*) AS count FROM candidate_match_results result
+        )
+        .get(sourceDocumentId, sourceDocumentId)?.count ?? 0
+    const matchRecords =
+      this.database
+        .prepare<[string], { count: number }>(
+          `SELECT count(*) AS count FROM candidate_match_results result
          JOIN candidate_profiles profile ON profile.id = result.candidate_profile_id
          WHERE profile.source_document_id = ?`
-      )
-      .get(sourceDocumentId)?.count ?? 0
-    const evaluationDatasetIds = this.stores.candidateEvaluation.candidateEvaluationDatasetIdsForLabels(new Set(
-      history.map((profile) => `候補者 ${profile.id.slice(0, 8).toLocaleUpperCase('en-US')}`)
-    ))
-    const persistedEvaluationRecords = evaluationDatasetIds.reduce((total, datasetId) =>
-      total + 1 + (this.database
-        .prepare<[string], { count: number }>('SELECT count(*) AS count FROM candidate_evaluation_reports WHERE dataset_id = ?')
-        .get(datasetId)?.count ?? 0), 0)
-    const draftEvaluationLabels = this.database
-      .prepare<[string], { count: number }>(
-        `SELECT count(*) AS count FROM candidate_evaluation_draft_labels label
+        )
+        .get(sourceDocumentId)?.count ?? 0
+    const evaluationDatasetIds = this.stores.candidateEvaluation.candidateEvaluationDatasetIdsForLabels(
+      new Set(history.map((profile) => `候補者 ${profile.id.slice(0, 8).toLocaleUpperCase('en-US')}`))
+    )
+    const persistedEvaluationRecords = evaluationDatasetIds.reduce(
+      (total, datasetId) =>
+        total +
+        1 +
+        (this.database
+          .prepare<[string], { count: number }>('SELECT count(*) AS count FROM candidate_evaluation_reports WHERE dataset_id = ?')
+          .get(datasetId)?.count ?? 0),
+      0
+    )
+    const draftEvaluationLabels =
+      this.database
+        .prepare<[string], { count: number }>(
+          `SELECT count(*) AS count FROM candidate_evaluation_draft_labels label
          JOIN candidate_profiles profile ON profile.id = label.candidate_profile_id
          WHERE profile.source_document_id = ?`
-      )
-      .get(sourceDocumentId)?.count ?? 0
+        )
+        .get(sourceDocumentId)?.count ?? 0
     const evaluationRecords = persistedEvaluationRecords + draftEvaluationLabels
-    const proposalDrafts = this.database
-      .prepare<[string], { count: number }>(
-        `SELECT count(*) AS count FROM proposal_drafts proposal
+    const proposalDrafts =
+      this.database
+        .prepare<[string], { count: number }>(
+          `SELECT count(*) AS count FROM proposal_drafts proposal
          JOIN candidate_profiles profile ON profile.id = proposal.candidate_profile_id
          WHERE profile.source_document_id = ?`
-      )
-      .get(sourceDocumentId)?.count ?? 0
+        )
+        .get(sourceDocumentId)?.count ?? 0
     const redactionSessionId = this.stores.privacy.getRedactionSessionIdForDocument(sourceDocumentId)
     const piiMappings = redactionSessionId
-      ? this.database
-          .prepare<[string], { count: number }>(
-            'SELECT count(*) AS count FROM local_pii_mappings WHERE redaction_session_id = ?'
-          )
-          .get(redactionSessionId)?.count ?? 0
+      ? (this.database
+          .prepare<[string], { count: number }>('SELECT count(*) AS count FROM local_pii_mappings WHERE redaction_session_id = ?')
+          .get(redactionSessionId)?.count ?? 0)
       : 0
-    const searchIndexEntries = this.database
-      .prepare<[string, string], { count: number }>(
-        `SELECT
+    const searchIndexEntries =
+      this.database
+        .prepare<[string, string], { count: number }>(
+          `SELECT
            (SELECT count(*) FROM candidate_profile_embeddings embedding
             JOIN candidate_profiles profile ON profile.id = embedding.profile_id
             WHERE profile.source_document_id = ?) +
            (SELECT count(*) FROM candidate_project_embeddings embedding
             JOIN candidate_profiles profile ON profile.id = embedding.profile_id
             WHERE profile.source_document_id = ?) AS count`
-      )
-      .get(sourceDocumentId, sourceDocumentId)?.count ?? 0
+        )
+        .get(sourceDocumentId, sourceDocumentId)?.count ?? 0
     const agentMatchRows = this.database
       .prepare<[string], { run_id: string; result_id: string }>(
         `SELECT result.run_id, result.id AS result_id
@@ -844,8 +948,14 @@ export class CandidateStore extends DomainStore {
       matchRunIds: new Set(agentMatchRows.map((row) => row.run_id)),
       matchResultIds: new Set(agentMatchRows.map((row) => row.result_id))
     })
-    const followUps = this.database.prepare<[string], { id: string; revision: number }>('SELECT id,revision FROM business_followups WHERE document_id=? ORDER BY id').all(sourceDocumentId)
-    const progressMail = this.database.prepare<[string], {id:string;payload:string}>('SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.document_id=? ORDER BY mail.id').all(sourceDocumentId)
+    const followUps = this.database
+      .prepare<[string], { id: string; revision: number }>('SELECT id,revision FROM business_followups WHERE document_id=? ORDER BY id')
+      .all(sourceDocumentId)
+    const progressMail = this.database
+      .prepare<[string], { id: string; payload: string }>(
+        'SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.document_id=? ORDER BY mail.id'
+      )
+      .all(sourceDocumentId)
     const counts = {
       ...(followUps.length ? { businessFollowUps: followUps.length } : {}),
       profileVersions: history.length,
@@ -859,15 +969,19 @@ export class CandidateStore extends DomainStore {
       encryptedFiles: 1,
       agentReferences
     }
-    const confirmationHash = createHash('sha256').update(JSON.stringify({
-      sourceDocumentId,
-      fileSha256: file.sha256,
-      latestProfileId: history[0]?.id,
-      latestVersion: history[0]?.version,
-      followUps,
-      progressMail,
-      counts
-    })).digest('hex')
+    const confirmationHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          sourceDocumentId,
+          fileSha256: file.sha256,
+          latestProfileId: history[0]?.id,
+          latestVersion: history[0]?.version,
+          followUps,
+          progressMail,
+          counts
+        })
+      )
+      .digest('hex')
     return candidateDeletionPreviewSchema.parse({
       sourceDocumentId,
       anonymousLabel: `候補者 ${history[0]?.id.slice(0, 8).toLocaleUpperCase('en-US')}`,
@@ -883,10 +997,11 @@ export class CandidateStore extends DomainStore {
     if (preview.confirmationHash !== expectedConfirmationHash) {
       throw new Error('Candidate deletion preview changed. Review the impact again before deleting.')
     }
-    const taskIds = this.stores.workTasks.listWorkTasks()
-      .filter((task) => task.contextBindings.some((binding) =>
-        binding.objectType === 'staged-file' && binding.objectId === sourceDocumentId
-      ))
+    const taskIds = this.stores.workTasks
+      .listWorkTasks()
+      .filter((task) =>
+        task.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === sourceDocumentId)
+      )
       .map((task) => task.id)
     const profileIds = this.database
       .prepare<[string], { id: string }>('SELECT id FROM candidate_profiles WHERE source_document_id = ?')
@@ -906,9 +1021,9 @@ export class CandidateStore extends DomainStore {
       matchRunIds: new Set(agentMatchRows.map((row) => row.run_id)),
       matchResultIds: new Set(agentMatchRows.map((row) => row.result_id))
     }
-    const evaluationDatasetIds = this.stores.candidateEvaluation.candidateEvaluationDatasetIdsForLabels(new Set(
-      profileIds.map((profileId) => `候補者 ${profileId.slice(0, 8).toLocaleUpperCase('en-US')}`)
-    ))
+    const evaluationDatasetIds = this.stores.candidateEvaluation.candidateEvaluationDatasetIdsForLabels(
+      new Set(profileIds.map((profileId) => `候補者 ${profileId.slice(0, 8).toLocaleUpperCase('en-US')}`))
+    )
     const redactionSessionId = this.stores.privacy.getRedactionSessionIdForDocument(sourceDocumentId)
     const remove = this.database.transaction(() => {
       this.stores.agentConversations.sanitizeSalesAgentConversations(agentTargets, now)
@@ -929,9 +1044,7 @@ export class CandidateStore extends DomainStore {
       const deleted = this.database.prepare('DELETE FROM staged_files WHERE token = ?').run(sourceDocumentId)
       if (deleted.changes !== 1) throw new Error('Candidate source record could not be deleted.')
       this.database
-        .prepare(
-          'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'candidate', sourceDocumentId, 1, 'delete', now.toISOString())
     })
     remove()
@@ -1005,15 +1118,16 @@ export class CandidateStore extends DomainStore {
       if (!current || current.status !== 'awaiting-review' || current.revision !== validated.reviewRevision) {
         throw new Error('Candidate review changed while it was being confirmed.')
       }
-      const latestVersion = this.database
-        .prepare<[string], { version: number | null }>(
-          'SELECT max(version) AS version FROM candidate_profiles WHERE source_document_id = ?'
-        )
-        .get(validated.documentId)?.version ?? 0
+      const latestVersion =
+        this.database
+          .prepare<[string], { version: number | null }>(
+            'SELECT max(version) AS version FROM candidate_profiles WHERE source_document_id = ?'
+          )
+          .get(validated.documentId)?.version ?? 0
       const profileVersion = latestVersion + 1
       const profileId = randomUUID()
-      const projectRecords: Array<{ draftId: string; project: CandidateProjectExperience; changed: boolean }> =
-        submittedProjects.map((submitted) => {
+      const projectRecords: Array<{ draftId: string; project: CandidateProjectExperience; changed: boolean }> = submittedProjects.map(
+        (submitted) => {
           const original = draftProjectsById.get(submitted.draftId)
           const changed = !original || JSON.stringify(projectPayload(original)) !== JSON.stringify(projectPayload(submitted))
           return {
@@ -1022,12 +1136,11 @@ export class CandidateStore extends DomainStore {
             project: {
               id: randomUUID(),
               ...projectPayload(submitted),
-              sourceLabels: original
-                ? [...new Set(original.sources.map((source) => source.sourceLabel))]
-                : []
+              sourceLabels: original ? [...new Set(original.sources.map((source) => source.sourceLabel))] : []
             }
           }
-        })
+        }
+      )
       const profile: CandidateProfile = candidateProfileSchema.parse({
         schemaVersion: 'candidate-profile-v1',
         id: profileId,
@@ -1098,7 +1211,7 @@ export class CandidateStore extends DomainStore {
           record.project.id,
           original ? JSON.stringify(original) : null,
           JSON.stringify(record.project),
-          record.changed ? validated.projectChangeReason ?? null : null,
+          record.changed ? (validated.projectChangeReason ?? null) : null,
           JSON.stringify(record.project.sourceLabels),
           reviewerId,
           reviewedAt
@@ -1137,14 +1250,14 @@ export class CandidateStore extends DomainStore {
         )
       if (update.changes !== 1) throw new Error('Candidate review could not be committed.')
       this.database
-        .prepare(`UPDATE candidate_records
+        .prepare(
+          `UPDATE candidate_records
                   SET recruiting_status = 'ready-for-recruiting', updated_at = ?
-                  WHERE source_document_id = ? AND recruiting_status = 'pending-review'`)
+                  WHERE source_document_id = ? AND recruiting_status = 'pending-review'`
+        )
         .run(reviewedAt, validated.documentId)
       this.database
-        .prepare(
-          'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'candidate_profile', profileId, profileVersion, 'upsert', reviewedAt)
     })
     save()
@@ -1153,7 +1266,11 @@ export class CandidateStore extends DomainStore {
     return result
   }
 
-  setCandidateOwnCompany(input: import('@shared').SetCandidateOwnCompanyInput, reviewerDisplayName: string, now = new Date()): CandidateProfile {
+  setCandidateOwnCompany(
+    input: import('@shared').SetCandidateOwnCompanyInput,
+    reviewerDisplayName: string,
+    now = new Date()
+  ): CandidateProfile {
     const validated = setCandidateOwnCompanyInputSchema.parse(input)
     return this.database.transaction(() => {
       const current = this.getCurrentCandidateProfile(validated.documentId)
@@ -1164,16 +1281,26 @@ export class CandidateStore extends DomainStore {
       if ((current.isOwnCompany ?? null) === validated.isOwnCompany) return current
       const timestamp = now.toISOString()
       // Preserve all profile content and local identity mappings; only affiliation changes.
-      const profile = candidateProfileSchema.parse({ ...current, id: randomUUID(),
-        profileVersion: current.profileVersion + 1, isOwnCompany: validated.isOwnCompany,
-        confirmedAt: timestamp, confirmedBy: reviewerDisplayName })
-      this.database.prepare("UPDATE candidate_profiles SET status = 'superseded' WHERE source_document_id = ? AND status = 'current'")
+      const profile = candidateProfileSchema.parse({
+        ...current,
+        id: randomUUID(),
+        profileVersion: current.profileVersion + 1,
+        isOwnCompany: validated.isOwnCompany,
+        confirmedAt: timestamp,
+        confirmedBy: reviewerDisplayName
+      })
+      this.database
+        .prepare("UPDATE candidate_profiles SET status = 'superseded' WHERE source_document_id = ? AND status = 'current'")
         .run(validated.documentId)
-      this.database.prepare(`INSERT INTO candidate_profiles(
+      this.database
+        .prepare(
+          `INSERT INTO candidate_profiles(
         id, source_document_id, version, profile_json, status, confirmed_at, confirmed_by
-      ) VALUES (?, ?, ?, ?, 'current', ?, ?)`)
+      ) VALUES (?, ?, ?, ?, 'current', ?, ?)`
+        )
         .run(profile.id, profile.sourceDocumentId, profile.profileVersion, JSON.stringify(profile), timestamp, reviewerDisplayName)
-      this.database.prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      this.database
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'candidate_profile', profile.id, profile.profileVersion, 'upsert', timestamp)
       return profile
     })()
@@ -1191,7 +1318,7 @@ export class CandidateStore extends DomainStore {
         "SELECT profile_json, status FROM candidate_profiles WHERE source_document_id = ? AND status = 'current'"
       )
       .get(validated.sourceDocumentId)
-      if (!currentRow) throw new Error('Current candidate profile was not found.')
+    if (!currentRow) throw new Error('Current candidate profile was not found.')
     const current = candidateProfileSchema.parse(JSON.parse(currentRow.profile_json))
     if (current.profileVersion !== validated.expectedVersion) {
       throw new Error('人材プロフィールが更新されました。再読み込みしてから編集してください。')
@@ -1225,7 +1352,7 @@ export class CandidateStore extends DomainStore {
       id: randomUUID(),
       sourceDocumentId: current.sourceDocumentId,
       profileVersion: current.profileVersion + 1,
-      isOwnCompany: validated.isOwnCompany === undefined ? current.isOwnCompany ?? null : validated.isOwnCompany,
+      isOwnCompany: validated.isOwnCompany === undefined ? (current.isOwnCompany ?? null) : validated.isOwnCompany,
       reviewRevision: current.reviewRevision,
       localPersonalDetails: validated.identity,
       fields: current.fields.map((field) => ({
@@ -1301,9 +1428,7 @@ export class CandidateStore extends DomainStore {
       }
       this.stores.privacy.persistRedactionSession(session, nextMappings)
       this.database
-        .prepare(
-          'INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
+        .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'candidate_profile', profile.id, profile.profileVersion, 'upsert', timestamp)
     })
     save()
@@ -1326,9 +1451,7 @@ export class CandidateStore extends DomainStore {
 
   listResumeAnalyses(): ResumeAnalysisSummary[] {
     const rows = this.database
-      .prepare<[], ParsedDocumentRow>(
-        'SELECT document_ir_json, analysis_summary_json FROM parsed_documents ORDER BY analyzed_at DESC'
-      )
+      .prepare<[], ParsedDocumentRow>('SELECT document_ir_json, analysis_summary_json FROM parsed_documents ORDER BY analyzed_at DESC')
       .all()
     return rows.map((row) => resumeAnalysisSummarySchema.parse(JSON.parse(row.analysis_summary_json)))
   }

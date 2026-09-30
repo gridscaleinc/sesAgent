@@ -22,13 +22,22 @@ const bootstrap: BootstrapPayload = {
   appVersion: '0.1.0',
   environmentLabel: 'テスト',
   operatorProfile: {
-    version: 'local-operator-profile-v1', operatorId: '11111111-1111-4111-8111-111111111111',
-    displayName: '本機ユーザー', roleLabel: 'プロフィール未設定', configured: false,
-    revision: null, updatedAt: null, cloudEligible: false
+    version: 'local-operator-profile-v1',
+    operatorId: '11111111-1111-4111-8111-111111111111',
+    displayName: '本機ユーザー',
+    roleLabel: 'プロフィール未設定',
+    configured: false,
+    revision: null,
+    updatedAt: null,
+    cloudEligible: false
   },
   preferences: {
-    version: 'local-application-preferences-v1', locale: 'ja-JP', configured: false,
-    revision: null, updatedAt: null, cloudEligible: false
+    version: 'local-application-preferences-v1',
+    locale: 'ja-JP',
+    configured: false,
+    revision: null,
+    updatedAt: null,
+    cloudEligible: false
   },
   tasks: [],
   processingJobs: [],
@@ -39,49 +48,104 @@ const bootstrap: BootstrapPayload = {
   jobCaseReviews: [],
   matchingHome: { state: 'onboarding', eligibleCandidateCount: 0, selectedJobCaseId: null, jobCases: [], currentRun: null },
   wechatVisibleMessage: {
-    phase: 'B-03-1', gateStatus: 'no-go', platform: 'darwin', featureFlagEnabled: true,
-    userFeatureAvailable: false, accessibilityTrusted: false, screenCaptureTrusted: false,
-    rawTextNetworkIsolationVerified: false, evidenceVerified: false, targetVersion: null,
+    phase: 'B-03-1',
+    gateStatus: 'no-go',
+    platform: 'darwin',
+    featureFlagEnabled: true,
+    userFeatureAvailable: false,
+    accessibilityTrusted: false,
+    screenCaptureTrusted: false,
+    rawTextNetworkIsolationVerified: false,
+    evidenceVerified: false,
+    targetVersion: null,
     failureCodes: ['MACOS_ACCESSIBILITY_PERMISSION_UNVERIFIED']
   },
   privacy: {
-    policyVersion: 'cloud-redaction-v2', cloudGateway: 'enforced', localAi: 'vision-ocr-and-pii-active',
+    policyVersion: 'cloud-redaction-v2',
+    cloudGateway: 'enforced',
+    localAi: 'vision-ocr-and-pii-active',
     qualityGate: {
-      status: 'passed', datasetVersion: 'ses-privacy-regression-v1', syntheticOnly: true,
-      caseCount: 28, identifierRecall: 1, redactionPrecision: 1,
-      residualLeakCount: 0, safeCaseFalsePositiveCount: 0, appleNerVerified: true,
-      reportHash: 'a'.repeat(64), failureCodes: []
+      status: 'passed',
+      datasetVersion: 'ses-privacy-regression-v1',
+      syntheticOnly: true,
+      caseCount: 28,
+      identifierRecall: 1,
+      redactionPrecision: 1,
+      residualLeakCount: 0,
+      safeCaseFalsePositiveCount: 0,
+      appleNerVerified: true,
+      reportHash: 'a'.repeat(64),
+      failureCodes: []
     },
     expertGate: {
-      status: 'not-verified', datasetVersion: null, humanLabeledDataset: true,
-      sourceDocumentCount: 0, caseCount: 0, automaticPersonNameRecall: null,
-      postReviewIdentifierRecall: null, redactionPrecision: null, reviewedAt: null, evaluatedAt: null,
-      reportHash: null, attestationHash: null, privacyImplementationSha256: null,
-      cloudEnforcementSha256: null, failureCodes: ['expert-report:missing']
+      status: 'not-verified',
+      datasetVersion: null,
+      humanLabeledDataset: true,
+      sourceDocumentCount: 0,
+      caseCount: 0,
+      automaticPersonNameRecall: null,
+      postReviewIdentifierRecall: null,
+      redactionPrecision: null,
+      reviewedAt: null,
+      evaluatedAt: null,
+      reportHash: null,
+      attestationHash: null,
+      privacyImplementationSha256: null,
+      cloudEnforcementSha256: null,
+      failureCodes: ['expert-report:missing']
     }
   },
   storage: { status: 'encrypted', engine: 'sqlcipher-compatible', keyProtection: 'macos-keychain', schemaVersion: 12 },
   gmail: {
-    provider: 'google-workspace', status: 'not-connected', configuration: 'required', workspaceDomain: null,
-    accountEmail: null, grantedScopes: [], readAccess: false, draftAccess: 'not-requested', sendMethod: 'not-implemented'
+    provider: 'google-workspace',
+    status: 'not-connected',
+    configuration: 'required',
+    workspaceDomain: null,
+    accountEmail: null,
+    grantedScopes: [],
+    readAccess: false,
+    draftAccess: 'not-requested',
+    sendMethod: 'not-implemented'
   },
   googleWorkspaceConfiguration: null,
   googleWorkspaceAcceptance: null,
   gmailSync: {
-    configuration: 'required', status: 'never', labelIds: [], query: null, lookbackDays: 30,
-    checkpointHistoryId: null, storedMessages: 0, lastSyncedAt: null, lastRun: null, lastError: null
+    configuration: 'required',
+    status: 'never',
+    labelIds: [],
+    query: null,
+    lookbackDays: 30,
+    checkpointHistoryId: null,
+    storedMessages: 0,
+    lastSyncedAt: null,
+    lastRun: null,
+    lastError: null
   },
   aiCommerce: {
-    configuration: 'required', connection: 'not-connected', productCode: null, billingMode: null,
-    memberDisplayName: null, accountId: null, accountAiTokenExpiresAt: null,
-    wallet: null, capabilities: [], refreshedAt: null
+    configuration: 'required',
+    connection: 'not-connected',
+    productCode: null,
+    billingMode: null,
+    memberDisplayName: null,
+    accountId: null,
+    accountAiTokenExpiresAt: null,
+    wallet: null,
+    capabilities: [],
+    refreshedAt: null
   },
   recovery: {
-    format: 'ses-recovery-v1', encryption: 'scrypt-aes-256-gcm', lastBackupAt: null, lastRestoreAt: null,
+    format: 'ses-recovery-v1',
+    encryption: 'scrypt-aes-256-gcm',
+    lastBackupAt: null,
+    lastRestoreAt: null,
     pendingRestore: false,
     reminder: {
-      status: 'due', reason: 'no-backup', currentDataRevision: 4, lastBackupDataRevision: null,
-      latestDataChangedAt: '2026-07-17T09:50:00.000Z', snoozedUntil: null
+      status: 'due',
+      reason: 'no-backup',
+      currentDataRevision: 4,
+      lastBackupDataRevision: null,
+      latestDataChangedAt: '2026-07-17T09:50:00.000Z',
+      snoozedUntil: null
     }
   },
   candidateEvaluation: { dataset: null, latestReport: null }
@@ -126,7 +190,16 @@ function callbacks() {
       ],
       evidence: {
         grantedScopeCount: 1,
-        sync: { status: 'idle', lastSyncedAt: '2026-07-20T00:04:00.000Z', mode: 'baseline', discovered: 2, imported: 2, duplicates: 0, filtered: 0, failed: 0 },
+        sync: {
+          status: 'idle',
+          lastSyncedAt: '2026-07-20T00:04:00.000Z',
+          mode: 'baseline',
+          discovered: 2,
+          imported: 2,
+          duplicates: 0,
+          filtered: 0,
+          failed: 0
+        },
         redaction: { storedMessages: 2, passed: 2, uncertain: 0, blocked: 0 }
       }
     }),
@@ -173,48 +246,67 @@ describe('GovernancePanel recovery controls', () => {
   })
 
   it('shows an explicit release blocker when the privacy report is unavailable', () => {
-    render(<GovernancePanel
-      bootstrap={{
-        ...bootstrap,
-        privacy: {
-          ...bootstrap.privacy,
-          qualityGate: {
-            status: 'not-verified', datasetVersion: null, syntheticOnly: true, caseCount: 0,
-            identifierRecall: null, redactionPrecision: null, residualLeakCount: null,
-            safeCaseFalsePositiveCount: null, appleNerVerified: null, reportHash: null,
-            failureCodes: ['quality-report:missing']
+    render(
+      <GovernancePanel
+        bootstrap={{
+          ...bootstrap,
+          privacy: {
+            ...bootstrap.privacy,
+            qualityGate: {
+              status: 'not-verified',
+              datasetVersion: null,
+              syntheticOnly: true,
+              caseCount: 0,
+              identifierRecall: null,
+              redactionPrecision: null,
+              residualLeakCount: null,
+              safeCaseFalsePositiveCount: null,
+              appleNerVerified: null,
+              reportHash: null,
+              failureCodes: ['quality-report:missing']
+            }
           }
-        }
-      }}
-      onClose={vi.fn()}
-      responsiveOpen={false}
-      {...callbacks()}
-    />)
+        }}
+        onClose={vi.fn()}
+        responsiveOpen={false}
+        {...callbacks()}
+      />
+    )
     expect(screen.getByText('固定回帰 未検証')).toBeInTheDocument()
     expect(screen.getByText('リリース不可')).toBeInTheDocument()
   })
 
   it('shows aggregate expert evidence without exposing dataset content', () => {
-    render(<GovernancePanel
-      bootstrap={{
-        ...bootstrap,
-        privacy: {
-          ...bootstrap.privacy,
-          expertGate: {
-            status: 'passed', datasetVersion: 'ses-privacy-expert-dataset-v1', humanLabeledDataset: true,
-            sourceDocumentCount: 50, caseCount: 60, automaticPersonNameRecall: 0.93,
-            postReviewIdentifierRecall: 1, redactionPrecision: 0.98,
-            reviewedAt: '2026-07-19T00:00:00.000Z', evaluatedAt: '2026-07-20T00:00:00.000Z',
-            reportHash: 'b'.repeat(64), attestationHash: 'c'.repeat(64),
-            privacyImplementationSha256: 'd'.repeat(64), cloudEnforcementSha256: 'e'.repeat(64),
-            failureCodes: []
+    render(
+      <GovernancePanel
+        bootstrap={{
+          ...bootstrap,
+          privacy: {
+            ...bootstrap.privacy,
+            expertGate: {
+              status: 'passed',
+              datasetVersion: 'ses-privacy-expert-dataset-v1',
+              humanLabeledDataset: true,
+              sourceDocumentCount: 50,
+              caseCount: 60,
+              automaticPersonNameRecall: 0.93,
+              postReviewIdentifierRecall: 1,
+              redactionPrecision: 0.98,
+              reviewedAt: '2026-07-19T00:00:00.000Z',
+              evaluatedAt: '2026-07-20T00:00:00.000Z',
+              reportHash: 'b'.repeat(64),
+              attestationHash: 'c'.repeat(64),
+              privacyImplementationSha256: 'd'.repeat(64),
+              cloudEnforcementSha256: 'e'.repeat(64),
+              failureCodes: []
+            }
           }
-        }
-      }}
-      onClose={vi.fn()}
-      responsiveOpen={false}
-      {...callbacks()}
-    />)
+        }}
+        onClose={vi.fn()}
+        responsiveOpen={false}
+        {...callbacks()}
+      />
+    )
     expect(screen.getByText('日本語専門家評価 60件')).toBeInTheDocument()
     expect(screen.getByText('氏名自動Recall 93%')).toBeInTheDocument()
     expect(screen.getByText(/評価データ本文は端末外へ送信・報告しません/)).toBeInTheDocument()
@@ -231,41 +323,56 @@ describe('GovernancePanel recovery controls', () => {
   })
 
   it('translates a revoked Google credential into a reconnect action instead of exposing an internal code', () => {
-    render(<GovernancePanel
-      bootstrap={{
-        ...bootstrap,
-        gmailSync: { ...bootstrap.gmailSync, status: 'error', lastError: 'GOOGLE_REAUTH_REQUIRED' }
-      }}
-      onClose={vi.fn()}
-      responsiveOpen={false}
-      {...callbacks()}
-    />)
+    render(
+      <GovernancePanel
+        bootstrap={{
+          ...bootstrap,
+          gmailSync: { ...bootstrap.gmailSync, status: 'error', lastError: 'GOOGLE_REAUTH_REQUIRED' }
+        }}
+        onClose={vi.fn()}
+        responsiveOpen={false}
+        {...callbacks()}
+      />
+    )
     expect(screen.getByText(/認証が失効しました。Google メールアカウントを再接続/)).toBeInTheDocument()
     expect(screen.queryByText('GOOGLE_REAUTH_REQUIRED')).not.toBeInTheDocument()
   })
 
   it('shows a connected online acceptance report without exposing mailbox content', async () => {
     const handlers = callbacks()
-    render(<GovernancePanel
-      bootstrap={{
-        ...bootstrap,
-        gmail: {
-          provider: 'google-workspace', status: 'readonly', configuration: 'connected',
-          workspaceDomain: 'example.co.jp', accountEmail: 'hr@example.co.jp',
-          grantedScopes: ['https://www.googleapis.com/auth/gmail.readonly'], readAccess: true,
-          draftAccess: 'not-requested', sendMethod: 'not-implemented'
-        },
-        gmailSync: {
-          configuration: 'ready', status: 'idle', labelIds: ['Label_SES'], query: '案件', lookbackDays: 30,
-          checkpointHistoryId: '100', storedMessages: 2, lastSyncedAt: '2026-07-20T00:04:00.000Z',
-          lastRun: { mode: 'baseline', discovered: 2, imported: 2, duplicates: 0, filtered: 0, failed: 0 },
-          lastError: null
-        }
-      }}
-      onClose={vi.fn()}
-      responsiveOpen={false}
-      {...handlers}
-    />)
+    render(
+      <GovernancePanel
+        bootstrap={{
+          ...bootstrap,
+          gmail: {
+            provider: 'google-workspace',
+            status: 'readonly',
+            configuration: 'connected',
+            workspaceDomain: 'example.co.jp',
+            accountEmail: 'hr@example.co.jp',
+            grantedScopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+            readAccess: true,
+            draftAccess: 'not-requested',
+            sendMethod: 'not-implemented'
+          },
+          gmailSync: {
+            configuration: 'ready',
+            status: 'idle',
+            labelIds: ['Label_SES'],
+            query: '案件',
+            lookbackDays: 30,
+            checkpointHistoryId: '100',
+            storedMessages: 2,
+            lastSyncedAt: '2026-07-20T00:04:00.000Z',
+            lastRun: { mode: 'baseline', discovered: 2, imported: 2, duplicates: 0, filtered: 0, failed: 0 },
+            lastError: null
+          }
+        }}
+        onClose={vi.fn()}
+        responsiveOpen={false}
+        {...handlers}
+      />
+    )
     fireEvent.click(screen.getByRole('button', { name: 'オンライン受入検証' }))
     expect(await screen.findByText('オンライン受入検証 合格')).toBeInTheDocument()
     expect(screen.getByText('Profileのみ再取得 · 本文未取得 · Cloud LLM未使用')).toBeInTheDocument()
@@ -274,16 +381,18 @@ describe('GovernancePanel recovery controls', () => {
   })
 
   it('shows the Windows DPAPI boundary without claiming unavailable OCR is active', () => {
-    render(<GovernancePanel
-      bootstrap={{
-        ...bootstrap,
-        privacy: { ...bootstrap.privacy, localAi: 'windows-ocr-bundled-isolation-pending' },
-        storage: { ...bootstrap.storage, keyProtection: 'windows-dpapi' }
-      }}
-      onClose={vi.fn()}
-      responsiveOpen={false}
-      {...callbacks()}
-    />)
+    render(
+      <GovernancePanel
+        bootstrap={{
+          ...bootstrap,
+          privacy: { ...bootstrap.privacy, localAi: 'windows-ocr-bundled-isolation-pending' },
+          storage: { ...bootstrap.storage, keyProtection: 'windows-dpapi' }
+        }}
+        onClose={vi.fn()}
+        responsiveOpen={false}
+        {...callbacks()}
+      />
+    )
     expect(screen.getByText('Windows DPAPI')).toBeInTheDocument()
     expect(screen.getByText('隔離検証待ち')).toBeInTheDocument()
     expect(screen.getByText(/固定オフラインOCR Runtimeは搭載済み/)).toBeInTheDocument()
@@ -291,16 +400,18 @@ describe('GovernancePanel recovery controls', () => {
   })
 
   it('does not present Windows PII rules as a validated Japanese NER model', () => {
-    render(<GovernancePanel
-      bootstrap={{
-        ...bootstrap,
-        privacy: { ...bootstrap.privacy, localAi: 'windows-ocr-and-pii-rules-active' },
-        storage: { ...bootstrap.storage, keyProtection: 'windows-dpapi' }
-      }}
-      onClose={vi.fn()}
-      responsiveOpen={false}
-      {...callbacks()}
-    />)
+    render(
+      <GovernancePanel
+        bootstrap={{
+          ...bootstrap,
+          privacy: { ...bootstrap.privacy, localAi: 'windows-ocr-and-pii-rules-active' },
+          storage: { ...bootstrap.storage, keyProtection: 'windows-dpapi' }
+        }}
+        onClose={vi.fn()}
+        responsiveOpen={false}
+        {...callbacks()}
+      />
+    )
     expect(screen.getByText(/Windowsの姓名候補は項目ラベルと規則で検出/)).toBeInTheDocument()
     expect(screen.getByText(/検証済みでない日本語NERを搭載済みとは表示しません/)).toBeInTheDocument()
   })
@@ -383,10 +494,12 @@ describe('GovernancePanel recovery controls', () => {
     fireEvent.change(screen.getByLabelText('パスワードを再入力'), { target: { value: 'correct horse battery staple' } })
     expect(submit).toBeEnabled()
     fireEvent.click(submit)
-    await waitFor(() => expect(handlers.onCreateRecovery).toHaveBeenCalledWith({
-      password: 'correct horse battery staple',
-      passwordConfirmation: 'correct horse battery staple'
-    }))
+    await waitFor(() =>
+      expect(handlers.onCreateRecovery).toHaveBeenCalledWith({
+        password: 'correct horse battery staple',
+        passwordConfirmation: 'correct horse battery staple'
+      })
+    )
     expect(await screen.findByText('pilot.ses-recovery · 検証済み')).toBeInTheDocument()
   })
 
@@ -404,11 +517,13 @@ describe('GovernancePanel recovery controls', () => {
     expect(confirmButton).toBeDisabled()
     fireEvent.change(screen.getByLabelText('確認のため「復元」と入力'), { target: { value: '復元' } })
     fireEvent.click(confirmButton)
-    await waitFor(() => expect(handlers.onConfirmRecovery).toHaveBeenCalledWith({
-      restoreToken: 'b2a56ae6-da51-4cb5-a82c-0fd350558e72',
-      confirmationHash: 'b'.repeat(64),
-      confirmationText: '復元'
-    }))
+    await waitFor(() =>
+      expect(handlers.onConfirmRecovery).toHaveBeenCalledWith({
+        restoreToken: 'b2a56ae6-da51-4cb5-a82c-0fd350558e72',
+        confirmationHash: 'b'.repeat(64),
+        confirmationText: '復元'
+      })
+    )
     expect(await screen.findByText('復元を予約しました。安全に再起動しています…')).toBeInTheDocument()
   })
 

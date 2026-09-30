@@ -1,0 +1,45 @@
+.ai-opinion {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface-faint);
+  color: var(--ink-secondary);
+  font-size: 13px;
+}
+
+.ai-opinion header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.ai-opinion header strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-opinion header em {
+  font-style: normal;
+  font-size: 12px;
+}
+
+.ai-opinion p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.ai-opinion p > span {
+  margin-right: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-opinion small {
+  color: var(--muted);
+  font-size: 11px;
+}

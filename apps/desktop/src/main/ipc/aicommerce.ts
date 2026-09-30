@@ -47,40 +47,34 @@ export function registerAiCommerceHandlers(context: MainIpcContext) {
     return { opened: true }
   })
 
-  ipcMain.handle(
-    ipcChannels.prepareAiCommerceCloudPrompt,
-    async (event, rawInput): Promise<PrepareAiCommerceCloudPromptResult> => {
-      assertTrustedSender(event)
-      if (!cloudAiReview) throw new Error('AICommerce の受管接続設定がありません。')
-      if (aiCommercePromptBusy) throw new Error('別の Cloud AI 要求が進行中です。完了後にもう一度実行してください。')
-      const input = prepareAiCommerceCloudPromptInputSchema.parse(rawInput)
-      aiCommercePromptBusy = true
-      try {
-        return await cloudAiReview.prepare(input.content, currentOperator().operatorId)
-      } finally {
-        aiCommercePromptBusy = false
-      }
+  ipcMain.handle(ipcChannels.prepareAiCommerceCloudPrompt, async (event, rawInput): Promise<PrepareAiCommerceCloudPromptResult> => {
+    assertTrustedSender(event)
+    if (!cloudAiReview) throw new Error('AICommerce の受管接続設定がありません。')
+    if (aiCommercePromptBusy) throw new Error('別の Cloud AI 要求が進行中です。完了後にもう一度実行してください。')
+    const input = prepareAiCommerceCloudPromptInputSchema.parse(rawInput)
+    aiCommercePromptBusy = true
+    try {
+      return await cloudAiReview.prepare(input.content, currentOperator().operatorId)
+    } finally {
+      aiCommercePromptBusy = false
     }
-  )
+  })
 
-  ipcMain.handle(
-    ipcChannels.executeAiCommerceCloudPrompt,
-    async (event, rawInput): Promise<AiCommerceCloudPromptResult> => {
-      assertTrustedSender(event)
-      if (!cloudAiReview) throw new Error('AICommerce の受管接続設定がありません。')
-      if (aiCommercePromptBusy) throw new Error('別の Cloud AI 要求が進行中です。完了後にもう一度実行してください。')
-      const input = executeAiCommerceCloudPromptInputSchema.parse(rawInput)
-      aiCommercePromptBusy = true
-      try {
-        const execution = await cloudAiReview.execute(input.reviewTicket, currentOperator().operatorId)
-        const response = validateCloudAiResponseForDisplay(execution.response)
-        return {
-          ...response,
-          removedIdentifierTypes: execution.removedIdentifierTypes
-        }
-      } finally {
-        aiCommercePromptBusy = false
+  ipcMain.handle(ipcChannels.executeAiCommerceCloudPrompt, async (event, rawInput): Promise<AiCommerceCloudPromptResult> => {
+    assertTrustedSender(event)
+    if (!cloudAiReview) throw new Error('AICommerce の受管接続設定がありません。')
+    if (aiCommercePromptBusy) throw new Error('別の Cloud AI 要求が進行中です。完了後にもう一度実行してください。')
+    const input = executeAiCommerceCloudPromptInputSchema.parse(rawInput)
+    aiCommercePromptBusy = true
+    try {
+      const execution = await cloudAiReview.execute(input.reviewTicket, currentOperator().operatorId)
+      const response = validateCloudAiResponseForDisplay(execution.response)
+      return {
+        ...response,
+        removedIdentifierTypes: execution.removedIdentifierTypes
       }
+    } finally {
+      aiCommercePromptBusy = false
     }
-  )
+  })
 }

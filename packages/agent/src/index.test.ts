@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { brandPersistedUserContent } from './business-text'
-import type {
-  AiConversationSnapshot,
-  SaveAiConversationInput,
-  TypedAiConversationReference
-} from '@shared'
+import type { AiConversationSnapshot, SaveAiConversationInput, TypedAiConversationReference } from '@shared'
 import {
   agentPlanningToolCatalog,
   isCandidateCaseRequest,
@@ -37,15 +33,37 @@ const matchPlan = {
 }
 
 const cases = [
-  { id: caseOne, version: 2, title: 'Java 支付平台', updatedAt: '2026-08-17T02:00:00.000Z', requiredSkills: 'Java', rate: '¥80万', workStyle: 'remote', startDate: '2026-09-01', status: 'current' as const },
-  { id: caseTwo, version: 1, title: 'AWS 数据平台', updatedAt: '2026-08-16T02:00:00.000Z', requiredSkills: 'AWS', rate: '¥75万', workStyle: 'hybrid', startDate: '2026-09-15', status: 'current' as const }
+  {
+    id: caseOne,
+    version: 2,
+    title: 'Java 支付平台',
+    updatedAt: '2026-08-17T02:00:00.000Z',
+    requiredSkills: 'Java',
+    rate: '¥80万',
+    workStyle: 'remote',
+    startDate: '2026-09-01',
+    status: 'current' as const
+  },
+  {
+    id: caseTwo,
+    version: 1,
+    title: 'AWS 数据平台',
+    updatedAt: '2026-08-16T02:00:00.000Z',
+    requiredSkills: 'AWS',
+    rate: '¥75万',
+    workStyle: 'hybrid',
+    startDate: '2026-09-15',
+    status: 'current' as const
+  }
 ]
 
 function createHarness(
   attachmentTokens: string[] = [],
   schedulable: Array<{ anonymousLabel: string; sourceDocumentId: string }> = [],
-  matchCandidate: { anonymousLabel: string; sourceDocumentId: string } | null =
-    { anonymousLabel: 'CANDIDATE_1', sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+  matchCandidate: { anonymousLabel: string; sourceDocumentId: string } | null = {
+    anonymousLabel: 'CANDIDATE_1',
+    sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  },
   conversationImports: Array<{ anonymousLabel: string; sourceDocumentId: string }> = [],
   matchability: { scorableTermCount: number; hardFilterTermCount: number; reviewId: string | null } | null = null
 ) {
@@ -76,7 +94,19 @@ function createHarness(
     listSchedulableCandidates: () => schedulable,
     listConversationImports: () => conversationImports,
     describeJobCaseMatchability: () => matchability,
-    executeTool: async (toolName: 'job-case.search.local' | 'candidate.match.local' | 'candidate.profile.read.local' | 'candidate.interview.read.local' | 'match-run.read.local' | 'resume.analyze.local' | 'candidate.draft.read.local' | 'job-case.draft.read.local' | 'candidate.interview.schedule.local', input: unknown): Promise<AgentToolResult> => {
+    executeTool: async (
+      toolName:
+        | 'job-case.search.local'
+        | 'candidate.match.local'
+        | 'candidate.profile.read.local'
+        | 'candidate.interview.read.local'
+        | 'match-run.read.local'
+        | 'resume.analyze.local'
+        | 'candidate.draft.read.local'
+        | 'job-case.draft.read.local'
+        | 'candidate.interview.schedule.local',
+      input: unknown
+    ): Promise<AgentToolResult> => {
       calls.push({ toolName, input })
       if (toolName === 'job-case.draft.read.local') {
         const value = input as { reviewIds: string[]; labels: string[] }
@@ -85,16 +115,34 @@ function createHarness(
           actionRunId: '66666666-6666-4666-8666-666666666666',
           output: {
             facts: value.reviewIds.map((reviewId, index) => ({
-              reviewId, label: value.labels[index]!, title: `案件 ${index + 1}`,
-              reviewStatus: 'awaiting-review' as const, lifecycle: 'active' as const, jobCase: null,
-              fields: [{ key: 'rate' as const, label: '単価', value: index === 0 ? '60万円' : null, status: index === 0 ? 'needs_review' as const : 'missing' as const }],
-              warningCodes: [], status: 'current' as const
+              reviewId,
+              label: value.labels[index]!,
+              title: `案件 ${index + 1}`,
+              reviewStatus: 'awaiting-review' as const,
+              lifecycle: 'active' as const,
+              jobCase: null,
+              fields: [
+                {
+                  key: 'rate' as const,
+                  label: '単価',
+                  value: index === 0 ? '60万円' : null,
+                  status: index === 0 ? ('needs_review' as const) : ('missing' as const)
+                }
+              ],
+              warningCodes: [],
+              status: 'current' as const
             }))
           }
         }
       }
       if (toolName === 'candidate.interview.schedule.local') {
-        const value = input as { candidateLabel: string; scheduledAt: string; durationMinutes: number; meetingMethod: 'zoom'; kind: 'recruiting' }
+        const value = input as {
+          candidateLabel: string
+          scheduledAt: string
+          durationMinutes: number
+          meetingMethod: 'zoom'
+          kind: 'recruiting'
+        }
         return { toolName, actionRunId: 'aaaaaaaa-1111-4111-8111-111111111111', output: value }
       }
       if (toolName === 'candidate.draft.read.local') {
@@ -114,7 +162,15 @@ function createHarness(
                 { label: '単価', value: null, confidence: 0, status: 'missing' as const, sources: [] }
               ],
               projects: [
-                { title: '決済基盤刷新', period: '2024/01〜2025/03', role: 'SE', technologies: ['Java'], summary: '設計と実装', confidence: 0.8, sources: ['Sheet1!A12'] }
+                {
+                  title: '決済基盤刷新',
+                  period: '2024/01〜2025/03',
+                  role: 'SE',
+                  technologies: ['Java'],
+                  summary: '設計と実装',
+                  confidence: 0.8,
+                  sources: ['Sheet1!A12']
+                }
               ]
             }
           }
@@ -126,7 +182,12 @@ function createHarness(
           toolName,
           actionRunId: '88888888-8888-4888-8888-888888888888',
           output: {
-            imported: value.fileTokens.map((token) => ({ documentId: token, name: `${token.slice(0, 4)}.pdf`, format: 'pdf', reviewRequired: true as const })),
+            imported: value.fileTokens.map((token) => ({
+              documentId: token,
+              name: `${token.slice(0, 4)}.pdf`,
+              format: 'pdf',
+              reviewRequired: true as const
+            })),
             failed: []
           }
         }
@@ -152,7 +213,22 @@ function createHarness(
           output: {
             runId,
             resultHash,
-            cards: [{ candidateProfileId, runId, resultId, resultHash, rank: 1, anonymousLabel: '候補者 AAAAAAAA', fitScore: 0.91, matched: ['Java'], missing: [], hardFilterStatus: 'passed', projectEvidence: '支付平台', status: 'current' }]
+            cards: [
+              {
+                candidateProfileId,
+                runId,
+                resultId,
+                resultHash,
+                rank: 1,
+                anonymousLabel: '候補者 AAAAAAAA',
+                fitScore: 0.91,
+                matched: ['Java'],
+                missing: [],
+                hardFilterStatus: 'passed',
+                projectEvidence: '支付平台',
+                status: 'current'
+              }
+            ]
           }
         }
       }
@@ -166,10 +242,18 @@ function createHarness(
               candidate: { candidateProfileId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
               profile: {
                 profileVersion: 3,
-                skills: 'Java / AWS', experienceYears: '8年', availability: '即日', rate: '90万円',
-                japaneseLevel: 'N1', workStyle: 'リモート', role: 'バックエンド', location: '東京',
+                skills: 'Java / AWS',
+                experienceYears: '8年',
+                availability: '即日',
+                rate: '90万円',
+                japaneseLevel: 'N1',
+                workStyle: 'リモート',
+                role: 'バックエンド',
+                location: '東京',
                 workAuthorization: '就労制限なし',
-                projectExperiences: [{ title: '支付平台', period: '2024-2026', role: '开发', technologies: ['Java'], summary: '支付平台改造' }]
+                projectExperiences: [
+                  { title: '支付平台', period: '2024-2026', role: '开发', technologies: ['Java'], summary: '支付平台改造' }
+                ]
               }
             }
           }
@@ -180,13 +264,26 @@ function createHarness(
           toolName,
           output: {
             facts: {
-              runId, validity: 'current', candidate: { candidateProfileId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
-              interviews: [{
-                kind: 'recruiting', roundNumber: 1, stage: 'prepared', scheduledAt: '2026-08-20T01:00:00.000Z',
-                durationMinutes: 60, meetingMethod: 'google-meet', interviewer: '採用担当', interviewGoal: 'Java経験の確認',
-                interviewNotes: null, unresolvedItems: ['稼働開始日'], decision: null, decisionReason: null,
-                updatedAt: '2026-08-18T00:00:00.000Z'
-              }]
+              runId,
+              validity: 'current',
+              candidate: { candidateProfileId, rank: 1, anonymousLabel: '候補者 AAAAAAAA' },
+              interviews: [
+                {
+                  kind: 'recruiting',
+                  roundNumber: 1,
+                  stage: 'prepared',
+                  scheduledAt: '2026-08-20T01:00:00.000Z',
+                  durationMinutes: 60,
+                  meetingMethod: 'google-meet',
+                  interviewer: '採用担当',
+                  interviewGoal: 'Java経験の確認',
+                  interviewNotes: null,
+                  unresolvedItems: ['稼働開始日'],
+                  decision: null,
+                  decisionReason: null,
+                  updatedAt: '2026-08-18T00:00:00.000Z'
+                }
+              ]
             }
           }
         }
@@ -219,9 +316,19 @@ describe('local conversational matching agent', () => {
   const withMatchInContext = async (harness: ReturnType<typeof createHarness>, conversationId: string) => {
     const seeded = await harness.useCase.execute(
       {
-        conversationId, message: '给当前案件匹配候选人', expectedConversationRevision: null,
+        conversationId,
+        message: '给当前案件匹配候选人',
+        expectedConversationRevision: null,
         requestId: '99999999-9999-4999-8999-999999999999',
-        selectedJobCaseRef: { kind: 'job-case', objectId: caseOne, objectVersion: 2, resultHash: null, ordinal: 1, label: cases[0]!.title, target: `job-case:${caseOne}` }
+        selectedJobCaseRef: {
+          kind: 'job-case',
+          objectId: caseOne,
+          objectVersion: 2,
+          resultHash: null,
+          ordinal: 1,
+          label: cases[0]!.title,
+          target: `job-case:${caseOne}`
+        }
       },
       matchPlan
     )
@@ -232,8 +339,14 @@ describe('local conversational matching agent', () => {
   const scheduleInput = (overrides: Record<string, unknown> = {}) => ({
     toolName: 'candidate.interview.schedule.local' as const,
     arguments: {
-      rank: 1, date: null, time: null, method: null,
-      durationMinutes: null, kind: null, note: null, ...overrides
+      rank: 1,
+      date: null,
+      time: null,
+      method: null,
+      durationMinutes: null,
+      kind: null,
+      note: null,
+      ...overrides
     }
   })
   const zoomMeetingUrl = 'https://company.zoom.us/wc/12345678901/join?pwd=local-test-only'
@@ -241,10 +354,8 @@ describe('local conversational matching agent', () => {
   it('names what the plan got wrong instead of only saying it was invalid', () => {
     // "Could not form a plan" hid an unknown tool name, a strict-schema
     // rejection and a bad enum behind one string. Each has a different fix.
-    expect(() => parseAgentRequestedTool({ name: 'schedule-interview', arguments: {} }))
-      .toThrow(/未知 Tool：schedule-interview/u)
-    expect(() => parseAgentRequestedTool({ name: 'read_match_result', arguments: { rank: 'first' } }))
-      .toThrow(/rank/u)
+    expect(() => parseAgentRequestedTool({ name: 'schedule-interview', arguments: {} })).toThrow(/未知 Tool：schedule-interview/u)
+    expect(() => parseAgentRequestedTool({ name: 'read_match_result', arguments: { rank: 'first' } })).toThrow(/rank/u)
   })
 
   it('survives the shapes a model actually emits for an interview request', () => {
@@ -286,17 +397,22 @@ describe('local conversational matching agent', () => {
     expect(draft({ target: 'case', reviewId: 'aaaa' })).not.toHaveProperty('reviewId')
 
     // Sending is not something this device can witness, so no tool claims it.
-    expect(() => parseAgentRequestedTool({ name: 'record_case_broadcast', arguments: {} }))
-      .toThrow(/未知 Tool/)
+    expect(() => parseAgentRequestedTool({ name: 'record_case_broadcast', arguments: {} })).toThrow(/未知 Tool/)
     // A target nobody can act on is normalized to the safe one rather than
     // failing the turn, but a plan that is not an argument object at all is
     // still refused.
-    expect(parseAgentPlannedToolAction({
-      toolName: 'job-case.broadcast.draft.local', arguments: { target: 'everything', ordinal: null }
-    })).toEqual({ toolName: 'job-case.broadcast.draft.local', arguments: { target: 'new-cases', ordinal: null } })
-    expect(() => parseAgentPlannedToolAction({
-      toolName: 'job-case.broadcast.draft.local', arguments: 'send it'
-    })).toThrow(/受控 schema/)
+    expect(
+      parseAgentPlannedToolAction({
+        toolName: 'job-case.broadcast.draft.local',
+        arguments: { target: 'everything', ordinal: null }
+      })
+    ).toEqual({ toolName: 'job-case.broadcast.draft.local', arguments: { target: 'new-cases', ordinal: null } })
+    expect(() =>
+      parseAgentPlannedToolAction({
+        toolName: 'job-case.broadcast.draft.local',
+        arguments: 'send it'
+      })
+    ).toThrow(/受控 schema/)
   })
 
   it('accepts a plan that only states the date, which is what the model actually emits', () => {
@@ -317,8 +433,11 @@ describe('local conversational matching agent', () => {
     const revision = await withMatchInContext(harness, conversationId)
     const result = await harness.useCase.execute(
       {
-        conversationId, message: '安排20号的面试', expectedConversationRevision: revision,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        conversationId,
+        message: '安排20号的面试',
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ date: '20号', time: '下午', method: 'zoom', durationMinutes: 60 })
     )
@@ -332,15 +451,28 @@ describe('local conversational matching agent', () => {
     // The verb must precede the noun: 安排面试 books one, 面试安排 is the
     // existing schedule and must stay with the read tool.
     for (const booking of [
-      '安排一个20号的面试', '帮我约一下面试', '预约面试', '给他定个面接',
-      '面談を設定してください', '面接を予約したい',
-      'schedule an interview for the 20th', 'book an interview', 'set up an interview'
-    ]) expect(looksLikeInterviewBookingRequest(booking)).toBe(true)
+      '安排一个20号的面试',
+      '帮我约一下面试',
+      '预约面试',
+      '给他定个面接',
+      '面談を設定してください',
+      '面接を予約したい',
+      'schedule an interview for the 20th',
+      'book an interview',
+      'set up an interview'
+    ])
+      expect(looksLikeInterviewBookingRequest(booking)).toBe(true)
 
     for (const reading of [
-      '看一下面试安排', '面试状态怎么样', '他的面接はどうなっている', 'what is the interview status',
-      '面談の予定を教えて', '总结一下这个人', '最近有什么案件？'
-    ]) expect(looksLikeInterviewBookingRequest(reading)).toBe(false)
+      '看一下面试安排',
+      '面试状态怎么样',
+      '他的面接はどうなっている',
+      'what is the interview status',
+      '面談の予定を教えて',
+      '总结一下这个人',
+      '最近有什么案件？'
+    ])
+      expect(looksLikeInterviewBookingRequest(reading)).toBe(false)
   })
 
   it('redirects every read plan to the scheduler when the operator asked to book', async () => {
@@ -358,8 +490,10 @@ describe('local conversational matching agent', () => {
       const result = await harness.useCase.execute(
         {
           conversationId: '33333333-3333-4333-8333-333333333333',
-          message: '安排一个20号的面试', expectedConversationRevision: null,
-          requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+          message: '安排一个20号的面试',
+          expectedConversationRevision: null,
+          requestId: '44444444-4444-4444-8444-444444444444',
+          selectedJobCaseRef: null
         },
         plan
       )
@@ -378,8 +512,11 @@ describe('local conversational matching agent', () => {
     const revision = await withMatchInContext(harness, conversationId)
     const result = await harness.useCase.execute(
       {
-        conversationId, message: '安排一个20号的面试', expectedConversationRevision: revision,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        conversationId,
+        message: '安排一个20号的面试',
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ rank: 1, date: '2026-08-20' })
     )
@@ -395,15 +532,18 @@ describe('local conversational matching agent', () => {
     // for the person they had just added.
     const mine = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }
     const deviceWide = ['1', '2', '3', '4'].map((n) => ({
-      anonymousLabel: `CANDIDATE_${n}`, sourceDocumentId: `${n}${n}${n}${n}${n}${n}${n}${n}-1111-4111-8111-111111111111`
+      anonymousLabel: `CANDIDATE_${n}`,
+      sourceDocumentId: `${n}${n}${n}${n}${n}${n}${n}${n}-1111-4111-8111-111111111111`
     }))
     const book = async (imports: typeof deviceWide, device: typeof deviceWide, rank: number | null = null) => {
       const harness = createHarness([], device, null, imports)
       const result = await harness.useCase.execute(
         {
           conversationId: '33333333-3333-4333-8333-333333333333',
-          message: `安排一个20号14点的Zoom面试 ${zoomMeetingUrl}`, expectedConversationRevision: null,
-          requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+          message: `安排一个20号14点的Zoom面试 ${zoomMeetingUrl}`,
+          expectedConversationRevision: null,
+          requestId: '44444444-4444-4444-8444-444444444444',
+          selectedJobCaseRef: null
         },
         scheduleInput({ rank, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
       )
@@ -444,8 +584,10 @@ describe('local conversational matching agent', () => {
     const asked = await createHarness([], many, null).useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '安排一个20号的面试', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '安排一个20号的面试',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ rank: null, date: '2026-08-20' })
     )
@@ -456,8 +598,10 @@ describe('local conversational matching agent', () => {
     const picked = await createHarness([], many, null).useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '第2位', expectedConversationRevision: null,
-        requestId: '55555555-5555-4555-8555-555555555555', selectedJobCaseRef: null
+        message: '第2位',
+        expectedConversationRevision: null,
+        requestId: '55555555-5555-4555-8555-555555555555',
+        selectedJobCaseRef: null
       },
       scheduleInput({ rank: 2, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
@@ -471,8 +615,11 @@ describe('local conversational matching agent', () => {
     const revision = await withMatchInContext(harness, conversationId)
     const result = await harness.useCase.execute(
       {
-        conversationId, message: '看一下面试安排', expectedConversationRevision: revision,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        conversationId,
+        message: '看一下面试安排',
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       { toolName: 'candidate.interview.read.local', arguments: { rank: 1 } }
     )
@@ -486,15 +633,18 @@ describe('local conversational matching agent', () => {
     const full = { date: '2026-08-20', time: '14:00', method: 'phone' as const, durationMinutes: 60 as const }
     const run = async (
       label: string,
-      opts: { schedulable?: typeof only[]; matchCandidate?: typeof matched | null; seedMatch?: boolean; rank?: number | null }
+      opts: { schedulable?: (typeof only)[]; matchCandidate?: typeof matched | null; seedMatch?: boolean; rank?: number | null }
     ) => {
       const harness = createHarness([], opts.schedulable ?? [], opts.matchCandidate ?? null)
       const conversationId = '33333333-3333-4333-8333-333333333333'
       const revision = opts.seedMatch ? await withMatchInContext(harness, conversationId) : null
       const result = await harness.useCase.execute(
         {
-          conversationId, message: label, expectedConversationRevision: revision,
-          requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+          conversationId,
+          message: label,
+          expectedConversationRevision: revision,
+          requestId: '44444444-4444-4444-8444-444444444444',
+          selectedJobCaseRef: null
         },
         scheduleInput({ rank: opts.rank ?? null, ...full })
       )
@@ -502,17 +652,23 @@ describe('local conversational matching agent', () => {
     }
 
     // A resolvable match run wins when a rank was actually named.
-    expect(await run('第1名安排面试', { seedMatch: true, matchCandidate: matched, rank: 1, schedulable: [only] }))
-      .toEqual({ status: 'completed', target: matched.sourceDocumentId })
+    expect(await run('第1名安排面试', { seedMatch: true, matchCandidate: matched, rank: 1, schedulable: [only] })).toEqual({
+      status: 'completed',
+      target: matched.sourceDocumentId
+    })
     // No match run: the invented rank is ignored and the single candidate is used.
-    expect(await run('安排这个人的面试', { rank: 1, schedulable: [only] }))
-      .toEqual({ status: 'completed', target: only.sourceDocumentId })
+    expect(await run('安排这个人的面试', { rank: 1, schedulable: [only] })).toEqual({ status: 'completed', target: only.sourceDocumentId })
     // Match run present but unresolvable: fall through rather than clarify.
-    expect(await run('安排这个人的面试', { seedMatch: true, matchCandidate: null, rank: 1, schedulable: [only] }))
-      .toEqual({ status: 'completed', target: only.sourceDocumentId })
+    expect(await run('安排这个人的面试', { seedMatch: true, matchCandidate: null, rank: 1, schedulable: [only] })).toEqual({
+      status: 'completed',
+      target: only.sourceDocumentId
+    })
     // Genuinely ambiguous: ask, and write nothing.
-    expect(await run('安排面试', { schedulable: [only, { anonymousLabel: 'RESUME_2', sourceDocumentId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }] }))
-      .toEqual({ status: 'clarifying', target: null })
+    expect(
+      await run('安排面试', {
+        schedulable: [only, { anonymousLabel: 'RESUME_2', sourceDocumentId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }]
+      })
+    ).toEqual({ status: 'clarifying', target: null })
     // Nothing to schedule at all.
     expect(await run('安排面试', {})).toEqual({ status: 'clarifying', target: null })
   })
@@ -526,8 +682,11 @@ describe('local conversational matching agent', () => {
     const revision = await withMatchInContext(harness, conversationId)
     const result = await harness.useCase.execute(
       {
-        conversationId, message: '安排这个人20号14点的电话面试', expectedConversationRevision: revision,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        conversationId,
+        message: '安排这个人20号14点的电话面试',
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
@@ -547,8 +706,10 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '安排这个人20号14点的电话面试', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '安排这个人20号14点的电话面试',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
@@ -567,8 +728,10 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '安排一个20号14点的电话面试', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '安排一个20号14点的电话面试',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
     )
@@ -580,15 +743,20 @@ describe('local conversational matching agent', () => {
   })
 
   it('asks which candidate when more than one could be meant', async () => {
-    const harness = createHarness([], [
-      { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
-      { anonymousLabel: 'RESUME_2', sourceDocumentId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }
-    ])
+    const harness = createHarness(
+      [],
+      [
+        { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+        { anonymousLabel: 'RESUME_2', sourceDocumentId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }
+      ]
+    )
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '安排一个20号14点的Zoom面试', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '安排一个20号14点的Zoom面试',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60 })
     )
@@ -603,8 +771,10 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId,
-        message: '帮我安排一个20号的面试', expectedConversationRevision: revision,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '帮我安排一个20号的面试',
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ date: '2026-08-20' })
     )
@@ -624,8 +794,10 @@ describe('local conversational matching agent', () => {
     const pending = await harness.useCase.execute(
       {
         conversationId,
-        message: '20号 14:00 的 Zoom 面试', expectedConversationRevision: revision,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '20号 14:00 的 Zoom 面试',
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ date: '2026-08-20', time: '14:00', method: 'zoom' })
     )
@@ -638,21 +810,24 @@ describe('local conversational matching agent', () => {
         conversationId,
         message: `30分钟。Zoom 链接是 ${zoomMeetingUrl}`,
         expectedConversationRevision: pending.conversation.revision,
-        requestId: '55555555-5555-4555-8555-555555555555', selectedJobCaseRef: null
+        requestId: '55555555-5555-4555-8555-555555555555',
+        selectedJobCaseRef: null
       },
       scheduleInput({ date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 30 })
     )
 
     expect(completed.status).toBe('completed')
-    expect(harness.calls).toEqual([{
-      toolName: 'candidate.interview.schedule.local',
-      input: expect.objectContaining({
-        scheduledAt: '2026-08-20T05:00:00.000Z',
-        durationMinutes: 30,
-        meetingMethod: 'zoom',
-        meetingUrl: zoomMeetingUrl
-      })
-    }])
+    expect(harness.calls).toEqual([
+      {
+        toolName: 'candidate.interview.schedule.local',
+        input: expect.objectContaining({
+          scheduledAt: '2026-08-20T05:00:00.000Z',
+          durationMinutes: 30,
+          meetingMethod: 'zoom',
+          meetingUrl: zoomMeetingUrl
+        })
+      }
+    ])
     expect(completed.assistantMessage.content).not.toContain(zoomMeetingUrl)
     expect(completed.assistantMessage.blocks?.[0]).toMatchObject({
       type: 'system-access',
@@ -674,24 +849,28 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId,
-        message: `20号 14:00，Zoom，60分钟，链接 ${zoomMeetingUrl}`, expectedConversationRevision: revision,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: `20号 14:00，Zoom，60分钟，链接 ${zoomMeetingUrl}`,
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       scheduleInput({ date: '2026-08-20', time: '14:00', method: 'zoom', durationMinutes: 60, note: '事前に職務経歴を共有' })
     )
-    expect(harness.calls).toEqual([{
-      toolName: 'candidate.interview.schedule.local',
-      input: {
-        sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        candidateLabel: 'CANDIDATE_1',
-        scheduledAt: '2026-08-20T05:00:00.000Z',
-        durationMinutes: 60,
-        meetingMethod: 'zoom',
-        meetingUrl: zoomMeetingUrl,
-        kind: 'recruiting',
-        contactNote: '事前に職務経歴を共有'
+    expect(harness.calls).toEqual([
+      {
+        toolName: 'candidate.interview.schedule.local',
+        input: {
+          sourceDocumentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          candidateLabel: 'CANDIDATE_1',
+          scheduledAt: '2026-08-20T05:00:00.000Z',
+          durationMinutes: 60,
+          meetingMethod: 'zoom',
+          meetingUrl: zoomMeetingUrl,
+          kind: 'recruiting',
+          contactNote: '事前に職務経歴を共有'
+        }
       }
-    }])
+    ])
     expect(result.status).toBe('completed')
     expect(result.assistantMessage.blocks?.[0]).toMatchObject({
       destination: 'interview-schedule',
@@ -699,17 +878,28 @@ describe('local conversational matching agent', () => {
     })
   })
 
-
   it('summarises imported resume facts without turning extraction provenance into a review gate', async () => {
     const token = '11111111-1111-4111-8111-111111111111'
     const harness = createHarness([token])
     const conversationId = '33333333-3333-4333-8333-333333333333'
     const imported = await harness.useCase.execute(
-      { conversationId, message: '导入这份简历', expectedConversationRevision: null, requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null },
+      {
+        conversationId,
+        message: '导入这份简历',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
+      },
       { toolName: 'resume.analyze.local', arguments: { attachmentOrdinal: null } }
     )
     const summary = await harness.useCase.execute(
-      { conversationId, message: '总结一下这个人的整体情况', expectedConversationRevision: imported.conversation.revision, requestId: '55555555-5555-4555-8555-555555555555', selectedJobCaseRef: null },
+      {
+        conversationId,
+        message: '总结一下这个人的整体情况',
+        expectedConversationRevision: imported.conversation.revision,
+        requestId: '55555555-5555-4555-8555-555555555555',
+        selectedJobCaseRef: null
+      },
       { toolName: 'candidate.draft.read.local', arguments: { draftOrdinal: null } }
     )
     // The ordinal resolved to the document the import turn actually produced.
@@ -729,7 +919,12 @@ describe('local conversational matching agent', () => {
     const conversationId = '33333333-3333-4333-8333-333333333333'
     const intakeBatchId = '12121212-1212-4212-8212-121212121203'
     const reviewIds = ['12121212-1212-4212-8212-121212121201', '12121212-1212-4212-8212-121212121202']
-    const baseInput = { conversationId, expectedConversationRevision: null as number | null, requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null }
+    const baseInput = {
+      conversationId,
+      expectedConversationRevision: null as number | null,
+      requestId: '44444444-4444-4444-8444-444444444444',
+      selectedJobCaseRef: null
+    }
 
     const nothing = await harness.useCase.execute(
       { ...baseInput, message: '第2条的单价是多少' },
@@ -743,30 +938,68 @@ describe('local conversational matching agent', () => {
       brandPersistedUserContent('【已提交业务文本（多条记录）】内容摘要 abcdef12，原文未写入会话。'),
       {
         content: '已导入 2 条案件草稿。',
-        blocks: [{
-          type: 'job-case-draft-cards', intakeBatchId,
-          cards: reviewIds.map((reviewId, index) => ({
-            reviewId, label: `DRAFT_${index + 1}`, ordinal: index + 1, outcome: 'created' as const, title: `案件 ${index + 1}`,
-            reviewStatus: 'awaiting-review' as const, lifecycle: 'active' as const, jobCase: null, fields: [], warningCodes: [], status: 'current' as const
-          }))
-        }]
+        blocks: [
+          {
+            type: 'job-case-draft-cards',
+            intakeBatchId,
+            cards: reviewIds.map((reviewId, index) => ({
+              reviewId,
+              label: `DRAFT_${index + 1}`,
+              ordinal: index + 1,
+              outcome: 'created' as const,
+              title: `案件 ${index + 1}`,
+              reviewStatus: 'awaiting-review' as const,
+              lifecycle: 'active' as const,
+              jobCase: null,
+              fields: [],
+              warningCodes: [],
+              status: 'current' as const
+            }))
+          }
+        ]
       },
       'completed',
       { intakeBatchId, reviewIds }
     )
-    expect(intake.conversation.salesAgentState?.lastIntakeBatch).toEqual({ intakeBatchId, messageId: intake.assistantMessage.id, reviewIds })
+    expect(intake.conversation.salesAgentState?.lastIntakeBatch).toEqual({
+      intakeBatchId,
+      messageId: intake.assistantMessage.id,
+      reviewIds
+    })
 
     const second = await harness.useCase.execute(
-      { ...baseInput, message: '第2条的单价是多少', expectedConversationRevision: intake.conversation.revision, requestId: '55555555-5555-4555-8555-555555555555' },
+      {
+        ...baseInput,
+        message: '第2条的单价是多少',
+        expectedConversationRevision: intake.conversation.revision,
+        requestId: '55555555-5555-4555-8555-555555555555'
+      },
       { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: 2 } }
     )
-    expect(harness.calls.at(-1)).toEqual({ toolName: 'job-case.draft.read.local', input: { reviewIds: [reviewIds[1]], labels: ['DRAFT_2'] } })
-    expect(second.assistantMessage.blocks?.[0]).toMatchObject({ type: 'job-case-draft-cards', intakeBatchId, cards: [{ ordinal: 2, label: 'DRAFT_2', outcome: 'created' }] })
-    expect(second.assistantMessage.blocks?.[1]).toMatchObject({ type: 'system-access', destination: 'review-center', intakeBatchId, reviewIds: [reviewIds[1]] })
+    expect(harness.calls.at(-1)).toEqual({
+      toolName: 'job-case.draft.read.local',
+      input: { reviewIds: [reviewIds[1]], labels: ['DRAFT_2'] }
+    })
+    expect(second.assistantMessage.blocks?.[0]).toMatchObject({
+      type: 'job-case-draft-cards',
+      intakeBatchId,
+      cards: [{ ordinal: 2, label: 'DRAFT_2', outcome: 'created' }]
+    })
+    expect(second.assistantMessage.blocks?.[1]).toMatchObject({
+      type: 'system-access',
+      destination: 'review-center',
+      intakeBatchId,
+      reviewIds: [reviewIds[1]]
+    })
 
     // A partial read must not narrow the batch: every draft is still reachable.
     const all = await harness.useCase.execute(
-      { ...baseInput, message: '这几条哪些缺单价', expectedConversationRevision: second.conversation.revision, requestId: '66666666-6666-4666-8666-666666666666' },
+      {
+        ...baseInput,
+        message: '这几条哪些缺单价',
+        expectedConversationRevision: second.conversation.revision,
+        requestId: '66666666-6666-4666-8666-666666666666'
+      },
       { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: null } }
     )
     expect(harness.calls.at(-1)).toEqual({ toolName: 'job-case.draft.read.local', input: { reviewIds, labels: ['DRAFT_1', 'DRAFT_2'] } })
@@ -774,7 +1007,12 @@ describe('local conversational matching agent', () => {
     expect(all.assistantMessage.content).not.toMatch(/待审核|不是正式案件|审核中心确认/u)
 
     const missing = await harness.useCase.execute(
-      { ...baseInput, message: '第9条', expectedConversationRevision: all.conversation.revision, requestId: '77777777-7777-4777-8777-777777777777' },
+      {
+        ...baseInput,
+        message: '第9条',
+        expectedConversationRevision: all.conversation.revision,
+        requestId: '77777777-7777-4777-8777-777777777777'
+      },
       { toolName: 'job-case.draft.read.local', arguments: { draftOrdinal: 9 } }
     )
     expect(missing.status).toBe('clarifying')
@@ -783,14 +1021,17 @@ describe('local conversational matching agent', () => {
 
   it('resolves a draft imported by the composer even before an Agent import block exists', async () => {
     const importedByComposer = {
-      anonymousLabel: 'RESUME_1', sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+      anonymousLabel: 'RESUME_1',
+      sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
     }
     const harness = createHarness([], [], null, [importedByComposer])
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '总结一下刚导入的简历', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '总结一下刚导入的简历',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       { toolName: 'candidate.draft.read.local', arguments: { draftOrdinal: null } }
     )
@@ -807,8 +1048,10 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '总结一下这个人', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '总结一下这个人',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       { toolName: 'candidate.draft.read.local', arguments: { draftOrdinal: null } }
     )
@@ -816,7 +1059,6 @@ describe('local conversational matching agent', () => {
     expect(result.status).toBe('clarifying')
     expect(result.assistantMessage.content).toContain('还没有导入过简历')
   })
-
 
   it('imports only attached files and makes their content available without routing to a field review', async () => {
     const tokens = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222']
@@ -840,8 +1082,10 @@ describe('local conversational matching agent', () => {
     await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '只导入第二份', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '只导入第二份',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       { toolName: 'resume.analyze.local', arguments: { attachmentOrdinal: 2 } }
     )
@@ -853,8 +1097,10 @@ describe('local conversational matching agent', () => {
     const result = await harness.useCase.execute(
       {
         conversationId: '33333333-3333-4333-8333-333333333333',
-        message: '导入简历', expectedConversationRevision: null,
-        requestId: '44444444-4444-4444-8444-444444444444', selectedJobCaseRef: null
+        message: '导入简历',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
       },
       { toolName: 'resume.analyze.local', arguments: { attachmentOrdinal: null } }
     )
@@ -862,37 +1108,75 @@ describe('local conversational matching agent', () => {
     expect(result.assistantMessage.content).toContain('没有可导入的附件')
   })
 
-
   it('exposes controlled Responses and DeepSeek chat models and rejects model or endpoint injection', () => {
     const catalog = loadAgentChatModelCatalog(undefined)
-    expect(catalog.map((model) => model.key)).toEqual([
-      'gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'deepseek-v4-flash'
-    ])
+    expect(catalog.map((model) => model.key)).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'deepseek-v4-flash'])
     expect(resolveAgentChatModel(catalog, 'gpt-5.6-luna')).toMatchObject({
-      upstreamModel: 'gpt-5.6-luna', provider: 'openai', endpoint: 'responses'
+      upstreamModel: 'gpt-5.6-luna',
+      provider: 'openai',
+      endpoint: 'responses'
     })
     expect(resolveAgentChatModel(catalog, 'deepseek-v4-flash')).toMatchObject({
-      displayName: 'DeepSeek V4 Flash', upstreamModel: 'deepseek-v4-flash',
-      maxOutputTokens: 4_096, provider: 'deepseek', endpoint: 'chat-completions'
+      displayName: 'DeepSeek V4 Flash',
+      upstreamModel: 'deepseek-v4-flash',
+      maxOutputTokens: 4_096,
+      provider: 'deepseek',
+      endpoint: 'chat-completions'
     })
     expect(() => resolveAgentChatModel(catalog, 'https://evil.invalid')).toThrow(/允许列表/)
-    expect(() => loadAgentChatModelCatalog(JSON.stringify([{
-      key: 'private-model', displayName: 'Private', model: 'private-model', endpoint: 'https://evil.invalid'
-    }]))).toThrow(/受控 schema/)
-    expect(() => loadAgentChatModelCatalog(JSON.stringify([{
-      key: 'gpt-5.6-luna', displayName: 'Hijacked', model: 'other-model'
-    }]))).toThrow(/重复/)
-    const extended = loadAgentChatModelCatalog(JSON.stringify([{
-      key: 'gpt-5.6-orbit', displayName: 'GPT-5.6 Orbit', model: 'gpt-5.6-orbit', maxOutputTokens: 2_048
-    }]))
+    expect(() =>
+      loadAgentChatModelCatalog(
+        JSON.stringify([
+          {
+            key: 'private-model',
+            displayName: 'Private',
+            model: 'private-model',
+            endpoint: 'https://evil.invalid'
+          }
+        ])
+      )
+    ).toThrow(/受控 schema/)
+    expect(() =>
+      loadAgentChatModelCatalog(
+        JSON.stringify([
+          {
+            key: 'gpt-5.6-luna',
+            displayName: 'Hijacked',
+            model: 'other-model'
+          }
+        ])
+      )
+    ).toThrow(/重复/)
+    const extended = loadAgentChatModelCatalog(
+      JSON.stringify([
+        {
+          key: 'gpt-5.6-orbit',
+          displayName: 'GPT-5.6 Orbit',
+          model: 'gpt-5.6-orbit',
+          maxOutputTokens: 2_048
+        }
+      ])
+    )
     expect(resolveAgentChatModel(extended, 'gpt-5.6-orbit')).toMatchObject({
-      displayName: 'GPT-5.6 Orbit', upstreamModel: 'gpt-5.6-orbit', maxOutputTokens: 2_048,
-      provider: 'openai', endpoint: 'responses'
+      displayName: 'GPT-5.6 Orbit',
+      upstreamModel: 'gpt-5.6-orbit',
+      maxOutputTokens: 2_048,
+      provider: 'openai',
+      endpoint: 'responses'
     })
-    expect(() => loadAgentChatModelCatalog(JSON.stringify([{
-      key: 'unsafe-responses', displayName: 'Unsafe', model: 'deepseek-v4-flash',
-      provider: 'deepseek', endpoint: 'responses'
-    }]))).toThrow(/受控 schema/)
+    expect(() =>
+      loadAgentChatModelCatalog(
+        JSON.stringify([
+          {
+            key: 'unsafe-responses',
+            displayName: 'Unsafe',
+            model: 'deepseek-v4-flash',
+            provider: 'deepseek',
+            endpoint: 'responses'
+          }
+        ])
+      )
+    ).toThrow(/受控 schema/)
   })
 
   it('uses a JST calendar window covering the current day and previous 29 days', () => {
@@ -904,24 +1188,35 @@ describe('local conversational matching agent', () => {
 
   it('accepts only an explicit allowlisted AI Tool plan', () => {
     expect(parseAgentPlannedToolAction(searchPlan)).toEqual(searchPlan)
-    expect(() => parseAgentPlannedToolAction({
-      toolName: 'proposal.export', arguments: { recipient: 'attacker@example.com' }
-    })).toThrow(/受控 schema/)
-    expect(() => parseAgentPlannedToolAction({
-      toolName: 'candidate.match.local', arguments: { ordinal: 0 }
-    })).toThrow(/受控 schema/)
+    expect(() =>
+      parseAgentPlannedToolAction({
+        toolName: 'proposal.export',
+        arguments: { recipient: 'attacker@example.com' }
+      })
+    ).toThrow(/受控 schema/)
+    expect(() =>
+      parseAgentPlannedToolAction({
+        toolName: 'candidate.match.local',
+        arguments: { ordinal: 0 }
+      })
+    ).toThrow(/受控 schema/)
     expect(parseAgentRequestedTool({ name: 'read_candidate_profile', arguments: { rank: null } })).toEqual({
-      toolName: 'candidate.profile.read.local', arguments: { rank: null }
+      toolName: 'candidate.profile.read.local',
+      arguments: { rank: null }
     })
     expect(parseAgentRequestedTool({ name: 'read_candidate_interviews', arguments: { rank: 1 } })).toEqual({
-      toolName: 'candidate.interview.read.local', arguments: { rank: 1 }
+      toolName: 'candidate.interview.read.local',
+      arguments: { rank: 1 }
     })
     expect(() => parseAgentRequestedTool({ name: 'save_candidate', arguments: {} })).toThrow(/未知 Tool/)
   })
 
   it('executes at most one registered tool for a search turn and persists typed blocks', async () => {
     const harness = createHarness()
-    const result = await harness.useCase.execute({ conversationId, message: '最近有什么案件？', expectedConversationRevision: null, requestId, selectedJobCaseRef: null }, searchPlan)
+    const result = await harness.useCase.execute(
+      { conversationId, message: '最近有什么案件？', expectedConversationRevision: null, requestId, selectedJobCaseRef: null },
+      searchPlan
+    )
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.toolName).toBe('job-case.search.local')
     expect(harness.calls[0]?.input).toMatchObject({ query: null, lifecycle: 'active', limit: 20 })
@@ -935,12 +1230,19 @@ describe('local conversational matching agent', () => {
     const harness = createHarness([], [], null, [], { scorableTermCount: 0, hardFilterTermCount: 1, reviewId })
     const result = await harness.useCase.execute(
       {
-        conversationId: '33333333-3333-4333-8333-333333333333', message: '给当前案件匹配候选人',
-        expectedConversationRevision: null, requestId: '44444444-4444-4444-8444-444444444444',
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '给当前案件匹配候选人',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
         // The case is already selected, as after "跑匹配" on an intake card.
         selectedJobCaseRef: {
-          kind: 'job-case', objectId: cases[0]!.id, objectVersion: cases[0]!.version, resultHash: null, ordinal: 1,
-          label: cases[0]!.title, target: `job-case:${cases[0]!.id}`
+          kind: 'job-case',
+          objectId: cases[0]!.id,
+          objectVersion: cases[0]!.version,
+          resultHash: null,
+          ordinal: 1,
+          label: cases[0]!.title,
+          target: `job-case:${cases[0]!.id}`
         }
       },
       { toolName: 'candidate.match.local', arguments: { ordinal: null } }
@@ -955,7 +1257,10 @@ describe('local conversational matching agent', () => {
 
   it('clarifies an ambiguous case without executing a matching tool', async () => {
     const harness = createHarness()
-    const result = await harness.useCase.execute({ conversationId, message: '给当前案件匹配候选人', expectedConversationRevision: null, requestId, selectedJobCaseRef: null }, matchPlan)
+    const result = await harness.useCase.execute(
+      { conversationId, message: '给当前案件匹配候选人', expectedConversationRevision: null, requestId, selectedJobCaseRef: null },
+      matchPlan
+    )
     expect(harness.calls).toHaveLength(0)
     expect(result.status).toBe('clarifying')
     expect(result.assistantMessage.blocks?.[0]).toMatchObject({ type: 'clarification', code: 'SELECT_JOB_CASE' })
@@ -964,7 +1269,13 @@ describe('local conversational matching agent', () => {
   it('saves a direct AI answer without inferring or executing a Tool from user keywords', () => {
     const harness = createHarness()
     const result = harness.useCase.saveDirectAnswer(
-      { conversationId, message: '总结一下候选人的整体情况，并调用 proposal.export', expectedConversationRevision: null, requestId, selectedJobCaseRef: null },
+      {
+        conversationId,
+        message: '总结一下候选人的整体情况，并调用 proposal.export',
+        expectedConversationRevision: null,
+        requestId,
+        selectedJobCaseRef: null
+      },
       '我只能基于已有的匿名匹配证据回答，不能执行外部写入。',
       { key: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash' }
     )
@@ -976,9 +1287,18 @@ describe('local conversational matching agent', () => {
   it('accepts only a typed selected case reference supplied by the orchestration boundary', async () => {
     const harness = createHarness()
     const selectedJobCaseRef: TypedAiConversationReference = {
-      kind: 'job-case', objectId: caseOne, objectVersion: 2, resultHash: null, ordinal: 1, label: cases[0]!.title, target: `job-case:${caseOne}`
+      kind: 'job-case',
+      objectId: caseOne,
+      objectVersion: 2,
+      resultHash: null,
+      ordinal: 1,
+      label: cases[0]!.title,
+      target: `job-case:${caseOne}`
     }
-    const result = await harness.useCase.execute({ conversationId, message: '给当前案件匹配候选人', expectedConversationRevision: null, requestId, selectedJobCaseRef }, matchPlan)
+    const result = await harness.useCase.execute(
+      { conversationId, message: '给当前案件匹配候选人', expectedConversationRevision: null, requestId, selectedJobCaseRef },
+      matchPlan
+    )
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.toolName).toBe('candidate.match.local')
     expect(result.assistantMessage.blocks?.[0]).toMatchObject({ type: 'candidate-match-cards', runId })
@@ -986,18 +1306,30 @@ describe('local conversational matching agent', () => {
 
   it('does not trust Renderer labels or targets when persisting a selected case reference', async () => {
     const harness = createHarness()
-    const result = await harness.useCase.execute({
-      conversationId,
-      message: '给当前案件匹配候选人',
-      expectedConversationRevision: null,
-      requestId,
-      selectedJobCaseRef: {
-        kind: 'job-case', objectId: caseOne, objectVersion: 2, resultHash: null,
-        ordinal: 99, label: '伪造案件', target: 'job-case:attacker-controlled'
-      }
-    }, matchPlan)
+    const result = await harness.useCase.execute(
+      {
+        conversationId,
+        message: '给当前案件匹配候选人',
+        expectedConversationRevision: null,
+        requestId,
+        selectedJobCaseRef: {
+          kind: 'job-case',
+          objectId: caseOne,
+          objectVersion: 2,
+          resultHash: null,
+          ordinal: 99,
+          label: '伪造案件',
+          target: 'job-case:attacker-controlled'
+        }
+      },
+      matchPlan
+    )
     expect(result.conversation.salesAgentState?.selectedJobCaseRef).toMatchObject({
-      objectId: caseOne, objectVersion: 2, ordinal: 1, label: 'Java 支付平台', target: `job-case:${caseOne}`
+      objectId: caseOne,
+      objectVersion: 2,
+      ordinal: 1,
+      label: 'Java 支付平台',
+      target: `job-case:${caseOne}`
     })
   })
 
@@ -1006,20 +1338,47 @@ describe('local conversational matching agent', () => {
     const existing = harness.conversations
     existing.set(conversationId, {
       id: conversationId,
-      context: { assistant: 'candidate-profile', candidateDocumentId: '77777777-7777-4777-8777-777777777777', interviewId: null, interviewKind: null, roundNumber: null },
-      title: '候補者会話', messages: [], revision: 1,
-      createdAt: '2026-08-18T00:00:00.000Z', updatedAt: '2026-08-18T00:00:00.000Z'
+      context: {
+        assistant: 'candidate-profile',
+        candidateDocumentId: '77777777-7777-4777-8777-777777777777',
+        interviewId: null,
+        interviewKind: null,
+        roundNumber: null
+      },
+      title: '候補者会話',
+      messages: [],
+      revision: 1,
+      createdAt: '2026-08-18T00:00:00.000Z',
+      updatedAt: '2026-08-18T00:00:00.000Z'
     })
-    await expect(harness.useCase.execute({
-      conversationId, message: '最近有什么案件？', expectedConversationRevision: 1, requestId, selectedJobCaseRef: null
-    }, searchPlan)).rejects.toMatchObject({ code: 'CONVERSATION_CONTEXT_MISMATCH' })
+    await expect(
+      harness.useCase.execute(
+        {
+          conversationId,
+          message: '最近有什么案件？',
+          expectedConversationRevision: 1,
+          requestId,
+          selectedJobCaseRef: null
+        },
+        searchPlan
+      )
+    ).rejects.toMatchObject({ code: 'CONVERSATION_CONTEXT_MISMATCH' })
   })
 
   it('resolves an ordinal case reference from the latest search result', async () => {
     const harness = createHarness()
-    const first = await harness.useCase.execute({ conversationId, message: '最近有什么案件？', expectedConversationRevision: null, requestId, selectedJobCaseRef: null }, searchPlan)
+    const first = await harness.useCase.execute(
+      { conversationId, message: '最近有什么案件？', expectedConversationRevision: null, requestId, selectedJobCaseRef: null },
+      searchPlan
+    )
     const second = await harness.useCase.execute(
-      { conversationId, message: '给第二个案件匹配候选人', expectedConversationRevision: first.conversation.revision, requestId: '99999999-9999-4999-8999-999999999999', selectedJobCaseRef: null },
+      {
+        conversationId,
+        message: '给第二个案件匹配候选人',
+        expectedConversationRevision: first.conversation.revision,
+        requestId: '99999999-9999-4999-8999-999999999999',
+        selectedJobCaseRef: null
+      },
       { toolName: 'candidate.match.local', arguments: { ordinal: 2 } }
     )
     expect(harness.calls.map((call) => call.toolName)).toEqual(['job-case.search.local', 'candidate.match.local'])
@@ -1030,19 +1389,34 @@ describe('local conversational matching agent', () => {
   it('resolves a short candidate follow-up to the only matched candidate and reads the confirmed profile', async () => {
     const harness = createHarness()
     const selectedJobCaseRef: TypedAiConversationReference = {
-      kind: 'job-case', objectId: caseOne, objectVersion: 2, resultHash: null, ordinal: 1,
-      label: cases[0]!.title, target: `job-case:${caseOne}`
+      kind: 'job-case',
+      objectId: caseOne,
+      objectVersion: 2,
+      resultHash: null,
+      ordinal: 1,
+      label: cases[0]!.title,
+      target: `job-case:${caseOne}`
     }
-    const matched = await harness.useCase.execute({
-      conversationId, message: '有什么合适的人选', expectedConversationRevision: null, requestId, selectedJobCaseRef
-    }, matchPlan)
-    const profile = await harness.useCase.execute({
-      conversationId,
-      message: '日语呢',
-      expectedConversationRevision: matched.conversation.revision,
-      requestId: '99999999-9999-4999-8999-999999999999',
-      selectedJobCaseRef
-    }, { toolName: 'candidate.profile.read.local', arguments: { rank: null } })
+    const matched = await harness.useCase.execute(
+      {
+        conversationId,
+        message: '有什么合适的人选',
+        expectedConversationRevision: null,
+        requestId,
+        selectedJobCaseRef
+      },
+      matchPlan
+    )
+    const profile = await harness.useCase.execute(
+      {
+        conversationId,
+        message: '日语呢',
+        expectedConversationRevision: matched.conversation.revision,
+        requestId: '99999999-9999-4999-8999-999999999999',
+        selectedJobCaseRef
+      },
+      { toolName: 'candidate.profile.read.local', arguments: { rank: null } }
+    )
 
     expect(harness.calls.map((call) => call.toolName)).toEqual(['candidate.match.local', 'candidate.profile.read.local'])
     expect(harness.calls[1]?.input).toMatchObject({ runId, resultId, rank: 1 })
@@ -1052,7 +1426,6 @@ describe('local conversational matching agent', () => {
     })
   })
 })
-
 
 describe('person and case intent boundaries', () => {
   it('distinguishes a specific pair, reverse search, and an ordinary context question', () => {

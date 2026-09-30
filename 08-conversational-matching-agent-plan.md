@@ -683,6 +683,8 @@ Tool Spec 继续进入 packages/action-runtime；Contract 继续进入 packages/
 
 ## 15. Feature Flag、灰度与回滚
 
+> 2026-09-24：Feature Flag 与经典页回退已移除。HR 列表 + 右侧面板是唯一主界面，`SES_CONVERSATIONAL_MATCHING_ENABLED` 不再读取，Bootstrap 不再携带 `featureFlags`，打包冒烟不再启动经典回退。本节以下内容保留为历史设计记录。
+
 ### 15.1 Feature Flag
 
 新增受管布尔配置：

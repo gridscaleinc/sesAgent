@@ -10,12 +10,22 @@ const copiedReviewId = '22222222-2222-4222-8222-222222222222'
 const workspace: BroadcastWorkspace = {
   queue: [
     {
-      reviewId: newReviewId, jobCaseId: 'case-1', jobCaseVersion: 1, title: 'Java 案件',
-      sourceType: 'gmail', status: 'new', lastCopy: null, hasUpdateSinceLastCopy: false
+      reviewId: newReviewId,
+      jobCaseId: 'case-1',
+      jobCaseVersion: 1,
+      title: 'Java 案件',
+      sourceType: 'gmail',
+      status: 'new',
+      lastCopy: null,
+      hasUpdateSinceLastCopy: false
     },
     {
-      reviewId: copiedReviewId, jobCaseId: 'case-2', jobCaseVersion: 2, title: 'RPA 案件',
-      sourceType: 'chat-paste', status: 'copied',
+      reviewId: copiedReviewId,
+      jobCaseId: 'case-2',
+      jobCaseVersion: 2,
+      title: 'RPA 案件',
+      sourceType: 'chat-paste',
+      status: 'copied',
       lastCopy: { at: '2026-08-25T02:00:00.000Z', lang: 'zh', jobCaseVersion: 1 },
       hasUpdateSinceLastCopy: true
     }
@@ -27,7 +37,10 @@ function actionsWith(overrides: Partial<BroadcastPanelActions> = {}): BroadcastP
   return {
     loadWorkspace: vi.fn().mockResolvedValue(workspace),
     draftBroadcast: vi.fn().mockResolvedValue({
-      textJa: '【案件】Java 案件', textZh: '【案件】Java 案件（中文）', forbiddenJa: [], forbiddenZh: []
+      textJa: '【案件】Java 案件',
+      textZh: '【案件】Java 案件（中文）',
+      forbiddenJa: [],
+      forbiddenZh: []
     }),
     draftUpdateNotice: vi.fn().mockResolvedValue({ status: 'no-changes' }),
     recordCopy: vi.fn().mockResolvedValue({ copy: { id: 'copy-1' } }),
@@ -38,9 +51,11 @@ function actionsWith(overrides: Partial<BroadcastPanelActions> = {}): BroadcastP
 }
 
 function renderView(actions: BroadcastPanelActions, initialReviewId?: string) {
-  render(<UiLocaleProvider locale="zh-CN">
-    <BroadcastWorkspaceView actions={actions} initialReviewId={initialReviewId} />
-  </UiLocaleProvider>)
+  render(
+    <UiLocaleProvider locale="zh-CN">
+      <BroadcastWorkspaceView actions={actions} initialReviewId={initialReviewId} />
+    </UiLocaleProvider>
+  )
 }
 
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
@@ -61,9 +76,11 @@ describe('BroadcastWorkspaceView', () => {
 
   it('reports a queue pick to the host so the conversation can follow the focus', async () => {
     const onSelectedReviewChange = vi.fn()
-    render(<UiLocaleProvider locale="zh-CN">
-      <BroadcastWorkspaceView actions={actionsWith()} initialReviewId={newReviewId} onSelectedReviewChange={onSelectedReviewChange} />
-    </UiLocaleProvider>)
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <BroadcastWorkspaceView actions={actionsWith()} initialReviewId={newReviewId} onSelectedReviewChange={onSelectedReviewChange} />
+      </UiLocaleProvider>
+    )
     fireEvent.click(await screen.findByRole('button', { name: /全部案件/u }))
     fireEvent.click(await screen.findByText('RPA 案件'))
     expect(onSelectedReviewChange).toHaveBeenCalledWith(copiedReviewId)
@@ -82,12 +99,17 @@ describe('BroadcastWorkspaceView', () => {
   })
 
   it('blocks the copy and names the identifier types the draft still carries', async () => {
-    renderView(actionsWith({
-      draftBroadcast: vi.fn().mockResolvedValue({
-        textJa: '【案件】<PERSON_NAME_001>', textZh: '【案件】<PERSON_NAME_001>',
-        forbiddenJa: ['person_name'], forbiddenZh: ['person_name']
-      })
-    }), newReviewId)
+    renderView(
+      actionsWith({
+        draftBroadcast: vi.fn().mockResolvedValue({
+          textJa: '【案件】<PERSON_NAME_001>',
+          textZh: '【案件】<PERSON_NAME_001>',
+          forbiddenJa: ['person_name'],
+          forbiddenZh: ['person_name']
+        })
+      }),
+      newReviewId
+    )
     expect(await screen.findByRole('alert')).toHaveTextContent('person_name')
     expect(screen.getByRole('button', { name: '复制' })).toBeDisabled()
   })
@@ -104,8 +126,11 @@ describe('BroadcastWorkspaceView', () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('【案件】Java 案件'))
     expect(actions.recordCopy).toHaveBeenCalledWith({
-      reviewId: newReviewId, lang: 'ja', kind: 'new',
-      templateId: builtInBroadcastTemplate().id, text: '【案件】Java 案件'
+      reviewId: newReviewId,
+      lang: 'ja',
+      kind: 'new',
+      templateId: builtInBroadcastTemplate().id,
+      text: '【案件】Java 案件'
     })
     expect(await screen.findByRole('status')).toHaveTextContent('已复制，可以去微信粘贴了。')
   })
@@ -121,8 +146,9 @@ describe('BroadcastWorkspaceView', () => {
     await waitFor(() => expect(copy).toBeEnabled())
     fireEvent.click(copy)
 
-    await waitFor(() => expect(actions.recordCopy).toHaveBeenCalledWith(
-      expect.objectContaining({ lang: 'zh', text: '【案件】Java 案件（中文）' })))
+    await waitFor(() =>
+      expect(actions.recordCopy).toHaveBeenCalledWith(expect.objectContaining({ lang: 'zh', text: '【案件】Java 案件（中文）' }))
+    )
   })
 
   it('opens the visible case text in the default mail client without claiming it was sent', async () => {
@@ -133,10 +159,15 @@ describe('BroadcastWorkspaceView', () => {
 
     fireEvent.click(openEmail)
 
-    await waitFor(() => expect(actions.openEmail).toHaveBeenCalledWith({
-      reviewId: newReviewId, lang: 'ja', kind: 'new',
-      templateId: builtInBroadcastTemplate().id, text: '【案件】Java 案件'
-    }))
+    await waitFor(() =>
+      expect(actions.openEmail).toHaveBeenCalledWith({
+        reviewId: newReviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId: builtInBroadcastTemplate().id,
+        text: '【案件】Java 案件'
+      })
+    )
     expect(actions.recordCopy).not.toHaveBeenCalled()
     expect(await screen.findByRole('status')).toHaveTextContent('请确认收件人和正文后手动发送')
     expect(screen.getByRole('status')).toHaveTextContent('不会标记为已发送')
@@ -146,7 +177,8 @@ describe('BroadcastWorkspaceView', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
     const actions = actionsWith({
       draftUpdateNotice: vi.fn().mockResolvedValue({
-        status: 'ready', textJa: '【更新】RPA 案件\n・単価：60万円 → 65万円',
+        status: 'ready',
+        textJa: '【更新】RPA 案件\n・単価：60万円 → 65万円',
         textZh: '【更新】RPA 案件\n・单价：60万日元 → 65万日元',
         changes: [{ label: '単価', before: '60万円', after: '65万円' }]
       })
@@ -168,12 +200,24 @@ describe('BroadcastWorkspaceView', () => {
     const actions = actionsWith({
       listBroadcasts: vi.fn().mockResolvedValue([
         {
-          id: 'copy-1', source: 'copy', jobCaseVersion: 2, templateId: builtInBroadcastTemplate().id,
-          templateRevision: 1, lang: 'zh', kind: 'update', createdAt: '2026-08-26T02:00:00.000Z'
+          id: 'copy-1',
+          source: 'copy',
+          jobCaseVersion: 2,
+          templateId: builtInBroadcastTemplate().id,
+          templateRevision: 1,
+          lang: 'zh',
+          kind: 'update',
+          createdAt: '2026-08-26T02:00:00.000Z'
         },
         {
-          id: 'legacy-1', source: 'legacy', jobCaseVersion: 1, templateId: builtInBroadcastTemplate().id,
-          templateRevision: 1, lang: 'ja', kind: 'new', createdAt: '2026-08-25T02:00:00.000Z'
+          id: 'legacy-1',
+          source: 'legacy',
+          jobCaseVersion: 1,
+          templateId: builtInBroadcastTemplate().id,
+          templateRevision: 1,
+          lang: 'ja',
+          kind: 'new',
+          createdAt: '2026-08-25T02:00:00.000Z'
         }
       ])
     })

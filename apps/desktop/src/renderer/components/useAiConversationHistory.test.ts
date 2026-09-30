@@ -4,7 +4,11 @@ import type { AiConversationContext, AiConversationSnapshot, DesktopApi } from '
 import { useAiConversationHistory } from './useAiConversationHistory'
 
 const context: AiConversationContext = {
-  assistant: 'sales-agent', candidateDocumentId: null, interviewId: null, interviewKind: null, roundNumber: null
+  assistant: 'sales-agent',
+  candidateDocumentId: null,
+  interviewId: null,
+  interviewKind: null,
+  roundNumber: null
 }
 
 function conversation(id: string, content: string, revision = 1): AiConversationSnapshot {
@@ -29,7 +33,12 @@ describe('useAiConversationHistory', () => {
 
   it('does not let a late history read replace a conversation just accepted from Main', async () => {
     let resolveHistory!: (value: AiConversationSnapshot[]) => void
-    const listAiConversations = vi.fn(() => new Promise<AiConversationSnapshot[]>((resolve) => { resolveHistory = resolve }))
+    const listAiConversations = vi.fn(
+      () =>
+        new Promise<AiConversationSnapshot[]>((resolve) => {
+          resolveHistory = resolve
+        })
+    )
     Object.defineProperty(window, 'sesAgent', {
       configurable: true,
       value: { ...originalApi, listAiConversations } as DesktopApi
@@ -67,21 +76,29 @@ describe('useAiConversationHistory', () => {
     await waitFor(() => expect(result.current.loading).toBe(false))
     const selectedJobCaseRef = {
       kind: 'job-case' as const,
-      objectId: '44444444-4444-4444-8444-444444444444', objectVersion: 2, resultHash: null, ordinal: 1,
-      label: 'Java 案件', target: 'job-case:44444444-4444-4444-8444-444444444444'
+      objectId: '44444444-4444-4444-8444-444444444444',
+      objectVersion: 2,
+      resultHash: null,
+      ordinal: 1,
+      label: 'Java 案件',
+      target: 'job-case:44444444-4444-4444-8444-444444444444'
     }
 
     await act(async () => {
       await result.current.persistSalesAgentState({
-        selectedJobCaseRef, lastMatchRunId: null, lastSearchMessageId: existing.messages[0]!.id
+        selectedJobCaseRef,
+        lastMatchRunId: null,
+        lastSearchMessageId: existing.messages[0]!.id
       })
     })
 
-    expect(saveAiConversation).toHaveBeenCalledWith(expect.objectContaining({
-      conversationId: existing.id,
-      expectedRevision: 1,
-      salesAgentState: expect.objectContaining({ selectedJobCaseRef })
-    }))
+    expect(saveAiConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: existing.id,
+        expectedRevision: 1,
+        salesAgentState: expect.objectContaining({ selectedJobCaseRef })
+      })
+    )
     expect(result.current.conversations[0]?.revision).toBe(2)
   })
 })

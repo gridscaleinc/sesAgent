@@ -19,65 +19,50 @@ import { assertTrustedSender, type MainIpcContext } from './context'
 /** Interview rounds, scheduling, preparation, notes, decisions and meeting links. */
 export function registerInterviewHandlers(context: MainIpcContext) {
   const { repository, currentOperator } = context
-  ipcMain.handle(
-    ipcChannels.submitCandidateReview,
-    (event, rawInput): SubmitCandidateReviewResult => {
-      assertTrustedSender(event)
-      const input = submitCandidateReviewInputSchema.parse(rawInput)
-      const operator = currentOperator()
-      const review = repository.confirmCandidateReview(input, operator.operatorId, operator.displayName)
-      const updatedTasks: WorkTask[] = []
-      for (const task of repository.listWorkTasks()) {
-        if (!task.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === input.documentId)) {
-          continue
-        }
-        const reconciled = synchronizeImportTask(repository, task, new Date(), operator.displayName)
-        if (reconciled !== task) repository.saveWorkTask(reconciled)
-        updatedTasks.push(reconciled)
+  ipcMain.handle(ipcChannels.submitCandidateReview, (event, rawInput): SubmitCandidateReviewResult => {
+    assertTrustedSender(event)
+    const input = submitCandidateReviewInputSchema.parse(rawInput)
+    const operator = currentOperator()
+    const review = repository.confirmCandidateReview(input, operator.operatorId, operator.displayName)
+    const updatedTasks: WorkTask[] = []
+    for (const task of repository.listWorkTasks()) {
+      if (!task.contextBindings.some((binding) => binding.objectType === 'staged-file' && binding.objectId === input.documentId)) {
+        continue
       }
-      return { review, updatedTasks }
+      const reconciled = synchronizeImportTask(repository, task, new Date(), operator.displayName)
+      if (reconciled !== task) repository.saveWorkTask(reconciled)
+      updatedTasks.push(reconciled)
     }
-  )
+    return { review, updatedTasks }
+  })
 
-  ipcMain.handle(
-    ipcChannels.createCandidateInterviewRound,
-    (event, rawInput): CandidateInterviewSnapshot => {
-      assertTrustedSender(event)
-      const input = createCandidateInterviewRoundInputSchema.parse(rawInput)
-      const operator = currentOperator()
-      return repository.createCandidateInterviewRound(input, operator.displayName)
-    }
-  )
+  ipcMain.handle(ipcChannels.createCandidateInterviewRound, (event, rawInput): CandidateInterviewSnapshot => {
+    assertTrustedSender(event)
+    const input = createCandidateInterviewRoundInputSchema.parse(rawInput)
+    const operator = currentOperator()
+    return repository.createCandidateInterviewRound(input, operator.displayName)
+  })
 
-  ipcMain.handle(
-    ipcChannels.saveCandidateInterviewSchedule,
-    (event, rawInput): CandidateInterviewSnapshot => {
-      assertTrustedSender(event)
-      const input = saveCandidateInterviewScheduleInputSchema.parse(rawInput)
-      const operator = currentOperator()
-      return repository.saveCandidateInterviewSchedule(input, operator.displayName)
-    }
-  )
+  ipcMain.handle(ipcChannels.saveCandidateInterviewSchedule, (event, rawInput): CandidateInterviewSnapshot => {
+    assertTrustedSender(event)
+    const input = saveCandidateInterviewScheduleInputSchema.parse(rawInput)
+    const operator = currentOperator()
+    return repository.saveCandidateInterviewSchedule(input, operator.displayName)
+  })
 
-  ipcMain.handle(
-    ipcChannels.saveCandidateInterviewPreparation,
-    (event, rawInput): CandidateInterviewSnapshot => {
-      assertTrustedSender(event)
-      const input = saveCandidateInterviewPreparationInputSchema.parse(rawInput)
-      const operator = currentOperator()
-      return repository.saveCandidateInterviewPreparation(input, operator.displayName)
-    }
-  )
+  ipcMain.handle(ipcChannels.saveCandidateInterviewPreparation, (event, rawInput): CandidateInterviewSnapshot => {
+    assertTrustedSender(event)
+    const input = saveCandidateInterviewPreparationInputSchema.parse(rawInput)
+    const operator = currentOperator()
+    return repository.saveCandidateInterviewPreparation(input, operator.displayName)
+  })
 
-  ipcMain.handle(
-    ipcChannels.saveCandidateInterviewNotes,
-    (event, rawInput): CandidateInterviewSnapshot => {
-      assertTrustedSender(event)
-      const input = saveCandidateInterviewNotesInputSchema.parse(rawInput)
-      const operator = currentOperator()
-      return repository.saveCandidateInterviewNotes(input, operator.displayName)
-    }
-  )
+  ipcMain.handle(ipcChannels.saveCandidateInterviewNotes, (event, rawInput): CandidateInterviewSnapshot => {
+    assertTrustedSender(event)
+    const input = saveCandidateInterviewNotesInputSchema.parse(rawInput)
+    const operator = currentOperator()
+    return repository.saveCandidateInterviewNotes(input, operator.displayName)
+  })
 
   ipcMain.handle(ipcChannels.openZoomMeeting, async (event, rawInput): Promise<{ opened: true }> => {
     assertTrustedSender(event)
@@ -99,13 +84,10 @@ export function registerInterviewHandlers(context: MainIpcContext) {
     return { opened: true }
   })
 
-  ipcMain.handle(
-    ipcChannels.recordCandidateInterviewDecision,
-    (event, rawInput): CandidateInterviewSnapshot => {
-      assertTrustedSender(event)
-      const input = recordCandidateInterviewDecisionInputSchema.parse(rawInput)
-      const operator = currentOperator()
-      return repository.recordCandidateInterviewDecision(input, operator.displayName)
-    }
-  )
+  ipcMain.handle(ipcChannels.recordCandidateInterviewDecision, (event, rawInput): CandidateInterviewSnapshot => {
+    assertTrustedSender(event)
+    const input = recordCandidateInterviewDecisionInputSchema.parse(rawInput)
+    const operator = currentOperator()
+    return repository.recordCandidateInterviewDecision(input, operator.displayName)
+  })
 }

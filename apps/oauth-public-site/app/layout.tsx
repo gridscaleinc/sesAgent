@@ -1,23 +1,22 @@
-import type { Metadata } from 'next';
-import './globals.css';
+import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
   title: {
     default: 'SES Agent Desktop | Local-first recruiting operations',
-    template: '%s | SES Agent Desktop',
+    template: '%s | SES Agent Desktop'
   },
-  description:
-    'A local-first desktop workspace that turns read-only Gmail job requests into structured recruiting cases.',
-};
+  description: 'A local-first desktop workspace that turns read-only Gmail job requests into structured recruiting cases.'
+}
 
 export default function RootLayout({
-  children,
+  children
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
     <html lang="en">
       <body>{children}</body>
     </html>
-  );
+  )
 }

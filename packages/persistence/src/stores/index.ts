@@ -24,6 +24,7 @@ import { ProcessingJobStore } from './processing-job-store'
 import { ProposalStore } from './proposal-store'
 import type { StoreRegistry } from './registry'
 import { WorkTaskStore } from './work-task-store'
+import { PersonCaseMatchStore } from './person-case-match-store'
 
 export type { StoreContext } from './base'
 export type { StoreRegistry } from './registry'
@@ -33,11 +34,7 @@ export type { StoreRegistry } from './registry'
  * other, so the registry is attached to the shared context after construction;
  * nothing reads it until a repository method runs.
  */
-export function createStoreRegistry(options: {
-  database: Database.Database
-  databaseKey: Buffer
-  mappingKey: Buffer
-}): StoreRegistry {
+export function createStoreRegistry(options: { database: Database.Database; databaseKey: Buffer; mappingKey: Buffer }): StoreRegistry {
   const context: StoreContext = {
     database: options.database,
     databaseKey: options.databaseKey,
@@ -67,7 +64,8 @@ export function createStoreRegistry(options: {
     privacy: new PrivacyStore(context),
     processingJobs: new ProcessingJobStore(context),
     proposals: new ProposalStore(context),
-    workTasks: new WorkTaskStore(context)
+    workTasks: new WorkTaskStore(context),
+    personCaseMatches: new PersonCaseMatchStore(context)
   }
 
   context.stores = stores

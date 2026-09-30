@@ -114,18 +114,37 @@ export function AgentMarkdown({ content }: { content: string }) {
       {blocks.map((block, index) => {
         const key = `${block.type}-${index}`
         if (block.type === 'heading') {
-          return block.level === 2
-            ? <h2 key={key}>{inlineMarkdown(block.text)}</h2>
-            : <h3 key={key}>{inlineMarkdown(block.text)}</h3>
+          return block.level === 2 ? <h2 key={key}>{inlineMarkdown(block.text)}</h2> : <h3 key={key}>{inlineMarkdown(block.text)}</h3>
         }
         if (block.type === 'unordered-list') {
-          return <ul key={key}>{block.items.map((item, itemIndex) => <li className={item.nested ? 'is-nested' : undefined} key={`${itemIndex}-${item.text}`}>{inlineMarkdown(item.text)}</li>)}</ul>
+          return (
+            <ul key={key}>
+              {block.items.map((item, itemIndex) => (
+                <li className={item.nested ? 'is-nested' : undefined} key={`${itemIndex}-${item.text}`}>
+                  {inlineMarkdown(item.text)}
+                </li>
+              ))}
+            </ul>
+          )
         }
         if (block.type === 'ordered-list') {
-          return <ol key={key}>{block.items.map((item, itemIndex) => <li className={item.nested ? 'is-nested' : undefined} key={`${itemIndex}-${item.text}`}>{inlineMarkdown(item.text)}</li>)}</ol>
+          return (
+            <ol key={key}>
+              {block.items.map((item, itemIndex) => (
+                <li className={item.nested ? 'is-nested' : undefined} key={`${itemIndex}-${item.text}`}>
+                  {inlineMarkdown(item.text)}
+                </li>
+              ))}
+            </ol>
+          )
         }
         if (block.type === 'quote') return <blockquote key={key}>{inlineMarkdown(block.text)}</blockquote>
-        if (block.type === 'code') return <pre key={key}><code>{block.text}</code></pre>
+        if (block.type === 'code')
+          return (
+            <pre key={key}>
+              <code>{block.text}</code>
+            </pre>
+          )
         return <p key={key}>{inlineMarkdown(block.text)}</p>
       })}
     </div>

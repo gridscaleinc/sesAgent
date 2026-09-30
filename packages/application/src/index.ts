@@ -157,7 +157,9 @@ export class SafeLocalProcessingDispatcher<TJob extends SafeLocalDispatchJob> {
 
   start(): void {
     if (this.timer) return
-    this.timer = setInterval(() => { void this.dispatchNow() }, this.intervalMs)
+    this.timer = setInterval(() => {
+      void this.dispatchNow()
+    }, this.intervalMs)
     this.timer.unref?.()
     void this.dispatchNow()
   }
@@ -198,19 +200,20 @@ export class SafeLocalProcessingDispatcher<TJob extends SafeLocalDispatchJob> {
       return
     }
     const now = this.now().toISOString()
-    const dispatchable = jobs.filter((job) =>
-      job.replayPolicy === 'safe-local' && (
-        job.status === 'queued' ||
-        (job.status === 'retry_wait' && job.nextRetryAt !== null && job.nextRetryAt <= now)
-      )
+    const dispatchable = jobs.filter(
+      (job) =>
+        job.replayPolicy === 'safe-local' &&
+        (job.status === 'queued' || (job.status === 'retry_wait' && job.nextRetryAt !== null && job.nextRetryAt <= now))
     )
-    await Promise.all(dispatchable.map(async (job) => {
-      try {
-        await this.options.execute(job)
-      } catch (error) {
-        this.options.onError?.(error, job)
-      }
-    }))
+    await Promise.all(
+      dispatchable.map(async (job) => {
+        try {
+          await this.options.execute(job)
+        } catch (error) {
+          this.options.onError?.(error, job)
+        }
+      })
+    )
   }
 }
 
@@ -284,7 +287,10 @@ function stepsFor(type: WorkTaskType): TaskStep[] {
   }
 }
 
-function initialTaskRecords(preview: WorkTaskPreview, createdAt: string): Pick<WorkTask, 'messages' | 'approvalGates' | 'artifacts' | 'toolAudits'> {
+function initialTaskRecords(
+  preview: WorkTaskPreview,
+  createdAt: string
+): Pick<WorkTask, 'messages' | 'approvalGates' | 'artifacts' | 'toolAudits'> {
   return {
     messages: [
       {
@@ -310,17 +316,19 @@ function initialTaskRecords(preview: WorkTaskPreview, createdAt: string): Pick<W
       approvedAt: null
     })),
     artifacts: [],
-    toolAudits: [{
-      id: 'audit-001',
-      action: 'task.create',
-      decision: 'executed',
-      dataScopeId: preview.scope.id,
-      externalSideEffect: 'local-write',
-      cloudPayload: 'none',
-      evidenceCount: 0,
-      reason: '確認済みプレビューと同じデータ範囲でローカルタスクを作成しました。',
-      createdAt
-    }]
+    toolAudits: [
+      {
+        id: 'audit-001',
+        action: 'task.create',
+        decision: 'executed',
+        dataScopeId: preview.scope.id,
+        externalSideEffect: 'local-write',
+        cloudPayload: 'none',
+        evidenceCount: 0,
+        reason: '確認済みプレビューと同じデータ範囲でローカルタスクを作成しました。',
+        createdAt
+      }
+    ]
   }
 }
 
@@ -328,38 +336,35 @@ function nextRecordId(prefix: string, records: ReadonlyArray<{ id: string }>): s
   return `${prefix}-${String(records.length + 1).padStart(3, '0')}`
 }
 
-function appendTaskMessage(
-  task: WorkTask,
-  message: Omit<WorkTaskMessage, 'id'>
-): WorkTaskMessage[] {
+function appendTaskMessage(task: WorkTask, message: Omit<WorkTaskMessage, 'id'>): WorkTaskMessage[] {
   return [...task.messages, { ...message, id: nextRecordId('message', task.messages) }]
 }
 
-function appendToolAudit(
-  task: WorkTask,
-  audit: Omit<ToolAudit, 'id' | 'dataScopeId'>
-): ToolAudit[] {
-  return [...task.toolAudits, {
-    ...audit,
-    id: nextRecordId('audit', task.toolAudits),
-    dataScopeId: task.scope.id
-  }]
+function appendToolAudit(task: WorkTask, audit: Omit<ToolAudit, 'id' | 'dataScopeId'>): ToolAudit[] {
+  return [
+    ...task.toolAudits,
+    {
+      ...audit,
+      id: nextRecordId('audit', task.toolAudits),
+      dataScopeId: task.scope.id
+    }
+  ]
 }
 
-function appendArtifact(
-  task: WorkTask,
-  artifact: Omit<WorkTaskArtifact, 'id' | 'containsDirectIdentifiers'>
-): WorkTaskArtifact[] {
+function appendArtifact(task: WorkTask, artifact: Omit<WorkTaskArtifact, 'id' | 'containsDirectIdentifiers'>): WorkTaskArtifact[] {
   const existing = task.artifacts.map((item): WorkTaskArtifact =>
     item.kind === artifact.kind && item.objectId !== null && item.objectId === artifact.objectId && item.status === 'available'
       ? { ...item, status: 'superseded' }
       : item
   )
-  return [...existing, {
-    ...artifact,
-    id: nextRecordId('artifact', task.artifacts),
-    containsDirectIdentifiers: false
-  }]
+  return [
+    ...existing,
+    {
+      ...artifact,
+      id: nextRecordId('artifact', task.artifacts),
+      containsDirectIdentifiers: false
+    }
+  ]
 }
 
 function approveTaskGates(task: WorkTask, approvedBy: string, approvedAt: string): ApprovalGate[] {
@@ -372,10 +377,33 @@ function approveTaskGates(task: WorkTask, approvedBy: string, approvedAt: string
 }
 
 const candidateSearchSkills = [
-  'Spring Boot', 'TypeScript', 'JavaScript', 'Node.js', 'PostgreSQL', 'Kubernetes',
-  'Salesforce', 'Terraform', 'Angular', 'React', 'Python', 'Kotlin', 'Docker', 'Oracle',
-  'Java', 'AWS', 'Azure', 'GCP', 'Vue', 'Go', 'C#', '.NET', 'Swift', 'SQL', 'MySQL',
-  'Linux', 'SAP'
+  'Spring Boot',
+  'TypeScript',
+  'JavaScript',
+  'Node.js',
+  'PostgreSQL',
+  'Kubernetes',
+  'Salesforce',
+  'Terraform',
+  'Angular',
+  'React',
+  'Python',
+  'Kotlin',
+  'Docker',
+  'Oracle',
+  'Java',
+  'AWS',
+  'Azure',
+  'GCP',
+  'Vue',
+  'Go',
+  'C#',
+  '.NET',
+  'Swift',
+  'SQL',
+  'MySQL',
+  'Linux',
+  'SAP'
 ] as const
 
 export function candidateSearchQueryFromInstruction(instruction: string): string {
@@ -404,12 +432,13 @@ export function candidateSearchQueryFromInstruction(instruction: string): string
   }
   for (const match of normalized.matchAll(
     /(?:日本で就労可能|就労資格必須|就労資格あり|就労制限なし|ビザサポートなし|資格外活動不可|週28時間制限不可)/gu
-  )) terms.push(`就労資格:${match[0]}`)
+  ))
+    terms.push(`就労資格:${match[0]}`)
   const unique = [...new Set(terms)]
   const hasSpecificRemoteFrequency = unique.some((term) => /^週\d+日(?:リモート|在宅)$/u.test(term))
   return unique
     .filter((term) => !(hasSpecificRemoteFrequency && term === 'リモート可'))
-    .map((term) => term.includes(' ') ? `"${term}"` : term)
+    .map((term) => (term.includes(' ') ? `"${term}"` : term))
     .join(' ')
 }
 
@@ -424,12 +453,18 @@ export function reconcileWorkTaskPlan(task: WorkTask): WorkTask {
   const messages = task.messages.length > 0 ? task.messages : initialRecords.messages
   const approvalGates = task.approvalGates.length > 0 ? task.approvalGates : initialRecords.approvalGates
   const toolAudits = task.toolAudits.length > 0 ? task.toolAudits : initialRecords.toolAudits
-  const unchanged = task.steps.length === steps.length && task.steps.every((step, index) =>
-    step.id === steps[index]?.id &&
-    step.title === steps[index]?.title &&
-    step.description === steps[index]?.description &&
-    step.status === steps[index]?.status
-  ) && messages === task.messages && approvalGates === task.approvalGates && toolAudits === task.toolAudits
+  const unchanged =
+    task.steps.length === steps.length &&
+    task.steps.every(
+      (step, index) =>
+        step.id === steps[index]?.id &&
+        step.title === steps[index]?.title &&
+        step.description === steps[index]?.description &&
+        step.status === steps[index]?.status
+    ) &&
+    messages === task.messages &&
+    approvalGates === task.approvalGates &&
+    toolAudits === task.toolAudits
   return unchanged ? task : { ...task, steps, messages, approvalGates, toolAudits }
 }
 
@@ -441,14 +476,19 @@ export function recordCandidateMatchExecution(
   artifact: { objectId: string; contentHash: string } | null = null
 ): WorkTask {
   if (task.type !== 'MATCH_CANDIDATES') throw new Error('Only candidate-match tasks can record match execution.')
-  if (!hasStructuredQuery && task.status === 'awaiting_input' && task.toolAudits.at(-1)?.action === 'candidate.search' && task.toolAudits.at(-1)?.decision === 'blocked') {
+  if (
+    !hasStructuredQuery &&
+    task.status === 'awaiting_input' &&
+    task.toolAudits.at(-1)?.action === 'candidate.search' &&
+    task.toolAudits.at(-1)?.decision === 'blocked'
+  ) {
     return task
   }
-  const artifactAlreadyRecorded = artifact !== null && task.artifacts.some((item) =>
-    item.kind === 'candidate-match-results' &&
-    item.objectId === artifact.objectId &&
-    item.contentHash === artifact.contentHash
-  )
+  const artifactAlreadyRecorded =
+    artifact !== null &&
+    task.artifacts.some(
+      (item) => item.kind === 'candidate-match-results' && item.objectId === artifact.objectId && item.contentHash === artifact.contentHash
+    )
   if (artifactAlreadyRecorded && (task.status === 'awaiting_review' || task.status === 'completed')) return task
   const definitions = stepsFor(task.type)
   const timestamp = now.toISOString()
@@ -462,9 +502,7 @@ export function recordCandidateMatchExecution(
     steps: definitions.map((step, index) => ({
       ...step,
       id: task.steps[index]?.id ?? step.id,
-      status: hasStructuredQuery
-        ? index < 3 ? 'completed' : 'blocked'
-        : index === 0 ? 'completed' : index === 1 ? 'blocked' : 'pending'
+      status: hasStructuredQuery ? (index < 3 ? 'completed' : 'blocked') : index === 0 ? 'completed' : index === 1 ? 'blocked' : 'pending'
     })),
     messages: appendTaskMessage(task, {
       role: 'system',
@@ -474,16 +512,17 @@ export function recordCandidateMatchExecution(
         : '検索条件を構造化できませんでした。条件を追加してから再実行してください。',
       createdAt: timestamp
     }),
-    artifacts: hasStructuredQuery && !artifactAlreadyRecorded
-      ? appendArtifact(task, {
-          kind: 'candidate-match-results',
-          label: '候補者比較結果',
-          status: 'available',
-          objectId: artifact?.objectId ?? null,
-          contentHash: artifact?.contentHash ?? null,
-          createdAt: timestamp
-        })
-      : task.artifacts,
+    artifacts:
+      hasStructuredQuery && !artifactAlreadyRecorded
+        ? appendArtifact(task, {
+            kind: 'candidate-match-results',
+            label: '候補者比較結果',
+            status: 'available',
+            objectId: artifact?.objectId ?? null,
+            contentHash: artifact?.contentHash ?? null,
+            createdAt: timestamp
+          })
+        : task.artifacts,
     toolAudits: appendToolAudit(task, {
       action: 'candidate.search',
       decision: hasStructuredQuery ? 'executed' : 'blocked',
@@ -526,7 +565,7 @@ export function recordCandidateMatchFailure(task: WorkTask, errorCode: string, n
     ...task,
     status: 'failed',
     updatedAt: timestamp,
-    steps: task.steps.map((step) => step.status === 'running' ? { ...step, status: 'blocked' } : step),
+    steps: task.steps.map((step) => (step.status === 'running' ? { ...step, status: 'blocked' } : step)),
     messages: appendTaskMessage(task, {
       role: 'system',
       kind: 'error',
@@ -545,12 +584,7 @@ export function recordCandidateMatchFailure(task: WorkTask, errorCode: string, n
   }
 }
 
-export function recordCandidateMatchRetryScheduled(
-  task: WorkTask,
-  errorCode: string,
-  nextRetryAt: string,
-  now = new Date()
-): WorkTask {
+export function recordCandidateMatchRetryScheduled(task: WorkTask, errorCode: string, nextRetryAt: string, now = new Date()): WorkTask {
   if (task.type !== 'MATCH_CANDIDATES') throw new Error('Only candidate-match tasks can schedule retry.')
   const timestamp = now.toISOString()
   return {
@@ -586,7 +620,7 @@ export function recoverInterruptedWorkTask(task: WorkTask, now = new Date()): Wo
     ...task,
     status: 'awaiting_input',
     updatedAt: timestamp,
-    steps: task.steps.map((step) => step.status === 'running' ? { ...step, status: 'blocked' } : step),
+    steps: task.steps.map((step) => (step.status === 'running' ? { ...step, status: 'blocked' } : step)),
     messages: appendTaskMessage(task, {
       role: 'system',
       kind: 'error',
@@ -614,7 +648,7 @@ export function cancelWorkTask(task: WorkTask, now = new Date()): WorkTask {
     ...task,
     status: 'cancelled',
     updatedAt: timestamp,
-    steps: task.steps.map((step) => step.status === 'completed' ? step : { ...step, status: 'blocked' }),
+    steps: task.steps.map((step) => (step.status === 'completed' ? step : { ...step, status: 'blocked' })),
     messages: appendTaskMessage(task, {
       role: 'system',
       kind: 'status',
@@ -708,11 +742,7 @@ export function recordProposalDraftCreated(
   }
 }
 
-export function recordProposalApproved(
-  task: WorkTask,
-  now = new Date(),
-  approvedBy = '本機ユーザー'
-): WorkTask {
+export function recordProposalApproved(task: WorkTask, now = new Date(), approvedBy = '本機ユーザー'): WorkTask {
   if (task.type !== 'GENERATE_PROPOSAL') throw new Error('Only proposal tasks can record proposal approval.')
   const definitions = stepsFor(task.type)
   const timestamp = now.toISOString()
@@ -885,14 +915,21 @@ export function recordResumeImportReviewState(
   const timestamp = now.toISOString()
   const nextEvidenceCount = Math.max(0, Math.trunc(evidenceCount))
   const artifacts = completed
-    ? profileObjectIds.reduce((current, objectId, index) => appendArtifact({ ...task, artifacts: current }, {
-        kind: 'candidate-profile',
-        label: `ローカル人材プロフィール ${index + 1}`,
-        status: 'available',
-        objectId,
-        contentHash: null,
-        createdAt: timestamp
-      }), task.artifacts)
+    ? profileObjectIds.reduce(
+        (current, objectId, index) =>
+          appendArtifact(
+            { ...task, artifacts: current },
+            {
+              kind: 'candidate-profile',
+              label: `ローカル人材プロフィール ${index + 1}`,
+              status: 'available',
+              objectId,
+              contentHash: null,
+              createdAt: timestamp
+            }
+          ),
+        task.artifacts
+      )
     : task.artifacts
   return {
     ...task,
@@ -956,7 +993,7 @@ export function recordResumeAnalysisFailure(task: WorkTask, errorCode: string, n
     ...task,
     status: 'failed',
     updatedAt: timestamp,
-    steps: task.steps.map((step) => step.status === 'running' ? { ...step, status: 'blocked' } : step),
+    steps: task.steps.map((step) => (step.status === 'running' ? { ...step, status: 'blocked' } : step)),
     messages: appendTaskMessage(task, {
       role: 'system',
       kind: 'error',
@@ -984,14 +1021,18 @@ export function recordResumeAnalysisPartialFailure(task: WorkTask, errorCode: st
     status: 'awaiting_review',
     progress: Math.max(task.progress, 15),
     updatedAt: timestamp,
-    steps: task.steps.map((step) => step.status === 'running' ? { ...step, status: 'blocked' } : step),
+    steps: task.steps.map((step) => (step.status === 'running' ? { ...step, status: 'blocked' } : step)),
     messages: appendTaskMessage(task, {
-      role: 'system', kind: 'error',
+      role: 'system',
+      kind: 'error',
       content: `一部のスキルシートを解析できませんでした（${errorCode}）。残りの選択ファイルを続行します。`,
       createdAt: timestamp
     }),
     toolAudits: appendToolAudit(task, {
-      action: 'resume.local-parse', decision: 'blocked', externalSideEffect: 'local-write', cloudPayload: 'none',
+      action: 'resume.local-parse',
+      decision: 'blocked',
+      externalSideEffect: 'local-write',
+      cloudPayload: 'none',
       evidenceCount: task.evidenceCount,
       reason: `端末内解析ジョブを ${errorCode} で停止し、残りの選択ファイルは継続します。原文のクラウド回退は許可しません。`,
       createdAt: timestamp
@@ -999,12 +1040,7 @@ export function recordResumeAnalysisPartialFailure(task: WorkTask, errorCode: st
   }
 }
 
-export function recordResumeAnalysisRetryScheduled(
-  task: WorkTask,
-  errorCode: string,
-  nextRetryAt: string,
-  now = new Date()
-): WorkTask {
+export function recordResumeAnalysisRetryScheduled(task: WorkTask, errorCode: string, nextRetryAt: string, now = new Date()): WorkTask {
   if (task.type !== 'IMPORT_RESUME') throw new Error('Only resume-import tasks can schedule analysis retry.')
   const timestamp = now.toISOString()
   return {
@@ -1084,11 +1120,7 @@ export function createSampleTasks(now: string): WorkTask[] {
     status: index < 2 ? 'completed' : index === 2 ? 'running' : 'pending'
   }))
 
-  const reviewTask = materializeWorkTask(
-    createWorkTaskPreview('EC決済基盤案件の提案メール下書きを準備したい'),
-    'task-sample-002',
-    now
-  )
+  const reviewTask = materializeWorkTask(createWorkTaskPreview('EC決済基盤案件の提案メール下書きを準備したい'), 'task-sample-002', now)
   reviewTask.status = 'awaiting_review'
   reviewTask.progress = 92
   reviewTask.evidenceCount = 4

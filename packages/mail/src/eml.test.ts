@@ -8,30 +8,33 @@ function manifest(name: string, bytes: Buffer): EmlFileManifest {
 
 describe('parseEmlMessage', () => {
   it('parses a bounded MIME message locally while discarding attachment content and hashing identities', async () => {
-    const bytes = Buffer.from([
-      'From: =?UTF-8?B?5bGx55Sw5aSq6YOO?= <taro.yamada@partner.example.jp>',
-      'To: sales@example.co.jp',
-      'Subject: Java / AWS 案件のご相談',
-      'Message-ID: <candidate-123@partner.example.jp>',
-      'Date: Fri, 17 Jul 2026 09:30:00 +0900',
-      'MIME-Version: 1.0',
-      'Content-Type: multipart/mixed; boundary="case-boundary"',
-      '',
-      '--case-boundary',
-      'Content-Type: text/plain; charset=utf-8',
-      '',
-      '募集ロール：バックエンドエンジニア',
-      '必須スキル：Java / Spring Boot / AWS',
-      '単価：90万円/月',
-      '電話：090-1234-5678',
-      '--case-boundary',
-      'Content-Type: application/pdf; name="private-resume.pdf"',
-      'Content-Disposition: attachment; filename="private-resume.pdf"',
-      'Content-Transfer-Encoding: base64',
-      '',
-      'UFJJVkFURV9BVFRBQ0hNRU5UX1NFTlRJTkVM',
-      '--case-boundary--'
-    ].join('\r\n'), 'utf8')
+    const bytes = Buffer.from(
+      [
+        'From: =?UTF-8?B?5bGx55Sw5aSq6YOO?= <taro.yamada@partner.example.jp>',
+        'To: sales@example.co.jp',
+        'Subject: Java / AWS 案件のご相談',
+        'Message-ID: <candidate-123@partner.example.jp>',
+        'Date: Fri, 17 Jul 2026 09:30:00 +0900',
+        'MIME-Version: 1.0',
+        'Content-Type: multipart/mixed; boundary="case-boundary"',
+        '',
+        '--case-boundary',
+        'Content-Type: text/plain; charset=utf-8',
+        '',
+        '募集ロール：バックエンドエンジニア',
+        '必須スキル：Java / Spring Boot / AWS',
+        '単価：90万円/月',
+        '電話：090-1234-5678',
+        '--case-boundary',
+        'Content-Type: application/pdf; name="private-resume.pdf"',
+        'Content-Disposition: attachment; filename="private-resume.pdf"',
+        'Content-Transfer-Encoding: base64',
+        '',
+        'UFJJVkFURV9BVFRBQ0hNRU5UX1NFTlRJTkVM',
+        '--case-boundary--'
+      ].join('\r\n'),
+      'utf8'
+    )
     const parsed = await parseEmlMessage(manifest('case.eml', bytes), bytes, new Date('2026-07-19T00:00:00.000Z'))
 
     expect(parsed).toMatchObject({
@@ -51,13 +54,16 @@ describe('parseEmlMessage', () => {
   })
 
   it('converts HTML to non-executable text and does not fetch linked content', async () => {
-    const bytes = Buffer.from([
-      'From: bp@partner.example.jp',
-      'Subject: Python案件',
-      'Content-Type: text/html; charset=utf-8',
-      '',
-      '<html><head><style>.x{display:none}</style></head><body><p>募集：Python案件</p><img src="https://tracker.invalid/pixel"><script>fetch("https://tracker.invalid")</script><p>単価：80万円</p></body></html>'
-    ].join('\r\n'), 'utf8')
+    const bytes = Buffer.from(
+      [
+        'From: bp@partner.example.jp',
+        'Subject: Python案件',
+        'Content-Type: text/html; charset=utf-8',
+        '',
+        '<html><head><style>.x{display:none}</style></head><body><p>募集：Python案件</p><img src="https://tracker.invalid/pixel"><script>fetch("https://tracker.invalid")</script><p>単価：80万円</p></body></html>'
+      ].join('\r\n'),
+      'utf8'
+    )
     const parsed = await parseEmlMessage(manifest('html-case.eml', bytes), bytes, new Date('2026-07-19T00:00:00.000Z'))
 
     expect(parsed.body).toContain('募集：Python案件')

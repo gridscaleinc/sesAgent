@@ -120,33 +120,35 @@ export class ProposalStore extends DomainStore {
       if (!jobCaseRow || !candidateRow) return []
       const jobCase = confirmedJobCaseSchema.parse(JSON.parse(jobCaseRow.case_json))
       const candidate = candidateProfileSchema.parse(JSON.parse(candidateRow.profile_json))
-      return [{
-        draftId: draft.id,
-        jobCase: {
-          id: jobCase.id,
-          reviewId: jobCase.sourceReviewId,
-          version: jobCase.version,
-          title: jobCase.fields.find((field) => field.key === 'title')?.value ?? `案件 ${jobCase.id.slice(0, 8)}`,
-          role: jobCase.fields.find((field) => field.key === 'role')?.value ?? null,
-          requiredSkills: jobCase.fields.find((field) => field.key === 'required_skills')?.value ?? null,
-          rate: jobCase.fields.find((field) => field.key === 'rate')?.value ?? null,
-          fields: jobCase.fields
-        },
-        candidate: {
-          id: candidate.id,
-          version: candidate.profileVersion,
-          anonymousLabel: `候補者 ${candidate.id.slice(0, 8).toLocaleUpperCase('en-US')}`,
-          skills: candidate.fields.find((field) => field.key === 'skills')?.value ?? null,
-          experienceYears: candidate.fields.find((field) => field.key === 'experience_years')?.value ?? null,
-          availability: candidate.fields.find((field) => field.key === 'availability')?.value ?? null,
-          rate: candidate.fields.find((field) => field.key === 'rate')?.value ?? null,
-          japaneseLevel: candidate.fields.find((field) => field.key === 'japanese_level')?.value ?? null,
-          workStyle: candidate.fields.find((field) => field.key === 'work_style')?.value ?? null,
-          role: candidate.fields.find((field) => field.key === 'role')?.value ?? null,
-          fields: candidate.fields,
-          projectExperiences: candidate.projectExperiences
+      return [
+        {
+          draftId: draft.id,
+          jobCase: {
+            id: jobCase.id,
+            reviewId: jobCase.sourceReviewId,
+            version: jobCase.version,
+            title: jobCase.fields.find((field) => field.key === 'title')?.value ?? `案件 ${jobCase.id.slice(0, 8)}`,
+            role: jobCase.fields.find((field) => field.key === 'role')?.value ?? null,
+            requiredSkills: jobCase.fields.find((field) => field.key === 'required_skills')?.value ?? null,
+            rate: jobCase.fields.find((field) => field.key === 'rate')?.value ?? null,
+            fields: jobCase.fields
+          },
+          candidate: {
+            id: candidate.id,
+            version: candidate.profileVersion,
+            anonymousLabel: `候補者 ${candidate.id.slice(0, 8).toLocaleUpperCase('en-US')}`,
+            skills: candidate.fields.find((field) => field.key === 'skills')?.value ?? null,
+            experienceYears: candidate.fields.find((field) => field.key === 'experience_years')?.value ?? null,
+            availability: candidate.fields.find((field) => field.key === 'availability')?.value ?? null,
+            rate: candidate.fields.find((field) => field.key === 'rate')?.value ?? null,
+            japaneseLevel: candidate.fields.find((field) => field.key === 'japanese_level')?.value ?? null,
+            workStyle: candidate.fields.find((field) => field.key === 'work_style')?.value ?? null,
+            role: candidate.fields.find((field) => field.key === 'role')?.value ?? null,
+            fields: candidate.fields,
+            projectExperiences: candidate.projectExperiences
+          }
         }
-      }]
+      ]
     })
     return proposalWorkspaceSnapshotSchema.parse({
       options: this.getProposalPreparationOptions(),
@@ -179,12 +181,7 @@ export class ProposalStore extends DomainStore {
     return row ? this.hydrateProposalFollowUp(proposalDraftFromRow(row)) : null
   }
 
-  createProposalDraft(
-    rawInput: CreateProposalDraftInput,
-    draftId: string,
-    actor: string,
-    now = new Date()
-  ): ProposalDraftSnapshot {
+  createProposalDraft(rawInput: CreateProposalDraftInput, draftId: string, actor: string, now = new Date()): ProposalDraftSnapshot {
     const input = createProposalDraftInputSchema.parse(rawInput)
     const task = this.stores.workTasks.getWorkTask(input.taskId)
     if (!task || task.type !== 'GENERATE_PROPOSAL') throw new Error('Proposal task was not found.')
@@ -381,12 +378,7 @@ export class ProposalStore extends DomainStore {
     return exported
   }
 
-  recordProposalFollowUp(
-    rawInput: RecordProposalFollowUpInput,
-    eventId: string,
-    actor: string,
-    now = new Date()
-  ): ProposalDraftSnapshot {
+  recordProposalFollowUp(rawInput: RecordProposalFollowUpInput, eventId: string, actor: string, now = new Date()): ProposalDraftSnapshot {
     const input = recordProposalFollowUpInputSchema.parse(rawInput)
     const current = this.getProposalDraft(input.draftId)
     if (!current) throw new Error('Proposal draft was not found.')
@@ -398,16 +390,7 @@ export class ProposalStore extends DomainStore {
              id, draft_id, revision, stage, occurred_on, note, actor, recorded_at, cloud_eligible
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`
         )
-        .run(
-          event.id,
-          event.draftId,
-          event.revision,
-          event.stage,
-          event.occurredOn,
-          event.note,
-          event.recordedBy,
-          event.recordedAt
-        )
+        .run(event.id, event.draftId, event.revision, event.stage, event.occurredOn, event.note, event.recordedBy, event.recordedAt)
       const updated = this.database
         .prepare(
           `UPDATE proposal_drafts SET payload_json = ?, updated_at = ?
@@ -460,9 +443,7 @@ export class ProposalStore extends DomainStore {
 
   recoverInterruptedProposalExports(now = new Date()): void {
     const rows = this.database
-      .prepare<[], ProposalExportRow>(
-        "SELECT id, draft_id, status FROM proposal_exports WHERE status = 'preparing'"
-      )
+      .prepare<[], ProposalExportRow>("SELECT id, draft_id, status FROM proposal_exports WHERE status = 'preparing'")
       .all()
     if (rows.length === 0) return
     const recoveredAt = now.toISOString()
