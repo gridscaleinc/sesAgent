@@ -275,7 +275,10 @@ export function sameCandidateRecord(
 const phoneKey = (value?: string | null) => (value ?? '').normalize('NFKC').replace(/\D/gu, '')
 // Spacing, punctuation and every kind of dash (1-2-3, 1‐2‐3, 1ー2ー3) are left out of the comparison.
 const addressKey = (value?: string | null) =>
-  (value ?? '').normalize('NFKC').replace(/[\s\p{P}ー−]/gu, '').toLowerCase()
+  (value ?? '')
+    .normalize('NFKC')
+    .replace(/[\s\p{P}ー−]/gu, '')
+    .toLowerCase()
 /** Birth year, read from a birth date (1985年3月, 1985/03/01) or from an age (39歳) as of `now`. */
 function birthYear(value: string | null | undefined, now: Date): number | null {
   const text = (value ?? '').normalize('NFKC')
@@ -387,6 +390,9 @@ export interface BusinessFollowUp extends Omit<SaveBusinessFollowUpInput, 'expec
   }>
 }
 
+/** The operator's request can carry a pasted reference message, so it allows a full message's length. */
+export const introductionRequestMaxLength = 4000
+
 export const regenerateIntroductionInputSchema = z
   .object({
     kind: z.enum(['case', 'person']),
@@ -395,8 +401,8 @@ export const regenerateIntroductionInputSchema = z
     lang: z.enum(['zh', 'ja']),
     style: z.enum(['standard', 'brief']),
     caseContext: z.object({ reviewId: z.string().uuid(), version: z.number().int().positive() }).optional(),
-    /** What the operator asked for this time, for example "加上他的团队管理经验". Never overrides facts or privacy. */
-    request: z.string().trim().min(1).max(500).optional()
+    /** What the operator asked for this time, for example "加上他的团队管理经验", or a reference message to follow. Never overrides facts or privacy. */
+    request: z.string().trim().min(1).max(introductionRequestMaxLength).optional()
   })
   .strict()
 export type RegenerateIntroductionInput = z.infer<typeof regenerateIntroductionInputSchema>
@@ -407,7 +413,7 @@ export const saveCaseIntroductionDraftsInputSchema = z
     reviewId: z.string().uuid(),
     jobCaseVersion: z.number().int().positive(),
     style: z.enum(['standard', 'brief']),
-    request: z.string().trim().min(1).max(500).nullable(),
+    request: z.string().trim().min(1).max(introductionRequestMaxLength).nullable(),
     drafts: z
       .array(
         z
@@ -430,7 +436,7 @@ export const savePersonnelIntroductionDraftsInputSchema = z
     profileVersion: z.number().int().positive(),
     caseContext: z.object({ reviewId: z.string().uuid(), version: z.number().int().positive() }).strict().nullable(),
     style: z.enum(['standard', 'brief']),
-    request: z.string().trim().min(1).max(500).nullable(),
+    request: z.string().trim().min(1).max(introductionRequestMaxLength).nullable(),
     drafts: z
       .array(
         z

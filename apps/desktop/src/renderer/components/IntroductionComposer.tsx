@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import {
   generatePersonnelMessage,
   generatePersonnelProposal,
+  introductionRequestMaxLength,
   type BusinessFollowUp,
   type CandidateReviewSnapshot,
   type JobCaseReviewSnapshot,
@@ -525,11 +526,15 @@ export function IntroductionComposer({
           </p>
         ) : null}
         <div className="hr-intro-generation">
-          <input
+          <textarea
             className="ai-request-input"
             aria-label={t('对 AI 的要求', 'AIへの要望')}
-            placeholder={t('例：加上他的团队管理经验', '例：チーム管理の経験を加えて')}
-            maxLength={500}
+            placeholder={t(
+              '例：加上他的团队管理经验，或粘贴一篇参考范文',
+              '例：チーム管理の経験を加えて。参考にする文例を貼り付けることもできます'
+            )}
+            rows={2}
+            maxLength={introductionRequestMaxLength}
             disabled={working || !valid || !style}
             value={requests[requestKey] ?? ''}
             onChange={(event) => setRequests((state) => ({ ...state, [requestKey]: event.target.value }))}

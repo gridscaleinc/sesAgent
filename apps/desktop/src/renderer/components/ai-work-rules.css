@@ -511,7 +511,7 @@
   color: var(--muted);
 }
 
-/* One-line request box beside an AI generate button: what the operator wants this time. */
+/* Request box beside an AI generate button: what the operator wants this time. */
 .ai-request-input {
   flex: 1 1 220px;
   min-width: 0;
@@ -522,6 +522,12 @@
   font: inherit;
   font-size: 13px;
   background: var(--surface);
+}
+textarea.ai-request-input {
+  min-height: 34px;
+  max-height: 240px;
+  resize: vertical;
+  line-height: 1.5;
 }
 .ai-request-input:focus {
   border-color: var(--accent);

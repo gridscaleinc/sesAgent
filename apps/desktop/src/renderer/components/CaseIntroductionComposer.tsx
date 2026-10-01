@@ -1,6 +1,12 @@
 import { useIntroductionExperience } from './use-introduction-experience'
 import { useEffect, useId, useRef, useState } from 'react'
-import type { BroadcastQueueItem, BroadcastTemplate, DraftCaseBroadcastResult, JobCaseReviewSnapshot } from '@shared'
+import {
+  introductionRequestMaxLength,
+  type BroadcastQueueItem,
+  type BroadcastTemplate,
+  type DraftCaseBroadcastResult,
+  type JobCaseReviewSnapshot
+} from '@shared'
 import { localizedIpcError, useLocaleText } from '../i18n'
 import { copyTextToClipboard } from '../copy-text'
 import { IntroductionOptions } from './IntroductionOptions'
@@ -363,11 +369,15 @@ export function CaseIntroductionComposer({
           onLanguageChange={setLang}
         />
         <div className="hr-intro-generation">
-          <input
+          <textarea
             className="ai-request-input"
             aria-label={t('对 AI 的要求', 'AIへの要望')}
-            placeholder={t('例：突出远程和长期稳定', '例：リモート可と長期案件である点を強調して')}
-            maxLength={500}
+            placeholder={t(
+              '例：突出远程和长期稳定，或粘贴一篇参考范文',
+              '例：リモート可と長期案件である点を強調して。参考にする文例を貼り付けることもできます'
+            )}
+            rows={2}
+            maxLength={introductionRequestMaxLength}
             disabled={busy || !valid}
             value={requests[styleKey] ?? ''}
             onChange={(event) => setRequestState((state) => ({ ...state, [styleKey]: event.target.value }))}
