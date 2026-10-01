@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createWorkTaskPreview, materializeWorkTask } from '@application'
 import type { ProposalDraftSnapshot, ProposalWorkspaceSnapshot } from '@shared'
 import { ProposalWorkbench } from './ProposalWorkbench'
@@ -193,7 +193,7 @@ describe('ProposalWorkbench', () => {
     expect(await screen.findByText(/送信済みにはしていません/)).toBeInTheDocument()
   })
 
-  it('records externally confirmed delivery without using Gmail write permissions', () => {
+  it('records externally confirmed delivery without using Gmail write permissions', async () => {
     const exported: ProposalDraftSnapshot = {
       ...draft,
       status: 'exported',
@@ -250,6 +250,9 @@ describe('ProposalWorkbench', () => {
       note: '翌営業日に状況確認',
       manuallyConfirmed: true
     })
+    // Ready for the next result straight away: the confirmation is asked again and the note is cleared.
+    await waitFor(() => expect(screen.getByLabelText('提案後の営業メモ')).toHaveValue(''))
+    expect(screen.getByLabelText(/アプリ外で事実を確認しました/)).not.toBeChecked()
   })
 
   it('freezes sent content and shows an append-only local sales timeline', () => {

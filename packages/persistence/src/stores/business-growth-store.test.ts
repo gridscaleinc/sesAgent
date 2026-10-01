@@ -45,11 +45,15 @@ describe.skipIf(!nativeSqliteAvailable)('BusinessGrowthStore via EncryptedApplic
     expect(handle.repository.getGrowthCheckpoint('k')).toBeUndefined()
     handle.repository.saveGrowthCheckpoint('k', 'v1')
     handle.repository.saveGrowthCheckpoint('k', 'v2')
+    // Saving the same value again is not a change the backup should see.
+    const revision = handle.repository.getLocalDataRevision()
+    handle.repository.saveGrowthCheckpoint('k', 'v2')
+    expect(handle.repository.getLocalDataRevision()).toEqual(revision)
     expect(handle.reopen().getGrowthCheckpoint('k')).toBe('v2')
   })
 
   describe('matching opportunities', () => {
-    it('keeps a dismissal until the evidence changes and rejects actions on a stale fingerprint', () => {
+    it('keeps a dismissal until the conclusion changes, undoes it on request and rejects actions on a stale fingerprint', () => {
       const { repository } = handle
       const person = seedImportedPerson(repository)
       const job = seedConfirmedCase(repository)
@@ -76,10 +80,23 @@ describe.skipIf(!nativeSqliteAvailable)('BusinessGrowthStore via EncryptedApplic
       repository.saveMatchingOpportunities(job.reviewId, [opportunity])
       expect(repository.listMatchingOpportunities()).toHaveLength(0)
 
+      // New evidence with the same conclusion keeps the removal.
       repository.saveMatchingOpportunities(job.reviewId, [{ ...opportunity, fingerprint: 'b'.repeat(64) }])
+      expect(repository.listMatchingOpportunities()).toHaveLength(0)
+      // A changed conclusion brings it back as new.
+      repository.saveMatchingOpportunities(job.reviewId, [
+        { ...opportunity, fingerprint: 'c'.repeat(64), status: 'needs-confirmation' as const }
+      ])
       item = repository.listMatchingOpportunities().find((row) => row.documentId === person.documentId)!
       expect(item.state).toBe('new')
-      expect(() => repository.controlMatchingOpportunity({ id: item.id, fingerprint: 'a'.repeat(64), action: 'seen' })).toThrow(/更新/)
+      expect(() => repository.controlMatchingOpportunity({ id: item.id, fingerprint: 'a'.repeat(64), action: 'dismissed' })).toThrow(/更新/)
+      // Reading it is harmless whatever changed: opening it from 今天 marks the current conclusion seen.
+      repository.controlMatchingOpportunity({ id: item.id, fingerprint: 'a'.repeat(64), action: 'seen' })
+      expect(repository.listMatchingOpportunities().find((row) => row.id === item.id)?.state).toBe('seen')
+      // 撤销 after a removal brings the pair back as already seen.
+      repository.controlMatchingOpportunity({ id: item.id, fingerprint: item.fingerprint, action: 'dismissed' })
+      repository.controlMatchingOpportunity({ id: item.id, fingerprint: item.fingerprint, action: 'restored' })
+      expect(repository.listMatchingOpportunities().find((row) => row.id === item.id)?.state).toBe('seen')
     })
 
     it('reads a row saved before the conclusion was stored as needs-confirmation', () => {

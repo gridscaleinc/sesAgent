@@ -3,6 +3,7 @@ import type { IpcMainInvokeEvent } from 'electron'
 import { ipcChannels, personnelMessageInputSchema } from '@shared'
 import { registerPersonnelHandlers } from './personnel'
 import { assertTrustedSender, type MainIpcContext } from './context'
+import { rejectedByHr } from '../work-rule-matching'
 const mock = vi.hoisted(() => ({
   handlers: new Map<string, (e: IpcMainInvokeEvent, raw?: unknown) => unknown>(),
   open: vi.fn(async (_url: string) => {})
@@ -12,6 +13,11 @@ vi.mock('electron', () => ({
   shell: { openExternal: mock.open }
 }))
 vi.mock('./context', () => ({ assertTrustedSender: vi.fn() }))
+// HR's 不满足 is computed from rules and profiles; here only whether the IPC consults it matters.
+vi.mock('../work-rule-matching', async (original) => ({
+  ...(await original<typeof import('../work-rule-matching')>()),
+  rejectedByHr: vi.fn(() => false)
+}))
 const valid = {
   documentId: '11111111-1111-4111-8111-111111111111',
   profileVersion: 1,
@@ -185,5 +191,50 @@ describe('personnel introduction drafts IPC', () => {
       currentOperator: () => ({ displayName: 'HR' })
     } as unknown as MainIpcContext)
     expect(invoke(ipcChannels.listPersonnelIntroductionDrafts, valid.documentId)).toEqual([stored[0], stored[2]])
+  })
+
+  it('lets HR mark a placed person 近期可入场 (and back), but nothing else until 退场', () => {
+    const save = vi.fn((input: unknown) => input)
+    const placed = [{ documentId: valid.documentId, reviewId: 'r', progress: { stage: 'started' } }]
+    const register = (followUps: unknown[]) =>
+      registerPersonnelHandlers({
+        repository: { setCandidateBusinessState: save, listBusinessFollowUps: () => followUps },
+        currentOperator: () => ({ displayName: 'HR', operatorId: 'hr' })
+      } as unknown as MainIpcContext)
+    const input = (status: string) => ({ documentId: valid.documentId, profileVersion: 1, reviewRevision: 1, status, confirmed: true })
+    register(placed)
+    invoke(ipcChannels.setCandidateBusinessState, input('soon'))
+    invoke(ipcChannels.setCandidateBusinessState, input('assigned'))
+    expect(() => invoke(ipcChannels.setCandidateBusinessState, input('available'))).toThrow(/记录退场/)
+    expect(() => invoke(ipcChannels.setCandidateBusinessState, input('paused'))).toThrow(/记录退场/)
+    expect(save).toHaveBeenCalledTimes(2)
+    mock.handlers.clear()
+    register([])
+    expect(() => invoke(ipcChannels.setCandidateBusinessState, input('assigned'))).toThrow(/确认已到岗/)
+  })
+  it('refuses to introduce or record as recommended a pair HR judged 不满足', async () => {
+    mock.open.mockClear()
+    const recommend = vi.fn()
+    registerPersonnelHandlers({
+      repository: {
+        validatePersonnelMessage: (input: unknown) => personnelMessageInputSchema.parse(input),
+        recordPersonnelCopy: vi.fn(),
+        advanceBusinessProgress: recommend
+      },
+      currentOperator: () => ({ displayName: 'HR', operatorId: 'hr' })
+    } as unknown as MainIpcContext)
+    vi.mocked(rejectedByHr).mockReturnValue(true)
+    const reviewId = '33333333-3333-4333-8333-333333333333'
+    const message = { ...valid, caseContext: { reviewId, version: 1 } }
+    expect(() => invoke(ipcChannels.validatePersonnelMessage, message)).toThrow(/不满足/)
+    expect(() => invoke(ipcChannels.recordPersonnelCopy, message)).toThrow(/不满足/)
+    await expect(invoke(ipcChannels.openPersonnelEmail, message)).rejects.toThrow(/不满足/)
+    const pair = { documentId: valid.documentId, reviewId, expectedRevision: 0, mutationId: '44444444-4444-4444-8444-444444444444' }
+    expect(() => invoke(ipcChannels.advanceBusinessProgress, { ...pair, action: 'recommend' })).toThrow(/不满足/)
+    expect(recommend).not.toHaveBeenCalled()
+    expect(mock.open).not.toHaveBeenCalled()
+    // A general introduction (no case) is not affected.
+    expect(() => invoke(ipcChannels.validatePersonnelMessage, valid)).not.toThrow()
+    vi.mocked(rejectedByHr).mockReturnValue(false)
   })
 })

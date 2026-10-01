@@ -75,9 +75,11 @@ export function buildReviewQueue(
 ): ReviewQueueItem[] {
   const reviewsByDocument = new Map(candidateReviews.map((review) => [review.documentId, review]))
   const importTaskByDocument = taskForDocument(tasks)
-  const pendingCandidateIds = new Set(
-    candidateReviews.filter((review) => review.status === 'awaiting-review').map((review) => review.documentId)
-  )
+  // People HR works with: a résumé saved only for a case assessment, or an archived/deleted record, waits for no review
+  // here (the same people the recruiting and people workspaces list).
+  const reviewable = (review: CandidateReviewSnapshot) =>
+    review.status === 'awaiting-review' && review.recordStatus === 'active' && review.inTalentLibrary !== false
+  const pendingCandidateIds = new Set(candidateReviews.filter(reviewable).map((review) => review.documentId))
   const items: ReviewQueueItem[] = []
 
   for (const task of tasks) {
@@ -103,7 +105,7 @@ export function buildReviewQueue(
   }
 
   for (const review of candidateReviews) {
-    if (review.status !== 'awaiting-review') continue
+    if (!reviewable(review)) continue
     const task = importTaskByDocument.get(review.documentId)
     const confirmedFields = review.fields.filter((field) => field.value).length
     items.push({
@@ -240,7 +242,6 @@ export function ReviewCenter({ items, onOpenCandidate, onOpenCase, onOpenTask, o
     <main className="review-center-page">
       <header className="review-center-header">
         <div>
-          <span className="eyebrow">HUMAN REVIEW</span>
           <h1>{t('审核中心', 'レビューセンター')}</h1>
           <p>
             {t(

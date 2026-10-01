@@ -16,16 +16,22 @@ import {
   type ProgressCommand,
   type ProgressEntry,
   type ProgressSchedule,
-  type ProgressMailPurpose
+  type ProgressMailPurpose,
+  followUpBlock,
+  scheduleConflictMessage,
+  isInactiveProgressStage
 } from '@shared'
 import { localizedIpcError, useUiLocale } from '../i18n'
+import { displayFieldValue } from '../field-display'
 import { copyTextToClipboard } from '../copy-text'
 import type { FollowUpTarget } from './follow-up-target'
 import { ActionMenu } from './HrObjectList'
 import './hr-followups.css'
 import './hr-progress.css'
+import { notifyBusinessDataChanged } from '../business-data-events'
 
 type Panel = 'schedule' | 'questions' | 'feedback' | 'entry' | 'history'
+type ScheduleConflict = { command: ProgressCommand; rowKey: string; draft: Draft | undefined }
 type Draft = {
   revision: number
   panel: Panel
@@ -41,6 +47,12 @@ type Draft = {
   entry: ProgressEntry
   actualDate: string
   correctionReason: string
+  /** 退场日 and an optional note, when the placement ends. */
+  leftDate: string
+  leaveReason: string
+  resumePaused: boolean
+  /** At 确认已到岗: also pause the person's other open follow-ups (the default). */
+  pauseOthers: boolean
   editingEntry: boolean
   rebooking: boolean
   analysis: ProgressAnalysis | null
@@ -60,7 +72,7 @@ function makeDraft(item: BusinessFollowUp, pending: string[] = []): Draft {
     revision: item.revision,
     panel: ['closed', 'paused'].includes(state.stage)
       ? 'history'
-      : ['entry', 'started'].includes(state.stage)
+      : ['entry', 'started', 'ended'].includes(state.stage)
         ? 'entry'
         : ['feedback', 'next-decision'].includes(state.stage)
           ? 'feedback'
@@ -70,10 +82,11 @@ function makeDraft(item: BusinessFollowUp, pending: string[] = []): Draft {
     pending: (progress?.pendingConditions ?? pending).join('\n'),
     schedule: {
       roundNumber: nextBusinessRound(progress),
-      scheduledAt: state.stage === 'next-round' ? '' : (round?.scheduledAt ?? ''),
+      // A new round starts without the time of the one already decided.
+      scheduledAt: state.stage === 'next-round' || round?.decision ? '' : (round?.scheduledAt ?? ''),
       durationMinutes: round?.durationMinutes ?? 60,
       meetingMethod: round?.meetingMethod ?? 'onsite',
-      meetingUrl: state.stage === 'next-round' ? '' : (round?.meetingUrl ?? ''),
+      meetingUrl: state.stage === 'next-round' || round?.decision ? '' : (round?.meetingUrl ?? ''),
       location: round?.meetingDetails?.onsiteAddress ?? round?.meetingDetails?.phoneNote ?? '',
       interviewer: round?.interviewer ?? '',
       note: round?.contactNote ?? ''
@@ -86,6 +99,10 @@ function makeDraft(item: BusinessFollowUp, pending: string[] = []): Draft {
     entry: progress?.entry ?? emptyProgressEntry(),
     actualDate: localDate(),
     correctionReason: '',
+    leftDate: localDate(),
+    leaveReason: '',
+    resumePaused: true,
+    pauseOthers: true,
     editingEntry: false,
     rebooking: false,
     analysis: null,
@@ -131,7 +148,7 @@ export function HrProgressWorkbench({
   onBackToMatches?(): void
   onUpdated?(): void
   /** Opens on one stage filter (the menu-bar panel's 今天要跟进); a new id applies it again. */
-  filterRequest?: { filter: 'today'; id: number }
+  filterRequest?: { filter: 'today' | 'active' | 'coordinating'; id: number }
 }) {
   const zh = useUiLocale() === 'zh-CN',
     t = (cn: string, ja: string) => (zh ? cn : ja)
@@ -147,6 +164,8 @@ export function HrProgressWorkbench({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
+    // The progress mail just ignored, offered back for a few seconds (忽略 by mistake).
+    [ignoredMail, setIgnoredMail] = useState<BusinessProgressMail | null>(null),
     [reload, setReload] = useState(0),
     [clock, setClock] = useState(() => new Date())
   const loading = localLoading || Boolean(shared?.loading)
@@ -162,12 +181,35 @@ export function HrProgressWorkbench({
     to: string | null
     draftKey: string
   } | null>(null)
+  useEffect(() => {
+    if (!ignoredMail) return
+    const timer = window.setTimeout(() => setIgnoredMail(null), 8000)
+    return () => window.clearTimeout(timer)
+  }, [ignoredMail])
   // A confirmation like 「已保存」 is a brief toast, not a row pushing the work down.
   useEffect(() => {
     if (!notice) return
     const timer = window.setTimeout(() => setNotice(''), 3000)
     return () => window.clearTimeout(timer)
   }, [notice])
+  const [personStatuses, setPersonStatuses] = useState<Record<string, string>>({})
+  // Pairs HR judged 不满足: their follow-ups say why they cannot move instead of failing at every step.
+  const [hrRejected, setHrRejected] = useState<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    const load = () => {
+      void Promise.resolve(window.sesAgent.listHrRejectedFollowUps?.())
+        .then((keys) => setHrRejected(new Set(keys ?? [])))
+        .catch(() => undefined)
+      void Promise.resolve(window.sesAgent.getPersonnelWorkspace?.())
+        .then((value) => {
+          if (value) setPersonStatuses(Object.fromEntries(value.states.map((state) => [state.documentId, state.status])))
+        })
+        .catch(() => undefined)
+    }
+    load()
+    window.addEventListener('ses-business-data-changed', load)
+    return () => window.removeEventListener('ses-business-data-changed', load)
+  }, [reloadToken])
   const content = useRef<HTMLElement>(null)
   const lock = useRef(false),
     requests = useRef(new Map<string, string>()),
@@ -243,22 +285,31 @@ export function HrProgressWorkbench({
           ...(value.length > 10 ? { hour: '2-digit', minute: '2-digit', hour12: false } : {})
         })
       : ''
+  // A follow-up that cannot move (person 暂停营业, case ended) is not counted as 今天要做 — the same rule as 今天 and the menu bar.
+  const blockOf = (row: BusinessFollowUp) =>
+    followUpBlock(row, {
+      personStatus: personStatuses[row.documentId],
+      caseLifecycle: cases.find((item) => item.reviewId === row.reviewId)?.lifecycle,
+      hrRejected: hrRejected.has(`${row.documentId}:${row.reviewId}`)
+    })
   const visible = items
     .filter((row) => {
       const state = businessProgressStep(row, clock, zh)
       return (
         (filter === 'all' ||
-          (filter === 'today' && state.due) ||
+          (filter === 'today' && state.due && !blockOf(row)) ||
+          (filter === 'coordinating' && state.stage === 'coordinating' && !blockOf(row)) ||
           (filter === 'entry' && state.stage === 'entry') ||
           (filter === 'started' && state.stage === 'started') ||
-          (filter === 'active' && !['started', 'closed', 'paused'].includes(state.stage))) &&
+          (filter === 'active' && !isInactiveProgressStage(state.stage))) &&
         (!query.trim() ||
           `${personName(row.documentId)} ${caseName(row.reviewId)} ${row.note}`.toLowerCase().includes(query.trim().toLowerCase()))
       )
     })
     .sort(
       (a, b) =>
-        Number(businessProgressStep(b, clock).due) - Number(businessProgressStep(a, clock).due) || b.updatedAt.localeCompare(a.updatedAt)
+        Number(businessProgressStep(b, clock).due && !blockOf(b)) - Number(businessProgressStep(a, clock).due && !blockOf(a)) ||
+        b.updatedAt.localeCompare(a.updatedAt)
     )
   const pages = Math.max(1, Math.ceil(visible.length / 12)),
     currentPage = Math.min(page, pages)
@@ -311,7 +362,7 @@ export function HrProgressWorkbench({
   useEffect(() => {
     if (content.current) content.current.scrollTop = 0
   }, [key, draft?.panel, state?.stage])
-  const inactive = state && ['started', 'closed', 'paused'].includes(state.stage)
+  const inactive = state && isInactiveProgressStage(state.stage)
   const historyOnly = Boolean(draft && latestRound && (inactive || draft.feedbackRoundNumber < latestRound.roundNumber))
   const canRecordFeedback =
     !inactive || Boolean(current?.progress?.rounds.some((round) => round.roundNumber === draft?.feedbackRoundNumber))
@@ -334,15 +385,38 @@ export function HrProgressWorkbench({
     })
   }
   const stale = Boolean(current && draft && current.revision !== draft.revision)
+  // An ended case takes no new interviews and its follow-ups cannot be resumed until the case is active again.
+  const caseEnded = Boolean(current && cases.find((item) => item.reviewId === current.reviewId)?.lifecycle === 'archived')
+  // Follow-ups this placement paused, mentioned when recording 退场.
+  const pausedByThis = current
+    ? items.filter((row) => row.progress?.pausedByPlacement === current.id && row.progress.stage === 'paused').length
+    : 0
+  // Still in place in another case: what this placement paused stays paused after its 退场.
+  const placedElsewhere = current
+    ? items.some((row) => row.documentId === current.documentId && row.id !== current.id && row.progress?.stage === 'started')
+    : false
+  // The person's other follow-ups still being arranged, offered to pause at 确认已到岗.
+  const othersOpen = current
+    ? items.filter(
+        (row) =>
+          row.documentId === current.documentId && row.id !== current.id && row.progress && !isInactiveProgressStage(row.progress.stage)
+      ).length
+    : 0
+  // The schedule being saved, kept with its row and draft so 「仍然保存」 can only resend exactly that.
+  const pendingCommand = useRef<ScheduleConflict | null>(null)
   const run = async <T,>(work: () => Promise<T>) => {
     if (lock.current) return
     lock.current = true
     setBusy(true)
     setError('')
     setNotice('')
+    setConflict(null)
+    const attempt = pendingCommand.current
+    pendingCommand.current = null
     try {
       return await work()
     } catch (cause) {
+      if (cause instanceof Error && cause.message.includes(scheduleConflictMessage) && attempt) setConflict(attempt)
       setError(
         localizedIpcError(
           zh ? 'zh-CN' : 'ja-JP',
@@ -356,8 +430,13 @@ export function HrProgressWorkbench({
     }
   }
   /** Resolves true once the command is saved, so a dialog can close only on success. */
+  // A schedule that overlaps another interview waits here for 「仍然保存」.
+  const [conflict, setConflict] = useState<ScheduleConflict | null>(null)
   const save = async (command: ProgressCommand, row = current) => {
+    setConflict(null)
     if (!row) return false
+    pendingCommand.current =
+      command.action === 'schedule' || command.action === 'rebook' ? { command, rowKey: pairKey(row), draft: drafts[pairKey(row)] } : null
     return (
       (await run(async () => {
         const rowKey = pairKey(row),
@@ -367,7 +446,9 @@ export function HrProgressWorkbench({
           reviewId: row.reviewId,
           expectedRevision: sourceDraft.revision,
           ...command,
-          ...(sourceDraft.messageId && ['coordinate', 'schedule', 'feedback', 'entry'].includes(command.action)
+          // The mail being worked through is applied by whichever step it led to (a reschedule, a cancellation, the start).
+          ...(sourceDraft.messageId &&
+          ['coordinate', 'schedule', 'feedback', 'entry', 'rebook', 'cancel-schedule', 'start'].includes(command.action)
             ? { sourceMessageId: sourceDraft.messageId }
             : {})
         }
@@ -376,13 +457,15 @@ export function HrProgressWorkbench({
         requests.current.set(requestKey, mutationId)
         const value = await window.sesAgent.advanceBusinessProgress({ ...body, mutationId })
         shared?.publish([value])
+        // 今天, the menu bar and the lists count follow-ups too: they re-read now, not at their next poll.
+        notifyBusinessDataChanged()
         loadEpoch.current++
         setLoading(false)
         setItems((rows) => [value, ...rows.filter((item) => item.id !== value.id)])
         const historicalSave =
           command.action === 'feedback' &&
           Boolean(row.progress?.rounds.some((round) => round.roundNumber === command.roundNumber)) &&
-          (['started', 'closed', 'paused'].includes(row.progress!.stage) || command.roundNumber < row.progress!.rounds.at(-1)!.roundNumber)
+          (isInactiveProgressStage(row.progress!.stage) || command.roundNumber < row.progress!.rounds.at(-1)!.roundNumber)
         const fresh = makeDraft(value),
           baseline = makeDraft(row)
         const savedDraft = { ...fresh, panel: sourceDraft.panel }
@@ -394,11 +477,11 @@ export function HrProgressWorkbench({
           [['candidateAvailability', 'clientAvailability', 'pending'], ['coordinate']],
           [['feedback', 'feedbackRoundNumber', 'result', 'next', 'unresolved', 'analysis'], ['feedback']],
           [
-            ['entry', 'actualDate', 'editingEntry'],
-            ['entry', 'start', 'correct-entry', 'undo-start']
+            ['entry', 'actualDate', 'editingEntry', 'leftDate', 'leaveReason', 'pauseOthers', 'resumePaused'],
+            ['entry', 'start', 'correct-entry', 'undo-start', 'leave', 'undo-leave']
           ],
           [['note'], ['note', 'pause', 'close']],
-          [['correctionReason'], ['rebook', 'cancel-schedule', 'correct-entry', 'undo-start']]
+          [['correctionReason'], ['rebook', 'cancel-schedule', 'correct-entry', 'undo-start', 'undo-leave']]
         ]
         for (const [fields, actions] of groups)
           if (
@@ -417,7 +500,7 @@ export function HrProgressWorkbench({
           })
         if (
           (command.action === 'feedback' && !historicalSave) ||
-          ['resume', 'pause', 'close', 'start', 'undo-start'].includes(command.action)
+          ['resume', 'pause', 'close', 'start', 'undo-start', 'leave', 'undo-leave', 'restart'].includes(command.action)
         )
           savedDraft.panel = fresh.panel
         if (sourceDraft.messageId && !body.sourceMessageId) savedDraft.messageId = sourceDraft.messageId
@@ -462,6 +545,7 @@ export function HrProgressWorkbench({
         )
       )
       onUpdated?.()
+      notifyBusinessDataChanged()
     })
   }
   const analyze = () => {
@@ -559,10 +643,11 @@ export function HrProgressWorkbench({
       const s = businessProgressStep(row, clock)
       return (
         name === 'all' ||
-        (name === 'today' && s.due) ||
+        (name === 'today' && s.due && !blockOf(row)) ||
+        (name === 'coordinating' && s.stage === 'coordinating' && !blockOf(row)) ||
         (name === 'entry' && s.stage === 'entry') ||
         (name === 'started' && s.stage === 'started') ||
-        (name === 'active' && !['started', 'closed', 'paused'].includes(s.stage))
+        (name === 'active' && !isInactiveProgressStage(s.stage))
       )
     }).length
   return (
@@ -583,6 +668,7 @@ export function HrProgressWorkbench({
         <nav className="hr-followup-filters" aria-label={t('跟进阶段', '対応段階')}>
           {[
             ['today', t('今天要做', '今日の対応')],
+            ['coordinating', t('待约面', '日程調整中')],
             ['active', t('进行中', '進行中')],
             ['entry', t('待进场', '参画待ち')],
             ['started', t('已进场', '参画済み')],
@@ -633,6 +719,16 @@ export function HrProgressWorkbench({
       {error && !stopping && !confirmingDelete ? (
         <p role="alert" className="hr-followup-message is-error">
           {error}
+          {/* Only for the same row and the same, unedited schedule: a changed time is checked again by 保存. */}
+          {conflict && current && pairKey(current) === conflict.rowKey && drafts[conflict.rowKey] === conflict.draft ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save({ ...conflict.command, allowConflict: true } as ProgressCommand, current)}
+            >
+              {t('仍然保存', 'このまま保存')}
+            </button>
+          ) : null}
         </p>
       ) : null}
       {notice ? (
@@ -697,6 +793,16 @@ export function HrProgressWorkbench({
                     void run(async () => {
                       await window.sesAgent.updateBusinessProgressMail({ id: item.id, state: 'dismissed' })
                       setMail((rows) => rows.filter((row) => row.id !== item.id))
+                      // A draft started from this mail no longer points at it, so its next save is not refused.
+                      setDrafts((all) =>
+                        Object.fromEntries(
+                          Object.entries(all).map(([key, value]) => [
+                            key,
+                            value.messageId === item.id ? { ...value, messageId: undefined } : value
+                          ])
+                        )
+                      )
+                      setIgnoredMail(item)
                     })
                   }
                 >
@@ -705,6 +811,24 @@ export function HrProgressWorkbench({
               </article>
             ))
           )}
+          {ignoredMail ? (
+            <p className="hr-followup-message is-toast" role="status">
+              {t('已忽略这封邮件。', 'このメールを無視しました。')}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await window.sesAgent.updateBusinessProgressMail({ id: ignoredMail.id, state: 'pending' })
+                    setMail((rows) => [ignoredMail, ...rows.filter((row) => row.id !== ignoredMail.id)])
+                    setIgnoredMail(null)
+                  })
+                }
+              >
+                {t('撤销', '元に戻す')}
+              </button>
+            </p>
+          ) : null}
         </section>
       ) : null}
       <div className="hr-progress-layout">
@@ -751,10 +875,28 @@ export function HrProgressWorkbench({
                       <span className={`hr-followup-badge stage-${step.stage}`}>{step.label}</span>
                     </span>
                     <span>{caseName(row.reviewId)}</span>
-                    <span className="hr-progress-next-line">
-                      <strong>{step.action}</strong>
-                      <time>{timestamp(step.when)}</time>
-                    </span>
+                    {blockOf(row) ? (
+                      // It cannot move: say why instead of offering a next step that would fail.
+                      <span className="hr-progress-next-line is-blocked">
+                        <strong>
+                          {blockOf(row) === 'case-ended'
+                            ? t('案件已结束，可以结束这条跟进', '案件終了・この対応を終了できます')
+                            : blockOf(row) === 'hr-rejected'
+                              ? t('已判定不满足，可以结束这条跟进', '条件を満たさないと判断済み・この対応を終了できます')
+                              : blockOf(row) === 'person-assigned'
+                                ? t(
+                                    '人员在别处进场中，改为近期可入场后可约面',
+                                    '他案件で参画中・「近日稼働可能」にすると面談を設定できます'
+                                  )
+                                : t('人员暂停营业，可以暂停这条跟进', '営業停止中・この対応を保留にできます')}
+                        </strong>
+                      </span>
+                    ) : (
+                      <span className="hr-progress-next-line">
+                        <strong>{step.action}</strong>
+                        <time>{timestamp(step.when)}</time>
+                      </span>
+                    )}
                     {pendingMail.some((mail) => mail.followUpId === row.id) ? <small>{t('收到新邮件', '新着メールあり')}</small> : null}
                   </button>
                 )
@@ -764,11 +906,16 @@ export function HrProgressWorkbench({
                   <h3>{t('还没有这类跟进', '該当する対応はありません')}</h3>
                   <p>
                     {t(
-                      '在匹配结果中选定案件或人员，点击“安排面试”即可开始。',
-                      'マッチング結果で案件・要員を選び、面談を予約して開始します。'
+                      '在找人或找案件的结果里选中一组，点击「开始跟进」即可开始。',
+                      '要員検索・案件検索の結果で組み合わせを選び、「対応を開始」で始めます。'
                     )}
                   </p>
-                  {onBrowse ? <button onClick={() => onBrowse('person')}>{t('去人员找案件', '要員から案件を探す')}</button> : null}
+                  {onBrowse ? (
+                    <div className="hr-followup-empty-actions">
+                      <button onClick={() => onBrowse('case')}>{t('去案件找人', '案件から要員を探す')}</button>
+                      <button onClick={() => onBrowse('person')}>{t('去人员找案件', '要員から案件を探す')}</button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -807,7 +954,7 @@ export function HrProgressWorkbench({
                   triggerClassName="hr-menu-trigger"
                   trigger={<span aria-hidden="true">⋯</span>}
                 >
-                  {!['closed', 'started', 'paused'].includes(state.stage) ? (
+                  {!isInactiveProgressStage(state.stage) ? (
                     <>
                       <button role="menuitem" type="button" disabled={busy || stale} onClick={() => openStop('pause')}>
                         {t('暂停跟进…', '対応を保留…')}
@@ -818,8 +965,36 @@ export function HrProgressWorkbench({
                     </>
                   ) : null}
                   {['paused', 'closed'].includes(state.stage) ? (
-                    <button role="menuitem" type="button" disabled={busy || stale} onClick={() => void save({ action: 'resume' })}>
+                    <button
+                      role="menuitem"
+                      type="button"
+                      disabled={busy || stale || caseEnded}
+                      onClick={() => void save({ action: 'resume' })}
+                    >
                       {t('恢复跟进', '対応を再開')}
+                    </button>
+                  ) : null}
+                  {/* After 退场 the client may want the same person back: a new round of work, the placement kept as history. */}
+                  {state.stage === 'ended' ? (
+                    <button
+                      role="menuitem"
+                      type="button"
+                      disabled={busy || stale || caseEnded}
+                      onClick={() =>
+                        void save({
+                          action: 'restart',
+                          // i18n-ignore: reason stored with the follow-up
+                          reason: '客户希望再次进场 / 再参画の希望'
+                        })
+                      }
+                    >
+                      {t('重新开始跟进（再次进场）', '対応を再開始（再参画）')}
+                    </button>
+                  ) : null}
+                  {/* A paused follow-up that will not come back (case ended, person not offered) can be ended for good. */}
+                  {state.stage === 'paused' ? (
+                    <button role="menuitem" type="button" disabled={busy || stale} onClick={() => openStop('close')}>
+                      {t('结束跟进…', '対応を終了…')}
                     </button>
                   ) : null}
                   {current.id ? (
@@ -846,10 +1021,46 @@ export function HrProgressWorkbench({
                   {stopRecord?.reason ? <> · {stopRecord.reason}</> : null}
                   {stopRecord ? <> · {day(stopRecord.at)}</> : null}
                 </p>
-                <button disabled={busy || stale} onClick={() => void save({ action: 'resume' })}>
+                <button
+                  disabled={busy || stale || caseEnded}
+                  title={caseEnded ? t('案件已结束；请先激活案件', '案件は終了しています。先に案件を再開してください') : undefined}
+                  onClick={() => void save({ action: 'resume' })}
+                >
                   {t('恢复跟进', '対応を再開')}
                 </button>
               </div>
+            ) : null}
+            {current && blockOf(current) === 'person-paused' ? (
+              <p className="hr-progress-case-ended" role="status">
+                {t(
+                  '此人员暂停营业：不能再约面试或恢复跟进。如需继续，请先把营业状态改为待机中。',
+                  'この要員は営業停止中です。面談の予約や対応の再開はできません。続ける場合は営業状態を待機中に戻してください。'
+                )}
+              </p>
+            ) : null}
+            {current && blockOf(current) === 'hr-rejected' ? (
+              <p className="hr-progress-case-ended" role="status">
+                {t(
+                  'HR 已判定这个人员不满足该案件的要求：不能再推荐或约面试。如判断有变，请在匹配中撤回「不满足」；否则可以结束这条跟进。',
+                  'この要員は案件の条件を満たさないと判断済みです。推薦や面談の設定はできません。判断が変わった場合はマッチングで「満たさない」を取り消し、そうでなければこの対応を終了してください。'
+                )}
+              </p>
+            ) : null}
+            {current && blockOf(current) === 'person-assigned' ? (
+              <p className="hr-progress-case-ended" role="status">
+                {t(
+                  '此人员正在其他案件进场：不能再约面试。项目快结束时，请先在人员资料里把营业状态改为近期可入场。',
+                  'この要員は他の案件で参画中のため、面談は設定できません。終了が近い場合は、要員情報で営業状態を「近日稼働可能」にしてください。'
+                )}
+              </p>
+            ) : null}
+            {caseEnded && !['started', 'ended', 'entry'].includes(state.stage) ? (
+              <p className="hr-progress-case-ended" role="status">
+                {t(
+                  '案件已结束：不能再约面试或恢复跟进。如需继续，请先在案件列表中激活案件。',
+                  '案件は終了しています。面談の予約や対応の再開はできません。続ける場合は案件一覧で案件を再開してください。'
+                )}
+              </p>
             ) : null}
             <div className="hr-progress-track" aria-label={t('业务流程', '業務の流れ')}>
               {[
@@ -863,7 +1074,7 @@ export function HrProgressWorkbench({
                   key={label}
                   className={
                     index <=
-                    (state.stage === 'started'
+                    (state.stage === 'started' || state.stage === 'ended'
                       ? 4
                       : state.stage === 'entry'
                         ? 3
@@ -960,7 +1171,7 @@ export function HrProgressWorkbench({
               ) : null}
               {draft.panel === 'schedule' ? (
                 <>
-                  {latestRound && state.stage !== 'started' && !draft.rebooking ? (
+                  {latestRound && !['started', 'ended'].includes(state.stage) && !draft.rebooking ? (
                     <div className="hr-progress-actions">
                       <button
                         disabled={busy || stale}
@@ -1015,7 +1226,7 @@ export function HrProgressWorkbench({
                       </details>
                       <div className="hr-progress-actions">
                         <button
-                          disabled={busy || stale}
+                          disabled={busy || stale || caseEnded}
                           onClick={() =>
                             void save({
                               action: 'coordinate',
@@ -1197,6 +1408,7 @@ export function HrProgressWorkbench({
                             disabled={
                               busy ||
                               stale ||
+                              caseEnded ||
                               (draft.rebooking && !draft.correctionReason.trim()) ||
                               (Boolean(latestRound?.decision) &&
                                 draft.schedule.roundNumber === latestRound?.roundNumber &&
@@ -1417,9 +1629,13 @@ export function HrProgressWorkbench({
               ) : null}
               {draft.panel === 'entry' ? (
                 <>
-                  {state.stage === 'started' && !draft.editingEntry ? (
-                    <section aria-label={t('进场记录', '参画記録')}>
-                      <h4>{t('已确认实际到岗', '参画開始を確認済み')}</h4>
+                  {(state.stage === 'started' || state.stage === 'ended') && !draft.editingEntry ? (
+                    <section className="hr-progress-placement" aria-label={t('进场记录', '参画記録')}>
+                      <h4>
+                        {state.stage === 'ended'
+                          ? t(`已退场：${current.progress?.entry.leftDate ?? ''}`, `退場済み：${current.progress?.entry.leftDate ?? ''}`)
+                          : t('已确认实际到岗', '参画開始を確認済み')}
+                      </h4>
                       <dl className="hr-progress-entry-record">
                         {(
                           ['actualDate', 'plannedDate', 'rate', 'workStyle', 'location', 'reportTime', 'contact', 'materials'] as const
@@ -1439,7 +1655,17 @@ export function HrProgressWorkbench({
                                 ][index]
                               }
                             </dt>
-                            <dd>{current.progress?.entry[field] || t('未填写', '未記入')}</dd>
+                            <dd>
+                              {(() => {
+                                const value = current.progress?.entry[field]
+                                if (!value) return t('未填写', '未記入')
+                                // Case wording shows in the UI language as elsewhere; the stored text is the tooltip.
+                                const key =
+                                  field === 'rate' ? 'rate' : field === 'workStyle' ? 'remote' : field === 'location' ? 'location' : ''
+                                const shown = key ? displayFieldValue(key, value, zh) : null
+                                return shown?.original ? <span title={shown.original}>{shown.text}</span> : value
+                              })()}
+                            </dd>
                           </div>
                         ))}
                       </dl>
@@ -1453,15 +1679,106 @@ export function HrProgressWorkbench({
                           ? t('双方已确认入场条件', '双方で参画条件を合意済み')
                           : t('入场条件尚未记录', '参画条件は未記録')}
                       </p>
-                      <div className="hr-progress-actions">
-                        <button
-                          disabled={busy || stale}
-                          onClick={() => update({ editingEntry: true, entry: current.progress!.entry, correctionReason: '' })}
-                        >
-                          {t('更正进场记录', '参画記録を訂正')}
-                        </button>
-                      </div>
-                      <details>
+                      {state.stage === 'ended' ? (
+                        <details>
+                          <summary>{t('撤销误记录的退场', '誤った退場記録を取り消す')}</summary>
+                          <label>
+                            {t('撤销原因', '取消理由')}
+                            <input
+                              disabled={busy}
+                              value={draft.correctionReason}
+                              onChange={(event) => update({ correctionReason: event.target.value })}
+                            />
+                          </label>
+                          <button
+                            disabled={busy || stale || !draft.correctionReason.trim()}
+                            onClick={() => void save({ action: 'undo-leave', reason: draft.correctionReason })}
+                          >
+                            {t('撤销并恢复进场中', '取り消して参画中に戻す')}
+                          </button>
+                        </details>
+                      ) : (
+                        <>
+                          {/* 退场: the project ended; the person is available again unless placed elsewhere. */}
+                          <form
+                            className="hr-progress-leave"
+                            aria-label={t('记录退场', '退場を記録')}
+                            onSubmit={(event) => {
+                              event.preventDefault()
+                              void save({
+                                action: 'leave',
+                                leftDate: draft.leftDate,
+                                reason: draft.leaveReason.trim(),
+                                ...(pausedByThis && !placedElsewhere ? { resumePaused: draft.resumePaused } : {})
+                              })
+                            }}
+                          >
+                            <h4>{t('项目结束：记录退场', '案件終了：退場を記録')}</h4>
+                            <div className="hr-progress-form-grid">
+                              <label>
+                                {t('退场日期', '退場日')}
+                                <input
+                                  type="date"
+                                  required
+                                  disabled={busy}
+                                  max={localDate()}
+                                  min={current.progress?.entry.actualDate ?? undefined}
+                                  value={draft.leftDate}
+                                  onChange={(event) => update({ leftDate: event.target.value })}
+                                />
+                              </label>
+                              <label>
+                                {t('备注（选填）', '備考（任意）')}
+                                <input
+                                  disabled={busy}
+                                  value={draft.leaveReason}
+                                  placeholder={t('例：契约期满', '例：契約満了')}
+                                  onChange={(event) => update({ leaveReason: event.target.value })}
+                                />
+                              </label>
+                            </div>
+                            <p className="hr-progress-hint">
+                              {t(
+                                '退场后营业状态改回「待机中」（进场前是暂停营业的恢复为暂停营业，在场期间改成近期可入场的保持不变）；如果此人员还在其他案件进场中，则保持已进场。',
+                                '退場後は営業状態を「待機中」に戻します（参画前が営業停止中なら営業停止中、参画中に「近日稼働可能」にしていればそのまま）。他の案件で参画中の場合は参画中のままです。'
+                              )}
+                            </p>
+                            {pausedByThis && placedElsewhere ? (
+                              <p className="hr-progress-hint">
+                                {t(
+                                  `进场时暂停了 ${pausedByThis} 条其他跟进；此人员还在其他案件进场，退场后这些跟进先保持暂停。`,
+                                  `参画時に他の対応 ${pausedByThis} 件を保留にしました。他の案件で参画中のため、退場後も保留のままです。`
+                                )}
+                              </p>
+                            ) : pausedByThis ? (
+                              <label className="hr-progress-check">
+                                <input
+                                  type="checkbox"
+                                  checked={draft.resumePaused}
+                                  onChange={(event) => update({ resumePaused: event.target.checked })}
+                                />
+                                {t(
+                                  `同时恢复进场时暂停的 ${pausedByThis} 条其他跟进`,
+                                  `参画時に保留にした他の対応 ${pausedByThis} 件も再開する`
+                                )}
+                              </label>
+                            ) : null}
+                            <div className="hr-progress-actions">
+                              <button type="submit" className="hr-primary" disabled={busy || stale || !draft.leftDate}>
+                                {t('确认退场', '退場を確定')}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy || stale}
+                                onClick={() => update({ editingEntry: true, entry: current.progress!.entry, correctionReason: '' })}
+                              >
+                                {t('更正进场记录', '参画記録を訂正')}
+                              </button>
+                            </div>
+                          </form>
+                        </>
+                      )}
+                      <details hidden={state.stage === 'ended'}>
                         <summary>{t('撤销误确认到岗', '誤った参画開始の確認を取り消す')}</summary>
                         <label>
                           {t('撤销原因', '取消理由')}
@@ -1596,14 +1913,42 @@ export function HrProgressWorkbench({
                               !current.progress.entry.termsAgreed ||
                               !draft.actualDate
                             }
-                            onClick={() => void save({ action: 'start', actualDate: draft.actualDate })}
+                            onClick={() =>
+                              void save({
+                                action: 'start',
+                                actualDate: draft.actualDate,
+                                ...(othersOpen ? { pauseOthers: draft.pauseOthers } : {})
+                              })
+                            }
                           >
                             {t('确认已到岗', '参画開始を確認')}
                           </button>
+                          {/* Ticked here but not saved yet: the start needs the saved terms, so say what to do first. */}
+                          {(!current.progress?.entry.candidateAccepted || !current.progress.entry.termsAgreed) &&
+                          draft.entry.candidateAccepted &&
+                          draft.entry.termsAgreed ? (
+                            <small className="hr-progress-hint">
+                              {t('请先保存入场安排，再确认到岗。', '先に参画手配を保存してから参画開始を確認してください。')}
+                            </small>
+                          ) : null}
+                          {othersOpen ? (
+                            <label className="hr-progress-check">
+                              <input
+                                type="checkbox"
+                                disabled={busy}
+                                checked={draft.pauseOthers}
+                                onChange={(event) => update({ pauseOthers: event.target.checked })}
+                              />
+                              {t(
+                                `同时暂停此人员在其他 ${othersOpen} 个案件的跟进（之后可以恢复）`,
+                                `この要員の他の案件 ${othersOpen} 件の対応も保留にする（後で再開できます）`
+                              )}
+                            </label>
+                          ) : null}
                           <small>
                             {t(
-                              '确认后人员会显示已入场，其他案件可分别决定是否继续。',
-                              '確認後は要員を参画中に更新します。別案件の継続は個別に判断できます。'
+                              '确认后人员会显示已进场；项目结束时请记录退场，营业状态会改回待机中（进场前是暂停营业的除外）。',
+                              '確認後は要員を参画中に更新します。案件終了時に退場を記録すると、営業状態は待機中に戻ります（参画前が営業停止中の場合を除く）。'
                             )}
                           </small>
                         </section>
@@ -1622,7 +1967,7 @@ export function HrProgressWorkbench({
                           (row) =>
                             row.documentId === current.documentId &&
                             row.id !== current.id &&
-                            !['closed', 'started', 'paused'].includes(row.progress?.stage ?? 'coordinating')
+                            !isInactiveProgressStage(row.progress?.stage ?? 'coordinating')
                         )
                         .map((row) => (
                           <div className="hr-progress-other" key={row.id}>
@@ -1897,13 +2242,20 @@ export function HrProgressWorkbench({
                     <p>
                       {t('此人员已进场。请先撤销进场，再删除这条跟进。', 'この要員は参画済みです。参画を取り消してから削除してください。')}
                     </p>
+                  ) : state.stage === 'ended' ? (
+                    <p>
+                      {t(
+                        '已退场的进场记录作为历史保留，不能单独删除；如是误记，请先撤销退场再撤销进场。',
+                        '退場済みの参画記録は履歴として残し、単独では削除できません。誤記録の場合は退場と参画を取り消してください。'
+                      )}
+                    </p>
                   ) : (
                     <>
                       <p>{t('用于误建或重复的跟进。', '誤って作成した、または重複した対応記録に使います。')}</p>
                       <p className="hr-followup-message is-error">
                         {t(
-                          `将删除此人员与此案件的跟进、${current.progress?.rounds.length ?? 0} 轮面试记录和关联的跟进邮件，无法恢复。人员和案件本身保留。`,
-                          `この要員と案件の対応記録、面談 ${current.progress?.rounds.length ?? 0} 回分の記録、関連する進捗メールを削除します。元に戻せません。要員と案件は残ります。`
+                          `将删除此人员与此案件的跟进、${current.progress?.rounds.length ?? 0} 轮面试记录和关联的跟进邮件，无法恢复。人员和案件本身保留。${current.events.some((event) => event.action === 'link-interview') ? '之前关联进来的历史面试会保留，只解除关联。' : ''}`,
+                          `この要員と案件の対応記録、面談 ${current.progress?.rounds.length ?? 0} 回分の記録、関連する進捗メールを削除します。元に戻せません。要員と案件は残ります。${current.events.some((event) => event.action === 'link-interview') ? '関連付けた過去の面談は削除せず、関連付けだけ解除します。' : ''}`
                         )}
                       </p>
                     </>
@@ -1911,9 +2263,9 @@ export function HrProgressWorkbench({
                   {error ? <p role="alert">{error}</p> : null}
                   <div className="hr-progress-dialog-actions">
                     <button autoFocus disabled={busy} type="button" onClick={() => setConfirmingDelete(null)}>
-                      {state.stage === 'started' ? t('关闭', '閉じる') : t('取消', 'キャンセル')}
+                      {state.stage === 'started' || state.stage === 'ended' ? t('关闭', '閉じる') : t('取消', 'キャンセル')}
                     </button>
-                    {state.stage !== 'started' ? (
+                    {state.stage !== 'started' && state.stage !== 'ended' ? (
                       <button className="is-danger" disabled={busy || stale} type="button" onClick={() => removeFollowUp(current)}>
                         {t('确认删除', '削除する')}
                       </button>

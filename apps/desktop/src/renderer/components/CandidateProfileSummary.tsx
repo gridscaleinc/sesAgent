@@ -2,6 +2,7 @@ import { BusinessField } from './BusinessField'
 import type { ReactNode } from 'react'
 import type { CandidateReviewSnapshot } from '@shared'
 import { localeText, useUiLocale, localizedCandidateFieldLabel } from '../i18n'
+import { displayFieldValue } from '../field-display'
 import './candidate-profile-summary.css'
 
 export function CandidateProfileSummary({
@@ -13,7 +14,7 @@ export function CandidateProfileSummary({
   collapseProjects?: boolean
   ownCompanyControl?: ReactNode
 }) {
-  const edit = (field: string, value: string | null, label: string, projectId?: string) => (
+  const edit = (field: string, value: string | null, label: string, projectId?: string, children?: ReactNode) => (
     <BusinessField
       kind="person"
       id={review.documentId}
@@ -23,8 +24,20 @@ export function CandidateProfileSummary({
       label={label}
       projectId={projectId}
       disabled={!review.profile || review.recordStatus !== 'active'}
-    />
+    >
+      {children}
+    </BusinessField>
   )
+  // Read-only display in the UI language, as on the list cards; the stored wording stays in the tooltip and the editor.
+  const shown = (key: string, value: string | null) => {
+    if (!value) return undefined
+    const display = displayFieldValue(key, value, zh)
+    return display.original === null ? undefined : (
+      <span className="is-normalized-value" title={[display.text, display.original].join('\n')}>
+        {display.text}
+      </span>
+    )
+  }
   const zh = useUiLocale() === 'zh-CN'
   const t = localeText(zh)
   const skills = [
@@ -94,7 +107,15 @@ export function CandidateProfileSummary({
           {facts.map((field) => (
             <div key={field.key}>
               <dt>{localizedCandidateFieldLabel(zh ? 'zh-CN' : 'ja-JP', field)}</dt>
-              <dd>{edit(field.key, field.value, localizedCandidateFieldLabel(zh ? 'zh-CN' : 'ja-JP', field))}</dd>
+              <dd>
+                {edit(
+                  field.key,
+                  field.value,
+                  localizedCandidateFieldLabel(zh ? 'zh-CN' : 'ja-JP', field),
+                  undefined,
+                  shown(field.key, field.value)
+                )}
+              </dd>
             </div>
           ))}
         </dl>

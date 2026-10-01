@@ -29,7 +29,7 @@ it.each(['case', 'person'] as const)('previews and confirms exactly the selected
   const confirm = await screen.findByRole('button', { name: '削除を確定' })
   await waitFor(() => expect(confirm).toBeEnabled())
   expect(onOpen).not.toHaveBeenCalled()
-  expect(screen.getByText('対応記録：3')).toBeVisible()
+  expect(screen.getByText('対応記録').nextElementSibling).toHaveTextContent('3')
   expect(window.sesAgent.deleteJobCaseData).not.toHaveBeenCalled()
   expect(window.sesAgent.deleteCandidateData).not.toHaveBeenCalled()
   fireEvent.click(confirm)

@@ -6,6 +6,7 @@ import type {
   CandidateReviewSnapshot,
   SaveCandidateInterviewScheduleInput
 } from '@shared'
+import { scheduleConflictMessage } from '@shared'
 import { localeText, localizedIpcError, useUiLocale } from '../i18n'
 import { Icon } from './Icon'
 
@@ -19,6 +20,10 @@ interface AgentInterviewSchedulePanelProps {
   onBack?(): void
   onClose(): void
   onSave(input: SaveCandidateInterviewScheduleInput): Promise<CandidateInterviewSnapshot>
+  /** A client interview booked on a case's 跟进 is changed there (rebooking keeps its history and conflict checks). */
+  onOpenFollowUp?(followUpId: string): void
+  /** Calls off a booked recruiting interview (back to being arranged, no time held). */
+  onCancel?(input: { interviewId: string; sourceDocumentId: string }): Promise<CandidateInterviewSnapshot>
 }
 
 function formatTokyoDateTime(value: string, locale: 'ja-JP' | 'zh-CN'): string {
@@ -87,7 +92,16 @@ function findFocusedInterview(
   )
 }
 
-export function AgentInterviewSchedulePanel({ access, interviews, reviews, onBack, onClose, onSave }: AgentInterviewSchedulePanelProps) {
+export function AgentInterviewSchedulePanel({
+  access,
+  interviews,
+  reviews,
+  onBack,
+  onClose,
+  onSave,
+  onOpenFollowUp,
+  onCancel
+}: AgentInterviewSchedulePanelProps) {
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
   const t = localeText(zh)
@@ -144,12 +158,16 @@ export function AgentInterviewSchedulePanel({ access, interviews, reviews, onBac
     setSaved(false)
   }, [selectedInterview?.id, selectedInterview?.updatedAt])
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
+  // The edit refused for overlapping another interview; 「仍然保存」 shows only while the form still holds it.
+  const editKey = JSON.stringify([selectedInterview?.id, dateTime, duration, interviewer.trim()])
+  const [conflictedEdit, setConflictedEdit] = useState<string | null>(null)
+  const submit = async (event: FormEvent | null, allowConflict = false) => {
+    event?.preventDefault()
     if (!selectedInterview || !dateTime || !interviewer.trim()) return
     setSaving(true)
     setError(null)
     setSaved(false)
+    setConflictedEdit(null)
     try {
       const next = await onSave({
         interviewId: selectedInterview.id,
@@ -163,18 +181,47 @@ export function AgentInterviewSchedulePanel({ access, interviews, reviews, onBac
         ...(selectedInterview.meetingUrl ? { meetingUrl: selectedInterview.meetingUrl } : {}),
         ...(selectedInterview.meetingDetails ? { meetingDetails: selectedInterview.meetingDetails } : {}),
         interviewer: interviewer.trim(),
-        ...(note.trim() ? { contactNote: note.trim() } : {})
+        ...(note.trim() ? { contactNote: note.trim() } : {}),
+        ...(allowConflict ? { allowConflict: true } : {})
       })
       setSelectedInterviewId(next.id)
       setEditing(false)
       setSaved(true)
     } catch (cause) {
+      if (cause instanceof Error && cause.message.includes(scheduleConflictMessage)) setConflictedEdit(editKey)
       setError(localizedIpcError(locale, cause, t('无法保存面试日程。', '面談日程を保存できませんでした。')))
     } finally {
       setSaving(false)
     }
   }
 
+  // Booked and not started, or opened with nothing recorded yet (the candidate did not join): Main allows both.
+  const changeable = Boolean(
+    selectedInterview &&
+    !selectedInterview.decision &&
+    (['scheduled', 'prepared'].includes(selectedInterview.stage) ||
+      (selectedInterview.stage === 'interviewing' && !selectedInterview.interviewNotes?.trim()))
+  )
+  const [cancelled, setCancelled] = useState<CandidateInterviewSnapshot | null>(null)
+  const cancel = async () => {
+    if (!selectedInterview || !onCancel) return
+    if (
+      !window.confirm(
+        t('取消这次面试预约？时间会被释放，之后可以重新预约。', 'この面談の予約を取り消しますか？時間は解放され、後で予約し直せます。')
+      )
+    )
+      return
+    setSaving(true)
+    setError(null)
+    try {
+      setCancelled(await onCancel({ interviewId: selectedInterview.id, sourceDocumentId: selectedInterview.sourceDocumentId }))
+      setEditing(false)
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('无法取消预约。', '予約を取り消せませんでした。')))
+    } finally {
+      setSaving(false)
+    }
+  }
   const selectedReview = selectedInterview ? reviewByDocumentId.get(selectedInterview.sourceDocumentId) : undefined
   const fallbackLabel = access.receipt?.candidateLabel ?? t('人员', '要員')
   const selectedName = candidateName(selectedReview, fallbackLabel)
@@ -283,7 +330,7 @@ export function AgentInterviewSchedulePanel({ access, interviews, reviews, onBac
               <span>{t('已登记', '登録済み')}</span>
             </header>
             {editing ? (
-              <form className="agent-panel-interview-form" onSubmit={submit}>
+              <form className="agent-panel-interview-form" onSubmit={(event) => void submit(event)}>
                 <label>
                   <span>{t('面试时间', '面談日時')}</span>
                   <input onChange={(event) => setDateTime(event.target.value)} required type="datetime-local" value={dateTime} />
@@ -319,6 +366,11 @@ export function AgentInterviewSchedulePanel({ access, interviews, reviews, onBac
                     <Icon name="alert" size={13} />
                     {error}
                   </p>
+                ) : null}
+                {conflictedEdit && conflictedEdit === editKey ? (
+                  <button disabled={saving} onClick={() => void submit(null, true)} type="button">
+                    {t('仍然保存', 'このまま保存')}
+                  </button>
                 ) : null}
                 <footer>
                   <button disabled={saving} onClick={() => setEditing(false)} type="button">
@@ -364,20 +416,44 @@ export function AgentInterviewSchedulePanel({ access, interviews, reviews, onBac
                   </div>
                 </dl>
                 {selectedInterview.contactNote ? <p className="agent-panel-interview-note">{selectedInterview.contactNote}</p> : null}
+                {cancelled?.id === selectedInterview.id ? (
+                  <p className="agent-panel-save-success">
+                    <Icon name="check" size={13} />
+                    {t('已取消预约，可在面试日程中重新预约', '予約を取り消しました。面談日程から再予約できます')}
+                  </p>
+                ) : null}
                 {saved ? (
                   <p className="agent-panel-save-success">
                     <Icon name="check" size={13} />
                     {t('面试日程已更新', '面談日程を更新しました')}
                   </p>
                 ) : null}
-                <button
-                  className="agent-panel-edit-button"
-                  disabled={!['scheduled', 'prepared'].includes(selectedInterview.stage)}
-                  onClick={() => setEditing(true)}
-                  type="button"
-                >
-                  {t('修改面试', '面談を変更')}
-                </button>
+                {selectedInterview.businessFollowUpId ? (
+                  <button
+                    className="agent-panel-edit-button"
+                    disabled={!onOpenFollowUp}
+                    onClick={() => onOpenFollowUp?.(selectedInterview.businessFollowUpId!)}
+                    type="button"
+                  >
+                    {t('在跟进中修改', '対応記録で変更')}
+                  </button>
+                ) : (
+                  <>
+                    <button className="agent-panel-edit-button" disabled={!changeable} onClick={() => setEditing(true)} type="button">
+                      {t('修改面试', '面談を変更')}
+                    </button>
+                    {onCancel ? (
+                      <button
+                        className="agent-panel-edit-button"
+                        disabled={!changeable || saving}
+                        onClick={() => void cancel()}
+                        type="button"
+                      >
+                        {t('取消预约', '予約を取り消す')}
+                      </button>
+                    ) : null}
+                  </>
+                )}
               </>
             )}
           </article>

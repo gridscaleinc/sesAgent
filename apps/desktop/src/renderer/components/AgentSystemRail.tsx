@@ -2,6 +2,11 @@ import { Icon } from './Icon'
 import { localeText, useUiLocale } from '../i18n'
 
 interface AgentSystemRailProps {
+  /** 今天, the first item: the day's overview. */
+  todayActive?: boolean
+  onToday?(): void
+  /** 今天要跟进; the badge is withheld at zero. */
+  todayCount?: number
   followActive?: boolean
   onFollowUps?(): void
   businessKind: 'case' | 'person'
@@ -18,6 +23,9 @@ interface AgentSystemRailProps {
 const commandKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl '
 
 export function AgentSystemRail({
+  todayActive = false,
+  onToday,
+  todayCount = 0,
   businessKind,
   onBusinessCases,
   onBusinessPeople,
@@ -30,6 +38,12 @@ export function AgentSystemRail({
 }: AgentSystemRailProps) {
   const zh = useUiLocale() === 'zh-CN'
   const t = localeText(zh)
+  // While 今天 is the page, no business section is current.
+  const caseActive = businessKind === 'case' && !followActive && !todayActive
+  const personActive = businessKind === 'person' && !followActive && !todayActive
+  const followCurrent = Boolean(followActive) && !todayActive
+  // ⌘1… follow the rail order: 今天, 案件, 人员, 跟进, Agent.
+  const railCount = 2 + (onToday ? 1 : 0) + (onFollowUps ? 1 : 0) + 1
 
   return (
     <aside aria-label={t('系统导航', 'システムナビゲーション')} className="agent-system-rail">
@@ -37,10 +51,26 @@ export function AgentSystemRail({
         SES
       </strong>
       <nav className="hr-business-nav">
+        {onToday ? (
+          <button
+            type="button"
+            aria-current={todayActive ? 'page' : undefined}
+            className={todayActive ? 'is-active' : ''}
+            onClick={onToday}
+          >
+            <Icon name="home" size={21} />
+            <span>{t('今天', '今日')}</span>
+            {todayCount > 0 ? (
+              <span aria-label={t(`${todayCount} 件今天要跟进`, `今日の対応 ${todayCount} 件`)} className="agent-system-rail-badge">
+                {todayCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         <button
           type="button"
-          aria-current={businessKind === 'case' && !followActive ? 'page' : undefined}
-          className={businessKind === 'case' && !followActive ? 'is-active' : ''}
+          aria-current={caseActive ? 'page' : undefined}
+          className={caseActive ? 'is-active' : ''}
           onClick={onBusinessCases}
         >
           <Icon name="briefcase" size={21} />
@@ -53,8 +83,8 @@ export function AgentSystemRail({
         </button>
         <button
           type="button"
-          aria-current={businessKind === 'person' && !followActive ? 'page' : undefined}
-          className={businessKind === 'person' && !followActive ? 'is-active' : ''}
+          aria-current={personActive ? 'page' : undefined}
+          className={personActive ? 'is-active' : ''}
           onClick={onBusinessPeople}
         >
           <Icon name="users" size={21} />
@@ -63,8 +93,8 @@ export function AgentSystemRail({
         {onFollowUps ? (
           <button
             type="button"
-            aria-current={followActive ? 'page' : undefined}
-            className={followActive ? 'is-active' : ''}
+            aria-current={followCurrent ? 'page' : undefined}
+            className={followCurrent ? 'is-active' : ''}
             onClick={onFollowUps}
           >
             <Icon name="clock" size={21} />
@@ -82,7 +112,10 @@ export function AgentSystemRail({
           aria-label={t('命令', 'コマンド')}
           className="agent-system-rail-command"
           onClick={onCommandPalette}
-          title={t(`命令（${commandKey}K；${commandKey}1–4 切换）`, `コマンド（${commandKey}K、${commandKey}1–4 で切替）`)}
+          title={t(
+            `命令（${commandKey}K；${commandKey}1–${railCount} 切换）`,
+            `コマンド（${commandKey}K、${commandKey}1–${railCount} で切替）`
+          )}
           type="button"
         >
           <kbd>{commandKey}K</kbd>

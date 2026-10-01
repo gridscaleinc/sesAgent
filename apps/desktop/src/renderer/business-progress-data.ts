@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { businessProgressStep, type BusinessFollowUp } from '@shared'
+import { businessProgressStep, isInactiveProgressStage, type BusinessFollowUp } from '@shared'
 import { localeText } from './i18n'
 
 export const progressPairKey = (row: { documentId: string; reviewId: string }) => `${row.documentId}:${row.reviewId}`
@@ -17,7 +17,7 @@ export function progressIndexes(rows: BusinessFollowUp[]) {
   return { person, case: cases, pairs }
 }
 export const isActiveProgress = (row: BusinessFollowUp) =>
-  !['started', 'closed', 'paused'].includes(row.progress?.stage ?? (row.status === 'closed' ? 'closed' : 'coordinating'))
+  !isInactiveProgressStage(row.progress?.stage ?? (row.status === 'closed' ? 'closed' : 'coordinating'))
 export function nextProgressAppointment(rows: BusinessFollowUp[], now: Date) {
   return rows
     .filter((row) => {
@@ -62,7 +62,9 @@ export function progressPresentation(row: BusinessFollowUp, now: Date, zh: boole
 }
 export function progressSummary(rows: BusinessFollowUp[], kind: 'person' | 'case', now: Date, zh: boolean) {
   const active = rows.filter(isActiveProgress),
-    started = rows.filter((row) => row.progress?.stage === 'started')
+    started = rows.filter((row) => row.progress?.stage === 'started'),
+    // Paused is waiting, not over: shown on its own, never as 历史跟进.
+    paused = rows.filter((row) => row.progress?.stage === 'paused')
   const t = localeText(zh)
   if (!rows.length) return kind === 'person' ? t('暂无跟进案件', '対応中の案件はありません') : t('暂无跟进人员', '対応中の要員はいません')
   const counts = new Map<string, number>()
@@ -83,7 +85,8 @@ export function progressSummary(rows: BusinessFollowUp[], kind: 'person' | 'case
     active.length ? t(`跟进中 ${active.length} ${unit}`, `対応中 ${active.length} ${unit}`) : '',
     ...[...counts].map(([label, count]) => `${label} ${count}`),
     started.length ? t(`已进场 ${started.length} ${unit}`, `参画済み ${started.length} ${unit}`) : '',
-    !active.length && !started.length ? t(`历史跟进 ${rows.length}`, `過去の対応 ${rows.length}`) : ''
+    paused.length ? t(`已暂停 ${paused.length}`, `保留中 ${paused.length}`) : '',
+    !active.length && !started.length && !paused.length ? t(`历史跟进 ${rows.length}`, `過去の対応 ${rows.length}`) : ''
   ]
     .filter(Boolean)
     .join(' · ')

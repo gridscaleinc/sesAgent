@@ -5,7 +5,9 @@ import {
   recordCandidateInterviewDecisionInputSchema,
   saveCandidateInterviewNotesInputSchema,
   saveCandidateInterviewPreparationInputSchema,
-  saveCandidateInterviewScheduleInputSchema
+  saveCandidateInterviewScheduleInputSchema,
+  scheduleClash,
+  scheduleConflictText
 } from '@shared'
 import {
   type CandidateInterviewSnapshot,
@@ -173,6 +175,29 @@ export class CandidateInterviewStore extends DomainStore {
     return this.candidateInterviewFromRow(saved)
   }
 
+  /**
+   * The candidate called off a booked interview: it goes back to being arranged, with no time held. The record stays,
+   * and no result is invented for it. Interviews on a case's 跟进 are cancelled there.
+   */
+  cancelCandidateInterviewSchedule(
+    input: { interviewId: string; sourceDocumentId: string },
+    updatedBy: string,
+    now = new Date()
+  ): CandidateInterviewSnapshot {
+    const current = this.getCandidateInterviewRow(input.sourceDocumentId, input.interviewId)
+    if (!current) throw new Error('面试记录不存在或已删除。 / 面談記録が見つかりません。')
+    if (current.business_followup_id) throw new Error('请从对应案件的跟进记录取消面试。 / 対応記録から取り消してください。')
+    const startedEmpty = current.stage === 'interviewing' && !current.interview_notes?.trim()
+    if (current.decision || !(['scheduled', 'prepared'].includes(current.stage) || startedEmpty) || !current.scheduled_at)
+      throw new Error('只有已预约、尚未开始的面试可以取消。 / 予約済みで開始前の面談のみ取り消せます。')
+    this.database
+      .prepare(
+        "UPDATE candidate_interview_sessions SET stage = 'contacting', scheduled_at = NULL, updated_at = ?, updated_by = ? WHERE id = ?"
+      )
+      .run(now.toISOString(), updatedBy, current.id)
+    return this.candidateInterviewFromRow(this.getCandidateInterviewRow(input.sourceDocumentId, current.id)!)
+  }
+
   saveCandidateInterviewSchedule(
     input: SaveCandidateInterviewScheduleInput,
     updatedBy: string,
@@ -191,12 +216,14 @@ export class CandidateInterviewStore extends DomainStore {
           "SELECT source_document_id FROM candidate_records WHERE source_document_id = ? AND record_status = 'active'"
         )
         .get(validated.sourceDocumentId)
-      if (!activeCandidate) throw new Error('Only an active imported candidate can enter a recruiting interview.')
+      if (!activeCandidate)
+        throw new Error('这个人员已删除或不可用，不能安排招聘面试。 / この要員は削除済みまたは利用できないため、採用面談を設定できません。')
     } else {
       const eligibleMembership = this.stores.candidates
         .listEligibleTalentProfiles()
         .some((profile) => profile.sourceDocumentId === validated.sourceDocumentId)
-      if (!eligibleMembership) throw new Error('Only eligible talent-pool members can enter a client interview.')
+      if (!eligibleMembership)
+        throw new Error('这个人员当前不在可安排的人员中，不能安排客户面试。 / この要員は現在手配できないため、顧客面談を設定できません。')
     }
     let current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId, kind)
     if (!current && validated.roundNumber) {
@@ -209,9 +236,32 @@ export class CandidateInterviewStore extends DomainStore {
           .get(validated.sourceDocumentId, kind, validated.roundNumber) ?? null
     }
     if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
-    if (current?.decision) throw new Error('A final interview decision is already recorded. Create a follow-up round instead.')
-    if (current && !['new', 'contacting', 'scheduled', 'prepared'].includes(current.stage)) {
-      throw new Error('An interview already started or is awaiting a decision, so its schedule is locked.')
+    // A decided round is not rebooked (checked before the time, so HR is not first asked to 「仍然保存」 for nothing);
+    // only 未到场 can be booked again for the same round.
+    const rebookingNoShow = current?.decision === 'no-show'
+    if (current?.decision && !rebookingNoShow)
+      throw new Error(
+        '这一轮已经记录结论，不能再改期；需要再面一次请安排复试，结论有误请「更正结论」。 / この回は結論が記録済みのため日程変更できません。再度面談する場合は再面談を設定し、結論の誤りは「結論を訂正」を使ってください。'
+      )
+    // The same time rule as 跟进: the same person or interviewer already booked then, unless HR saves anyway.
+    if (!validated.allowConflict) {
+      const clash = scheduleClash(
+        {
+          id: current?.id ?? null,
+          sourceDocumentId: validated.sourceDocumentId,
+          scheduledAt: validated.scheduledAt,
+          durationMinutes: validated.durationMinutes,
+          interviewer: validated.interviewer || null
+        },
+        this.listCandidateInterviews(),
+        this.stores.businessProgress.list()
+      )
+      if (clash) throw new Error(scheduleConflictText(clash.scheduledAt!))
+    }
+    // Opened but nothing recorded yet (the candidate did not join): the time can still move.
+    const startedEmpty = current?.stage === 'interviewing' && !current.interview_notes?.trim()
+    if (current && !rebookingNoShow && !['new', 'contacting', 'scheduled', 'prepared'].includes(current.stage) && !startedEmpty) {
+      throw new Error('面试已经开始记录或在等结论，不能再改期。 / 面談の記録が始まっているか結論待ちのため、日程は変更できません。')
     }
     const timestamp = now.toISOString()
     const id = current?.id ?? randomUUID()
@@ -249,11 +299,18 @@ export class CandidateInterviewStore extends DomainStore {
         timestamp,
         updatedBy
       )
+    // 未到场 booked again: the same round takes place later, so its earlier 未到场 is no longer its result.
+    if (rebookingNoShow)
+      this.database
+        .prepare(
+          'UPDATE candidate_interview_sessions SET decision = NULL, decision_reason = NULL, decided_at = NULL, decided_by = NULL WHERE id = ?'
+        )
+        .run(id)
     if (kind === 'recruiting') {
       this.database
         .prepare(
           `UPDATE candidate_records SET recruiting_status = 'recruiting', updated_at = ?
-         WHERE source_document_id = ? AND recruiting_status IN ('ready-for-recruiting', 'on-hold')`
+         WHERE source_document_id = ? AND recruiting_status IN ('ready-for-recruiting', 'on-hold', 'no-show')`
         )
         .run(timestamp, validated.sourceDocumentId)
     }
@@ -320,7 +377,9 @@ export class CandidateInterviewStore extends DomainStore {
     if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
     if (!current) throw new Error('Interview session was not found.')
     if (current.decision)
-      throw new Error('A final interview decision is already recorded. Reopen the candidate before editing interview notes.')
+      throw new Error(
+        '这一轮已经记录结论，面试记录不能再修改；如结论有误，请使用「更正结论」。 / この回は結論が記録済みのため面談記録は編集できません。結論が誤っている場合は「結論を訂正」を使ってください。'
+      )
     if (!['prepared', 'interviewing'].includes(current.stage)) {
       throw new Error('Interview notes can only be edited while the interview is in progress.')
     }
@@ -378,9 +437,104 @@ export class CandidateInterviewStore extends DomainStore {
     const current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId)
     if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
     if (!current) throw new Error('Interview session was not found.')
-    if (current.stage !== 'awaiting-decision') {
-      throw new Error('Complete the interview record before recording a decision.')
+    // 候选人撤回 / 未到场 / 暂缓 can close a round at any point before its result, without inventing a time or notes;
+    // 通过 / 不通过 / 复试 judge an interview that took place, so they wait for its record.
+    const closingWithoutInterview =
+      ['withdrawn', 'no-show', 'on-hold'].includes(validated.decision) &&
+      ['new', 'contacting', 'scheduled', 'prepared', 'interviewing', 'awaiting-decision'].includes(current.stage) &&
+      !current.decision
+    if (current.stage !== 'awaiting-decision' && !closingWithoutInterview) {
+      throw new Error(
+        '请先完成面试记录，再记录通过、不通过或复试；候选人撤回、未到场或暂缓可以直接记录。 / 通過・見送り・再面談は面談記録の後に記録してください。辞退・欠席・保留はそのまま記録できます。'
+      )
     }
+    return this.writeDecision(current, validated, decidedBy, now)
+  }
+
+  /**
+   * A next round created by mistake (复试 chosen in error) and never booked or recorded is removed, so the round
+   * before it can have its result corrected. Anything already booked, prepared or recorded stays.
+   */
+  deleteUnbookedCandidateInterviewRound(input: { interviewId: string; sourceDocumentId: string }): void {
+    const current = this.getCandidateInterviewRow(input.sourceDocumentId, input.interviewId)
+    if (!current) throw new Error('面试记录不存在或已删除。 / 面談記録が見つかりません。')
+    if (current.business_followup_id) throw new Error('请从对应案件的跟进记录处理。 / 対応記録から操作してください。')
+    const plan = JSON.parse(current.question_plan_json || '[]') as Array<{ source?: string }>
+    if (
+      !current.parent_interview_id ||
+      current.decision ||
+      current.scheduled_at ||
+      current.interview_notes?.trim() ||
+      !['new', 'contacting'].includes(current.stage) ||
+      plan.some((question) => question.source !== 'inherited')
+    )
+      throw new Error('只有尚未预约、没有记录的下一轮可以删除。 / 未予約で記録のない次回面談のみ削除できます。')
+    if (
+      this.database
+        .prepare<[string], { id: string }>('SELECT id FROM candidate_interview_sessions WHERE parent_interview_id = ? LIMIT 1')
+        .get(current.id)
+    )
+      throw new Error('这一轮之后还有面试，不能删除。 / この回の後にも面談があるため削除できません。')
+    this.database.prepare('DELETE FROM candidate_interview_sessions WHERE id = ?').run(current.id)
+  }
+
+  /**
+   * 更正结论: a decision recorded by mistake is replaced with a reason. The earlier one stays readable in the decision
+   * reason; talent-pool admission follows the new decision (admitted by this interview → removed when it no longer
+   * passes). A 复试 already created from this round must be dealt with first.
+   */
+  correctCandidateInterviewDecision(
+    input: RecordCandidateInterviewDecisionInput & { correctionReason: string },
+    decidedBy: string,
+    now = new Date()
+  ): CandidateInterviewSnapshot {
+    const validated = recordCandidateInterviewDecisionInputSchema.parse(input)
+    const correctionReason = input.correctionReason.trim()
+    if (correctionReason.length < 2) throw new Error('请填写更正原因。 / 訂正の理由を入力してください。')
+    this.assertCandidateInterviewSubject(validated.sourceDocumentId)
+    const current = this.getCandidateInterviewRow(validated.sourceDocumentId, validated.interviewId)
+    if (current?.business_followup_id) throw new Error('请从对应案件的跟进记录修改面试。')
+    if (!current) throw new Error('Interview session was not found.')
+    if (!current.decision) throw new Error('这一轮还没有结论，请直接记录结论。 / この回はまだ結論がありません。結論を記録してください。')
+    if (current.decision === validated.decision) throw new Error('新结论与原结论相同。 / 新しい結論が元の結論と同じです。')
+    const child = this.database
+      .prepare<[string], { id: string }>('SELECT id FROM candidate_interview_sessions WHERE parent_interview_id = ? LIMIT 1')
+      .get(current.id)
+    if (child)
+      throw new Error(
+        '这一轮之后已经建了下一轮面试，不能再更正结论；请在下一轮里继续处理。 / この回の次の面談が作成済みのため、結論は訂正できません。次の回で対応してください。'
+      )
+    const labels: Record<string, string> = {
+      passed: '通过 / 通過',
+      'next-round': '复试 / 再面談',
+      failed: '不通过 / 見送り',
+      'no-show': '未到场 / 欠席',
+      withdrawn: '候选人撤回 / 辞退',
+      'on-hold': '暂缓 / 保留'
+    }
+    const reason = `${validated.decisionReason}\n（更正：原结论「${labels[current.decision] ?? current.decision}」— ${current.decision_reason ?? ''}；更正原因：${correctionReason}）`
+    const result = this.writeDecision(current, { ...validated, decisionReason: reason.slice(0, 1_500) }, decidedBy, now)
+    // Admitted by this interview and no longer passed: out of the matching pool again.
+    if (current.kind === 'recruiting' && current.decision === 'passed' && validated.decision !== 'passed')
+      this.database
+        .prepare(
+          "UPDATE talent_pool_memberships SET status = 'removed', reason = ?, updated_at = ? WHERE source_document_id = ? AND admitted_interview_id = ?"
+        )
+        .run(correctionReason, now.toISOString(), validated.sourceDocumentId, current.id)
+    return result
+  }
+
+  private writeDecision(
+    current: CandidateInterviewRow,
+    validated: {
+      interviewId: string
+      sourceDocumentId: string
+      decision: RecordCandidateInterviewDecisionInput['decision']
+      decisionReason: string
+    },
+    decidedBy: string,
+    now: Date
+  ): CandidateInterviewSnapshot {
     const timestamp = now.toISOString()
     const stage =
       validated.decision === 'passed'

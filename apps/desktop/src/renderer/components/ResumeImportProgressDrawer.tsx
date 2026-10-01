@@ -6,7 +6,8 @@ import './resume-import-progress.css'
 export type ResumeImportProgress = {
   phase: 'choosing' | 'creating' | 'parsing' | 'completed' | 'partial-failed' | 'error'
   taskId: string | null
-  files: Array<{ token: string; name: string; status: 'queued' | 'parsing' | 'success' | 'error'; error: string | null }>
+  /** 'skipped': the person was already in the system (该人员已入库); the import of that file was given up. */
+  files: Array<{ token: string; name: string; status: 'queued' | 'parsing' | 'success' | 'skipped' | 'error'; error: string | null }>
   error: string | null
 }
 
@@ -51,12 +52,13 @@ export function ResumeImportProgressDrawer({
             ? t('部分文件未能导入', '一部のファイルを取り込めませんでした')
             : progress.phase === 'error'
               ? t('简历导入未完成', '履歴書取込を完了できませんでした')
-              : t('人员资料已导入', '要員情報を取り込みました')
+              : !succeeded.length && progress.files.some((file) => file.status === 'skipped')
+                ? t('这些人员已入库，未重复导入', 'これらの要員は登録済みのため、取り込んでいません')
+                : t('人员资料已导入', '要員情報を取り込みました')
   return (
     <aside aria-label={t('简历导入进度', '履歴書取込の進捗')} className="resume-import-progress-drawer" role="dialog">
       <header>
         <div>
-          <span className="eyebrow">LOCAL RESUME IMPORT</span>
           <h2>{title}</h2>
           <p>
             {t(
@@ -83,7 +85,10 @@ export function ResumeImportProgressDrawer({
       <ol>
         {progress.files.map((file) => (
           <li className={`is-${file.status}`} key={file.token}>
-            <Icon name={file.status === 'success' ? 'check' : file.status === 'error' ? 'alert' : 'file'} size={16} />
+            <Icon
+              name={file.status === 'success' || file.status === 'skipped' ? 'check' : file.status === 'error' ? 'alert' : 'file'}
+              size={16}
+            />
             <div>
               <strong>{file.name}</strong>
               <small>
@@ -93,7 +98,9 @@ export function ResumeImportProgressDrawer({
                     ? t('正在解析', '解析中')
                     : file.status === 'success'
                       ? t('已导入', '取込済み')
-                      : (file.error ?? t('解析失败', '解析に失敗しました'))}
+                      : file.status === 'skipped'
+                        ? (file.error ?? t('已跳过（已入库）', 'スキップ（登録済み）'))
+                        : (file.error ?? t('解析失败', '解析に失敗しました'))}
               </small>
             </div>
             {!parsing && !single && file.status === 'success' && (onFindCases || onOpenPerson) ? (

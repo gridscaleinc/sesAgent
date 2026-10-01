@@ -54,6 +54,8 @@ export interface AgentChatModelDefinition {
   endpoint: 'responses' | 'chat-completions'
   /** Descriptive only, for the model pickers: fast = quick and cheap, strongest = best but slow and expensive. */
   tier?: AgentChatModelTier
+  /** Listed but not yet offered by the AI gateway (no price set): shown greyed out and never chosen. */
+  unavailable?: true
 }
 
 export type AgentChatModelTier = 'fast' | 'balanced' | 'strong' | 'strongest'
@@ -108,7 +110,9 @@ const defaultAgentChatModels: AgentChatModelDefinition[] = [
     maxOutputTokens: 1_200,
     provider: 'openai',
     endpoint: 'responses',
-    tier: 'strong'
+    tier: 'strong',
+    // The AI gateway has no price for it yet (PROCESSING_TIER_PRICE_MISSING).
+    unavailable: true
   },
   {
     key: 'gpt-6.1-sol-pro',
@@ -117,7 +121,8 @@ const defaultAgentChatModels: AgentChatModelDefinition[] = [
     maxOutputTokens: 1_200,
     provider: 'openai',
     endpoint: 'responses',
-    tier: 'strongest'
+    tier: 'strongest',
+    unavailable: true
   },
   {
     key: 'gpt-6-sol',
@@ -214,6 +219,7 @@ export interface AgentJobCaseRecord {
 export interface AgentCandidateMatchRecord {
   candidateProfileId: string
   sourceDocumentId?: string
+  jobCaseId?: string
   runId: string
   resultId: string
   resultHash: string
@@ -266,6 +272,8 @@ export interface AgentResumeImportOutput {
     facts?: AgentCandidateDraftFacts
   }>
   failed: Array<{ name: string; code: string }>
+  /** People already in the system (该人员已入库): not imported again; the existing record is meant instead. */
+  alreadyImported?: Array<{ name: string; existingDocumentId: string }>
 }
 
 export interface AgentCandidateDraftReadOutput {
@@ -848,6 +856,7 @@ function candidateCard(record: AgentCandidateMatchRecord, ordinal: number): Agen
     reference: typedReference('match-result', record.resultId, record.anonymousLabel, null, record.resultHash, ordinal),
     candidateProfileId: record.candidateProfileId,
     ...(record.sourceDocumentId ? { sourceDocumentId: record.sourceDocumentId } : {}),
+    ...(record.jobCaseId ? { jobCaseId: record.jobCaseId } : {}),
     runId: record.runId,
     rank: record.rank,
     anonymousLabel: record.anonymousLabel,
@@ -1599,10 +1608,15 @@ export class LocalAgentUseCase {
           .flatMap((block) => block.imported)
           .map((item) => ({ anonymousLabel: item.label, sourceDocumentId: item.documentId }))
         const registered = this.port.listConversationImports?.(input.conversationId) ?? []
+        // Someone imported here and deleted since is no longer anyone to book.
+        const schedulable = this.port.listSchedulableCandidates?.()
+        const stillThere = schedulable ? new Set(schedulable.map((item) => item.sourceDocumentId)) : null
         const conversationImports = [...blockImports, ...registered].filter(
-          (item, index, all) => all.findIndex((other) => other.sourceDocumentId === item.sourceDocumentId) === index
+          (item, index, all) =>
+            all.findIndex((other) => other.sourceDocumentId === item.sourceDocumentId) === index &&
+            (!stillThere || stillThere.has(item.sourceDocumentId))
         )
-        const scope = conversationImports.length > 0 ? conversationImports : (this.port.listSchedulableCandidates?.() ?? [])
+        const scope = conversationImports.length > 0 ? conversationImports : (schedulable ?? [])
 
         let candidate: { anonymousLabel: string; sourceDocumentId: string } | null = null
         if (conversationImports.length === 0 && previousState.lastMatchRunId) {
@@ -1681,16 +1695,44 @@ export class LocalAgentUseCase {
           }
           return save(assistantMessage(prompt, [clarification], turnId), previousState, 'clarifying', null, null)
         }
+        // A client interview is booked on a case's 跟进: the case being discussed (matched, opened or shown) is required.
+        const kind = args.kind ?? 'recruiting'
+        let jobCaseId: string | null = null
+        if (kind === 'client') {
+          // Only a case the operator chose (matched, opened or shown beside the conversation): never the lone active case
+          // picked by default, since the interview would quietly land on it.
+          const records = this.port.listActiveJobCases?.() ?? []
+          const workspace = this.workspaceJobCase(input)
+          const chosen =
+            input.selectedJobCaseRef ?? previousState.selectedJobCaseRef ?? (workspace ? jobCaseCard(workspace, 1).reference : null)
+          const canonical = chosen ? canonicalJobCaseReference(chosen, records) : null
+          if (!canonical) {
+            const prompt = textFor(
+              locale,
+              '顧客面談は案件に紐づけて登録します。先に対象の案件を開くか検索し、その後で面談日時をお知らせください。',
+              '客户面试要关联到案件。请先打开或搜索对应的案件，再告诉我面试时间。'
+            )
+            const clarification: AiConversationBlock = {
+              type: 'clarification',
+              code: 'INTERVIEW_DETAILS_REQUIRED',
+              prompt,
+              options: records.slice(0, 20).map((record, index) => jobCaseCard(record, index + 1).reference)
+            }
+            return save(assistantMessage(prompt, [clarification], turnId), previousState, 'clarifying', null, null)
+          }
+          jobCaseId = canonical.objectId
+        }
         const tool = await this.port.executeTool(
           'candidate.interview.schedule.local',
           {
             sourceDocumentId: candidate.sourceDocumentId,
+            ...(jobCaseId ? { jobCaseId } : {}),
             candidateLabel: candidate.anonymousLabel,
             scheduledAt: scheduledAt!,
             durationMinutes: args.durationMinutes,
             meetingMethod: method,
             ...(localMeetingLink.status === 'resolved' ? { meetingUrl: localMeetingLink.link.url } : {}),
-            kind: args.kind ?? 'recruiting',
+            kind,
             ...(args.note
               ? {
                   contactNote: args.note
@@ -1705,11 +1747,18 @@ export class LocalAgentUseCase {
         if (tool.toolName !== 'candidate.interview.schedule.local') {
           throw new AgentExecutionError('TOOL_RESULT_INVALID', '面談登録结果无效。')
         }
-        const content = textFor(
-          locale,
-          `${tool.output.candidateLabel} の面談を登録しました。面談日程から確認・変更できます。`,
-          `${tool.output.candidateLabel} 的面试已经登记，可以在面试日程中查看或修改。`
-        )
+        const content =
+          kind === 'client'
+            ? textFor(
+                locale,
+                `${tool.output.candidateLabel} の顧客面談を案件の対応記録に登録しました。面談日程で確認でき、変更は対応記録から行えます。`,
+                `${tool.output.candidateLabel} 的客户面试已登记到该案件的跟进中，可以在面试日程中查看，修改请在跟进中进行。`
+              )
+            : textFor(
+                locale,
+                `${tool.output.candidateLabel} の面談を登録しました。面談日程から確認・変更できます。`,
+                `${tool.output.candidateLabel} 的面试已经登记，可以在面试日程中查看或修改。`
+              )
         return save(
           assistantMessage(
             content,
@@ -1988,14 +2037,28 @@ export class LocalAgentUseCase {
         )
         if (tool.toolName !== 'resume.analyze.local') throw new AgentExecutionError('TOOL_RESULT_INVALID', '履歴書取込结果无效。')
         const { imported, failed } = tool.output
+        const known = tool.output.alreadyImported?.length ?? 0
+        const knownNote = known
+          ? textFor(
+              locale,
+              `${known}件は登録済みの要員のため、重複して取り込んでいません。`,
+              `另有 ${known} 份简历的人员已入库，未重复导入。`
+            )
+          : ''
         const content =
           imported.length > 0
             ? textFor(
                 locale,
-                `${imported.length}件の履歴書（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}）を端末内に取り込み、内容をこの会話に追加しました。このまま履歴書について質問できます。${failed.length > 0 ? `${failed.length}件は取り込めませんでした。` : ''}`,
-                `已在本机导入 ${imported.length} 份简历（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}），并将资料加入当前会话。现在可以直接针对这些简历继续提问。${failed.length > 0 ? `另有 ${failed.length} 份未能导入。` : ''}`
+                `${imported.length}件の履歴書（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}）を端末内に取り込み、内容をこの会話に追加しました。このまま履歴書について質問できます。${failed.length > 0 ? `${failed.length}件は取り込めませんでした。` : ''}${knownNote}`,
+                `已在本机导入 ${imported.length} 份简历（${imported.map((_file, index) => `RESUME_${index + 1}`).join('、')}），并将资料加入当前会话。现在可以直接针对这些简历继续提问。${failed.length > 0 ? `另有 ${failed.length} 份未能导入。` : ''}${knownNote}`
               )
-            : textFor(locale, '添付された履歴書を取り込めませんでした。', '附件中的简历未能导入。')
+            : known && !failed.length
+              ? textFor(
+                  locale,
+                  '添付された履歴書の要員はすべて登録済みのため、重複して取り込んでいません。既存の要員情報をご利用ください。',
+                  '附件中简历的人员都已入库，未重复导入；请直接使用已有的人员资料。'
+                )
+              : `${textFor(locale, '添付された履歴書を取り込めませんでした。', '附件中的简历未能导入。')}${knownNote}`
         const importBlock: AiConversationBlock = {
           type: 'resume-import',
           imported: imported.map((file, index) => ({
@@ -2019,7 +2082,7 @@ export class LocalAgentUseCase {
         return save(
           assistant,
           previousState,
-          imported.length > 0 ? 'completed' : 'failed',
+          imported.length > 0 || (known > 0 && !failed.length) ? 'completed' : 'failed',
           'resume.analyze.local',
           tool.actionRunId ?? null
         )

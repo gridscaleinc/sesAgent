@@ -135,35 +135,90 @@ export function BusinessObjectDeleteButton({
                 }}
               >
                 <h3>{kind === 'case' ? t('删除案件', '案件を削除') : t('删除人员', '要員を削除')}</h3>
-                <p>
-                  <strong>{title}</strong>
+                <p className="business-delete-target">{title}</p>
+                <p className="business-delete-warning">
+                  {t('将永久删除本地资料及其关联记录，无法恢复。', 'ローカル資料と関連記録を完全に削除します。元に戻せません。')}
                 </p>
-                <p>{t('将永久删除本地资料及其关联记录，无法恢复。', 'ローカル資料と関連記録を完全に削除します。元に戻せません。')}</p>
                 {preview ? (
-                  <ul>
-                    <li>
-                      {t('资料版本', '資料の版')}：
-                      {'caseVersions' in preview.counts ? preview.counts.caseVersions : preview.counts.profileVersions}
-                    </li>
-                    <li>
-                      {t('跟进记录', '対応記録')}：{preview.counts.businessFollowUps ?? 0}
-                    </li>
-                    <li>
-                      {t('关联任务', '関連タスク')}：{preview.counts.taskRecords}
-                    </li>
-                    <li>
-                      {t('会话引用', '会話参照')}：{preview.counts.agentReferences.messages}
-                    </li>
-                  </ul>
+                  <dl className="business-delete-impact">
+                    <div>
+                      <dt>{t('资料版本', '資料の版')}</dt>
+                      <dd>{'caseVersions' in preview.counts ? preview.counts.caseVersions : preview.counts.profileVersions}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('跟进记录', '対応記録')}</dt>
+                      <dd>{preview.counts.businessFollowUps ?? 0}</dd>
+                    </div>
+                    {'endedPlacements' in preview.counts && preview.counts.endedPlacements ? (
+                      <div>
+                        <dt>{t('其中已退场记录', 'うち退場済みの記録')}</dt>
+                        <dd>{preview.counts.endedPlacements}</dd>
+                      </div>
+                    ) : null}
+                    {'introductionDrafts' in preview.counts && preview.counts.introductionDrafts ? (
+                      <div>
+                        <dt>{t('人员介绍草稿', '要員紹介の下書き')}</dt>
+                        <dd>{preview.counts.introductionDrafts}</dd>
+                      </div>
+                    ) : null}
+                    {'caseVersions' in preview.counts
+                      ? (
+                          [
+                            ['caseBroadcastCopies', t('群发记录', '配信記録')],
+                            ['caseIntroductionDrafts', t('案件介绍草稿', '案件紹介の下書き')],
+                            ['recommendationPoints', t('推荐要点', '推薦ポイント')],
+                            ['matchingOpportunities', t('匹配机会', 'マッチング機会')],
+                            ['requirementDecisions', t('要求判定', '要件の判断')],
+                            ['questionDrafts', t('面试问题草稿', '面談質問の下書き')],
+                            ['personAssessments', t('人员评估', '要員評価')]
+                          ] as const
+                        ).map(([key, label]) => {
+                          const value = (preview.counts as Record<string, unknown>)[key]
+                          return typeof value === 'number' && value > 0 ? (
+                            <div key={key}>
+                              <dt>{label}</dt>
+                              <dd>{value}</dd>
+                            </div>
+                          ) : null
+                        })
+                      : null}
+                    <div>
+                      <dt>{t('关联任务', '関連タスク')}</dt>
+                      <dd>{preview.counts.taskRecords}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('会话引用', '会話参照')}</dt>
+                      <dd>{preview.counts.agentReferences.messages}</dd>
+                    </div>
+                  </dl>
                 ) : !error ? (
                   <p role="status">{t('正在读取删除影响…', '削除の影響を確認中…')}</p>
                 ) : null}
+                {preview && 'activePlacements' in preview.counts && preview.counts.activePlacements ? (
+                  <p role="alert" className="business-delete-blocked">
+                    {t(
+                      kind === 'case'
+                        ? `有 ${preview.counts.activePlacements} 名人员通过这个案件处于已进场。请先在跟进中记录退场或撤销进场，再删除案件。`
+                        : '这个人员还处于已进场。请先在跟进中记录退场或撤销进场，再删除。',
+                      kind === 'case'
+                        ? `この案件で参画中の要員が ${preview.counts.activePlacements} 名います。対応記録で退場または参画取消を記録してから削除してください。`
+                        : 'この要員は参画中です。対応記録で退場または参画取消を記録してから削除してください。'
+                    )}
+                  </p>
+                ) : null}
                 {error ? <p role="alert">{error}</p> : null}
                 <div className="business-delete-actions">
-                  <button ref={cancel} disabled={busy} onClick={close} type="button">
+                  <button className="business-delete-cancel" ref={cancel} disabled={busy} onClick={close} type="button">
                     {t('取消', 'キャンセル')}
                   </button>
-                  <button className="business-delete-button" disabled={!preview || busy} onClick={() => void remove()} type="button">
+                  <button
+                    className="business-delete-confirm"
+                    disabled={
+                      !preview || busy || Boolean(preview && 'activePlacements' in preview.counts && preview.counts.activePlacements)
+                    }
+                    onClick={() => void remove()}
+                    type="button"
+                  >
                     {busy ? t('删除中…', '削除中…') : t('确认删除', '削除を確定')}
                   </button>
                 </div>

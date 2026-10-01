@@ -1,8 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { CandidateInterviewSnapshot, CandidateReviewSnapshot } from '@shared'
 import { Icon } from './Icon'
 import { localeText, useUiLocale } from '../i18n'
 import type { PipelineView } from './CandidatePipeline'
+import { useBusinessProgress } from '../business-progress-data'
+import { tokyoDateKey } from '../tokyo-calendar'
 
 type RecruitingWorkspaceProps = {
   interviews: CandidateInterviewSnapshot[]
@@ -48,6 +50,20 @@ function isOpenInterview(interview: CandidateInterviewSnapshot | null): boolean 
   return Boolean(interview && interview.stage !== 'passed' && interview.stage !== 'closed')
 }
 
+const finishedRecruitingStatuses = new Set<CandidateReviewSnapshot['recruitingStatus']>(['passed', 'rejected', 'withdrawn', 'no-show'])
+
+/**
+ * A person already in the matching pool (including one placed or paused, which
+ * suspends eligibility) or with a recruiting conclusion no longer needs resume
+ * review here; only an open recruiting interview keeps them in this queue.
+ */
+export function needsRecruitingWork(review: CandidateReviewSnapshot, interview: CandidateInterviewSnapshot | null): boolean {
+  if (review.recordStatus !== 'active' || review.inTalentLibrary === false) return false
+  if (isOpenInterview(interview)) return true
+  if (review.talentPoolStatus === 'eligible' || review.talentPoolStatus === 'suspended') return false
+  return review.status === 'awaiting-review' && !finishedRecruitingStatuses.has(review.recruitingStatus)
+}
+
 function stageLabel(interview: CandidateInterviewSnapshot | null, review: CandidateReviewSnapshot, zh: boolean): string {
   const t = localeText(zh)
 
@@ -89,6 +105,7 @@ function formatDate(value: string | null, locale: 'ja-JP' | 'zh-CN'): string {
 
   if (!value) return t('尚未预约', '未予約')
   return new Intl.DateTimeFormat(locale, {
+    timeZone: 'Asia/Tokyo',
     month: 'numeric',
     day: 'numeric',
     weekday: 'short',
@@ -104,21 +121,10 @@ function sourceLabel(fileName: string, zh: boolean): string {
   return extension ? `${t('简历', '履歴書')} · ${extension}` : t('本地简历', 'ローカル履歴書')
 }
 
-function WorkspaceHeader({
-  eyebrow,
-  title,
-  description,
-  children
-}: {
-  eyebrow: string
-  title: string
-  description: string
-  children?: ReactNode
-}) {
+function WorkspaceHeader({ title, description, children }: { title: string; description: string; children?: ReactNode }) {
   return (
     <header className="candidate-queue-header">
       <div>
-        <span>{eyebrow}</span>
         <h1>{title}</h1>
         <p>{description}</p>
       </div>
@@ -138,6 +144,30 @@ export function RecruitingInterviewWorkspace({ interviews, reviews, onImportResu
   const [query, setQuery] = useState('')
   const [stage, setStage] = useState('all')
 
+  // Someone already proposed to a case (followed, in place) is past recruiting, whatever the résumé review says.
+  const followed = useBusinessProgress()?.indexes.person
+  // Someone in place or not being offered (暂停营业) is not a recruiting task either.
+  const [offDuty, setOffDuty] = useState<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      void window.sesAgent
+        ?.getPersonnelWorkspace?.()
+        .then((workspace) => {
+          if (alive)
+            setOffDuty(
+              new Set(workspace.states.filter((row) => row.status === 'assigned' || row.status === 'paused').map((row) => row.documentId))
+            )
+        })
+        .catch(() => undefined)
+    load()
+    // A status changed elsewhere (退场, 暂停营业) shows here without reopening the page.
+    window.addEventListener('ses-business-data-changed', load)
+    return () => {
+      alive = false
+      window.removeEventListener('ses-business-data-changed', load)
+    }
+  }, [reviews])
   const rows = useMemo(
     () =>
       reviews
@@ -145,8 +175,12 @@ export function RecruitingInterviewWorkspace({ interviews, reviews, onImportResu
           review,
           interview: latestInterview(interviews, review.documentId, 'recruiting')
         }))
-        .filter(({ review, interview }) => review.status === 'awaiting-review' || isOpenInterview(interview)),
-    [interviews, reviews]
+        .filter(
+          ({ review, interview }) =>
+            needsRecruitingWork(review, interview) &&
+            (isOpenInterview(interview) || (!followed?.get(review.documentId)?.length && !offDuty.has(review.documentId)))
+        ),
+    [followed, interviews, offDuty, reviews]
   )
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase(locale)
@@ -158,10 +192,9 @@ export function RecruitingInterviewWorkspace({ interviews, reviews, onImportResu
         .some((value) => value!.toLocaleLowerCase(locale).includes(normalized))
     })
   }, [locale, query, rows, stage])
-  const today = new Date().toDateString()
-  const scheduledToday = rows.filter(
-    ({ interview }) => interview?.scheduledAt && new Date(interview.scheduledAt).toDateString() === today
-  ).length
+  // Tokyo days, as the schedule center and 今天 count them.
+  const today = tokyoDateKey(new Date().toISOString())
+  const scheduledToday = rows.filter(({ interview }) => interview?.scheduledAt && tokyoDateKey(interview.scheduledAt) === today).length
 
   return (
     <main className="candidate-queue-workspace">
@@ -170,7 +203,6 @@ export function RecruitingInterviewWorkspace({ interviews, reviews, onImportResu
           '只显示招聘面试中的人员，按下一步行动安排初面、复试和招聘结论。',
           '社内採用段階の応募者だけを表示し、一次面談・再面談・採用結論を次の行動順に進めます。'
         )}
-        eyebrow="RECRUITING INTERVIEWS"
         title={t('招聘面试', '採用面談')}
       >
         <button onClick={onImportResume} type="button">

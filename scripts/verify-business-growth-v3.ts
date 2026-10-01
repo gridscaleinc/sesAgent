@@ -152,7 +152,7 @@ async function prepare(p: Awaited<ReturnType<typeof pair>>, bank?: { id: string;
   )
 }
 try {
-  assert.equal(currentSchemaVersion, 66)
+  assert.equal(currentSchemaVersion, 67)
   repository.controlSystemExperience({ action: 'budget', dailyCallLimit: 60, expectedRevision: 0 })
   const [customer] = repository.saveCustomerIdentity({ name: 'ABC株式会社', aliases: ['ABC', '客户甲'], expectedVersion: 0 })
   const resolved = repository.resolveCustomerIdentity(' ABC ')
@@ -247,10 +247,13 @@ try {
   repository.controlMatchingOpportunity({ id: item.id, fingerprint: item.fingerprint, action: 'dismissed' })
   repository.saveMatchingOpportunities(p.reviewId, [opportunity])
   assert.equal(repository.listMatchingOpportunities().filter((o) => o.documentId === p.documentId).length, 0)
+  // New evidence with the same conclusion keeps the removal; a changed conclusion brings the pair back as new.
   repository.saveMatchingOpportunities(p.reviewId, [{ ...opportunity, fingerprint: 'b'.repeat(64) }])
+  assert.equal(repository.listMatchingOpportunities().filter((o) => o.documentId === p.documentId).length, 0)
+  repository.saveMatchingOpportunities(p.reviewId, [{ ...opportunity, fingerprint: 'c'.repeat(64), status: 'needs-confirmation' as const }])
   item = repository.listMatchingOpportunities().find((o) => o.documentId === p.documentId)!
   assert.equal(item.state, 'new')
-  assert.throws(() => repository.controlMatchingOpportunity({ id: item.id, fingerprint: 'a'.repeat(64), action: 'seen' }), /更新/)
+  assert.throws(() => repository.controlMatchingOpportunity({ id: item.id, fingerprint: 'a'.repeat(64), action: 'dismissed' }), /更新/)
   await createOpportunityDiscovery({ repository })()
   worker.stop()
   repository.close()

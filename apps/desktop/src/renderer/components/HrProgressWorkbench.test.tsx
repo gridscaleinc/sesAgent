@@ -422,7 +422,8 @@ it('shows all persisted entry terms after arrival and on reopening the record', 
     for (const value of [
       '2026-09-09',
       '2026-09-10',
-      '85万円',
+      // Shown in the UI language; the stored 「85万円」 is the tooltip.
+      '85万日元',
       '每周两天远程',
       '東京丸の内',
       '09:30',
@@ -711,4 +712,33 @@ it('pauses from the menu and resumes from the status line', async () => {
     expect(window.sesAgent.advanceBusinessProgress).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'resume' }))
   )
   await waitFor(() => expect(detail().queryByRole('status', { name: '跟进状态' })).not.toBeInTheDocument())
+})
+
+it('records 退场 with a date from a started follow-up, and offers to undo it once left', async () => {
+  const placed = row(0)
+  placed.progress = {
+    ...placed.progress!,
+    stage: 'started',
+    entry: { ...emptyProgressEntry(), plannedDate: '2026-09-09', actualDate: '2026-09-10', candidateAccepted: true, termsAgreed: true }
+  }
+  records = [placed]
+  const view = show({ target: { documentId, reviewId: cases[0]!.reviewId } })
+  await screen.findByRole('article', { name: '跟进详情' })
+  const form = within(detail().getByRole('form', { name: '记录退场' }))
+  expect(form.getByLabelText('退场日期')).toHaveAttribute('min', '2026-09-10')
+  fireEvent.change(form.getByLabelText('退场日期'), { target: { value: '2026-09-30' } })
+  fireEvent.change(form.getByLabelText('备注（选填）'), { target: { value: '契约期满' } })
+  fireEvent.click(form.getByRole('button', { name: '确认退场' }))
+  await waitFor(() =>
+    expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'leave', leftDate: '2026-09-30', reason: '契约期满' })
+    )
+  )
+  view.unmount()
+  records = [{ ...placed, progress: { ...placed.progress!, stage: 'ended', entry: { ...placed.progress!.entry, leftDate: '2026-09-30' } } }]
+  show({ target: { documentId, reviewId: cases[0]!.reviewId } })
+  await screen.findByRole('article', { name: '跟进详情' })
+  expect(detail().getByRole('region', { name: '进场记录' })).toHaveTextContent('已退场：2026-09-30')
+  expect(detail().queryByRole('form', { name: '记录退场' })).not.toBeInTheDocument()
+  expect(detail().getByText('撤销误记录的退场')).toBeInTheDocument()
 })

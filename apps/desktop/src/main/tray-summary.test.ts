@@ -8,7 +8,7 @@ import {
   type JobCaseReviewSnapshot,
   type MatchingOpportunity
 } from '@shared'
-import { buildTraySummary, isProposable, trayAiQuota, trayBadge, type TraySummaryInput } from './tray-summary'
+import { buildTodaySummary, buildTraySummary, isProposable, trayAiQuota, trayBadge, type TraySummaryInput } from './tray-summary'
 
 // Thursday 2026-10-01 10:00 in Tokyo (01:00 UTC). The Tokyo day starts at 2026-09-30T15:00Z, the week on
 // Monday 2026-09-28, i.e. 2026-09-27T15:00Z.
@@ -65,7 +65,8 @@ function review(n: number, intakeAt: string, title = `案件${n}`, lifecycle: 'a
 const feedEntry = (n: number, kind: 'case' | 'person', unseen: boolean, archived = false) =>
   ({ kind, objectId: uuid(50 + n), occurredAt: now.toISOString(), unseen, archived }) as unknown as BusinessFeedEntry
 
-const opportunity = (n: number, state: MatchingOpportunity['state']) => ({ id: uuid(200 + n), state }) as unknown as MatchingOpportunity
+const opportunity = (n: number, state: MatchingOpportunity['state']) =>
+  ({ id: uuid(200 + n), documentId: uuid(n), reviewId: uuid(50 + n), status: 'recommended', state }) as unknown as MatchingOpportunity
 
 function input(overrides: Partial<TraySummaryInput> = {}): TraySummaryInput {
   return {
@@ -75,7 +76,6 @@ function input(overrides: Partial<TraySummaryInput> = {}): TraySummaryInput {
     feed: [],
     caseReviews: [],
     opportunities: [],
-    proposablePairs: [],
     personName: () => '山田 太郎',
     ai: { state: 'ok', availableCredits: 500, reservedCredits: 0, fraction: 0.5 },
     gmail: null,
@@ -117,7 +117,7 @@ describe('buildTraySummary', () => {
       input({
         caseReviews: [review(1, '2026-09-01T00:00:00Z', 'EC決済基盤の刷新')],
         followUps: [
-          followUp(1, { stage: 'scheduled', rounds: [round(1, '2026-10-01T05:00:00Z')] }), // 14:00 today: next, due within 24h
+          followUp(1, { stage: 'scheduled', rounds: [round(1, '2026-10-01T05:00:00Z')] }), // 14:00 today: next, due today
           followUp(2, { stage: 'scheduled', rounds: [round(2, '2026-10-01T00:00:00Z', 30)] }), // 09:00 today, over: 待反馈
           followUp(3, { stage: 'scheduled', rounds: [round(1, '2026-09-30T14:30:00Z')] }), // yesterday 23:30
           followUp(4), // no progress yet: 待约面
@@ -127,13 +127,81 @@ describe('buildTraySummary', () => {
       }),
       now
     )
-    // 1 (scheduled within 24h) + 2 (feedback) + 3 (feedback) + 4 (coordinating)
+    // 1 (scheduled today) + 2 (feedback) + 3 (feedback) + 4 (coordinating)
     expect(summary.followUpsDueToday).toBe(4)
     expect(summary.interviews).toEqual({
       coordinating: 1,
       today: 2,
-      next: { at: '2026-10-01T05:00:00Z', roundNumber: 1, caseTitle: 'EC決済基盤の刷新', personName: null }
+      next: { kind: 'client', at: '2026-10-01T05:00:00Z', roundNumber: 1, caseTitle: 'EC決済基盤の刷新', personName: null }
     })
+  })
+
+  it('counts a 招聘面试 among today’s interviews, not a 待约面 follow-up’s old time, and not tomorrow’s interview as due', () => {
+    const summary = buildTraySummary(
+      input({
+        caseReviews: [review(1, '2026-09-01T00:00:00Z', 'EC決済基盤の刷新')],
+        followUps: [
+          // Back at 待约面 after a resume found its old time taken: that time is no longer booked.
+          followUp(1, { stage: 'coordinating', rounds: [round(1, '2026-10-01T05:00:00Z')] }),
+          // Tomorrow 10:00 Tokyo, within 24 hours of now but not today's work.
+          followUp(2, { stage: 'scheduled', rounds: [round(1, '2026-10-02T01:00:00Z')] })
+        ],
+        candidateInterviews: [
+          {
+            id: uuid(300),
+            kind: 'recruiting',
+            sourceDocumentId: uuid(9),
+            businessFollowUpId: null,
+            roundNumber: 1,
+            stage: 'scheduled',
+            decision: null,
+            scheduledAt: '2026-10-01T06:00:00Z',
+            durationMinutes: 45
+          },
+          {
+            id: uuid(301),
+            kind: 'recruiting',
+            sourceDocumentId: uuid(8),
+            businessFollowUpId: null,
+            roundNumber: 1,
+            stage: 'passed',
+            decision: 'passed',
+            scheduledAt: '2026-10-01T07:00:00Z',
+            durationMinutes: 45
+          }
+        ] as never
+      }),
+      now
+    )
+    // Only 1 (待约面) is due; tomorrow's interview is not.
+    expect(summary.followUpsDueToday).toBe(1)
+    // One rule for both kinds: an interview held today with its result recorded still counts; it is not 「下一场」.
+    expect(summary.interviews.today).toBe(2)
+    expect(summary.interviews.next).toEqual({ kind: 'recruiting', at: '2026-10-01T06:00:00Z', roundNumber: 1, caseTitle: '招聘面试', personName: null })
+  })
+
+  it('keeps a booked interview of a follow-up that cannot move now among today’s interviews', () => {
+    const summary = buildTraySummary(
+      input({
+        caseReviews: [review(1, '2026-09-01T00:00:00Z', 'EC決済基盤の刷新')],
+        followUps: [followUp(1, { stage: 'scheduled', rounds: [round(1, '2026-10-01T05:00:00Z')] })],
+        // The case was ended with its follow-up kept: nothing is due, but the interview still takes place today.
+        blocked: () => true
+      }),
+      now
+    )
+    expect(summary.followUpsDueToday).toBe(0)
+    expect(summary.interviews.today).toBe(1)
+    // The 今天 page lists the same interview its number counts.
+    const today = buildTodaySummary(
+      input({
+        caseReviews: [review(1, '2026-09-01T00:00:00Z', 'EC決済基盤の刷新')],
+        followUps: [followUp(1, { stage: 'scheduled', rounds: [round(1, '2026-10-01T05:00:00Z')] })],
+        blocked: () => true
+      }),
+      now
+    )
+    expect(today.lists.interviews).toHaveLength(1)
   })
 
   it('never names the person unless the operator turned names on', () => {
@@ -160,13 +228,7 @@ describe('buildTraySummary', () => {
           feedEntry(5, 'person', true)
         ],
         opportunities: [opportunity(1, 'new'), opportunity(2, 'new'), opportunity(3, 'seen'), opportunity(4, 'dismissed')],
-        followUps: [followUp(2, { stage: 'recommended' })],
-        proposablePairs: [
-          { documentId: uuid(1), reviewId: uuid(51) },
-          { documentId: uuid(1), reviewId: uuid(51) },
-          { documentId: uuid(2), reviewId: uuid(52) },
-          { documentId: uuid(3), reviewId: uuid(51) }
-        ]
+        followUps: [followUp(2, { stage: 'recommended' })]
       }),
       now
     )
@@ -240,6 +302,92 @@ describe('buildTraySummary', () => {
         now
       ).alerts
     ).toEqual(['ai-signed-out'])
+  })
+})
+
+describe('buildTodaySummary', () => {
+  const opp = (n: number, status: MatchingOpportunity['status'], score: number, state: MatchingOpportunity['state'] = 'new') =>
+    ({
+      id: uuid(200 + n),
+      documentId: uuid(n),
+      reviewId: uuid(50 + n),
+      jobCaseId: uuid(70 + n),
+      personName: `人员${n}`,
+      caseTitle: `案件${n}`,
+      score,
+      status,
+      confirm: status === 'recommended' ? [] : ['日本語ビジネス'],
+      updatedAt: now.toISOString(),
+      state
+    }) as unknown as MatchingOpportunity
+
+  it('always names people and keeps the panel numbers, whatever the menu-bar setting', () => {
+    const summary = buildTodaySummary(
+      input({
+        menuBar: { visible: true, showPersonNames: false },
+        caseReviews: [review(1, '2026-09-01T00:00:00Z', 'EC決済基盤の刷新')],
+        followUps: [followUp(1, { stage: 'scheduled', rounds: [round(1, '2026-10-01T05:00:00Z')] })]
+      }),
+      now
+    )
+    const tray = buildTraySummary(input({ menuBar: { visible: true, showPersonNames: false } }), now)
+    expect(tray).not.toHaveProperty('lists')
+    expect(summary.showPersonNames).toBe(true)
+    expect(summary.interviews.next?.personName).toBe('山田 太郎')
+    expect(summary.lists.interviews).toEqual([
+      {
+        kind: 'client',
+        followUpId: uuid(101),
+        documentId: uuid(1),
+        reviewId: uuid(51),
+        at: '2026-10-01T05:00:00Z',
+        durationMinutes: 60,
+        roundNumber: 1,
+        caseTitle: 'EC決済基盤の刷新',
+        personName: '山田 太郎'
+      }
+    ])
+  })
+
+  it('lists today’s follow-ups with their localized next step, timed ones first', () => {
+    const rows = [
+      followUp(4),
+      followUp(1, { stage: 'scheduled', rounds: [round(1, '2026-10-01T05:00:00Z')] }),
+      followUp(5, { stage: 'recommended' })
+    ]
+    const zh = buildTodaySummary(input({ followUps: rows }), now).lists.followUps
+    expect(zh.map((row) => [row.id, row.stageLabel, row.action])).toEqual([
+      [uuid(101), '1 面已预约', '查看面试安排'],
+      [uuid(104), '待约面', '安排面试']
+    ])
+    const ja = buildTodaySummary(input({ locale: 'ja-JP', followUps: rows }), now).lists.followUps
+    expect(ja[1]).toMatchObject({ stage: 'coordinating', stageLabel: '日程調整中', action: '面談を予約', personName: '山田 太郎' })
+  })
+
+  it('splits new opportunities into 可以提案 and 待确认, best first, five each', () => {
+    const opportunities = [
+      ...Array.from({ length: 7 }, (_, index) => opp(index + 1, 'recommended', 60 + index)),
+      opp(10, 'needs-confirmation', 70),
+      opp(11, 'needs-confirmation', 90),
+      opp(12, 'recommended', 99, 'seen')
+    ]
+    const { proposable, needsInfo } = buildTodaySummary(input({ opportunities }), now).lists.opportunities
+    expect(proposable.map((row) => row.score)).toEqual([66, 65, 64, 63, 62])
+    expect(needsInfo.map((row) => [row.caseTitle, row.confirm])).toEqual([
+      ['案件11', ['日本語ビジネス']],
+      ['案件10', ['日本語ビジネス']]
+    ])
+  })
+
+  it('lists unread active cases newest first, at most five', () => {
+    const feed = Array.from({ length: 7 }, (_, index) => ({
+      ...feedEntry(index + 1, 'case', index !== 0),
+      title: `案件${index + 1}`,
+      sourceAt: `2026-09-2${index + 1}T00:00:00Z`
+    })) as BusinessFeedEntry[]
+    const cases = buildTodaySummary(input({ feed }), now).lists.unseenCases
+    expect(cases.map((row) => row.title)).toEqual(['案件7', '案件6', '案件5', '案件4', '案件3'])
+    expect(cases[0]).toEqual({ reviewId: uuid(57), title: '案件7', sourceAt: '2026-09-27T00:00:00Z' })
   })
 })
 

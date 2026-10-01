@@ -338,6 +338,33 @@ describe('broadcast IPC handlers', () => {
     expect(opened.searchParams.get('subject')).toBe('【案件】Java 案件')
     expect(opened.searchParams.get('body')).toBe(body)
     expect(opened.searchParams.get('bcc')).toBeNull()
+    // Handed to the mail client counts as handed out: it is the baseline for 「有更新」 and update notices.
+    expect(deps.repository.appendCaseBroadcastCopy).toHaveBeenCalledTimes(1)
+    expect(deps.repository.appendCaseBroadcastCopy).toHaveBeenCalledWith(expect.objectContaining({ reviewId, kind: 'new', text: body }))
+  })
+
+  it('checks a text for the clipboard by the copy rules: long Chinese or Japanese text passes, an identifier does not', () => {
+    const deps = dependencies()
+    registerBroadcastHandlers(deps)
+    const long = `【案件】Java 案件\n${'業務内容の説明が続きます。'.repeat(220)}`
+    expect(
+      invoke(ipcChannels.validateCaseBroadcastMessage, {
+        reviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId: builtInBroadcastTemplate().id,
+        text: long.slice(0, 3900)
+      })
+    ).toMatchObject({ reviewId })
+    expect(() =>
+      invoke(ipcChannels.validateCaseBroadcastMessage, {
+        reviewId,
+        lang: 'ja',
+        kind: 'new',
+        templateId: builtInBroadcastTemplate().id,
+        text: '【案件】連絡先 090-1111-2222'
+      })
+    ).toThrow(/識別子/)
     expect(deps.repository.appendCaseBroadcastCopy).not.toHaveBeenCalled()
   })
 

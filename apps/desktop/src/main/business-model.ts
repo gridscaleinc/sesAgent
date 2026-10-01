@@ -12,14 +12,17 @@ export type BusinessModelSlot = ApplicationAiModelSlot
 
 type ModelContext = Pick<MainIpcContext, 'repository' | 'agentChatModelCatalog'>
 
-/** The catalog key for a slot; a missing choice, or a key the catalog no longer lists, falls back to the default model. */
+/**
+ * The catalog key for a slot; a missing choice, a key the catalog no longer lists, or a model the gateway does not
+ * offer yet falls back to the default model.
+ */
 export function businessModelKey(
   preferences: Pick<LocalApplicationPreferences, 'aiModels'> | null,
   catalog: readonly AgentChatModelDefinition[],
   slot: BusinessModelSlot
 ): string {
   const chosen = preferences?.aiModels?.[slot]
-  return chosen && catalog.some((model) => model.key === chosen) ? chosen : defaultAgentChatModelKey
+  return chosen && catalog.some((model) => model.key === chosen && !model.unavailable) ? chosen : defaultAgentChatModelKey
 }
 
 /** The model for one business AI call. Reads the saved preferences on every call, so a changed setting applies at once. */

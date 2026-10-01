@@ -30,7 +30,7 @@
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--line);
-  background: var(--surface, var(--surface));
+  background: var(--surface);
   color: inherit;
   border-radius: 8px;
   padding: 9px 11px;
@@ -106,7 +106,7 @@
   margin: 10px 0;
   padding: 8px 12px;
   background: var(--surface-faint);
-  border-left: 3px solid #9aacc4;
+  border-left: 3px solid var(--line-slate-74);
 }
 .system-experience {
   font-size: 14px;
@@ -123,19 +123,19 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 12px;
-  background: var(--surface, var(--surface));
+  background: var(--surface);
   color: inherit;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 .system-experience button:hover:not(:disabled) {
-  background: #edf3fd;
-  border-color: #94b5e8;
+  background: var(--accent-soft);
+  border-color: var(--line-blue-77);
 }
 .system-experience button:focus-visible,
 .system-experience summary:focus-visible {
-  outline: 2px solid #2d68d8;
+  outline: 2px solid var(--line-blue-54);
   outline-offset: 3px;
 }
 .system-experience .work-rule-actions {
@@ -155,7 +155,7 @@
 .experience-method {
   margin: 12px 0;
   padding: 12px;
-  background: var(--surface, var(--surface));
+  background: var(--surface);
   border-radius: 8px;
 }
 .question-bank {
@@ -184,13 +184,13 @@
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface, var(--surface));
+  background: var(--surface);
   color: inherit;
   font: inherit;
 }
 .question-bank input:focus-visible,
 .question-bank select:focus-visible {
-  outline: 2px solid #2d68d8;
+  outline: 2px solid var(--line-blue-54);
   outline-offset: 2px;
 }
 .question-bank .work-rule-card {
@@ -217,7 +217,7 @@
 .interview-evidence blockquote {
   margin: 8px 0;
   padding: 8px 12px;
-  border-left: 3px solid #9aacc4;
+  border-left: 3px solid var(--line-slate-74);
   background: var(--surface-faint);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -261,17 +261,17 @@
   display: block;
   margin-top: 4px;
   font-size: 12px;
-  color: var(--muted, var(--muted));
+  color: var(--muted);
 }
 .interview-question-list {
   display: grid;
   gap: 12px;
 }
 .interview-question-card {
-  border: 1px solid var(--line, var(--line));
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px 16px;
-  background: var(--surface, var(--surface));
+  background: var(--surface);
   display: grid;
   gap: 10px;
   min-width: 0;
@@ -289,7 +289,7 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--muted, var(--muted));
+  color: var(--muted);
 }
 .interview-dimension {
   font-size: 12px;
@@ -297,27 +297,27 @@
   padding: 2px 9px;
   border-radius: 999px;
   background: var(--line-faint);
-  color: #3b4a63;
+  color: var(--tone-blue-41);
 }
 .interview-question-card.dim-authenticity .interview-dimension {
-  background: #eff9f5;
-  color: var(--forest);
+  background: var(--tint-gray-96-3);
+  color: var(--tone-blue-46-3);
 }
 .interview-question-card.dim-core-capability .interview-dimension {
   background: var(--blue-soft);
   color: var(--blue);
 }
 .interview-question-card.dim-problem-solving .interview-dimension {
-  background: var(--amber-soft);
-  color: var(--amber);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
 }
 .interview-question-card.dim-ownership-collaboration .interview-dimension {
-  background: #f3ecfb;
-  color: #6b3fa0;
+  background: var(--tint-violet-95);
+  color: var(--tone-violet-47);
 }
 .interview-question-card.dim-case-readiness .interview-dimension {
-  background: #e6f6f9;
-  color: #0b6b7d;
+  background: var(--tint-gray-96-4);
+  color: var(--tone-blue-49);
 }
 .interview-question-card .interview-dimension.is-bank {
   background: var(--surface-faint);
@@ -329,7 +329,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--muted, var(--muted));
+  color: var(--muted);
   cursor: pointer;
 }
 .interview-switch input {
@@ -338,7 +338,7 @@
   margin: 0;
   appearance: none;
   border-radius: 999px;
-  background: #cbd2dc;
+  background: var(--tint-gray-86);
   position: relative;
   cursor: pointer;
   transition: background 0.15s;
@@ -355,7 +355,7 @@
   transition: transform 0.15s;
 }
 .interview-switch input:checked {
-  background: var(--forest);
+  background: var(--accent);
 }
 .interview-switch input:checked::after {
   transform: translateX(14px);
@@ -368,7 +368,7 @@
   margin: 0;
   font-size: 15px;
   line-height: 1.65;
-  color: var(--ink, var(--ink));
+  color: var(--ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -389,10 +389,10 @@
   line-height: 1.65;
 }
 .interview-question-card textarea.interview-question-text:hover {
-  border-color: var(--line, var(--line));
+  border-color: var(--line);
 }
 .interview-question-card textarea.interview-question-text:focus {
-  border-color: var(--forest);
+  border-color: var(--accent);
   background: var(--surface);
   outline: none;
 }
@@ -402,11 +402,11 @@
   align-items: baseline;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--ink, var(--ink));
+  color: var(--ink);
 }
 .interview-followup > span:first-child {
   flex-shrink: 0;
-  color: var(--muted, var(--muted));
+  color: var(--muted);
 }
 .interview-question-card .interview-followup input {
   flex: 1;
@@ -421,10 +421,10 @@
   background: transparent;
 }
 .interview-question-card .interview-followup input:hover {
-  border-color: var(--line, var(--line));
+  border-color: var(--line);
 }
 .interview-question-card .interview-followup input:focus {
-  border-color: var(--forest);
+  border-color: var(--accent);
   background: var(--surface);
   outline: none;
 }
@@ -442,19 +442,19 @@
 .interview-guide dt {
   flex-shrink: 0;
   font-weight: 600;
-  color: var(--green);
+  color: var(--status-ok-fg);
 }
 .interview-guide .is-warning dt {
-  color: var(--amber);
+  color: var(--status-attention-fg);
 }
 .interview-guide dd {
   margin: 0;
-  color: #3b4a63;
+  color: var(--tone-blue-41);
   overflow-wrap: anywhere;
 }
 .interview-sources {
   font-size: 12px;
-  color: var(--muted, var(--muted));
+  color: var(--muted);
 }
 .interview-sources summary {
   cursor: pointer;
@@ -469,15 +469,15 @@
   padding: 2px 8px;
   border-radius: 6px;
   background: var(--surface-faint);
-  color: #3b4a63;
+  color: var(--tone-blue-41);
   overflow-wrap: anywhere;
 }
 .interview-sources blockquote {
   margin: 6px 0 0;
   padding: 6px 10px;
-  border-left: 3px solid #b6cebd;
-  background: #fafbfc;
-  color: #3b4a63;
+  border-left: 3px solid var(--line-green-83);
+  background: var(--surface-faint);
+  color: var(--tone-blue-41);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -492,23 +492,23 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 -4px 12px rgb(16 24 40 / 8%);
+  box-shadow: 0 -4px 12px color-mix(in srgb, var(--shadow-color) 8%, transparent);
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
 }
 .interview-questions-footer small {
-  color: var(--muted, var(--muted));
+  color: var(--muted);
   font-size: 12px;
 }
 .interview-questions-footer button.is-primary {
-  background: var(--forest);
+  background: var(--accent);
   color: var(--on-accent);
-  border-color: var(--forest);
+  border-color: var(--accent);
 }
 .interview-questions-empty {
-  color: var(--muted, var(--muted));
+  color: var(--muted);
 }
 
 /* One-line request box beside an AI generate button: what the operator wants this time. */
@@ -517,14 +517,14 @@
   min-width: 0;
   box-sizing: border-box;
   padding: 7px 10px;
-  border: 1px solid var(--line, var(--line));
+  border: 1px solid var(--line);
   border-radius: 8px;
   font: inherit;
   font-size: 13px;
-  background: var(--surface, var(--surface));
+  background: var(--surface);
 }
 .ai-request-input:focus {
-  border-color: var(--forest);
+  border-color: var(--accent);
   outline: none;
 }
 .hr-intro-generation {
@@ -536,7 +536,7 @@
 .match-detail .assessment-request {
   margin: 4px 0;
   padding: 4px 8px;
-  border-left: 3px solid var(--forest);
-  background: #fafcf9;
+  border-left: 3px solid var(--accent);
+  background: var(--tint-gray-99);
   font-size: 12px;
 }

@@ -20,9 +20,13 @@ import {
   updateCandidateProfileInputSchema
 } from '@shared'
 import { assertTrustedSender, type MainIpcContext } from './context'
+import { deviceDeletionJournal } from '../deletion-journal'
 import { currentOriginalOpenRoot, prepareOriginalOpenRoot } from '../original-open-root'
 
 /** Candidate profile search, history, source documents, edits and permanent deletion. */
+/** Decrypted originals opened for viewing, per person, until their timed cleanup or the person's deletion. */
+const openedOriginals = new Map<string, string[]>()
+
 export function registerCandidateHandlers(context: MainIpcContext) {
   const { repository, fileVault, userDataPath, currentOperator, currentMatchRuntimeIdentity, searchCandidates } = context
   ipcMain.handle(ipcChannels.searchCandidateProfiles, async (event, rawInput) => {
@@ -78,13 +82,22 @@ export function registerCandidateHandlers(context: MainIpcContext) {
     const root = currentOriginalOpenRoot() ?? (await prepareOriginalOpenRoot(userDataPath))
     const temporaryDirectory = join(root, randomUUID())
     const temporaryPath = await fileVault.materializeTemporaryCopy(record, temporaryDirectory)
+    // Remembered so deleting this person also removes the decrypted copy still waiting for its 30-minute cleanup.
+    openedOriginals.set(sourceDocumentId, [...(openedOriginals.get(sourceDocumentId) ?? []), temporaryDirectory])
+    // Gone from disk (opening failed, or the 30-minute cleanup ran): no longer reported as a copy to delete.
+    const forget = () => {
+      const left = (openedOriginals.get(sourceDocumentId) ?? []).filter((directory) => directory !== temporaryDirectory)
+      if (left.length) openedOriginals.set(sourceDocumentId, left)
+      else openedOriginals.delete(sourceDocumentId)
+    }
     const error = await shell.openPath(temporaryPath)
     if (error) {
       await rm(temporaryDirectory, { recursive: true, force: true })
+      forget()
       throw new Error(`原始ファイルをシステムアプリで開けませんでした: ${error}`)
     }
     const cleanup = setTimeout(() => {
-      void rm(temporaryDirectory, { recursive: true, force: true })
+      void rm(temporaryDirectory, { recursive: true, force: true }).then(forget, () => undefined)
     }, 30 * 60_000)
     cleanup.unref()
     return { opened: true, fileName: record.name, cleanup: 'scheduled' }
@@ -124,17 +137,49 @@ export function registerCandidateHandlers(context: MainIpcContext) {
     if (!stagedFile) throw new Error('削除対象の暗号化ファイルが見つかりません。')
     const deletionId = randomUUID()
     const startedAt = new Date()
+    // Journaled before the delete (kept outside the database, so restoring an older backup deletes this person
+    // again); confirmed once the delete succeeded, dropped if it did not.
+    const journal = deviceDeletionJournal(userDataPath)
+    const journalId = await journal
+      .begin({ entityType: 'candidate', entityId: input.sourceDocumentId, deletedAt: startedAt.toISOString() })
+      .catch(() => null)
     const quarantined = await fileVault.quarantineStagedFile(stagedFile, deletionId)
     try {
       repository.deleteCandidateDatabaseData(input.sourceDocumentId, input.confirmationHash, startedAt)
     } catch (error) {
       if (quarantined) await fileVault.restoreQuarantinedFile(quarantined)
+      if (journalId) await journal.discard(journalId).catch(() => undefined)
       throw error
     }
     let fileVaultStatus: DataDeletionReport['components']['fileVault'] = quarantined ? 'deleted' : 'not_present'
-    const warningCodes = [...preview.warningCodes]
     const recoveryPackageExists = Boolean(repository.getRecoveryState().lastBackupAt)
-    if (recoveryPackageExists) warningCodes.push('RECOVERY_PACKAGE_ROTATION_REQUIRED')
+    // One or the other: no backup to rotate, or a backup that still holds this person.
+    const warningCodes = [
+      ...preview.warningCodes.filter((code) => !(recoveryPackageExists && code === 'BACKUP_SYSTEM_NOT_CONFIGURED')),
+      ...(recoveryPackageExists ? ['RECOVERY_PACKAGE_ROTATION_REQUIRED'] : [])
+    ]
+    // Decrypted copies opened from the app (kept 30 minutes for the system viewer) go now.
+    const openedCopies = openedOriginals.get(input.sourceDocumentId) ?? []
+    openedOriginals.delete(input.sourceDocumentId)
+    let temporaryFiles: DataDeletionReport['components']['temporaryFiles'] = 'not_present'
+    for (const directory of openedCopies)
+      await rm(directory, { recursive: true, force: true }).then(
+        () => {
+          if (temporaryFiles !== 'failed') temporaryFiles = 'deleted'
+        },
+        () => {
+          temporaryFiles = 'failed'
+          warningCodes.push('TEMPORARY_FILE_PURGE_FAILED')
+        }
+      )
+    if (
+      !journalId ||
+      !(await journal.confirm(journalId).then(
+        () => true,
+        () => false
+      ))
+    )
+      warningCodes.push('DELETION_JOURNAL_WRITE_FAILED')
     if (quarantined) {
       try {
         await fileVault.purgeQuarantinedFile(quarantined)
@@ -157,7 +202,7 @@ export function registerCandidateHandlers(context: MainIpcContext) {
         fileVault: fileVaultStatus,
         searchIndex: preview.counts.searchIndexEntries > 0 ? 'deleted' : 'not_present',
         cache: 'not_present',
-        temporaryFiles: 'not_present',
+        temporaryFiles,
         backups: recoveryPackageExists ? 'expired_pending' : 'not_present'
       },
       deletedCounts: preview.counts,

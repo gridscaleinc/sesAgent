@@ -12,7 +12,7 @@ import {
   type JobCaseReviewSnapshot,
   type PersonnelCaseMatchResult
 } from '@shared'
-import { HrObjectList } from './HrObjectList'
+import { HrObjectList, hrListPageSizeKey } from './HrObjectList'
 import { HrMatchingWorkspace } from './HrMatchingWorkspace'
 import { clearPersonCaseMatchCache } from '../person-case-match-cache'
 import { IntroductionComposer } from './IntroductionComposer'
@@ -20,6 +20,8 @@ import { CaseIntroductionComposer, clearCaseIntroductionSession } from './CaseIn
 import { builtInBroadcastTemplate } from '@shared'
 import { currentBusinessObjects, readHrPosition, saveHrPosition } from '../hr-business-navigation'
 import { cardChangeLabels, cardSkillItems } from '../hr-card-presentation'
+import { UiLocaleProvider } from '../i18n'
+import { BusinessHeaderActionsContext } from './business-header-actions'
 
 const documentId = '11111111-1111-4111-8111-111111111111'
 const reviewId = '22222222-2222-4222-8222-222222222222'
@@ -429,7 +431,7 @@ it('keeps full OR requirements and parenthesized skill lists intact in the compa
       working: true,
       occurredAt: new Date().toISOString(),
       fields: [
-        { key: 'required_skills', value: requirements },
+        { key: 'required_skills', value: `Java\nPython\n${requirements}` },
         { key: 'rate', value: '80万円' }
       ],
       event: 'updated',
@@ -451,13 +453,63 @@ it('keeps full OR requirements and parenthesized skill lists intact in the compa
   )
   const card = await screen.findByRole('article')
   expect(within(card).getByText('BTP or Fiori or Cdsview')).toBeVisible()
-  const extra = within(card).getByText('BTP or Fiori, Cdsviewの設計経験')
-  expect(extra).not.toBeVisible()
-  fireEvent.click(within(card).getByText('残り 2 項目'))
-  expect(extra).toBeVisible()
+  // The card shows the first five requirements whole and counts the rest, which stay whole in its tooltip.
+  expect(within(card).queryByText('BTP or Fiori, Cdsviewの設計経験')).not.toBeInTheDocument()
+  const more = within(card).getByText('+2')
+  expect(more).toHaveAttribute('title', expect.stringContaining('BTP or Fiori, Cdsviewの設計経験'))
+  expect(more.getAttribute('title')!.split('\n')).toHaveLength(2)
   expect(onOpen).not.toHaveBeenCalled()
   expect(openCardMenu(card).getByRole('menuitem', { name: /^削除 /u })).toBeEnabled()
   expect(within(card).queryByText(/情報が更新されました|取込済み/u)).not.toBeInTheDocument()
+})
+
+it('shows Japanese case values in the Chinese UI with the stored wording on hover', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([
+    {
+      ...entry,
+      kind: 'case',
+      businessStatus: 'active',
+      working: true,
+      occurredAt: new Date().toISOString(),
+      fields: [
+        { key: 'rate', value: 'スキル見合い' },
+        { key: 'remote', value: '週3日リモート' },
+        { key: 'location', value: '東京都港区' }
+      ],
+      changes: []
+    }
+  ])
+  render(
+    <UiLocaleProvider locale="zh-CN">
+      <HrObjectList
+        kind="case"
+        reloadToken={0}
+        candidates={[]}
+        busy={false}
+        onOpen={vi.fn()}
+        onIntake={vi.fn()}
+        onImportResume={vi.fn()}
+        onRefresh={vi.fn()}
+      />
+    </UiLocaleProvider>
+  )
+  const card = await screen.findByRole('article')
+  // Each value sits under its own label; the tooltip carries the full value and the stored wording, without an underline.
+  expect(within(card).getByText('面议')).toHaveAttribute('title', '面议\nスキル見合い')
+  expect(within(card).getByText('每周远程3天')).toHaveAttribute('title', '每周远程3天\n週3日リモート')
+  expect(within(card).getByText('每周远程3天')).not.toHaveClass('is-normalized-value')
+  expect(card.querySelector('.is-normalized-value')).toBeNull()
+  expect(within(card).getByText('東京都港区')).toHaveAttribute('title', '東京都港区')
+  const facts = [...card.querySelectorAll('.hr-card-fact')].map((fact) => [
+    fact.querySelector('dt')!.textContent,
+    fact.querySelector('dd')!.textContent
+  ])
+  expect(facts).toEqual([
+    ['单价', '面议'],
+    ['地点', '東京都港区'],
+    ['工作方式', '每周远程3天'],
+    ['开始', '—']
+  ])
 })
 
 it('aggregates same IDs, keeps same-name people separate and buffers reordered updates', async () => {
@@ -522,12 +574,12 @@ it('retains the selected unread card while acknowledging it', async () => {
 
 it('pages both lists, restores each page and keeps actions visible with matching disabled while busy', async () => {
   saveHrPosition('person', { timeRange: 'all' })
-  const rows: BusinessFeedEntry[] = Array.from({ length: 45 }, (_, index) => ({
+  const rows: BusinessFeedEntry[] = Array.from({ length: 22 }, (_, index) => ({
     ...entry,
     objectId: `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`,
     title: `Engineer ${index}`
   }))
-  const cases: BusinessFeedEntry[] = rows.slice(0, 25).map((row) => ({
+  const cases: BusinessFeedEntry[] = rows.slice(0, 12).map((row) => ({
     ...row,
     kind: 'case',
     businessStatus: 'active',
@@ -547,12 +599,15 @@ it('pages both lists, restores each page and keeps actions visible with matching
     onRefresh: vi.fn()
   }
   const view = render(<HrObjectList {...props} />)
-  expect(await screen.findAllByRole('article')).toHaveLength(20)
+  expect(await screen.findAllByRole('article')).toHaveLength(10)
   const card = within(screen.getAllByRole('article')[0]!)
-  expect(card.getByRole('button', { name: '紹介を準備' })).toBeVisible()
+  // A person card shows 紹介を準備 beside the primary; the rest of its actions are in 「…」.
+  expect(card.getByRole('button', { name: '紹介を準備' })).toBeEnabled()
   const menu = openCardMenu(screen.getAllByRole('article')[0]!)
-  expect(menu.getByRole('menuitem', { name: '詳細を見る' })).toBeVisible()
-  expect(menu.getByRole('menuitem', { name: 'あとで対応' })).toBeVisible()
+  // 稍后处理 sits on the card; the menu keeps only 删除.
+  expect(menu.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['削除'])
+  expect(card.getByRole('button', { name: 'あとで対応' })).toBeEnabled()
+  expect(menu.queryByRole('menuitem', { name: '紹介を準備' })).not.toBeInTheDocument()
   expect(menu.getByRole('menuitem', { name: /^削除 /u })).toBeDisabled()
   const find = card.getByRole('button', { name: '案件を探す' })
   expect(find).toBeDisabled()
@@ -560,10 +615,10 @@ it('pages both lists, restores each page and keeps actions visible with matching
   fireEvent.click(find)
   expect(props.onOpen).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
-  const selected = rows[20]!
+  const selected = rows[10]!
   view.rerender(<HrObjectList {...props} selectedKey={`person:${selected.objectId}`} />)
   expect(screen.getByRole('article', { name: selected.title })).toHaveAttribute('aria-current', 'true')
-  fireEvent.click(openCardMenu(screen.getByRole('article', { name: selected.title })).getByRole('menuitem', { name: '詳細を見る' }))
+  fireEvent.click(screen.getByRole('article', { name: selected.title }))
   expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ objectId: selected.objectId }), 'view')
   const scroller = view.container.querySelector('.hr-object-scroll')!
   fireEvent.scroll(scroller, { target: { scrollTop: 280 } })
@@ -578,25 +633,34 @@ it('pages both lists, restores each page and keeps actions visible with matching
   expect(screen.getByRole('navigation')).toHaveTextContent('2 / 3')
   expect(restored.container.querySelector('.hr-object-scroll')!.scrollTop).toBe(280)
   fireEvent.click(screen.getByRole('button', { name: '次のページ' }))
-  expect(screen.getAllByRole('article')).toHaveLength(5)
+  expect(screen.getAllByRole('article')).toHaveLength(2)
   expect(screen.getByRole('button', { name: '次のページ' })).toBeDisabled()
-  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue(rows.slice(0, 25))
+  // ←/→ turn pages and a page number jumps straight to it.
+  fireEvent.keyDown(document.body, { key: 'ArrowLeft' })
+  expect(screen.getByRole('button', { name: '2 ページ目' })).toHaveAttribute('aria-current', 'page')
+  fireEvent.click(screen.getByRole('button', { name: '1 ページ目' }))
+  expect(screen.getByRole('navigation')).toHaveTextContent('1 / 3')
+  // A larger page size is remembered.
+  fireEvent.click(screen.getByRole('button', { name: '20 件ずつ表示' }))
+  expect(screen.getAllByRole('article')).toHaveLength(20)
+  expect(localStorage.getItem(hrListPageSizeKey)).toBe('20')
+  expect(screen.getByRole('button', { name: '20 件ずつ表示' })).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.click(screen.getByRole('button', { name: '10 件ずつ表示' }))
+  fireEvent.click(screen.getByRole('button', { name: '3 ページ目' }))
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue(rows.slice(0, 12))
   restored.rerender(<HrObjectList {...props} reloadToken={1} />)
   await waitFor(() => expect(screen.getByRole('navigation')).toHaveTextContent('2 / 2'))
-  expect(screen.getAllByRole('article')).toHaveLength(5)
+  expect(screen.getAllByRole('article')).toHaveLength(2)
   fireEvent.change(screen.getByRole('textbox', { name: '案件・要員を検索' }), { target: { value: 'Engineer 0' } })
   expect(screen.getAllByRole('article')).toHaveLength(1)
   expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
 })
 
-it('filters by local calendar days and restores independent case and personnel time ranges', async () => {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const atDay = (offset: number) => {
-    const date = new Date(today)
-    date.setDate(date.getDate() + offset)
-    return date.toISOString()
-  }
+it('filters by Tokyo calendar days and restores independent case and personnel time ranges', async () => {
+  const tokyoToday = Date.parse(
+    `${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}T00:00:00+09:00`
+  )
+  const atDay = (offset: number) => new Date(tokyoToday + offset * 86_400_000).toISOString()
   const rows: BusinessFeedEntry[] = [0, -6, -7, -29, -30, 1].map((offset) => ({
     ...entry,
     objectId: `day-${offset}`,
@@ -663,13 +727,13 @@ it('opens cases on the working set, and "all" on every case in descending time o
       onRefresh={vi.fn()}
     />
   )
-  expect(await screen.findByText(/担当案件はまだありません/)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '担当案件 0' })).toHaveAttribute('aria-pressed', 'true')
+  expect(await screen.findByText(/担当中の案件はまだありません/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '担当中 0' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
+  fireEvent.click(screen.getByRole('button', { name: '案件プール' }))
   expect(await screen.findAllByRole('article')).toHaveLength(4)
   expect(screen.getByRole('combobox', { name: '一覧の期間' })).toHaveValue('all')
-  expect(screen.getByRole('button', { name: 'すべて' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '案件プール' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.queryByRole('button', { name: 'マッチング可能' })).not.toBeInTheDocument()
   expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(['Case 16', 'Case 9', 'Case 0', 'Case -1'])
   const newest = within(screen.getAllByRole('article')[0]!)
@@ -744,7 +808,8 @@ it('shows local results during cloud work, ignores unrelated progress and invali
   await act(async () => finish(result))
   expect(screen.getByRole('button', { name: '紹介を準備' })).toBeEnabled()
   view.rerender(<HrMatchingWorkspace {...props} cases={[{ ...job, jobCase: { ...job.jobCase!, version: 2 } }]} />)
-  expect(screen.getByText('情報またはAIルールが更新されました。案件を再検索してください。')).toBeVisible()
+  // An edited case drops out of the result with a note; the rest of the result is not locked.
+  expect(screen.getByText('1 件の案件が終了・更新されたため結果から外しました')).toBeVisible()
   expect(screen.queryByRole('article')).not.toBeInTheDocument()
   expect(window.sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1)
 })
@@ -1094,25 +1159,29 @@ it('opens on the working set and adds, removes and undoes membership without a c
     />
   )
   await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
-  expect(screen.getByRole('button', { name: '担当案件 1' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '担当中 1' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.queryByRole('combobox', { name: '一覧の期間' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'あとで対応' })).not.toBeInTheDocument()
-  fireEvent.click(openCardMenu(screen.getByRole('article', { name: 'Case b' })).getByRole('menuitem', { name: '担当から外す' }))
+  fireEvent.click(openCardMenu(screen.getByRole('article', { name: 'Case b' })).getByRole('menuitem', { name: '案件プールに戻す' }))
   await waitFor(() => expect(caseTitles()).toEqual([]))
   expect(window.sesAgent.setCaseWorking).toHaveBeenLastCalledWith({ reviewId: 'b', working: false })
   fireEvent.click(screen.getByRole('button', { name: '元に戻す' }))
   await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
   expect(window.sesAgent.setCaseWorking).toHaveBeenLastCalledWith({ reviewId: 'b', working: true })
   expect(screen.queryByRole('button', { name: '元に戻す' })).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
-  // "All" is every case; mine carry the badge.
-  await waitFor(() => expect(caseTitles().sort()).toEqual(['Case a', 'Case b']))
-  expect(within(screen.getByRole('article', { name: 'Case b' })).getByText('担当')).toBeInTheDocument()
-  fireEvent.click(openCardMenu(screen.getByRole('article', { name: 'Case a' })).getByRole('menuitem', { name: '担当に追加' }))
+  fireEvent.click(screen.getByRole('button', { name: '案件プール' }))
+  // 「全部」 lists only cases not in my cases; joining moves a case out of it.
+  await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
+  fireEvent.click(within(screen.getByRole('article', { name: 'Case a' })).getByRole('button', { name: '担当する' }))
   await waitFor(() => expect(window.sesAgent.setCaseWorking).toHaveBeenLastCalledWith({ reviewId: 'a', working: true }))
-  await waitFor(() => expect(caseTitles().sort()).toEqual(['Case a', 'Case b']))
-  fireEvent.click(await screen.findByRole('button', { name: '担当案件 2' }))
+  await waitFor(() => expect(caseTitles()).toEqual([]))
+  fireEvent.click(await screen.findByRole('button', { name: '担当中 2' }))
   expect(caseTitles()).toEqual(expect.arrayContaining(['Case a', 'Case b']))
+  // Removing it from my cases brings it back to 「全部」.
+  fireEvent.click(openCardMenu(screen.getByRole('article', { name: 'Case a' })).getByRole('menuitem', { name: '案件プールに戻す' }))
+  await waitFor(() => expect(window.sesAgent.setCaseWorking).toHaveBeenLastCalledWith({ reviewId: 'a', working: false }))
+  fireEvent.click(screen.getByRole('button', { name: '案件プール' }))
+  await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
 })
 it('returns to the working set each time the list is shown again', async () => {
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', false), workingCase('b', true)])
@@ -1128,12 +1197,12 @@ it('returns to the working set each time the list is shown again', async () => {
   }
   const view = render(<HrObjectList {...props} active />)
   await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
-  fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
-  await waitFor(() => expect(caseTitles().sort()).toEqual(['Case a', 'Case b']))
+  fireEvent.click(screen.getByRole('button', { name: '案件プール' }))
+  await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
   view.rerender(<HrObjectList {...props} active={false} />)
   view.rerender(<HrObjectList {...props} active />)
   await waitFor(() => expect(caseTitles()).toEqual(['Case b']))
-  expect(screen.getByRole('button', { name: '担当案件 1' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '担当中 1' })).toHaveAttribute('aria-pressed', 'true')
 })
 it('suggests, but never performs, removal once every follow-up of a working case has ended', async () => {
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('b', true)])
@@ -1175,7 +1244,7 @@ it('suggests, but never performs, removal once every follow-up of a working case
       />
     </BusinessProgressContext.Provider>
   )
-  expect(await screen.findByText('この案件の対応はすべて終了しています。担当案件から外せます。')).toBeInTheDocument()
+  expect(await screen.findByText('この案件の対応はすべて終了しています。案件プールに戻せます。')).toBeInTheDocument()
   expect(window.sesAgent.setCaseWorking).not.toHaveBeenCalled()
   expect(caseTitles()).toEqual(['Case b'])
 })
@@ -1192,7 +1261,7 @@ it('keeps the working-set notice on the case list when switching to people', asy
     onRefresh: vi.fn()
   }
   const view = render(<HrObjectList kind="case" {...props} />)
-  fireEvent.click(openCardMenu(await screen.findByRole('article', { name: 'Case b' })).getByRole('menuitem', { name: '担当から外す' }))
+  fireEvent.click(openCardMenu(await screen.findByRole('article', { name: 'Case b' })).getByRole('menuitem', { name: '案件プールに戻す' }))
   expect(await screen.findByRole('button', { name: '元に戻す' })).toBeInTheDocument()
   view.rerender(<HrObjectList kind="person" {...props} />)
   expect(screen.queryByRole('button', { name: '元に戻す' })).not.toBeInTheDocument()
@@ -1327,6 +1396,9 @@ it('ends a case from its card, lists it under "ended" and makes it active again'
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', false), ended])
   window.sesAgent.setJobCaseLifecycle = vi.fn(async () => ({}) as never)
   const onRefresh = vi.fn(async () => {})
+  // The app re-reads its data on this event, once per change.
+  const changed = vi.fn()
+  window.addEventListener('ses-business-data-changed', changed)
   render(
     <HrObjectList
       kind="case"
@@ -1339,7 +1411,7 @@ it('ends a case from its card, lists it under "ended" and makes it active again'
       onRefresh={onRefresh}
     />
   )
-  fireEvent.click(await screen.findByRole('button', { name: 'すべて' }))
+  fireEvent.click(await screen.findByRole('button', { name: '案件プール' }))
   expect(screen.getByRole('combobox', { name: '案件の状態' })).toHaveValue('active')
   await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
   fireEvent.click(openCardMenu(screen.getByRole('article', { name: 'Case a' })).getByRole('menuitem', { name: '案件を終了' }))
@@ -1347,7 +1419,9 @@ it('ends a case from its card, lists it under "ended" and makes it active again'
     expect(window.sesAgent.setJobCaseLifecycle).toHaveBeenCalledWith(expect.objectContaining({ reviewId: 'a', state: 'archived' }))
   )
   await waitFor(() => expect(caseTitles()).toEqual([]))
-  expect(onRefresh).toHaveBeenCalled()
+  expect(changed).toHaveBeenCalledTimes(1)
+  expect(onRefresh).not.toHaveBeenCalled()
+  window.removeEventListener('ses-business-data-changed', changed)
   fireEvent.click(screen.getByRole('button', { name: '元に戻す' }))
   await waitFor(() =>
     expect(window.sesAgent.setJobCaseLifecycle).toHaveBeenLastCalledWith(expect.objectContaining({ reviewId: 'a', state: 'active' }))
@@ -1357,8 +1431,12 @@ it('ends a case from its card, lists it under "ended" and makes it active again'
   await waitFor(() => expect(caseTitles()).toEqual(['Case c']))
   const endedCard = within(screen.getByRole('article', { name: 'Case c' }))
   expect(endedCard.getByText('終了')).toBeInTheDocument()
-  expect(endedCard.queryByRole('menuitem', { name: '担当に追加', hidden: true })).not.toBeInTheDocument()
-  expect(endedCard.getByRole('button', { name: '要員を探す' })).toHaveAccessibleDescription('案件は終了しています')
+  expect(endedCard.queryByRole('menuitem', { name: '担当する', hidden: true })).not.toBeInTheDocument()
+  // An ended case offers re-activation in place of looking for people, and no broadcasting or joining.
+  expect(endedCard.queryByRole('button', { name: '要員を探す' })).not.toBeInTheDocument()
+  expect(endedCard.queryByRole('button', { name: '案件を配信' })).not.toBeInTheDocument()
+  const endedMenu = openCardMenu(screen.getByRole('article', { name: 'Case c' }))
+  expect(endedMenu.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['削除'])
   fireEvent.click(endedCard.getByRole('button', { name: '案件を再開' }))
   await waitFor(() =>
     expect(window.sesAgent.setJobCaseLifecycle).toHaveBeenLastCalledWith(expect.objectContaining({ reviewId: 'c', state: 'active' }))
@@ -1394,7 +1472,7 @@ it('counts and lists only active unread cases, and lets a read card leave "unrea
   expect(caseTitles()).toEqual(['Case a'])
   expect(screen.getByRole('button', { name: '未読 0' })).toBeInTheDocument()
   // ...and gone once HR comes back to "unread".
-  fireEvent.click(screen.getByRole('button', { name: 'すべて' }))
+  fireEvent.click(screen.getByRole('button', { name: '案件プール' }))
   fireEvent.click(screen.getByRole('button', { name: '未読 0' }))
   await waitFor(() => expect(caseTitles()).toEqual([]))
 })
@@ -1418,8 +1496,8 @@ it('marks a case read on its current revision after it was ended and re-activate
       onRefresh={vi.fn()}
     />
   )
-  fireEvent.click(await screen.findByRole('button', { name: 'すべて' }))
-  fireEvent.click(openCardMenu(await screen.findByRole('article', { name: 'Case a' })).getByRole('menuitem', { name: '詳細を見る' }))
+  fireEvent.click(await screen.findByRole('button', { name: '案件プール' }))
+  fireEvent.click(await screen.findByRole('article', { name: 'Case a' }))
   await waitFor(() =>
     expect(window.sesAgent.markBusinessFeed).toHaveBeenLastCalledWith(expect.objectContaining({ revision: after.revision, action: 'seen' }))
   )
@@ -1529,11 +1607,12 @@ it('keeps secondary card actions in an accessible menu that arrows, Esc and a cl
   render(<HrObjectList kind="case" {...listProps} onOpen={onOpen} />)
   const card = await screen.findByRole('article', { name: 'Case a' })
   const actions = within(card)
-  // Only the primary and the broadcast stay on the card.
+  // A case I handle shows 要員を探す, 案件を配信 and 案件を終了; the rest live in its 「…」 menu.
   expect(actions.getByRole('button', { name: '要員を探す' })).toBeVisible()
   expect(actions.getByRole('button', { name: '案件を配信' })).toBeVisible()
+  expect(actions.getByRole('button', { name: '案件を終了' })).toBeVisible()
   expect(actions.queryByRole('button', { name: '紹介を準備' })).not.toBeInTheDocument()
-  expect(actions.queryByRole('button', { name: '担当から外す' })).not.toBeInTheDocument()
+  expect(actions.queryByRole('button', { name: '案件プールに戻す' })).not.toBeInTheDocument()
   const trigger = actions.getByRole('button', { name: /^その他の操作/u })
   expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
   expect(trigger).toHaveAttribute('aria-expanded', 'false')
@@ -1541,13 +1620,13 @@ it('keeps secondary card actions in an accessible menu that arrows, Esc and a cl
   expect(trigger).toHaveAttribute('aria-expanded', 'true')
   const menu = actions.getByRole('menu')
   const items = within(menu).getAllByRole('menuitem')
-  expect(items.map((item) => item.textContent)).toEqual(['詳細を見る', '担当から外す', '案件を終了', '削除'])
+  expect(items.map((item) => item.textContent)).toEqual(['案件プールに戻す', '削除'])
   expect(items[0]).toHaveFocus()
   fireEvent.keyDown(menu, { key: 'ArrowDown' })
   expect(items[1]).toHaveFocus()
   fireEvent.keyDown(menu, { key: 'ArrowUp' })
   fireEvent.keyDown(menu, { key: 'ArrowUp' })
-  expect(items[3]).toHaveFocus()
+  expect(items[1]).toHaveFocus()
   fireEvent.keyDown(menu, { key: 'Escape' })
   expect(actions.queryByRole('menu')).not.toBeInTheDocument()
   expect(trigger).toHaveFocus()
@@ -1555,10 +1634,8 @@ it('keeps secondary card actions in an accessible menu that arrows, Esc and a cl
   fireEvent.mouseDown(document.body)
   expect(actions.queryByRole('menu')).not.toBeInTheDocument()
   expect(onOpen).not.toHaveBeenCalled()
-  fireEvent.click(trigger)
-  fireEvent.click(within(actions.getByRole('menu')).getByRole('menuitem', { name: '詳細を見る' }))
+  fireEvent.click(card)
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ objectId: 'a' }), 'view')
-  expect(actions.queryByRole('menu')).not.toBeInTheDocument()
   fireEvent.click(actions.getByRole('button', { name: '案件を配信' }))
   expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ objectId: 'a' }), 'promote')
   // The internal record number is not shown on the card.
@@ -1655,20 +1732,21 @@ it('offers one primary import per list and keeps full data as a quiet secondary 
 it('shows imported cases in my cases when the import added them there', async () => {
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', false)])
   render(<HrObjectList kind="case" {...listProps} />)
-  fireEvent.click(await screen.findByRole('button', { name: 'すべて' }))
+  fireEvent.click(await screen.findByRole('button', { name: '案件プール' }))
   await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', false), workingCase('n', true)])
   act(() => {
     window.dispatchEvent(new CustomEvent('ses-cases-imported', { detail: { reviewIds: ['n'], working: true } }))
   })
   await waitFor(() => expect(caseTitles()).toEqual(['Case n']))
-  expect(screen.getByRole('button', { name: '担当案件 1' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: '担当中 1' })).toHaveAttribute('aria-pressed', 'true')
 })
 
 it('applies waiting updates at once when the list on screen is empty instead of asking to refresh it', async () => {
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([])
   const view = render(<HrObjectList kind="case" {...listProps} onAssessResumes={vi.fn()} />)
-  await screen.findByText(/担当案件はまだありません/u)
+  // No case at all yet: the empty list says how to add one.
+  await screen.findByText(/案件はまだありません。案件情報を貼り付ける/u)
   // The resume drop hint only makes sense over case cards.
   expect(screen.queryByText(/履歴書を案件カードにドロップ/u)).not.toBeInTheDocument()
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('n', true)])
@@ -1687,8 +1765,9 @@ it('opens where cases imported from another page landed, and names the case stat
   })
   view.rerender(<HrObjectList kind="case" {...listProps} active />)
   // The re-read after the import event is async and can be slow under a loaded full run.
-  await waitFor(() => expect(caseTitles()).toEqual(['Case a', 'Case n']), { timeout: 3000 })
-  expect(screen.getByRole('button', { name: 'すべて' })).toHaveAttribute('aria-pressed', 'true')
+  // 「全部」 shows the imported case; Case a is in my cases.
+  await waitFor(() => expect(caseTitles()).toEqual(['Case n']), { timeout: 3000 })
+  expect(screen.getByRole('button', { name: '案件プール' })).toHaveAttribute('aria-pressed', 'true')
   const status = screen.getByRole('combobox', { name: '案件の状態' })
   expect(
     within(status)
@@ -1711,10 +1790,431 @@ it('explains an empty person library and offers the import instead of the filter
 it('names the selected time range when it hides everything and offers every time', async () => {
   vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([{ ...workingCase('old', false), occurredAt: '2020-01-01T00:00:00Z' }])
   render(<HrObjectList kind="case" {...listProps} />)
-  fireEvent.click(await screen.findByRole('button', { name: 'すべて' }))
+  fireEvent.click(await screen.findByRole('button', { name: '案件プール' }))
   fireEvent.change(screen.getByRole('combobox', { name: '一覧の期間' }), { target: { value: '7d' } })
   expect(screen.getByText('直近7日の条件に一致する案件はありません。')).toBeVisible()
   expect(screen.queryByText(/今日の案件はありません/u)).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '全期間を見る' }))
   expect(caseTitles()).toEqual(['Case old'])
+})
+
+it('shows cards with up to five requirements, labelled facts, a follow-up line and an unread dot', async () => {
+  const followed = {
+    ...workingCase('a', true),
+    title: 'Case followed',
+    unseen: true,
+    fields: [
+      { key: 'required_skills', value: 'Java, Spring, AWS, Docker, React, Go, Rust' },
+      { key: 'rate', value: '80万円' },
+      { key: 'location', value: '東京' },
+      { key: 'start_date', value: '即日' }
+    ]
+  } as BusinessFeedEntry
+  const quiet = { ...workingCase('b', true), title: 'Case quiet' } as BusinessFeedEntry
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([followed, quiet])
+  const active = {
+    id: 'f',
+    documentId,
+    reviewId: 'a',
+    revision: 1,
+    status: 'pending',
+    note: '',
+    nextStep: '',
+    recordedBy: 'HR',
+    updatedAt: new Date().toISOString(),
+    events: []
+  } as unknown as BusinessFollowUp
+  const data = {
+    rows: [active],
+    indexes: progressIndexes([active]),
+    now: new Date(),
+    loading: false,
+    failed: false,
+    publish: vi.fn(),
+    refresh: vi.fn(),
+    remove: vi.fn()
+  } as ReturnType<typeof useBusinessProgressData>
+  const onOpenProgress = vi.fn()
+  render(
+    <BusinessProgressContext.Provider value={data}>
+      <HrObjectList kind="case" {...listProps} onOpenProgress={onOpenProgress} />
+    </BusinessProgressContext.Provider>
+  )
+  const row = within(await screen.findByRole('article', { name: 'Case followed' }))
+  // Every row in 担当中 is mine, so the row carries no 担当中 badge there.
+  expect(row.queryByText('担当中')).not.toBeInTheDocument()
+  expect(row.getByText('未読')).toHaveClass('hr-visually-hidden')
+  expect(row.getByRole('heading', { name: 'Case followed' })).toHaveAttribute('title', 'Case followed')
+  expect(row.getByRole('list', { name: '必須スキル' }).querySelectorAll('li:not(.hr-row-more)').length).toBe(5)
+  expect(row.getByText('+2')).toHaveAttribute('title', 'Go\nRust')
+  for (const value of ['80万円', '東京', '即日']) expect(row.getByText(value)).toBeInTheDocument()
+  // Four labelled facts in fixed places; a missing one reads 「—」 instead of disappearing.
+  const facts = [...screen.getByRole('article', { name: 'Case followed' }).querySelectorAll('.hr-card-fact')]
+  expect(facts.map((fact) => fact.querySelector('dt')!.textContent)).toEqual(['単価', '勤務地', '勤務形態', '開始'])
+  expect(facts.map((fact) => fact.querySelector('dd')!.textContent)).toEqual(['80万円', '東京', '—', '即日'])
+  // Follow-ups are a small chip that opens them; a case without any shows no empty box.
+  const chip = row.getByRole('button', { name: /対応中 1 名/u })
+  fireEvent.click(chip)
+  expect(onOpenProgress).toHaveBeenCalledWith(expect.objectContaining({ objectId: 'a' }))
+  const quietRow = within(screen.getByRole('article', { name: 'Case quiet' }))
+  expect(quietRow.queryByText(/対応中の要員はいません/u)).not.toBeInTheDocument()
+  expect(quietRow.queryByRole('button', { name: /対応/u })).not.toBeInTheDocument()
+  expect(quietRow.queryByText('未読')).not.toBeInTheDocument()
+})
+
+it('drops skill chips that repeat the title and shows the date and source on the card', async () => {
+  const titled = {
+    ...workingCase('a', true),
+    title: 'ＪＡＶＡ／Spring Boot 開発',
+    source: 'chat-paste',
+    fields: [{ key: 'required_skills', value: 'java, spring boot, AWS' }]
+  } as BusinessFeedEntry
+  const repeated = {
+    ...workingCase('b', true),
+    title: 'Java, Spring',
+    fields: [{ key: 'required_skills', value: 'Java, Spring' }]
+  } as BusinessFeedEntry
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([titled, repeated])
+  render(<HrObjectList kind="case" {...listProps} />)
+  const card = within(await screen.findByRole('article', { name: titled.title }))
+  // Case- and width-insensitive: 「ＪＡＶＡ」 in the title covers the 「java」 requirement.
+  expect([...card.getByRole('list', { name: '必須スキル' }).querySelectorAll('li')].map((item) => item.textContent)).toEqual(['AWS'])
+  expect(card.getByText(/チャット貼付/u)).toBeVisible()
+  // A card whose requirements all repeat its title shows no chip row at all.
+  expect(within(screen.getByRole('article', { name: repeated.title })).queryByRole('list')).not.toBeInTheDocument()
+})
+
+it('shows person cards with their own facts, status tags and footer actions', async () => {
+  saveHrPosition('person', { timeRange: 'all' })
+  const engineer = {
+    ...entry,
+    businessStatus: 'soon',
+    source: 'gmail',
+    fields: [
+      { key: 'skills', value: 'Java, Go' },
+      { key: 'experience_years', value: '8年' },
+      { key: 'rate', value: '70万円' }
+    ]
+  } as BusinessFeedEntry
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([engineer])
+  const onOpen = vi.fn()
+  render(<HrObjectList kind="person" {...listProps} candidates={[{ ...person, inTalentLibrary: false }]} onOpen={onOpen} />)
+  const article = await screen.findByRole('article', { name: 'Same Name' })
+  const card = within(article)
+  const facts = [...article.querySelectorAll('.hr-card-fact')]
+  expect(facts.map((fact) => fact.querySelector('dt')!.textContent)).toEqual(['経験', '稼働開始', '勤務形態', '営業状況'])
+  expect(facts.map((fact) => fact.querySelector('dd')!.textContent)).toEqual(['8年', '—', '—', '近日稼働可能'])
+  expect(article.querySelector('.hr-card-meta')).toHaveTextContent('未登録')
+  expect(article.querySelector('.hr-card-meta')).toHaveTextContent('Gmail')
+  expect(card.getByRole('button', { name: '案件を探す' })).toBeEnabled()
+  fireEvent.click(card.getByRole('button', { name: '紹介を準備' }))
+  expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ objectId: documentId }), 'promote')
+  fireEvent.click(card.getByRole('button', { name: '案件を探す' }))
+  expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ objectId: documentId }), 'match')
+})
+
+it('badges my cases only in views that mix them with pool cases', async () => {
+  const mine = { ...workingCase('a', true), unseen: true } as BusinessFeedEntry
+  const pooled = { ...workingCase('b', false), unseen: true } as BusinessFeedEntry
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([mine, pooled])
+  render(<HrObjectList kind="case" {...listProps} />)
+  const working = within(await screen.findByRole('article', { name: 'Case a' }))
+  expect(working.queryByText('担当中')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '案件プール' }))
+  const pool = within(await screen.findByRole('article', { name: 'Case b' }))
+  expect(pool.queryByText('担当中')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '未読 2' }))
+  expect(within(await screen.findByRole('article', { name: 'Case a' })).getByText('担当中')).toHaveClass('hr-working-badge')
+  expect(within(screen.getByRole('article', { name: 'Case b' })).queryByText('担当中')).not.toBeInTheDocument()
+})
+
+it('puts the open detail beside the list, closes it with Esc and gives the list its full width back', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', true), workingCase('b', true)])
+  const onCloseDetail = vi.fn()
+  const props = {
+    ...listProps,
+    kind: 'case' as const,
+    selectedKey: 'case:a',
+    detail: <p>Case a detail</p>,
+    detailLabel: '業務ワークスペース',
+    onCloseDetail
+  }
+  const view = render(<HrObjectList {...props} />)
+  await waitFor(() => expect(caseTitles()).toHaveLength(2))
+  const list = screen.getByRole('region', { name: '案件一覧' })
+  // Nothing open: the list has the whole surface and the pane is not there for assistive tech.
+  expect(list).not.toHaveClass('has-detail')
+  expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
+  view.rerender(<HrObjectList {...props} detailOpen />)
+  const pane = screen.getByRole('complementary', { name: '業務ワークスペース' })
+  expect(list).toHaveClass('has-detail')
+  expect(pane).toHaveTextContent('Case a detail')
+  expect(screen.getByRole('article', { name: 'Case a' })).toBeVisible()
+  expect(within(pane).queryByRole('button', { name: '一覧に戻る' })).not.toBeInTheDocument()
+  // A menu takes Esc first; only then does Esc close the detail.
+  const menuTrigger = within(screen.getByRole('article', { name: 'Case a' })).getByRole('button', { name: /^その他の操作/u })
+  fireEvent.click(menuTrigger)
+  fireEvent.keyDown(within(screen.getByRole('article', { name: 'Case a' })).getByRole('menu'), { key: 'Escape' })
+  expect(onCloseDetail).not.toHaveBeenCalled()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(onCloseDetail).toHaveBeenCalledOnce()
+  view.rerender(<HrObjectList {...props} detailOpen={false} />)
+  expect(list).not.toHaveClass('has-detail')
+  expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
+  expect(screen.getByRole('article', { name: 'Case a' })).toHaveFocus()
+  // Closed, Esc is left to others.
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(onCloseDetail).toHaveBeenCalledOnce()
+})
+
+it('shows the list or the detail in a narrow surface, with a way back to the list', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', true)])
+  const onCloseDetail = vi.fn()
+  const props = {
+    ...listProps,
+    kind: 'case' as const,
+    selectedKey: 'case:a',
+    detail: <p>Case a detail</p>,
+    detailLabel: '業務ワークスペース',
+    onCloseDetail,
+    layoutWidth: 720
+  }
+  const view = render(<HrObjectList {...props} detailOpen />)
+  const pane = await screen.findByRole('complementary', { name: '業務ワークスペース' })
+  const list = screen.getByRole('region', { name: '案件一覧' })
+  expect(list).toHaveClass('is-narrow')
+  expect(screen.queryByRole('article', { name: 'Case a' })).not.toBeInTheDocument()
+  // The toolbar row stays; search is still one key away.
+  expect(screen.getByRole('textbox', { name: '案件・要員を検索' })).toBeVisible()
+  fireEvent.click(within(pane).getByRole('button', { name: '一覧に戻る' }))
+  expect(onCloseDetail).toHaveBeenCalledOnce()
+  view.rerender(<HrObjectList {...props} detailOpen={false} />)
+  expect(screen.getByRole('article', { name: 'Case a' })).toBeVisible()
+  expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
+  // Wide again: list and detail side by side, no back link.
+  view.rerender(<HrObjectList {...props} layoutWidth={1400} detailOpen />)
+  expect(list).not.toHaveClass('is-narrow')
+  expect(screen.getByRole('article', { name: 'Case a' })).toBeVisible()
+  expect(within(screen.getByRole('complementary', { name: '業務ワークスペース' })).queryByRole('button', { name: '一覧に戻る' })).toBeNull()
+})
+
+it('shows the resume drop hint only while files are dragged over the case list, never for drags over the detail', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', true)])
+  const onDrop = vi.fn()
+  render(
+    <div onDrop={onDrop}>
+      <HrObjectList
+        kind="case"
+        {...listProps}
+        cases={[job]}
+        onAssessResumes={vi.fn()}
+        detail={<p>Case detail</p>}
+        detailOpen
+        detailLabel="業務ワークスペース"
+      />
+    </div>
+  )
+  await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
+  const hint = /履歴書を案件カードにドロップ/u
+  expect(screen.queryByText(hint)).not.toBeInTheDocument()
+  const list = screen.getByRole('region', { name: '案件一覧' })
+  const scroller = list.querySelector('.hr-object-scroll')!
+  fireEvent.dragEnter(scroller, { dataTransfer: { types: ['Files'] } })
+  expect(screen.getByText(hint)).toHaveAttribute('role', 'status')
+  fireEvent.dragLeave(list, { relatedTarget: null, dataTransfer: { types: ['Files'] } })
+  expect(screen.queryByText(hint)).not.toBeInTheDocument()
+  // Over the detail pane the list neither announces nor swallows the drop.
+  const pane = screen.getByRole('complementary', { name: '業務ワークスペース' })
+  fireEvent.dragEnter(pane.firstElementChild!, { dataTransfer: { types: ['Files'] } })
+  expect(screen.queryByText(hint)).not.toBeInTheDocument()
+  fireEvent.drop(pane.firstElementChild!, { dataTransfer: { files: [new File(['x'], 'resume.pdf')], types: ['Files'] } })
+  expect(onDrop).toHaveBeenCalledOnce()
+})
+
+it('carries the shell actions at the end of its toolbar row and steps the detail back while the Agent drawer is open', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('a', true)])
+  const props = { ...listProps, kind: 'case' as const, detail: <p>Case detail</p>, detailOpen: true, detailLabel: '業務ワークスペース' }
+  const shell = (chatOpen: boolean) => (
+    <BusinessHeaderActionsContext.Provider value={{ actions: <button type="button">Agentに質問</button>, chatOpen }}>
+      <HrObjectList {...props} />
+    </BusinessHeaderActionsContext.Provider>
+  )
+  const view = render(shell(false))
+  await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
+  const toolbar = view.container.querySelector('.hr-list-toolbar') as HTMLElement
+  expect(within(toolbar).getByRole('button', { name: 'Agentに質問' })).toBeVisible()
+  // Search, the primary and the secondary come first in the same row.
+  expect(within(toolbar).getAllByRole('button')[0]).toHaveTextContent('案件を追加')
+  expect(screen.getByRole('complementary', { name: '業務ワークスペース' })).toBeVisible()
+  view.rerender(shell(true))
+  expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()
+  view.rerender(shell(false))
+  expect(screen.getByRole('complementary', { name: '業務ワークスペース' })).toBeVisible()
+})
+
+it('names the missing facts in one line instead of four dashes when a case has none', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([{ ...workingCase('e', true), fields: [] } as BusinessFeedEntry])
+  render(<HrObjectList kind="case" {...listProps} />)
+  const card = await screen.findByRole('article', { name: 'Case e' })
+  expect(within(card).getByText('単価・勤務地・勤務形態・開始は未入力')).toBeInTheDocument()
+  expect(card.querySelector('.hr-card-facts')).toBeNull()
+})
+
+it('filters people by 营业状态, counting each status with the other filters applied', async () => {
+  saveHrPosition('person', { timeRange: 'all' })
+  const person = (id: string, title: string, businessStatus: BusinessFeedEntry['businessStatus']) => ({
+    ...entry,
+    objectId: `11111111-1111-4111-8111-00000000000${id}`,
+    title,
+    businessStatus
+  })
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([
+    person('1', '待机 A', 'available'),
+    person('2', '待机 B', 'available'),
+    person('3', '进场 C', 'assigned'),
+    person('4', '暂停 D', 'paused')
+  ])
+  render(
+    <UiLocaleProvider locale="zh-CN">
+      <HrObjectList kind="person" {...listProps} busy={false} />
+    </UiLocaleProvider>
+  )
+  await screen.findByRole('article', { name: '待机 A' })
+  const filter = screen.getByRole('combobox', { name: '营业状态筛选' })
+  expect([...filter.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+    '全部状态',
+    '待机中 (2)',
+    '近期可入场 (0)',
+    '已进场 (1)',
+    '暂停营业 (1)'
+  ])
+  fireEvent.change(filter, { target: { value: 'assigned' } })
+  expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(['进场 C'])
+  // Counts stay those of every status, so HR can see where to switch next.
+  expect(within(filter).getByRole('option', { name: '待机中 (2)' })).toBeInTheDocument()
+  fireEvent.change(screen.getByRole('textbox', { name: '搜索案件或人员' }), { target: { value: 'B' } })
+  expect(within(filter).getByRole('option', { name: '待机中 (1)' })).toBeInTheDocument()
+  fireEvent.change(filter, { target: { value: 'all' } })
+  expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(['待机 B'])
+})
+
+it('re-reads the whole list on a data change that names no object, without an error', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([entry])
+  render(<HrObjectList kind="person" {...listProps} busy={false} />)
+  await screen.findByRole('article', { name: entry.title })
+  const calls = vi.mocked(window.sesAgent.getBusinessFeed).mock.calls.length
+  act(() => window.dispatchEvent(new Event('ses-business-data-changed')))
+  await waitFor(() => expect(vi.mocked(window.sesAgent.getBusinessFeed).mock.calls.length).toBeGreaterThan(calls))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('asks before ending a case with open follow-ups and can end them together', async () => {
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([workingCase('b', true)])
+  window.sesAgent.setJobCaseLifecycle = vi.fn(async () => ({}) as never)
+  window.sesAgent.advanceBusinessProgress = vi.fn(async () => ({}) as never)
+  const open = {
+    id: '33333333-3333-4333-8333-000000000001',
+    documentId,
+    reviewId: 'b',
+    revision: 3,
+    status: 'interview',
+    events: [],
+    progress: { stage: 'coordinating', rounds: [], candidateAvailability: '', clientAvailability: '', pendingConditions: [], entry: {} }
+  } as unknown as BusinessFollowUp
+  const data = {
+    rows: [open],
+    indexes: progressIndexes([open]),
+    now: new Date(),
+    loading: false,
+    failed: false,
+    publish: vi.fn(),
+    refresh: vi.fn(async () => {}),
+    remove: vi.fn()
+  } as unknown as ReturnType<typeof useBusinessProgressData>
+  render(
+    <BusinessProgressContext.Provider value={data}>
+      <HrObjectList kind="case" {...listProps} busy={false} />
+    </BusinessProgressContext.Provider>
+  )
+  fireEvent.click(within(await screen.findByRole('article', { name: 'Case b' })).getByRole('button', { name: '案件を終了' }))
+  const dialog = within(await screen.findByRole('dialog', { name: '案件を終了' }))
+  expect(dialog.getByText(/終了していない対応が 1 件/u)).toBeInTheDocument()
+  expect(window.sesAgent.setJobCaseLifecycle).not.toHaveBeenCalled()
+  fireEvent.click(dialog.getByRole('button', { name: '対応もまとめて終了' }))
+  // Main ends the case and its open follow-ups in one transaction.
+  await waitFor(() =>
+    expect(window.sesAgent.setJobCaseLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewId: 'b', state: 'archived', closeOpenFollowUps: true })
+    )
+  )
+  expect(window.sesAgent.advanceBusinessProgress).not.toHaveBeenCalled()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+it('marks people in place or not offered, shows where a person is placed, offers their own actions and lists them last', async () => {
+  saveHrPosition('person', { timeRange: 'all' })
+  const person = (id: string, title: string, businessStatus: BusinessFeedEntry['businessStatus'], minutes: number) => ({
+    ...entry,
+    objectId: `11111111-1111-4111-8111-00000000000${id}`,
+    title,
+    businessStatus,
+    occurredAt: new Date(Date.now() - minutes * 60_000).toISOString()
+  })
+  vi.mocked(window.sesAgent.getBusinessFeed).mockResolvedValue([
+    person('1', '进场 A', 'assigned', 1),
+    person('2', '暂停 B', 'paused', 2),
+    person('3', '待机 C', 'available', 3)
+  ])
+  const placed = {
+    id: '33333333-3333-4333-8333-000000000009',
+    documentId: '11111111-1111-4111-8111-000000000001',
+    reviewId,
+    revision: 1,
+    status: 'closed',
+    events: [],
+    progress: {
+      stage: 'started',
+      rounds: [],
+      candidateAvailability: '',
+      clientAvailability: '',
+      pendingConditions: [],
+      entry: { actualDate: '2026-09-10' }
+    }
+  } as unknown as BusinessFollowUp
+  const data = {
+    rows: [placed],
+    indexes: progressIndexes([placed]),
+    now: new Date(),
+    loading: false,
+    failed: false,
+    publish: vi.fn(),
+    refresh: vi.fn(async () => {}),
+    remove: vi.fn()
+  } as unknown as ReturnType<typeof useBusinessProgressData>
+  const onOpenProgress = vi.fn()
+  const javaCase = {
+    reviewId,
+    redactedSubject: 'Java 案件',
+    fields: [{ key: 'title', value: 'Java 案件' }]
+  } as unknown as JobCaseReviewSnapshot
+  render(
+    <UiLocaleProvider locale="zh-CN">
+      <BusinessProgressContext.Provider value={data}>
+        <HrObjectList kind="person" {...listProps} busy={false} cases={[javaCase]} onOpenProgress={onOpenProgress} />
+      </BusinessProgressContext.Provider>
+    </UiLocaleProvider>
+  )
+  await screen.findByRole('article', { name: '进场 A' })
+  // People who can be arranged come first in 全部, even when the others are newer.
+  expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual(['待机 C', '进场 A', '暂停 B'])
+  const placedCard = within(screen.getByRole('article', { name: '进场 A' }))
+  expect(placedCard.getByText('已进场', { selector: '.hr-status-badge' })).toBeInTheDocument()
+  expect(placedCard.getByText('9/10 起 · Java 案件')).toBeInTheDocument()
+  expect(placedCard.queryByRole('button', { name: '找案件' })).not.toBeInTheDocument()
+  fireEvent.click(placedCard.getByRole('button', { name: '记录退场' }))
+  expect(onOpenProgress).toHaveBeenCalledWith(expect.objectContaining({ title: '进场 A' }))
+  expect(within(screen.getByRole('article', { name: '暂停 B' })).getByRole('button', { name: '恢复营业' })).toBeInTheDocument()
+  expect(
+    within(screen.getByRole('article', { name: '待机 C' })).queryByText('待机中', { selector: '.hr-status-badge' })
+  ).not.toBeInTheDocument()
 })

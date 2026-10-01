@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { candidateIdentityKey, sameCandidateRecord, type CasePersonnelMatchResult, type CaseSearchSummary } from '@shared'
+import { candidateIdentityKey, excludedByHr, sameCandidateRecord, type CasePersonnelMatchResult, type CaseSearchSummary } from '@shared'
 import type { EncryptedApplicationRepository } from '@persistence'
 
 /** Save search and explicit assessments in the same history, without rerunning the model. */
@@ -57,7 +57,7 @@ export function saveCaseSearchAssessments(
 export function summarizeCaseSearches(
   repository: Pick<
     EncryptedApplicationRepository,
-    'listActiveJobCases' | 'listCaseAssessments' | 'listCandidateReviews' | 'getPersonnelWorkspace'
+    'listActiveJobCases' | 'listCaseAssessments' | 'listCandidateReviews' | 'getPersonnelWorkspace' | 'listBusinessFollowUps'
   >
 ): CaseSearchSummary[] {
   const jobs = [...new Map(repository.listActiveJobCases().map((job) => [job.sourceReviewId, job])).values()]
@@ -69,14 +69,17 @@ export function summarizeCaseSearches(
       .states.filter((item) => !['available', 'soon'].includes(item.status))
       .map((item) => item.documentId)
   )
+  const followed = new Set((repository.listBusinessFollowUps?.() ?? []).map((row) => `${row.documentId}:${row.reviewId}`))
   return jobs.flatMap((job) => {
     const history = repository.listCaseAssessments(job.id)
     if (!history.length) return []
     const listed = history.filter(
       (row) =>
         row.origin !== 'search' ||
+        // As in the people panel: someone in a follow-up for this case is always listed.
+        followed.has(`${row.documentId}:${job.sourceReviewId}`) ||
         (people.get(row.documentId)?.recordStatus === 'active' &&
-          row.result.qualification?.status !== 'excluded' &&
+          (row.result.qualification?.status !== 'excluded' || excludedByHr(row.result.qualification)) &&
           !unavailable.has(row.documentId))
     )
     const kept: string[] = []

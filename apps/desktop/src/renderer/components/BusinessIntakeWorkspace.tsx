@@ -9,6 +9,7 @@ import {
 } from '@shared'
 import { localizedIpcError, useUiLocale, localeText, localizedMainText } from '../i18n'
 import { Icon } from './Icon'
+import { adoptCreatedCases } from '../case-adoption'
 
 type Segment = {
   id: string
@@ -106,6 +107,7 @@ export function BusinessIntakeWorkspace({ inputSeed, modelKey, cases, candidates
           })
           const records = result.intake?.records ?? []
           const succeeded = records.filter((item) => item.status === 'succeeded')
+          await adoptCreatedCases(records).catch(() => undefined)
           const failed = records.filter((item) => item.status !== 'succeeded')
           const retrySegments: Segment[] = (failed.every((item) => item.startLine && item.endLine) ? failed : []).flatMap((item) => {
             if (!item.startLine || !item.endLine) return []
@@ -211,7 +213,7 @@ export function BusinessIntakeWorkspace({ inputSeed, modelKey, cases, candidates
             )}
           />
           <div className="business-inline-actions">
-            <small>{text.length.toLocaleString()} / 100,000</small>
+            <small>{text.length.toLocaleString(locale)} / 100,000</small>
             <button className="is-primary" disabled={!text.trim()} onClick={prepare} type="button">
               {t('预览分段', '区切りを確認')}
             </button>

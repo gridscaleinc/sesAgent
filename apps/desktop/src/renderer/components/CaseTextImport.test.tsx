@@ -66,7 +66,7 @@ it('adds new cases to my cases and offers finding people or opening each one', a
   window.addEventListener('ses-cases-imported', imported)
   render(
     <CaseTextImport
-      cases={[review('c1', 'Java案件'), review('c2', 'AWS案件')]}
+      cases={[review('c1', 'Java案件'), review('c2', 'AWS案件'), review('old', '既存案件')]}
       onImport={onImport}
       onRefresh={async () => {}}
       onAddToWorking={onAddToWorking}
@@ -77,15 +77,16 @@ it('adds new cases to my cases and offers finding people or opening each one', a
   )
   submit('Java案件とAWS案件')
   const list = within(await screen.findByRole('list', { name: '追加した案件' }))
-  expect(onAddToWorking.mock.calls).toEqual([['c1'], ['c2']])
-  expect(list.getAllByRole('listitem').map((item) => item.firstChild?.textContent)).toEqual(['Java案件', 'AWS案件'])
+  // The case the paste repeated is listed and joins 负责中 too, so it can be opened instead of seeming lost.
+  expect(onAddToWorking.mock.calls).toEqual([['c1'], ['c2'], ['old']])
+  expect(list.getAllByRole('listitem').map((item) => item.firstChild?.textContent)).toEqual(['Java案件', 'AWS案件', '既存案件'])
   fireEvent.click(list.getByRole('button', { name: '要員を探す：AWS案件' }))
   expect(onFindPeople).toHaveBeenCalledWith('c2')
   fireEvent.click(list.getByRole('button', { name: '表示：Java案件' }))
   expect(onOpenCase).toHaveBeenCalledWith('c1')
   expect(screen.queryByRole('button', { name: /一覧ですべて見る/u })).not.toBeInTheDocument()
   await waitFor(() => expect(imported).toHaveBeenCalledOnce())
-  expect((imported.mock.calls[0]![0] as CustomEvent).detail).toEqual({ reviewIds: ids, working: true })
+  expect((imported.mock.calls[0]![0] as CustomEvent).detail).toEqual({ reviewIds: [...ids, 'old'], working: true })
   window.removeEventListener('ses-cases-imported', imported)
 })
 it('lists the first three new cases, links to the rest in the list and reports cases it could not add to my cases', async () => {
@@ -110,7 +111,7 @@ it('lists the first three new cases, links to the rest in the list and reports c
   expect(within(list).getAllByRole('listitem')).toHaveLength(3)
   fireEvent.click(screen.getByRole('button', { name: '一覧ですべて見る（5）' }))
   expect(onShowInList).toHaveBeenCalledOnce()
-  expect(screen.getByRole('alert')).toHaveTextContent('担当案件に追加できませんでした')
+  expect(screen.getByRole('alert')).toHaveTextContent('担当中にできませんでした')
 })
 it('sends personnel introductions to the personnel import', async () => {
   const onImport = vi.fn().mockResolvedValue({ ...saved, created: 0, skippedPersonnel: 2 })

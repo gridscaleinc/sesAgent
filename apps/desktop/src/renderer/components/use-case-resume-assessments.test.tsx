@@ -387,3 +387,123 @@ it('counts saved searches on the case card until this session has its own result
     [other.reviewId]: { pending: 0, count: 1 }
   })
 })
+
+it('opens a pair on its saved assessment and assesses again only when the case or profile changed', async () => {
+  const current = { ...person, profile: { version: 2 } } as CandidateReviewSnapshot
+  const saved = { ...assessment('case-a'), jobCaseVersion: 1, profileVersion: 2, origin: 'specified' } as CasePersonAssessment
+  let release!: () => void
+  // History arrives late: a concurrent caller must wait for it instead of assessing again.
+  vi.mocked(window.sesAgent.listCaseAssessments).mockImplementation(() => new Promise((resolve) => (release = () => resolve([saved]))))
+  const { result } = renderHook(useCaseResumeAssessments)
+  let first!: Promise<string>
+  let second!: Promise<string>
+  act(() => {
+    void result.current.loadHistory(job)
+    first = result.current.openPerson(job, current)
+  })
+  await act(async () => release())
+  await act(async () => {
+    await first
+  })
+  expect(await first).toBe(saved.id)
+  expect(window.sesAgent.assessCasePerson).not.toHaveBeenCalled()
+  // Opening it again still shows the saved result.
+  await act(async () => {
+    second = result.current.openPerson(job, current)
+    await second
+  })
+  expect(await second).toBe(saved.id)
+  expect(window.sesAgent.assessCasePerson).not.toHaveBeenCalled()
+  // A newer profile version is assessed again.
+  await act(async () => {
+    await result.current.openPerson(job, { ...current, profile: { version: 3 } } as CandidateReviewSnapshot)
+  })
+  await waitFor(() => expect(window.sesAgent.assessCasePerson).toHaveBeenCalledTimes(1))
+})
+
+it('keeps a person HR judged 不满足 in the list, last, and replaces results when a decision arrives', async () => {
+  const { visibleCaseTasks, compareCaseTasks } = await import('./use-case-resume-assessments')
+  const { announceRequirementDecision } = await import('../requirement-decision-events')
+  const requirement = {
+    id: 'L',
+    key: 'required_skills',
+    label: '日本語流暢',
+    category: 'condition' as const,
+    alternatives: [],
+    minimumYears: null,
+    requiresPractice: false
+  }
+  const decided = (outcome: 'conflict' | 'unknown', hr: boolean) =>
+    ({
+      ...assessment('case-a'),
+      jobCaseVersion: 1,
+      profileVersion: 1,
+      origin: 'search',
+      result: {
+        qualification: {
+          policyVersion: 'technical-language-v5',
+          status: outcome === 'conflict' ? 'excluded' : 'needs-confirmation',
+          requirements: [
+            {
+              requirement,
+              outcome,
+              evidence: null,
+              source: null,
+              ...(hr
+                ? {
+                    hrDecision: {
+                      confirmationId: 'c',
+                      outcome: 'conflict',
+                      scope: 'person',
+                      note: null,
+                      question: null,
+                      decidedAt: '',
+                      decidedBy: null
+                    }
+                  }
+                : {})
+            }
+          ]
+        }
+      }
+    }) as unknown as CasePersonAssessment
+  const task = (id: string, documentId: string, value: CasePersonAssessment) => ({
+    id,
+    reviewId: 'review-a',
+    reviewRevision: 1,
+    jobCaseId: 'case-a',
+    documentId,
+    name: id,
+    status: 'completed' as const,
+    origin: 'search' as const,
+    assessment: { ...value, documentId }
+  })
+  const people = ['hr', 'model', 'open'].map(
+    (documentId) =>
+      ({
+        ...person,
+        documentId,
+        fileName: `${documentId}.xlsx`,
+        localIdentity: { displayName: documentId },
+        recordStatus: 'active'
+      }) as CandidateReviewSnapshot
+  )
+  const all = [
+    task('hr', 'hr', decided('conflict', true)),
+    task('model', 'model', decided('conflict', false)),
+    task('open', 'open', decided('unknown', false))
+  ]
+  const view = visibleCaseTasks(all, 'review-a', people, new Set())
+  // HR's 不满足 stays listed (last); a conflict found in the material is listed apart as excluded.
+  expect(view.tasks.toSorted(compareCaseTasks).map((item) => item.id)).toEqual(['open', 'hr'])
+  expect(view.excluded.map((item) => item.task.id)).toEqual(['model'])
+
+  const { result } = renderHook(useCaseResumeAssessments)
+  vi.mocked(window.sesAgent.listCaseAssessments).mockResolvedValue([{ ...decided('unknown', false), documentId: person.documentId }])
+  await act(async () => {
+    await result.current.loadHistory(job)
+  })
+  const replaced = { ...decided('conflict', true), documentId: person.documentId }
+  act(() => announceRequirementDecision({ documentId: person.documentId, confirmations: [], assessments: [replaced], personRun: null }))
+  expect(result.current.tasks[0]!.assessment).toEqual(replaced)
+})

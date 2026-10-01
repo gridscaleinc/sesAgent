@@ -24,6 +24,41 @@ export interface MatchRequirementEvidence {
   yearsUnconfirmed?: true
   /** Settled by the cloud AI quoting this person's own material (a local check alone could not). */
   aiVerified?: true
+  /** HR's own decision on an item the material left unclear; the local outcome underneath was 'unknown'. */
+  hrDecision?: RequirementHrDecision
+}
+/** What HR settled about one requirement: confirmed, not met, or being asked of the person. */
+export interface RequirementHrDecision {
+  confirmationId: string
+  outcome: RequirementConfirmation['outcome']
+  scope: RequirementConfirmation['scope']
+  note: string | null
+  question: string | null
+  decidedAt: string
+  decidedBy: string | null
+  /** What the material (résumé, rules, AI review) concluded before HR decided; restored when the decision is withdrawn. */
+  materialOutcome?: MatchRequirementEvidence['outcome']
+}
+/**
+ * One HR decision on a requirement. 'person' scope is a fact about the person (their Japanese, their years with a
+ * skill) and applies to every case asking the same thing; 'pair' scope holds only for one case version.
+ */
+export interface RequirementConfirmation {
+  id: string
+  documentId: string
+  scope: 'person' | 'pair'
+  /** Set for 'pair' scope: the decision holds only while the case stays at this version. */
+  jobCaseId: string | null
+  jobCaseVersion: number | null
+  /** requirementIdentity of the requirement, so the same wording in another case finds it. */
+  requirementKey: string
+  requirementLabel: string
+  outcome: 'met' | 'conflict' | 'asking'
+  note: string | null
+  /** For 'asking': what HR will ask the person. */
+  question: string | null
+  decidedAt: string
+  decidedBy: string | null
 }
 export interface BusinessMatchQualification {
   policyVersion: typeof businessMatchingPolicyVersion | 'mandatory-evidence-v1' | 'mandatory-evidence-v2'
@@ -402,7 +437,9 @@ export function qualificationStatus(requirements: MatchRequirementEvidence[]): B
 }
 
 /** Business terms remain visible, but do not decide professional suitability. */
-export function requirementDimension(requirement: MatchRequirement): 'technical' | 'language' | 'business' {
+export function requirementDimension(
+  requirement: Pick<MatchRequirement, 'key' | 'label' | 'category'>
+): 'technical' | 'language' | 'business' {
   if (
     ['japanese_level', 'japanese-level', 'english_level', 'language'].includes(requirement.key) ||
     (requirement.category === 'condition' && language.test(requirement.label))
@@ -418,15 +455,19 @@ export function proposalConclusion(qualification: BusinessMatchQualification | u
       ? '可以提案'
       : '提案可能'
     : qualification?.status === 'excluded'
-      ? zh
-        ? '不建议向本案提案'
-        : 'この案件への提案は推奨しません'
+      ? excludedByHr(qualification)
+        ? zh
+          ? 'HR 确认不满足本案条件'
+          : 'HRが案件条件を満たさないと確認'
+        : zh
+          ? '不建议向本案提案'
+          : 'この案件への提案は推奨しません'
       : zh
-        ? '核心信息待补充'
-        : 'コア情報の補足が必要'
+        ? '待确认'
+        : '確認待ち'
 }
 
-const requirementIdentity = (requirement: MatchRequirement) =>
+export const requirementIdentity = (requirement: Pick<MatchRequirement, 'key' | 'label' | 'category'>) =>
   `${requirementDimension(requirement)}:${norm(requirement.label).replace(/[\s（）()、,，:：~〜～]/gu, '')}`
 export function uniqueRequirementEvidence(items: MatchRequirementEvidence[]): MatchRequirementEvidence[] {
   const result = new Map<string, MatchRequirementEvidence>()
@@ -470,9 +511,11 @@ export function matchEvidenceSections(qualification: BusinessMatchQualification 
 export function matchFollowUpLabels(qualification: BusinessMatchQualification | undefined, questions: string[] = [], zh = true): string[] {
   const sections = matchEvidenceSections(qualification, questions)
   return [...sections.corePending, ...sections.businessPending]
-    .map(
-      (item) =>
-        `${requirementDisplayLabel(item.requirement, zh)}${item.evidence ? `：${item.evidence}` : ''}${item.outcome === 'conflict' ? (zh ? '（条件有差异，需协商）' : '（条件に相違あり・要相談）') : ''}`
+    .map((item) =>
+      // What HR chose to ask the person goes into the follow-up as written.
+      item.hrDecision?.outcome === 'asking' && item.hrDecision.question
+        ? item.hrDecision.question
+        : `${requirementDisplayLabel(item.requirement, zh)}${item.evidence ? `：${item.evidence}` : ''}${item.outcome === 'conflict' ? (zh ? '（条件有差异，需协商）' : '（条件に相違あり・要相談）') : ''}`
     )
     .concat(sections.questions)
 }
@@ -487,4 +530,84 @@ export function requirementDisplayLabel(requirement: MatchRequirement, zh: boole
   }
   const name = names[requirement.key]
   return name ? `${name[zh ? 0 : 1]}：${requirement.label}` : requirement.label
+}
+
+/** The local result under any earlier HR decision, so applying the current decisions again is exact and reversible. */
+function withoutHrDecision(item: MatchRequirementEvidence): MatchRequirementEvidence {
+  if (!item.hrDecision) return item
+  const { hrDecision, ...rest } = item
+  return { ...rest, outcome: hrDecision.materialOutcome ?? 'unknown' }
+}
+/** The decision that applies to one requirement of a case: one made for this case version first, then the person's own. */
+export function requirementConfirmationFor(
+  confirmations: readonly RequirementConfirmation[],
+  requirement: Pick<MatchRequirement, 'key' | 'label' | 'category'>,
+  job: { id: string; version: number }
+): RequirementConfirmation | undefined {
+  const key = requirementIdentity(requirement)
+  const latest = (items: RequirementConfirmation[]) => items.toSorted((a, b) => b.decidedAt.localeCompare(a.decidedAt))[0]
+  return (
+    latest(
+      confirmations.filter(
+        (item) => item.requirementKey === key && item.scope === 'pair' && item.jobCaseId === job.id && item.jobCaseVersion === job.version
+      )
+    ) ?? latest(confirmations.filter((item) => item.requirementKey === key && item.scope === 'person'))
+  )
+}
+/**
+ * Applies HR decisions to a pair's qualification. Only technical and language items the material left 'unknown' take
+ * a decision; a met or conflicting local result stays as it is. Earlier decisions are removed first, so a withdrawn
+ * decision returns the item to 'unknown'.
+ */
+export function applyRequirementConfirmations(
+  qualification: BusinessMatchQualification,
+  confirmations: readonly RequirementConfirmation[],
+  job: { id: string; version: number }
+): BusinessMatchQualification {
+  const requirements = qualification.requirements.map((original) => {
+    const item = withoutHrDecision(original)
+    // HR's decision is the final word on a requirement, whatever the material or the AI review concluded: an unclear
+    // item is settled, a conflict HR knows better about is overruled, and a 不满足 holds even where the AI saw a match.
+    if (!isProposalRequirement(item.requirement)) return item
+    const decision = requirementConfirmationFor(confirmations, item.requirement, job)
+    if (!decision) return item
+    return {
+      ...item,
+      outcome: decision.outcome === 'asking' ? ('unknown' as const) : decision.outcome,
+      hrDecision: {
+        confirmationId: decision.id,
+        outcome: decision.outcome,
+        scope: decision.scope,
+        note: decision.note,
+        question: decision.question,
+        decidedAt: decision.decidedAt,
+        decidedBy: decision.decidedBy,
+        materialOutcome: item.outcome
+      }
+    }
+  })
+  const changed = requirements.some((item, index) => item !== qualification.requirements[index])
+  return changed ? { ...qualification, requirements, status: qualificationStatus(requirements) } : qualification
+}
+/**
+ * True when HR judged any requirement of this pair 不满足: the pair stays listed, marked and sorted last, and is not
+ * proposed or interviewed from any entry (the same reading as Main's rejectedByHr). Other conflicts of the material
+ * may sit beside it; HR's judgement is what decides.
+ */
+export function excludedByHr(qualification: BusinessMatchQualification | undefined): boolean {
+  if (qualification?.status !== 'excluded') return false
+  return (qualification.requirements ?? []).some(
+    (item) => isProposalRequirement(item.requirement) && item.outcome === 'conflict' && item.hrDecision?.outcome === 'conflict'
+  )
+}
+/** A first wording of what to ask the person about an unclear requirement; HR edits it before saving. */
+export function requirementQuestion(requirement: MatchRequirement, zh: boolean): string {
+  const label = requirementDisplayLabel(requirement, zh)
+  if (requirementDimension(requirement) === 'language')
+    return zh
+      ? `关于「${label}」：请确认本人在工作中实际使用该语言的程度（会议、邮件、文档）。`
+      : `「${label}」について、業務での使用状況（会議・メール・資料作成）をご本人に確認させてください。`
+  return zh
+    ? `关于「${label}」：请确认本人的实际经验（年限、担当内容、最近一次使用时间）。`
+    : `「${label}」について、実務経験（年数・担当内容・直近の利用時期）をご本人に確認させてください。`
 }

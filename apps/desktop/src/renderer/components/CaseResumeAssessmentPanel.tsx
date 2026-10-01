@@ -1,6 +1,8 @@
+import { focusRequirement, hasPendingRequirementFocus, onRequirementFocus } from '../requirement-decision-events'
 import { useEffect, useRef, useState } from 'react'
 import {
   businessMatchingPolicyVersion,
+  excludedByHr,
   matchEvidenceSections,
   type CandidateReviewSnapshot,
   type CasePersonAssessment,
@@ -79,6 +81,11 @@ export function CaseResumeAssessmentPanel({
   const [selected, setSelected] = useState<Record<string, string | null>>({})
   const [checked, setChecked] = useState<Record<string, string[]>>({})
   const [tab, setTab] = useState<MatchDetailTabId>('evidence')
+  // A requirement to show (a list chip, 「确认条件」) opens 匹配依据, where its row is highlighted.
+  useEffect(() => {
+    if (hasPendingRequirementFocus()) setTab('evidence')
+    return onRequirementFocus(() => setTab('evidence'))
+  }, [])
   const [showDetail, setShowDetail] = useState(false)
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
@@ -154,8 +161,8 @@ export function CaseResumeAssessmentPanel({
   const active = job.lifecycle === 'active'
   // Unknown rules (still loading or failed to load) block proposals, but are not shown as outdated results.
   const rulesKnown = rulesRevision !== null
+  // An ended case keeps its history readable; only a changed profile, case, rule or policy makes a result outdated.
   const staleFor = (assessment: CasePersonAssessment, person?: CandidateReviewSnapshot) =>
-    !active ||
     assessment.id.startsWith('preview:') ||
     assessment.result.qualification?.policyVersion !== businessMatchingPolicyVersion ||
     assessment.jobCaseVersion !== job.jobCase?.version ||
@@ -165,19 +172,24 @@ export function CaseResumeAssessmentPanel({
     person.profile.version !== assessment.profileVersion
   /** Why the next-step actions are unavailable for this person; empty when they can be used. */
   const blockedReason = (task: CaseResumeTask) => {
-    if (!active) return t('案件已停用', '案件は停止中です')
+    if (!active) return t('案件已结束', '案件は終了しています')
     if (pendingResumeTask(task)) return t('正在评估，请稍候', '評価中です。しばらくお待ちください')
     if (!task.assessment) return t('评估未完成', '評価が完了していません')
     if (task.assessment.id.startsWith('preview:')) return t('匹配度评估尚未完成', '適合度の評価がまだ完了していません')
     if (personFor(task)?.recordStatus === 'deleted') return t('人员已删除', '要員は削除されています')
     if (unavailablePeople.has(task.documentId ?? ''))
-      return t('此人员已入场或暂停营业，请先更新营业状态', '参画中または営業停止中です。先に営業状況を更新してください')
+      return t('此人员已进场或暂停营业，请先更新营业状态', '参画中または営業停止中です。先に営業状況を更新してください')
     if (!rulesKnown)
       return rulesError
         ? t('规则读取失败，请先重试', 'ルールを読み込めません。先に再試行してください')
         : t('正在读取规则…', 'ルールを読込中…')
     if (staleFor(task.assessment, personFor(task)))
       return t('资料或规则已更新，请先重新评估', '情報またはルールが更新されました。先に再評価してください')
+    if (excludedByHr(task.assessment.result.qualification))
+      return t(
+        'HR 已确认不满足；如需提案，请先在匹配依据中撤销这个判断',
+        'HRが未充足と確認済みです。提案する場合は、先にマッチングの根拠で判断を取り消してください'
+      )
     return ''
   }
   const canUse = (task: CaseResumeTask) => !blockedReason(task)
@@ -275,7 +287,7 @@ export function CaseResumeAssessmentPanel({
       ).length
     : 0
   const excludedReason = ({ task, reason }: ExcludedCaseTask) => {
-    if (reason === 'unavailable') return t('已入场或暂停营业', '参画中または営業停止中')
+    if (reason === 'unavailable') return t('已进场或暂停营业', '参画中または営業停止中')
     if (reason === 'archived') return t('人员已归档', 'アーカイブ済み')
     const conflicts = matchEvidenceSections(task.assessment?.result.qualification).conflicts.map((item) => item.requirement.label)
     const labels = conflicts.length ? conflicts : (task.assessment?.result.missing ?? [])
@@ -323,6 +335,11 @@ export function CaseResumeAssessmentPanel({
     if (task.id !== current?.id) recordExperienceOpened(task.assessment?.result.experienceRunId)
     setSelected((state) => ({ ...state, [job.reviewId]: task.id }))
     if (pointer) setShowDetail(true)
+  }
+  // A chip clicked in the list opens 匹配依据 at that requirement, where HR can decide it.
+  const showRequirement = (label: string) => {
+    setTab('evidence')
+    focusRequirement(label)
   }
   const aiSettled = (task: CaseResumeTask) =>
     task.assessment?.result.qualification?.requirements.filter((item) => item.aiVerified).length ?? 0
@@ -451,7 +468,7 @@ export function CaseResumeAssessmentPanel({
   )
   const notices = (
     <>
-      {!active ? <p role="alert">{t('案件已停用，仍可查看历史评估。', '案件は停止中です。過去の評価を参照できます。')}</p> : null}
+      {!active ? <p role="alert">{t('案件已结束，仍可查看历史评估。', '案件は終了しています。過去の評価を参照できます。')}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {rulesError ? (
         <p role="alert">
@@ -564,6 +581,7 @@ export function CaseResumeAssessmentPanel({
                 title={nameFor(task)}
                 selected={task.id === current?.id}
                 onSelect={() => choose(task, true)}
+                onRequirement={showRequirement}
                 experienceRun={task.assessment?.result.experienceRunId}
                 rank={rank + 1}
                 titleHint={
@@ -620,7 +638,7 @@ export function CaseResumeAssessmentPanel({
                 ? t(`${excludedCounts.requirements} 人因硬性条件被排除`, `${excludedCounts.requirements}名が必須条件により除外`)
                 : '',
               excludedCounts.unavailable
-                ? t(`${excludedCounts.unavailable} 人已入场或暂停营业`, `${excludedCounts.unavailable}名が参画中・営業停止中`)
+                ? t(`${excludedCounts.unavailable} 人已进场或暂停营业`, `${excludedCounts.unavailable}名が参画中・営業停止中`)
                 : '',
               excludedCounts.archived ? t(`${excludedCounts.archived} 人已归档`, `${excludedCounts.archived}名がアーカイブ済み`) : ''
             ]
@@ -665,6 +683,7 @@ export function CaseResumeAssessmentPanel({
           stale={stale}
           status={badgeFor(task).tone === 'stale' ? badgeFor(task) : undefined}
           archived={person?.recordStatus === 'archived'}
+          {...(task.notice ? { intakeNotice: task.notice } : {})}
           blocked={blocked}
           followLabel={followLabel}
           hasFollowUp={Boolean(follow)}
@@ -714,6 +733,7 @@ export function CaseResumeAssessmentPanel({
                 {statusLabel(task.status)}…
               </p>
             ) : null}
+            {task.notice ? <p role="status">{task.notice}</p> : null}
             {task.status === 'failed' ? (
               <div role="alert">
                 <p>{task.error}</p>
@@ -752,7 +772,7 @@ export function CaseResumeAssessmentPanel({
       overlay={
         dragging ? (
           <div className="match-drop-overlay" aria-hidden="true">
-            <strong>{active ? t('松开即可添加简历', 'ドロップして履歴書を追加') : t('案件已停用', '案件は停止中です')}</strong>
+            <strong>{active ? t('松开即可添加简历', 'ドロップして履歴書を追加') : t('案件已结束', '案件は終了しています')}</strong>
             <small>{fileHint(t)}</small>
           </div>
         ) : null

@@ -1,6 +1,7 @@
 import { saveCaseSearchAssessments } from '../case-search-assessments'
 import { beginIntroductionDraft, createIntroductionGenerator } from '../introduction-generation'
 import { createRecommendationPointsGenerator, getRecommendationPoints } from '../recommendation-points'
+import { createRequirementDecisions } from '../requirement-decisions'
 import { saveBusinessField } from '../business-field-editing'
 import { businessProgressCalendar, createBusinessProgressAnalyzer, draftBusinessProgressMessage } from '../business-progress'
 import { writeFile } from 'node:fs/promises'
@@ -10,6 +11,8 @@ import { ipcMain, shell, net, dialog } from 'electron'
 import { gmailReplyMailbox, GmailReadClient } from '@mail'
 import {
   advanceBusinessProgressSchema,
+  decideRequirementInputSchema,
+  withdrawRequirementDecisionInputSchema,
   analyzeBusinessProgressSchema,
   beginBusinessProgressSchema,
   beginIntroductionDraftInputSchema,
@@ -20,6 +23,7 @@ import {
   candidateProfileSourceInputSchema,
   deleteBusinessFollowUpSchema,
   ipcChannels,
+  isInactiveProgressStage,
   markBusinessFeedSchema,
   personnelMessageInputSchema,
   progressMessageInputSchema,
@@ -35,10 +39,19 @@ import {
 } from '@shared'
 import { createCasePersonnelMatcher } from '../case-personnel-matching'
 import { createPersonnelCaseMatcher } from '../personnel-case-matching'
+import { rejectedByHr } from '../work-rule-matching'
 import { assertTrustedSender, type MainIpcContext } from './context'
+
+const hrRejectedMessage =
+  '这个人员已被判定不满足该案件的要求，不能介绍、推荐或安排面试；如判断有变，请先在匹配中撤回「不满足」。 / この要員は案件の条件を満たさないと判断済みのため、紹介・推薦・面談の設定はできません。判断が変わった場合は、マッチング画面で「満たさない」を取り消してください。'
 
 export function registerPersonnelHandlers(context: MainIpcContext) {
   const { repository, currentOperator } = context
+  /** The repository's checks, plus HR's 不满足 for the case the text introduces the person to. */
+  const validatedMessage = (input: z.infer<typeof personnelMessageInputSchema>) => {
+    if (input.caseContext && rejectedByHr(repository, input.documentId, input.caseContext.reviewId)) throw new Error(hrRejectedMessage)
+    return repository.validatePersonnelMessage(input)
+  }
   ipcMain.handle(ipcChannels.listPersonnelMailUpdates, (event, id) => {
     assertTrustedSender(event)
     return repository.listPersonnelMailUpdates(z.string().uuid().parse(id))
@@ -55,11 +68,29 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   const analyzeProgress = createBusinessProgressAnalyzer(context)
   ipcMain.handle(ipcChannels.beginBusinessProgress, (event, input) => {
     assertTrustedSender(event)
+    // Who cannot start (不满足, 已进场, 暂停营业, an ended case) is named by the store, one by one.
     return repository.beginBusinessProgress(beginBusinessProgressSchema.parse(input), currentOperator().displayName)
   })
   ipcMain.handle(ipcChannels.advanceBusinessProgress, (event, input) => {
     assertTrustedSender(event)
-    return repository.advanceBusinessProgress(advanceBusinessProgressSchema.parse(input), currentOperator().displayName)
+    const parsed = advanceBusinessProgressSchema.parse(input)
+    // A pair HR judged 不满足 is not proposed or interviewed again from any entry; recorded history stays editable.
+    if (
+      ['recommend', 'coordinate', 'schedule', 'rebook', 'resume', 'link-interview', 'restart'].includes(parsed.action) &&
+      rejectedByHr(repository, parsed.documentId, parsed.reviewId)
+    )
+      throw new Error(hrRejectedMessage)
+    return repository.advanceBusinessProgress(parsed, currentOperator().displayName)
+  })
+  ipcMain.handle(ipcChannels.listHrRejectedFollowUps, (event) => {
+    assertTrustedSender(event)
+    // Shown on 跟进 so a follow-up HR judged 不满足 says why it cannot move, instead of failing at every step.
+    return repository
+      .listBusinessFollowUps()
+      .filter(
+        (row) => row.progress && !isInactiveProgressStage(row.progress.stage) && rejectedByHr(repository, row.documentId, row.reviewId)
+      )
+      .map((row) => `${row.documentId}:${row.reviewId}`)
   })
   ipcMain.handle(ipcChannels.deleteBusinessFollowUp, (event, input) => {
     assertTrustedSender(event)
@@ -147,17 +178,37 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
 
   ipcMain.handle(ipcChannels.regenerateIntroduction, (event, input) => {
     assertTrustedSender(event)
-    return regenerate(regenerateIntroductionInputSchema.parse(input))
+    const parsed = regenerateIntroductionInputSchema.parse(input)
+    // An introduction of a person for a case HR judged 不满足 could never be sent: not generated either.
+    if (parsed.kind === 'person' && parsed.caseContext && rejectedByHr(repository, parsed.id, parsed.caseContext.reviewId))
+      throw new Error(hrRejectedMessage)
+    return regenerate(parsed)
   })
   // 推荐要点 for one person and case: generated on demand through the redacted cloud path, stored per pair.
   const generateRecommendationPoints = createRecommendationPointsGenerator(context)
   ipcMain.handle(ipcChannels.generateRecommendationPoints, (event, input) => {
     assertTrustedSender(event)
-    return generateRecommendationPoints(recommendationPointsQuerySchema.parse(input))
+    const query = recommendationPointsQuerySchema.parse(input)
+    if (rejectedByHr(repository, query.documentId, query.reviewId)) throw new Error(hrRejectedMessage)
+    return generateRecommendationPoints(query)
   })
   ipcMain.handle(ipcChannels.getRecommendationPoints, (event, input) => {
     assertTrustedSender(event)
     return getRecommendationPoints(context, recommendationPointsQuerySchema.parse(input))
+  })
+  // HR decisions on requirements the material left unclear: 满足 / 不满足 / 问本人, applied to the stored results at once.
+  const decisions = createRequirementDecisions(context)
+  ipcMain.handle(ipcChannels.listRequirementConfirmations, (event, documentId) => {
+    assertTrustedSender(event)
+    return decisions.list(z.string().uuid().parse(documentId))
+  })
+  ipcMain.handle(ipcChannels.decideRequirement, (event, input) => {
+    assertTrustedSender(event)
+    return decisions.decide(decideRequirementInputSchema.parse(input), currentOperator().displayName || null)
+  })
+  ipcMain.handle(ipcChannels.withdrawRequirementDecision, (event, input) => {
+    assertTrustedSender(event)
+    return decisions.withdraw(withdrawRequirementDecisionInputSchema.parse(input))
   })
   ipcMain.handle(ipcChannels.saveBusinessField, (event, input) => {
     assertTrustedSender(event)
@@ -242,20 +293,32 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   })
   ipcMain.handle(ipcChannels.setCandidateBusinessState, (event, input) => {
     assertTrustedSender(event)
-    return repository.setCandidateBusinessState(candidateBusinessStateInputSchema.parse(input), currentOperator().operatorId)
+    const parsed = candidateBusinessStateInputSchema.parse(input)
+    // 已进场 follows the placement record: it is set by 确认已到岗 and ended by 记录退场, never chosen by hand.
+    const placed = repository
+      .listBusinessFollowUps()
+      .some((row) => row.documentId === parsed.documentId && row.progress?.stage === 'started')
+    // While placed HR may mark 近期可入场 ahead of the project's end (and take it back); the rest waits for 记录退场.
+    if (parsed.status === 'assigned' && !placed)
+      throw new Error('已进场只能在跟进中「确认已到岗」后设置。 / 参画中は対応記録で「参画開始を確認」すると設定されます。')
+    if (placed && parsed.status !== 'soon' && parsed.status !== 'assigned')
+      throw new Error('此人员已进场；项目结束请在跟进中记录退场。 / 参画中です。案件終了時は対応記録で退場を記録してください。')
+    return repository.setCandidateBusinessState(parsed, currentOperator().operatorId)
   })
   ipcMain.handle(ipcChannels.validatePersonnelMessage, (event, input) => {
     assertTrustedSender(event)
-    return repository.validatePersonnelMessage(personnelMessageInputSchema.parse(input))
+    return validatedMessage(personnelMessageInputSchema.parse(input))
   })
   ipcMain.handle(ipcChannels.recordPersonnelCopy, (event, input) => {
     assertTrustedSender(event)
-    return repository.recordPersonnelCopy(personnelMessageInputSchema.parse(input), currentOperator().operatorId)
+    const parsed = personnelMessageInputSchema.parse(input)
+    validatedMessage(parsed)
+    return repository.recordPersonnelCopy(parsed, currentOperator().operatorId)
   })
   ipcMain.handle(ipcChannels.openPersonnelEmail, async (event, raw) => {
     assertTrustedSender(event)
     const parsed = personnelMessageInputSchema.parse(raw)
-    const input = repository.validatePersonnelMessage(parsed)
+    const input = validatedMessage(parsed)
     const encode = (value: string) =>
       encodeURIComponent(value).replace(/[!'()*]/gu, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
     const subject = input.subject ?? (input.lang === 'ja' ? '要員のご紹介' : '人员介绍')
@@ -278,7 +341,7 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
         /* The operator can still choose the recipient in the mail client while offline. */
       }
     }
-    repository.validatePersonnelMessage(parsed)
+    validatedMessage(parsed)
     const url = `mailto:${recipient ? encode(recipient) : ''}?subject=${encode(subject)}&body=${encode(input.text)}`
     if (url.length > 16_000) throw new Error('文案过长，请使用复制。 / 長い文面はコピーをご利用ください。')
     await shell.openExternal(url)

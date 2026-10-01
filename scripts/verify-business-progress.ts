@@ -190,8 +190,10 @@ try {
     )
   }
   let a = change(0, { action: 'schedule', schedule: schedule(1, '2026-09-08T01:00:00.000Z') })
+  // An overlap is named first; HR can still save it on purpose.
+  assert.throws(() => change(1, { action: 'schedule', schedule: schedule(1, '2026-09-08T01:30:00.000Z') }), /时间冲突/)
   assert.equal(
-    change(1, { action: 'schedule', schedule: schedule(1, '2026-09-08T01:30:00.000Z') }).progress!.stage,
+    change(1, { action: 'schedule', schedule: schedule(1, '2026-09-08T01:30:00.000Z'), allowConflict: true }).progress!.stage,
     'scheduled',
     'overlapping appointments can be saved by HR'
   )
@@ -406,6 +408,33 @@ try {
   let inbox = repository.listBusinessProgressMail()[0]!
   assert.equal(inbox.followUpId, null, 'ambiguous messages do not attach automatically')
   const third = repository.listBusinessFollowUps().find((row) => row.reviewId === job.reviewId)!
+  // In place in the first case, the person takes no new client interview until HR marks 近期可入场.
+  const placedPerson = repository.getCandidateReview(documentId)!
+  assert.throws(
+    () =>
+      repository.advanceBusinessProgress(
+        {
+          documentId,
+          reviewId: third.reviewId,
+          expectedRevision: third.revision,
+          mutationId: randomUUID(),
+          action: 'schedule',
+          schedule: schedule(1, '2026-09-15T05:00:00.000Z')
+        },
+        'test-hr'
+      ),
+    /已进场/
+  )
+  repository.setCandidateBusinessState(
+    {
+      documentId,
+      profileVersion: placedPerson.profile?.version ?? 0,
+      reviewRevision: placedPerson.reviewRevision,
+      status: 'soon',
+      confirmed: true
+    },
+    'test-hr'
+  )
   repository.updateBusinessProgressMail({ id: inbox.id, followUpId: third.id })
   const sourceInput = {
     documentId,
@@ -641,7 +670,7 @@ try {
   assert.throws(() => repository.setCaseWorking({ reviewId: workingCase, working: true }, 'HR'), /无效案件/)
   repository.setJobCaseLifecycle({ reviewId: workingCase, state: 'active', reason: '案件重新开始' }, 'HR')
   assert.equal(feedCase().working, false, 'restoring does not re-add the case')
-  assert.equal(currentSchemaVersion, 66)
+  assert.equal(currentSchemaVersion, 67)
   console.log(
     JSON.stringify({
       status: 'passed',

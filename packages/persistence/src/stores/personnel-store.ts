@@ -200,6 +200,8 @@ export class PersonnelStore extends DomainStore {
     const current = entries.find((entry) => entry.kind === input.kind && entry.objectId === input.objectId)
     if (!current || current.revision !== input.revision)
       throw new Error('信息已更新，请刷新后查看。 / 情報が更新されました。再読込してください。')
+    // Already read at this revision: nothing changes, so nothing is written (and the backup revision stays).
+    if (input.action === 'seen' && !current.unseen) return entries
     this.database
       .prepare(
         `INSERT INTO business_feed_marks(id,case_review_id,candidate_document_id,revision,seen_at,deferred) VALUES (?,?,?,?,?,?)
@@ -381,7 +383,11 @@ export class PersonnelStore extends DomainStore {
       .prepare<[string], { status: string }>('SELECT status FROM candidate_business_states WHERE document_id = ?')
       .get(input.documentId)
     if (state && !['available', 'soon'].includes(state.status))
-      throw new Error('此人员已入场或暂停营业。 / この要員は参画中または営業停止中です。')
+      throw new Error(
+        state.status === 'assigned'
+          ? '此人员已进场，暂不介绍；项目快结束时可先把营业状态改为近期可入场。 / この要員は参画中のため紹介できません。終了が近い場合は「近日稼働可能」に変更してください。'
+          : '此人员暂停营业，暂不介绍。 / この要員は営業停止中のため紹介できません。'
+      )
     if (input.caseContext) {
       const job = this.stores.jobCases.getJobCaseReview(input.caseContext.reviewId)
       if (!job?.jobCase || job.lifecycle !== 'active' || job.jobCase.version !== input.caseContext.version) {

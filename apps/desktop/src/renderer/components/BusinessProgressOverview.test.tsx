@@ -212,9 +212,11 @@ it('keeps today filtering intact and shows business progress on the card, not as
   fireEvent.change(list.getByLabelText('列表时间范围'), { target: { value: 'all' } })
   const card = within(await list.findByRole('article', { name: '人员A' }))
   expect(card.getByRole('button', { name: /跟进中 4 个案件/ })).toBeVisible()
-  for (const name of ['找案件', '准备介绍']) expect(card.getByRole('button', { name })).toBeVisible()
+  // The card footer shows 找案件, 准备介绍 and 稍后处理; only 删除 sits in its 「…」 menu.
+  for (const name of ['找案件', '准备介绍', '稍后处理']) expect(card.getByRole('button', { name })).toBeVisible()
   fireEvent.click(card.getByRole('button', { name: /^更多操作/u }))
-  for (const name of ['查看详情', '稍后处理']) expect(card.getByRole('menuitem', { name })).toBeVisible()
+  expect(card.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['删除'])
+  expect(card.queryByRole('menuitem', { name: '准备介绍' })).not.toBeInTheDocument()
   expect(card.queryByRole('textbox')).not.toBeInTheDocument()
   expect(card.getByText(/2020/)).toBeVisible()
 })

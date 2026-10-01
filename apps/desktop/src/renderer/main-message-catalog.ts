@@ -12,7 +12,7 @@ import { jobCaseFieldCanonicalLabels } from '@shared'
  */
 const mainMessageZh = new Map<string, string>([
   ['[送信前に記入]', '[发送前填写]'],
-  ['コア情報の補足が必要', '核心信息待补充'],
+  ['HRが案件条件を満たさないと確認', 'HR 确认不满足本案条件'],
   ['完了', '已完成'],
   ['開始', '开始'],
   ['稼働可能時期', '可入场时间'],
@@ -187,7 +187,7 @@ const mainMessageZh = new Map<string, string>([
   ['第', '第'],
   ['対応を再開', '恢复跟进'],
   ['宛先', '收件人'],
-  ['担当', '我的'],
+  ['担当', '负责中'],
   ['推薦済み', '已推荐'],
   ['スキルシート', '技能表'],
   ['開発ビルド・暗号化ローカルDB・サンプルデータ', '开发版本 · 加密本地数据库 · 示例数据'],
@@ -232,8 +232,8 @@ const jobCaseFieldLabelsZh: Record<JobCaseFieldKey, string> = {
   rate: '单价',
   settlement: '结算',
   location: '工作地点',
-  remote: '远程',
-  start_date: '入场时间',
+  remote: '工作方式',
+  start_date: '开始时间',
   working_hours: '工作时间',
   japanese_level: '日语能力',
   interview: '面试次数',
@@ -291,6 +291,15 @@ function translatedMainPattern(source: string): string | null {
     const type = mainMessageZh.get(taskMeta[1]) ?? taskMeta[1]
     return `${type} · 证据 ${taskMeta[2]} 项`
   }
+  const deletedSinceBackup =
+    /^このバックアップの作成後に完全削除した (\d+) 件（要員・案件）は、復元後の再起動時にもう一度削除されます。(?:うち (\d+) 件はバックアップ時点で参画中のため自動では削除されず、復元後に削除するか残すかを確認します。)?$/u.exec(
+      source
+    )
+  if (deletedSinceBackup)
+    return (
+      `这个备份之后永久删除的 ${deletedSinceBackup[1]} 项（人员、案件），恢复后重启时会再次删除。` +
+      (deletedSinceBackup[2] ? `其中 ${deletedSinceBackup[2]} 项在备份时有人进场，不会自动删除，恢复后会请你确认删除还是保留。` : '')
+    )
   const evidenceTab = /^証跡\s*(\d+)$/u.exec(source)
   if (evidenceTab) return `证据 ${evidenceTab[1]}`
   const candidateResultTab = /^候補者\s*(\d+)$/u.exec(source)
@@ -377,6 +386,8 @@ const simplifiedChineseBuiltInTaskTemplates: ReadonlyArray<readonly [string, str
     '查找 Java 经验 5 年以上、具备 AWS、8 月可入场且每周可远程 3 天的人员'
   ],
   ['選択したスキルシートを安全に取り込み、候補者プロフィールを作成したい', '安全导入选定的技能表并创建人员档案'],
+  ['選択した履歴書を候補者ライブラリへ安全に取り込みます', '导入所选简历到人员库'],
+  ['会話に添付された履歴書を候補者ライブラリへ安全に取り込みます', '导入对话中附加的简历到人员库'],
   ['Java / Spring Boot / AWS案件の候補者を照合したい', '匹配 Java / Spring Boot / AWS 案件的人员'],
   ['EC決済基盤案件の提案メール下書きを準備したい', '准备支付平台案件的提案邮件草稿']
 ]

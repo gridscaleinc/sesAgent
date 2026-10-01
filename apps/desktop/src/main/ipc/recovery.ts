@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -15,6 +16,7 @@ import {
 import {
   type ConfirmRecoveryResult,
   type CreateRecoveryPackageResult,
+  type HeldDeletion,
   type RecoveryPreviewResult,
   type RecoveryState,
   confirmRecoveryInputSchema,
@@ -24,11 +26,57 @@ import {
   snoozeRecoveryReminderInputSchema
 } from '@shared'
 import { assertTrustedSender, type MainIpcContext } from './context'
-import { verifyStagedRecovery } from '../recovery-verification'
+import { countRestoredDeletions, verifyStagedRecovery } from '../recovery-verification'
+import { deleteJournaledRecord, deviceDeletionJournal, journalRecordExists } from '../deletion-journal'
 
 /** Encrypted recovery package creation, preview and restore confirmation. */
 export function registerRecoveryHandlers(context: MainIpcContext) {
-  const { repository, masterKey, masterKeyProvider, userDataPath } = context
+  const { repository, masterKey, masterKeyProvider, userDataPath, fileVault } = context
+  const journal = () => deviceDeletionJournal(userDataPath)
+  /** Held deletions still in the data; one deleted or gone meanwhile is settled (confirmed again for future restores). */
+  const heldDeletions = async (): Promise<HeldDeletion[]> => {
+    const exists = journalRecordExists(repository)
+    const rows: HeldDeletion[] = []
+    for (const entry of await journal().held()) {
+      if (!exists(entry)) {
+        await journal().confirm(entry.id)
+        continue
+      }
+      const label =
+        entry.entityType === 'candidate'
+          ? (() => {
+              const person = repository.getCandidateReview(entry.entityId)
+              return person?.localIdentity?.displayName || person?.fileName || entry.entityId
+            })()
+          : (() => {
+              const job = repository.getJobCaseReview(entry.entityId)
+              return job?.fields.find((field) => field.key === 'title')?.value || job?.redactedSubject || entry.entityId
+            })()
+      rows.push({ id: entry.id, entityType: entry.entityType, label, reason: entry.heldReason ?? '', deletedAt: entry.deletedAt })
+    }
+    return rows
+  }
+  ipcMain.handle(ipcChannels.listHeldDeletions, async (event) => {
+    assertTrustedSender(event)
+    return heldDeletions()
+  })
+  ipcMain.handle(ipcChannels.resolveHeldDeletion, async (event, rawInput) => {
+    assertTrustedSender(event)
+    const input = z
+      .object({ id: z.string().uuid(), action: z.enum(['delete', 'keep']) })
+      .strict()
+      .parse(rawInput)
+    const entry = (await journal().held()).find((item) => item.id === input.id)
+    if (!entry) throw new Error('这条删除已处理。 / この削除は処理済みです。')
+    if (input.action === 'keep') {
+      // HR keeps the record: it is no longer a deletion to redo after a future restore either.
+      await journal().discard(entry.id)
+    } else {
+      await deleteJournaledRecord(entry, repository, fileVault)
+      await journal().confirm(entry.id)
+    }
+    return heldDeletions()
+  })
   let recoveryBusy = false
   let recoveryPreview: {
     token: string
@@ -161,6 +209,12 @@ export function registerRecoveryHandlers(context: MainIpcContext) {
       await verifyStagedRecovery(staged, repository.getSchemaVersion())
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
       recoveryPreview = { token, staged, expiresAt }
+      // People and cases deleted after this backup was made come back with it, and are deleted again right after the
+      // restore; only those actually in the backup count, and those with someone in place there are left to HR.
+      const deletedSince = await deviceDeletionJournal(userDataPath)
+        .recordedAfter(staged.summary.createdAt)
+        .then((entries) => countRestoredDeletions(staged!, entries))
+        .catch(() => ({ total: 0, inPlace: 0 }))
       return {
         cancelled: false,
         restoreToken: token,
@@ -170,7 +224,15 @@ export function registerRecoveryHandlers(context: MainIpcContext) {
         warnings: [
           '現在のローカルデータは再起動時に置き換えられます。',
           'Google Workspace の認証情報は復元されず、再接続が必要です。',
-          'アプリ外へ書き出したファイルは復元対象外です。'
+          'アプリ外へ書き出したファイルは復元対象外です。',
+          ...(deletedSince.total
+            ? [
+                `このバックアップの作成後に完全削除した ${deletedSince.total} 件（要員・案件）は、復元後の再起動時にもう一度削除されます。` +
+                  (deletedSince.inPlace
+                    ? `うち ${deletedSince.inPlace} 件はバックアップ時点で参画中のため自動では削除されず、復元後に削除するか残すかを確認します。`
+                    : '')
+              ]
+            : [])
         ]
       }
     } catch (error) {

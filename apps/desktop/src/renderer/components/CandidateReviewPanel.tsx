@@ -10,6 +10,7 @@ import type {
 import { Icon } from './Icon'
 import { localeText, localizedIpcError, useLocaleText, localizedCandidateFieldLabel } from '../i18n'
 import { summarizeSourceLabels } from '../source-evidence'
+import { formatTokyoDateTime } from '../format-time'
 
 interface CandidateReviewPanelProps {
   analysis: ResumeAnalysisSummary
@@ -120,7 +121,7 @@ export function CandidateReviewPanel({ analysis, review, onSubmit }: CandidateRe
           <span>Profile v{review.profile?.version ?? 1}</span>
         </div>
         <p>
-          {review.fileName} · {review.reviewerDisplayName} · {review.completedAt ? new Date(review.completedAt).toLocaleString(locale) : ''}
+          {review.fileName} · {review.reviewerDisplayName} · {review.completedAt ? formatTokyoDateTime(locale, review.completedAt) : ''}
         </p>
         {localIdentityPanel}
         <div className="anonymous-profile-id">

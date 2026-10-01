@@ -1,12 +1,13 @@
 import { applyLearnedRanking, withRankingRefs } from './experience-ranking'
 import { experienceBundle, experienceContext, matchingExperienceInput } from './experience-context'
 import { withLearningForeground } from './learning-activity'
-import { emptyWorkRules, evaluateWithWorkRules, workRuleContext } from './work-rule-matching'
+import { confirmationsOf, emptyWorkRules, evaluateWithWorkRules, workRuleContext } from './work-rule-matching'
 import { randomUUID } from 'node:crypto'
 import { businessModel } from './business-model'
 import { candidateBenchmarkQueryFromJobCase } from '@job-cases'
 import {
   businessMatchingPolicyVersion,
+  excludedByHr,
   proposalConclusion,
   candidateProfileSourceInputSchema,
   type PersonnelCaseMatch,
@@ -66,7 +67,8 @@ export function createPersonnelCaseMatcher(
         experienceBundle(repository, 'matching', snapshots.get(job.id)!.requirements, snapshots.get(job.id)!.context)
       ])
     )
-    const evaluations = new Map(activeCases.map((job) => [job.id, evaluateWithWorkRules(profile, job, library)]))
+    const confirmations = confirmationsOf(repository, documentId)
+    const evaluations = new Map(activeCases.map((job) => [job.id, evaluateWithWorkRules(profile, job, library, undefined, confirmations)]))
     let local = activeCases
       .flatMap((jobCase): PersonnelCaseMatch[] => {
         const evaluated = evaluations.get(jobCase.id)!
@@ -140,7 +142,11 @@ export function createPersonnelCaseMatcher(
       })
       return shown
     }
-    const visible = () => ({ ...result, items: result.items.filter((item) => item.qualification?.status !== 'excluded') })
+    // HR's 不满足 keeps a case listed, marked and last; other exclusions are left out.
+    const visible = () => ({
+      ...result,
+      items: result.items.filter((item) => item.qualification?.status !== 'excluded' || excludedByHr(item.qualification))
+    })
     options?.onLocal?.(structuredClone(visible()))
     if (!items.length || !cloud?.assessPersonnelCases) {
       if (items.length) result.cloud.reason = 'service-unavailable'
@@ -224,7 +230,8 @@ export function createPersonnelCaseMatcher(
           profile,
           activeCases.find((job) => job.id === item.jobCaseId)!,
           library,
-          verdict
+          verdict,
+          confirmations
         )
         evaluations.set(item.jobCaseId, evaluated)
         return {

@@ -1,9 +1,11 @@
 import { tokyoDateKey, dateFromKey, mondayFor, addDays, tokyoClockMinutes } from '../tokyo-calendar'
 import { useEffect, useMemo, useState } from 'react'
+import { businessProgressStep, followUpBlock, isInactiveProgressStage, scheduleClash } from '@shared'
 import type { BusinessFollowUp, CandidateInterviewSnapshot, CandidateReviewSnapshot, JobCaseReviewSnapshot } from '@shared'
 import { Icon } from './Icon'
 import { localeText, useUiLocale } from '../i18n'
 import type { PipelineView } from './CandidatePipeline'
+import { needsRecruitingWork } from './CandidateWorkspaces'
 
 type ScheduleTab = 'calendar' | 'list'
 type ScheduleKindFilter = 'all' | CandidateInterviewSnapshot['kind']
@@ -87,18 +89,6 @@ function viewFor(interview: CandidateInterviewSnapshot | null): PipelineView {
   if (interview.stage === 'awaiting-decision') return 'decision'
   if (interview.stage === 'prepared' || interview.stage === 'interviewing') return 'workbench'
   return interview.kind === 'client' ? 'client' : 'workbench'
-}
-
-function overlaps(left: CandidateInterviewSnapshot, right: CandidateInterviewSnapshot): boolean {
-  if (!left.scheduledAt || !right.scheduledAt || !left.interviewer || left.id === right.id) return false
-  const rightInterviewer = right.interviewer
-  if (!rightInterviewer || left.interviewer.trim().toLocaleLowerCase('ja-JP') !== rightInterviewer.trim().toLocaleLowerCase('ja-JP'))
-    return false
-  const leftStart = new Date(left.scheduledAt).getTime()
-  const rightStart = new Date(right.scheduledAt).getTime()
-  const leftEnd = leftStart + left.durationMinutes * 60_000
-  const rightEnd = rightStart + right.durationMinutes * 60_000
-  return leftStart < rightEnd && rightStart < leftEnd
 }
 
 function latestInterview(
@@ -185,6 +175,27 @@ export function InterviewScheduleCenter({
       alive = false
     }
   }, [interviews])
+  // Who is not being offered (暂停营业) or in place (已进场): their follow-ups cannot be booked, as 今天 and the menu bar count.
+  const [personStatuses, setPersonStatuses] = useState<ReadonlyMap<string, string>>(new Map())
+  // Pairs HR judged 不满足: nothing to book for them either (as 跟进, 今天 and the menu bar).
+  const [hrRejected, setHrRejected] = useState<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    let alive = true
+    void Promise.resolve(window.sesAgent.listHrRejectedFollowUps?.())
+      .then((keys) => {
+        if (alive) setHrRejected(new Set(keys ?? []))
+      })
+      .catch(() => {})
+    void window.sesAgent
+      .getPersonnelWorkspace?.()
+      .then((workspace) => {
+        if (alive) setPersonStatuses(new Map(workspace.states.map((state) => [state.documentId, state.status])))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [interviews, reviews])
   const reviewByDocumentId = useMemo(() => new Map(reviews.map((review) => [review.documentId, review])), [reviews])
   const rows = useMemo(() => {
     const liveRows = interviews.flatMap((interview): ScheduleRow[] => {
@@ -193,9 +204,29 @@ export function InterviewScheduleCenter({
       const follow = followUps.find((row) => row.id === interview.businessFollowUpId)
       const job = cases.find((row) => row.reviewId === follow?.reviewId)
       const caseTitle = job?.fields.find((field) => field.key === 'title')?.value ?? job?.redactedSubject
-      const inactive = ['closed', 'paused', 'started'].includes(follow?.progress?.stage ?? '')
-      const unscheduled = follow?.progress?.stage === 'coordinating'
-      const status = inactive ? 'finished' : unscheduled ? 'unbooked' : statusFor(interview)
+      const inactive = isInactiveProgressStage(follow?.progress?.stage ?? '')
+      // Only a follow-up's latest round is the one waiting to be booked; earlier rounds are its history.
+      const latest =
+        !follow ||
+        !interviews.some(
+          (other) => other.businessFollowUpId === follow.id && other.roundNumber > interview.roundNumber && other.id !== interview.id
+        )
+      // A decided round is history even when the follow-up waits for its next booking (重新开始跟进).
+      const unscheduled = follow?.progress?.stage === 'coordinating' && latest && !interview.decision
+      const blocked = follow
+        ? followUpBlock(follow, {
+            personStatus: personStatuses.get(follow.documentId),
+            caseLifecycle: cases.find((row) => row.reviewId === follow.reviewId)?.lifecycle,
+            hrRejected: hrRejected.has(`${follow.documentId}:${follow.reviewId}`)
+          })
+        : null
+      // Waiting to be booked but it cannot be (case ended, person paused or in place): not one to book.
+      if (unscheduled && blocked) return []
+      // Ended or paused before it took place: the time is released, so it is not drawn as booked.
+      const released = inactive && !interview.decision
+      // Held and waiting for the client's feedback, as 跟进 and 今天 read it from the time: a result is due, not a start.
+      const awaitingFeedback = Boolean(follow && latest && !interview.decision && businessProgressStep(follow).stage === 'feedback')
+      const status = inactive ? 'finished' : unscheduled ? 'unbooked' : awaitingFeedback ? 'decision' : statusFor(interview)
       return [
         {
           id: interview.id,
@@ -203,21 +234,16 @@ export function InterviewScheduleCenter({
           review,
           kind: interview.kind,
           status,
-          scheduledAt: unscheduled ? null : interview.scheduledAt,
+          scheduledAt: unscheduled || released ? null : interview.scheduledAt,
           interviewer: interview.interviewer,
           label: [caseTitle, interviewLabel(interview, zh)].filter(Boolean).join(' · '),
           route: routeFor(review, interview, interview.kind),
+          // The same rule 跟进 and 招聘面试 refuse a time by: same person or same interviewer, booked times only.
           conflict:
             !inactive &&
+            !unscheduled &&
             !interview.decision &&
-            interviews.some(
-              (other) =>
-                !other.decision &&
-                !followUps.some(
-                  (row) => row.id === other.businessFollowUpId && ['closed', 'paused', 'started'].includes(row.progress?.stage ?? '')
-                ) &&
-                overlaps(interview, other)
-            )
+            Boolean(interview.scheduledAt && scheduleClash({ ...interview, scheduledAt: interview.scheduledAt }, interviews, followUps))
         }
       ]
     })
@@ -225,9 +251,15 @@ export function InterviewScheduleCenter({
     // is represented as a virtual row only; the interview record is created
     // by the existing schedule-save use case after HR chooses a time.
     const withoutRecruitingSession = reviews.flatMap((review): ScheduleRow[] => {
-      // Once a recruiting decision has produced a local profile (active or
-      // archived), it is no longer an unbooked recruiting candidate.
-      if (review.profile || latestInterview(interviews, review.documentId, 'recruiting')) return []
+      // The same people the 招聘面试 queue lists: in the library, waiting for a recruiting interview, not already
+      // followed on a case, in place or not being offered. A résumé kept only for a case assessment is not one.
+      if (
+        latestInterview(interviews, review.documentId, 'recruiting') ||
+        !needsRecruitingWork(review, null) ||
+        followUps.some((row) => row.documentId === review.documentId) ||
+        ['assigned', 'paused'].includes(personStatuses.get(review.documentId) ?? '')
+      )
+        return []
       return [
         {
           id: `unbooked:${review.documentId}`,
@@ -243,14 +275,55 @@ export function InterviewScheduleCenter({
         }
       ]
     })
+    // A follow-up waiting for its first or next interview has no round yet: it is still one to book.
+    const awaitingRound = followUps.flatMap((follow): ScheduleRow[] => {
+      const stage = follow.progress?.stage
+      const review = reviewByDocumentId.get(follow.documentId)
+      const rounds = interviews.filter((item) => item.businessFollowUpId === follow.id)
+      // Waiting for its first round, or (after 重新开始跟进) for one after rounds that are all decided.
+      const waiting = stage === 'next-round' || (stage === 'coordinating' && rounds.every((round) => round.decision))
+      const job = cases.find((row) => row.reviewId === follow.reviewId)
+      // A follow-up that cannot move now (ended case, 暂停营业, in place elsewhere) books nothing, as on 今天 and the menu bar.
+      if (
+        !review ||
+        !waiting ||
+        followUpBlock(follow, {
+          personStatus: personStatuses.get(follow.documentId),
+          caseLifecycle: job?.lifecycle,
+          hrRejected: hrRejected.has(`${follow.documentId}:${follow.reviewId}`)
+        })
+      )
+        return []
+      const caseTitle = job?.fields.find((field) => field.key === 'title')?.value ?? job?.redactedSubject
+      return [
+        {
+          id: `follow-up:${follow.id}`,
+          interview: null,
+          review,
+          kind: 'client',
+          status: 'unbooked',
+          scheduledAt: null,
+          interviewer: null,
+          label: [caseTitle, t('待约客户面试', '顧客面談の調整待ち')].filter(Boolean).join(' · '),
+          route: {
+            businessFollowUpId: follow.id,
+            sourceDocumentId: follow.documentId,
+            interviewId: null,
+            kind: 'client',
+            view: 'schedule'
+          },
+          conflict: false
+        }
+      ]
+    })
     const actionPriority: Record<ScheduleStatus, number> = { unbooked: 0, decision: 1, preparing: 2, ready: 3, finished: 4 }
-    return [...liveRows, ...withoutRecruitingSession].toSorted(
+    return [...liveRows, ...awaitingRound, ...withoutRecruitingSession].toSorted(
       (left, right) =>
         actionPriority[left.status] - actionPriority[right.status] ||
         (left.scheduledAt ?? '9999').localeCompare(right.scheduledAt ?? '9999') ||
         left.label.localeCompare(right.label, locale)
     )
-  }, [interviews, locale, reviewByDocumentId, reviews, zh, cases, followUps])
+  }, [interviews, locale, reviewByDocumentId, reviews, zh, cases, followUps, personStatuses, hrRejected])
   const interviewers = useMemo(
     () => [...new Set(rows.map((row) => row.interviewer).filter((value): value is string => Boolean(value)))].toSorted(),
     [rows]
@@ -292,7 +365,6 @@ export function InterviewScheduleCenter({
     <main className="interview-schedule-center" aria-label={t('面试日程中心', '面談日程センター')}>
       <header className="candidate-queue-header interview-schedule-header">
         <div>
-          <span>INTERVIEW SCHEDULE</span>
           <h1>{t('面试日程', '面談日程')}</h1>
           <p>
             {t(

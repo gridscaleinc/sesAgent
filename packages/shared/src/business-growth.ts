@@ -43,8 +43,11 @@ export interface MatchingOpportunity {
   rulesRevision: number
   fingerprint: string
   score: number
-  /** The local matching conclusion; excluded pairs are never stored. Rows saved before it existed read as 'needs-confirmation'. */
-  status: 'recommended' | 'needs-confirmation'
+  /**
+   * The local matching conclusion. Excluded pairs are not stored, except 'not-suitable': HR judged a requirement
+   * not met, and the pair stays listed last. Rows saved before the status existed read as 'needs-confirmation'.
+   */
+  status: 'recommended' | 'needs-confirmation' | 'not-suitable'
   reasons: string[]
   /** Only the core (technical / language) requirements still unmet; business terms are left to the full assessment. */
   confirm: string[]
@@ -52,7 +55,7 @@ export interface MatchingOpportunity {
   state: 'new' | 'seen' | 'dismissed'
 }
 export const opportunityActionSchema = z
-  .object({ id: z.string().uuid(), fingerprint: z.string().length(64), action: z.enum(['seen', 'dismissed']) })
+  .object({ id: z.string().uuid(), fingerprint: z.string().length(64), action: z.enum(['seen', 'dismissed', 'restored']) })
   .strict()
 export interface QuestionBankRevision {
   id: string

@@ -8,11 +8,12 @@ import { DomainStore } from './base'
  * leaves no trace here either.
  */
 export class JobCaseSeenStore extends DomainStore {
+  /** Seen once is seen: opening the case again writes nothing, so the backup revision does not move. */
   markJobCaseReviewSeen(reviewId: string, seenAt: string): void {
     this.database
       .prepare(
         `INSERT INTO job_case_seen(review_id, seen_at) VALUES (?, ?)
-         ON CONFLICT(review_id) DO UPDATE SET seen_at = excluded.seen_at`
+         ON CONFLICT(review_id) DO NOTHING`
       )
       .run(reviewId, seenAt)
   }

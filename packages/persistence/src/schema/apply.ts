@@ -69,7 +69,8 @@ import {
   migrationV63,
   migrationV64,
   migrationV65,
-  migrationV66
+  migrationV66,
+  migrationV67
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
@@ -438,4 +439,12 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 64').get()) database.exec(migrationV64)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 65').get()) database.exec(migrationV65)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 66').get()) database.exec(migrationV66)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 67').get()) database.exec(migrationV67)
+  // Introductions for a case deleted before deletion took them along: the case's text must not outlive it.
+  database
+    .prepare(
+      `DELETE FROM personnel_introduction_drafts
+       WHERE case_review_id <> '' AND case_review_id NOT IN (SELECT review_id FROM job_case_extractions)`
+    )
+    .run()
 }

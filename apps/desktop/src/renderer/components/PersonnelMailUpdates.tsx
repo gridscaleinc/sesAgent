@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PersonnelMailUpdate } from '@shared'
 import { localizedIpcError, useUiLocale } from '../i18n'
+import { formatTokyoDateTime } from '../format-time'
 
 export function PersonnelMailUpdates({ documentId, version }: { documentId: string; version: number }) {
   const zh = useUiLocale() === 'zh-CN',
@@ -73,7 +74,7 @@ export function PersonnelMailUpdates({ documentId, version }: { documentId: stri
             {(row.currentValue === undefined ? row.previousValue : row.currentValue) || t('未填写', '未記入')} → {row.value}
           </p>
           <small>
-            {new Date(row.receivedAt).toLocaleDateString()} · {row.subject}
+            {formatTokyoDateTime(zh ? 'zh-CN' : 'ja-JP', row.receivedAt, 'date')} · {row.subject}
           </small>
           <p>
             {row.reason === 'multiple-people'

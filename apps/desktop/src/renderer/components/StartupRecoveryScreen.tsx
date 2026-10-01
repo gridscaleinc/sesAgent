@@ -87,7 +87,6 @@ export function StartupRecoveryScreen({ status, onPreviewRecovery, onConfirmReco
         </header>
 
         <div className="startup-recovery-status">
-          <span className="eyebrow">OFFLINE RECOVERY</span>
           <div className="startup-recovery-title-row">
             <span className="startup-recovery-alert">
               <Icon name="lock" size={24} />
@@ -154,7 +153,7 @@ export function StartupRecoveryScreen({ status, onPreviewRecovery, onConfirmReco
                     <dd>{new Date(preview.summary.createdAt).toLocaleString(locale)}</dd>
                   </div>
                   <div>
-                    <dt>Schema</dt>
+                    <dt>{t('数据版本', 'データ版')}</dt>
                     <dd>v{preview.summary.schemaVersion}</dd>
                   </div>
                   <div>

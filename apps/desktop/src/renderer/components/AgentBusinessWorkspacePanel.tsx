@@ -1,4 +1,5 @@
 import { BusinessField } from './BusinessField'
+import { displayFieldValue } from '../field-display'
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react'
 import {
   JobCaseAliasSuggestions,
@@ -283,17 +284,30 @@ function CaseReviewView({
     [aliasSuggestions, setAliasSuggestions] = useState<AliasSuggestion[]>([])
   const review = reviews.find((item) => item.reviewId === access.reviewId)
   if (!review) return <Empty>{t('案件记录不存在或已经删除', '案件レコードが存在しないか削除されています')}</Empty>
-  const edit = (key: string, value: string | null, label: string) => (
-    <BusinessField
-      kind="case"
-      id={review.reviewId}
-      version={review.reviewRevision}
-      field={key}
-      value={value}
-      label={label}
-      disabled={review.lifecycle !== 'active'}
-    />
-  )
+  const edit = (key: string, value: string | null, label: string) => {
+    // Display only: the stored Japanese stays what is edited and saved; the tooltip shows it.
+    const shown = value ? displayFieldValue(key, value, zh) : null
+    return (
+      <BusinessField
+        kind="case"
+        id={review.reviewId}
+        version={review.reviewRevision}
+        field={key}
+        value={value}
+        label={label}
+        disabled={review.lifecycle !== 'active'}
+      >
+        {shown?.original ? (
+          <span className="is-normalized-value" title={shown.original}>
+            {shown.text}
+          </span>
+        ) : value ? undefined : (
+          // Same muted dash as the list cards for an empty value; the field stays editable.
+          <span className="agent-business-empty-value">—</span>
+        )}
+      </BusinessField>
+    )
+  }
   const archived = review.lifecycle === 'archived'
   const valid = review.status === 'completed' && !archived
   const findPeople = findPeopleAction(review, onFindPeople)
@@ -1150,6 +1164,7 @@ export function AgentBusinessWorkspacePanel({
         actions={broadcastActions}
         initialReviewId={access.reviewId}
         onSelectedReviewChange={(reviewId) => onOpenAccess({ type: 'system-access', destination: 'broadcast', reviewId })}
+        onOpenCase={(reviewId) => onOpenAccess({ type: 'system-access', destination: 'case-review', reviewId })}
       />
     ) : (
       <Empty>{t('群发案件在此环境中不可用', '案件配信はこの環境では利用できません')}</Empty>

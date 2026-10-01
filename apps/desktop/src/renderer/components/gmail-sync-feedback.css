@@ -1,6 +1,6 @@
 .gmail-sync-feedback {
   margin-top: 12px;
-  color: #374b60;
+  color: var(--tone-slate-41-3);
   font-size: 12px;
   line-height: 1.65;
   overflow-wrap: anywhere;
@@ -14,8 +14,8 @@
 }
 .gmail-sync-feedback [role='alert'] {
   padding: 9px 11px;
-  color: #9b3030;
-  background: #fff5f4;
-  border: 1px solid #efccc7;
+  color: var(--tone-red-47);
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
   border-radius: 8px;
 }

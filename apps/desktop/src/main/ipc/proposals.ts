@@ -20,6 +20,7 @@ import {
   createProposalDraftInputSchema,
   exportProposalPackageInputSchema,
   exportSkillSheetInputSchema,
+  isInactiveProgressStage,
   ipcChannels,
   proposalTaskIdSchema,
   recordProposalFollowUpInputSchema,
@@ -27,6 +28,7 @@ import {
 } from '@shared'
 import { exportSkillSheet } from '../skill-sheet-export'
 import { assertWorkTaskAllowsExecution } from '../work-task-helpers'
+import { rejectedByHr } from '../work-rule-matching'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 async function renderProposalAttachmentPdf(draft: ProposalDraftSnapshot): Promise<Buffer> {
@@ -83,6 +85,18 @@ export function registerProposalHandlers(context: MainIpcContext) {
     return repository.getProposalWorkspace(proposalTaskIdSchema.parse(rawTaskId))
   })
 
+  /** A pair HR judged 不满足 gets no proposal either, as no introduction or recommendation from any entry. */
+  const assertNotRejectedByHr = (draft: { candidateProfileId: string; jobCaseId: string }) => {
+    const documentId = repository.getCandidateSourceDocumentId(draft.candidateProfileId)
+    const reviewId =
+      repository.listActiveJobCases().find((job) => job.id === draft.jobCaseId)?.sourceReviewId ??
+      repository.listJobCaseReviews().find((review) => review.jobCase?.id === draft.jobCaseId)?.reviewId
+    if (documentId && reviewId && rejectedByHr(repository, documentId, reviewId))
+      throw new Error(
+        '这个人员已被判定不满足该案件的要求，不能提案；如判断有变，请先在匹配中撤回「不满足」。 / この要員は案件の条件を満たさないと判断済みのため提案できません。判断が変わった場合は「満たさない」を取り消してください。'
+      )
+  }
+
   ipcMain.handle(ipcChannels.createProposalDraft, async (event, rawInput): Promise<ProposalMutationResult> => {
     assertTrustedSender(event)
     const input = createProposalDraftInputSchema.parse(rawInput)
@@ -91,6 +105,7 @@ export function registerProposalHandlers(context: MainIpcContext) {
         const task = repository.getWorkTask(input.taskId)
         if (!task) throw new Error('提案タスクが見つかりません。')
         assertWorkTaskAllowsExecution(task)
+        assertNotRejectedByHr({ candidateProfileId: input.candidateProfileId, jobCaseId: input.jobCaseId })
         const draft = repository.createProposalDraft(input, randomUUID(), currentOperator().displayName)
         const updatedTask = recordProposalDraftCreated(task, draft.attachment.fields.length + 2, new Date(), {
           objectId: draft.id,
@@ -134,6 +149,7 @@ export function registerProposalHandlers(context: MainIpcContext) {
         if (!task) throw new Error('提案タスクが見つかりません。')
         assertWorkTaskAllowsExecution(task)
         const operator = currentOperator()
+        assertNotRejectedByHr(currentDraft)
         const draft = repository.approveProposalDraft(input, operator.displayName)
         const updatedTask = recordProposalApproved(task, new Date(), operator.displayName)
         repository.saveWorkTask(updatedTask)
@@ -318,6 +334,55 @@ export function registerProposalHandlers(context: MainIpcContext) {
     )
   })
 
+  /**
+   * A proposal sent from here is the same 推荐 as one sent from 找人: it opens (or keeps) the pair's 跟进 at 已推荐,
+   * so it counts in this week's numbers and HR continues interviews and the start there. Best effort: an ended case,
+   * a person judged 不满足 or one not being offered simply keeps the proposal record only.
+   */
+  /**
+   * A proposal result recorded here is the pair's 跟进 too: sent and later stages record 已推荐 (opening the follow-up
+   * if needed, counted in this week's numbers); declined or withdrawn ends a follow-up still under way. Returns why it
+   * could not be carried over, so HR is told instead of the two drifting apart silently.
+   */
+  const syncFollowUp = (draft: { candidateProfileId: string; jobCaseId: string }, stage: string, actor: string): string | undefined => {
+    try {
+      const documentId = repository.getCandidateSourceDocumentId(draft.candidateProfileId)
+      const reviewId =
+        repository.listActiveJobCases().find((job) => job.id === draft.jobCaseId)?.sourceReviewId ??
+        repository.listJobCaseReviews().find((review) => review.jobCase?.id === draft.jobCaseId)?.reviewId
+      if (!documentId || !reviewId)
+        return '人员或案件已不存在，跟进未更新。 / 要員または案件が見つからないため、対応記録は更新していません。'
+      const existing = repository.listBusinessFollowUps().find((row) => row.documentId === documentId && row.reviewId === reviewId)
+      if (stage === 'declined' || stage === 'withdrawn') {
+        // A paused one ends too: the client said no, so it is not resumed for this proposal.
+        if (!existing?.progress || (isInactiveProgressStage(existing.progress.stage) && existing.progress.stage !== 'paused'))
+          return undefined
+        repository.advanceBusinessProgress(
+          {
+            documentId,
+            reviewId,
+            expectedRevision: existing.revision,
+            mutationId: randomUUID(),
+            action: 'close',
+            reason: stage === 'declined' ? '客户拒绝（提案记录） / 顧客見送り（提案記録）' : '撤回提案 / 提案取り下げ'
+          },
+          actor
+        )
+        return undefined
+      }
+      if (rejectedByHr(repository, documentId, reviewId))
+        return '此人员已被判定不满足该案件，跟进未记为已推荐。 / 案件の条件を満たさないと判断済みのため、推薦済みにしていません。'
+      repository.advanceBusinessProgress(
+        { documentId, reviewId, expectedRevision: existing?.revision ?? 0, mutationId: randomUUID(), action: 'recommend' },
+        actor
+      )
+      return undefined
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : ''
+      return `跟进未更新：${message.split(' / ')[0] || '请在跟进中手动记录。'} / 対応記録は更新されていません。`
+    }
+  }
+
   ipcMain.handle(ipcChannels.recordProposalFollowUp, async (event, rawInput): Promise<ProposalMutationResult> => {
     assertTrustedSender(event)
     const input = recordProposalFollowUpInputSchema.parse(rawInput)
@@ -335,7 +400,8 @@ export function registerProposalHandlers(context: MainIpcContext) {
         const draft = repository.recordProposalFollowUp(input, randomUUID(), operator.displayName, now)
         const updatedTask = recordProposalFollowUp(task, input.stage, now, operator.displayName)
         repository.saveWorkTask(updatedTask)
-        return { draft, task: updatedTask }
+        const followUpNote = syncFollowUp(draft, input.stage, operator.displayName)
+        return { draft, task: updatedTask, ...(followUpNote ? { followUpNote } : {}) }
       })
     )
   })

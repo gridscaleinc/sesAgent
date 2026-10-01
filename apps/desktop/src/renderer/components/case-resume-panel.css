@@ -1,25 +1,30 @@
+/* Shown only while files are dragged over the case list, floating so the rows do not move. */
 .case-list-drop-help {
-  margin: 0 4px 10px;
-  color: #60748e;
+  position: absolute;
+  z-index: 4;
+  top: 44px;
+  right: 20px;
+  left: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--surface-selected);
+  color: var(--accent-text);
   font-size: 12px;
   line-height: 1.6;
-}
-.case-list-drop-help.is-active {
-  padding: 12px;
-  background: #eff9f5;
-  color: #355e4b;
-  border-radius: 10px;
+  pointer-events: none;
 }
 .hr-object-card.is-resume-drag-target {
-  outline: 2px solid #50866b;
+  outline: 2px solid var(--line-green-57);
   outline-offset: -2px;
-  background: #eff9f5;
+  background: var(--tint-gray-97);
 }
 .case-card-drop-caption {
-  padding: 10px 12px;
-  margin: 0 0 12px;
-  color: #355e4b;
-  background: #e0eee3;
+  padding: 4px 10px;
+  margin: 0;
+  color: var(--accent-text);
+  background: var(--tint-green-94);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
@@ -35,7 +40,7 @@
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface);
-  color: var(--forest);
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -49,7 +54,7 @@
   padding: 0;
 }
 .case-resume-picker:focus-within {
-  outline: 2px solid var(--forest);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 .case-resume-picker:has(input:disabled) {
@@ -60,10 +65,10 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--forest);
+  color: var(--accent-text);
 }
 .case-people-hint {
-  color: var(--amber);
+  color: var(--status-attention-fg);
 }
 .case-people-tools {
   display: flex;

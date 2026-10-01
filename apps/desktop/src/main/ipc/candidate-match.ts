@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
+import { rejectedByHr } from '../work-rule-matching'
 import { AgentExecutionError, resolveAgentChatModel, type AgentToolExecutionMetadata } from '@agent'
 import {
   cancelWorkTask,
@@ -340,6 +341,81 @@ export function registerCandidateMatchHandlers(
           sourceDocumentId: review.documentId
         })),
     scheduleCandidateInterview: (input) => {
+      if (input.kind === 'client') {
+        // A client interview is always for a case: it is booked on that case's 跟进, under the same rules
+        // (ended case, 暂停营业, 已进场, time conflicts) and moves the follow-up to 已约面.
+        if (!input.caseReviewId)
+          throw new Error('客户面试需要指定案件，请在案件的跟进中安排。 / 顧客面談は案件を指定し、対応記録から設定してください。')
+        // 已进场, 暂停营业, an ended case and time conflicts are refused by 跟进's own rules below.
+        const actor = currentOperator().displayName
+        const pair = { documentId: input.sourceDocumentId, reviewId: input.caseReviewId }
+        if (rejectedByHr(repository, pair.documentId, pair.reviewId))
+          throw new Error(
+            '这个人员已被判定不满足该案件的要求，不能安排客户面试。 / この要員は案件の条件を満たさないと判断済みのため、顧客面談は設定できません。'
+          )
+        const current = repository
+          .listBusinessFollowUps()
+          .find((item) => item.documentId === pair.documentId && item.reviewId === pair.reviewId)
+        // Booking from the conversation only adds a first or next interview; anything else is decided on 跟进.
+        const latest = current?.progress?.rounds.at(-1)
+        const pastStage = Boolean(current?.progress && ['entry', 'started', 'ended'].includes(current.progress.stage))
+        // A booked round still ahead is changed on 跟进 (重新预约); one already held may be followed by the next round
+        // before its result is written down, as 跟进 allows.
+        const upcoming = Boolean(
+          latest?.scheduledAt && !latest.decision && Date.parse(latest.scheduledAt) + latest.durationMinutes * 60000 > Date.now()
+        )
+        if (current?.progress && (pastStage || upcoming))
+          throw new Error(
+            pastStage
+              ? '这个跟进已经过了面试阶段，请在跟进中处理。 / この対応は面談の段階を過ぎています。対応記録で操作してください。'
+              : '这一轮客户面试已经约好；如需改时间，请在跟进中「重新预约」。 / この回の顧客面談は予約済みです。日時の変更は対応記録の「再予約」から行ってください。'
+          )
+        // Any row there already (even an older one without stages) is the HR's record and is never removed here.
+        const existed = Boolean(current)
+        const [row] = repository.beginBusinessProgress([pair], actor)
+        const last = row!.progress?.rounds.at(-1)
+        try {
+          repository.advanceBusinessProgress(
+            {
+              ...pair,
+              expectedRevision: row!.revision,
+              mutationId: randomUUID(),
+              action: 'schedule',
+              schedule: {
+                // The next round after one decided or already held; the same round when it was never booked.
+                roundNumber: !last ? 1 : last.decision || last.scheduledAt ? last.roundNumber + 1 : last.roundNumber,
+                scheduledAt: input.scheduledAt,
+                durationMinutes: input.durationMinutes,
+                meetingMethod: input.meetingMethod,
+                meetingUrl: input.meetingUrl ?? '',
+                location: '',
+                interviewer: actor,
+                note: input.contactNote ?? ''
+              }
+            },
+            actor
+          )
+        } catch (cause) {
+          // Not booked (a conflict, an ended case…): a follow-up created just for this booking goes away again.
+          if (!existed) repository.deleteBusinessFollowUp({ followUpId: row!.id, expectedRevision: row!.revision })
+          throw cause
+        }
+        return
+      }
+      // The latest recruiting round already booked and still ahead is changed in 面试日程 (改期), not silently moved
+      // from the conversation; a held, cancelled or never-booked one takes the new time.
+      const latestRecruiting = repository
+        .listCandidateInterviews()
+        .filter((item) => item.sourceDocumentId === input.sourceDocumentId && item.kind === 'recruiting' && !item.businessFollowUpId)
+        .sort((a, b) => b.roundNumber - a.roundNumber)[0]
+      if (
+        latestRecruiting?.scheduledAt &&
+        !latestRecruiting.decision &&
+        Date.parse(latestRecruiting.scheduledAt) + latestRecruiting.durationMinutes * 60000 > Date.now()
+      )
+        throw new Error(
+          '这个人员的招聘面试已经约好；如需改时间，请在面试日程中「改期」。 / この要員の採用面談は予約済みです。日時の変更は面談日程の「日程変更」から行ってください。'
+        )
       repository.saveCandidateInterviewSchedule(
         {
           sourceDocumentId: input.sourceDocumentId,

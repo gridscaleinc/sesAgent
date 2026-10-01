@@ -27,8 +27,8 @@
 .recommendation-points-label {
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--amber-soft);
-  color: var(--amber);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
   font-size: 11px;
   font-weight: 600;
 }
@@ -37,7 +37,7 @@
   padding: 6px 10px;
   border-radius: 7px;
   background: var(--amber-faint);
-  color: var(--amber);
+  color: var(--status-attention-fg);
   font-size: 12px;
 }
 .recommendation-points-list {
@@ -104,6 +104,6 @@
   border: 0;
   background: none;
   padding: 0;
-  color: var(--forest);
+  color: var(--accent-text);
   text-decoration: underline;
 }

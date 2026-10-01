@@ -18,6 +18,7 @@ import { AiModelSettingsSection } from './AiModelSettingsSection'
 import { Icon, type IconName } from './Icon'
 import { GmailSyncFeedback } from './GmailSyncFeedback'
 import { localizedIpcError, useLocaleText, localizedJobCaseFieldLabel } from '../i18n'
+import { readThemePreference, saveThemePreference, type ThemePreference } from '../theme'
 
 export type ApplicationSettingsSection = 'experience' | 'general' | 'models' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
 
@@ -84,19 +85,31 @@ function languageOptions(t: LocaleText): Array<{ locale: ApplicationLocale; name
   ]
 }
 
+function themeOptions(t: LocaleText): Array<{ theme: ThemePreference; name: string; detail: string }> {
+  return [
+    {
+      theme: 'system',
+      name: t('跟随系统', 'システムに合わせる'),
+      detail: t('随系统的浅色/深色外观切换。', 'システムのライト/ダーク設定に合わせて切り替えます。')
+    },
+    { theme: 'light', name: t('浅色', 'ライト'), detail: t('始终使用浅色界面。', '常にライト表示を使います。') },
+    { theme: 'dark', name: t('深色', 'ダーク'), detail: t('始终使用深色界面。', '常にダーク表示を使います。') }
+  ]
+}
+
 function settingsSections(t: LocaleText): Array<{ id: ApplicationSettingsSection; label: string; detail: string; icon: IconName }> {
   return [
-    { id: 'general', label: t('常规设置', '一般設定'), detail: t('语言与本机用户', '言語と本機ユーザー'), icon: 'settings' },
+    { id: 'general', label: t('常规设置', '一般設定'), detail: t('语言、外观与本机用户', '言語・外観・本機ユーザー'), icon: 'tasks' },
     {
       id: 'models',
       label: t('AI 模型', 'AIモデル'),
       detail: t('批量核对与文案分析', '一括確認と文章・分析'),
       icon: 'sparkles'
     },
-    { id: 'experience', label: t('系统经验', 'システムの経験'), detail: t('自动学习与核实方法', '自動学習と確認方法'), icon: 'sparkles' },
+    { id: 'experience', label: t('系统经验', 'システムの経験'), detail: t('自动学习与核实方法', '自動学習と確認方法'), icon: 'database' },
     { id: 'fields', label: t('案件字段', '案件項目'), detail: t('字段别名', '項目の別名'), icon: 'briefcase' },
     { id: 'broadcast', label: t('群发', '配信'), detail: t('文案模板', '紹介文テンプレート'), icon: 'mail' },
-    { id: 'integrations', label: t('外部系统', '外部システム'), detail: t('连接、权限与同步', '接続・権限・同期'), icon: 'mail' },
+    { id: 'integrations', label: t('外部系统', '外部システム'), detail: t('连接、权限与同步', '接続・権限・同期'), icon: 'external-link' },
     {
       id: 'privacy',
       label: t('数据与隐私', 'データとプライバシー'),
@@ -130,6 +143,7 @@ export function ApplicationSettingsDialog({
   const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null)
   const [activeSection, setActiveSection] = useState<ApplicationSettingsSection>(initialSection)
   const [busy, setBusy] = useState<string | null>(null)
+  const [theme, setTheme] = useState<ThemePreference>(readThemePreference)
   const [error, setError] = useState<string | null>(null)
   const [aliasDrafts, setAliasDrafts] = useState<Record<JobCaseFieldKey, string>>(() => aliasDraftsFrom(fieldAliases))
   const [aliasError, setAliasError] = useState<string | null>(null)
@@ -249,7 +263,6 @@ export function ApplicationSettingsDialog({
       >
         <header>
           <div>
-            <span>APPLICATION SETTINGS</span>
             <h2 id="application-settings-title">{t('设置', '設定')}</h2>
             <p>{t('在一个位置管理显示、外部系统和数据保护。', '表示、外部システム、データ保護を一つの場所で管理します。')}</p>
           </div>
@@ -288,7 +301,6 @@ export function ApplicationSettingsDialog({
             {activeSection === 'general' ? (
               <section aria-labelledby="general-settings-title" className="settings-section">
                 <div className="settings-section-heading">
-                  <span>GENERAL</span>
                   <h3 id="general-settings-title">{t('常规设置', '一般設定')}</h3>
                   <p>{t('设置本机使用的显示语言和用户信息。', 'この端末で使用する表示言語とユーザー情報を設定します。')}</p>
                 </div>
@@ -313,6 +325,35 @@ export function ApplicationSettingsDialog({
                         <span>
                           <strong>{option.name}</strong>
                           <small>{option.nativeName}</small>
+                          <em>{option.detail}</em>
+                        </span>
+                        {selected ? <Icon name="check" size={17} /> : null}
+                      </button>
+                    )
+                  })}
+                </section>
+                <section aria-labelledby="appearance-settings-title" className="language-choice-group" role="radiogroup">
+                  <div className="language-choice-heading">
+                    <Icon name="settings" size={16} />
+                    <span id="appearance-settings-title">{t('外观', '外観')}</span>
+                  </div>
+                  {themeOptions(t).map((option) => {
+                    const selected = theme === option.theme
+                    return (
+                      <button
+                        aria-checked={selected}
+                        className={selected ? 'language-choice is-selected' : 'language-choice'}
+                        key={option.theme}
+                        onClick={() => {
+                          saveThemePreference(option.theme)
+                          setTheme(option.theme)
+                        }}
+                        role="radio"
+                        type="button"
+                      >
+                        <span className="language-choice-radio" aria-hidden="true" />
+                        <span>
+                          <strong>{option.name}</strong>
                           <em>{option.detail}</em>
                         </span>
                         {selected ? <Icon name="check" size={17} /> : null}
@@ -400,7 +441,6 @@ export function ApplicationSettingsDialog({
             {activeSection === 'fields' ? (
               <section aria-labelledby="field-settings-title" className="settings-section">
                 <div className="settings-section-heading">
-                  <span>CASE FIELDS</span>
                   <h3 id="field-settings-title">{t('案件字段别名', '案件項目の別名')}</h3>
                   <p>
                     {t(
@@ -461,7 +501,6 @@ export function ApplicationSettingsDialog({
             {activeSection === 'broadcast' && broadcastActions ? (
               <section aria-labelledby="broadcast-settings-title" className="settings-section">
                 <div className="settings-section-heading">
-                  <span>CASE BROADCAST</span>
                   <h3 id="broadcast-settings-title">{t('群发', '配信')}</h3>
                   <p>
                     {t(
@@ -487,7 +526,6 @@ export function ApplicationSettingsDialog({
             {activeSection === 'integrations' ? (
               <section aria-labelledby="integration-settings-title" className="settings-section">
                 <div className="settings-section-heading">
-                  <span>EXTERNAL SYSTEMS</span>
                   <h3 id="integration-settings-title">{t('外部系统', '外部システム')}</h3>
                   <p>{t('在此统一管理外部服务的连接、权限和同步范围。', '外部サービスの接続、権限、同期範囲をここで一元管理します。')}</p>
                 </div>
@@ -692,7 +730,6 @@ export function ApplicationSettingsDialog({
             {activeSection === 'privacy' ? (
               <section aria-labelledby="privacy-settings-title" className="settings-section">
                 <div className="settings-section-heading">
-                  <span>DATA & PRIVACY</span>
                   <h3 id="privacy-settings-title">{t('数据与隐私', 'データとプライバシー')}</h3>
                   <p>
                     {t('查看个人信息脱敏、本地 AI 和加密存储的当前状态。', '個人情報の脱敏、Local AI、暗号化保存の現在状態を確認します。')}

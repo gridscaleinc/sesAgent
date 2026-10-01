@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 66
+export const currentSchemaVersion = 67
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2683,5 +2683,44 @@ export const migrationV66 = `
 BEGIN IMMEDIATE;
 ALTER TABLE local_application_preferences ADD COLUMN menu_bar TEXT;
 INSERT INTO schema_migrations(version,applied_at) VALUES(66,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// HR decisions on requirements the material left unclear (满足 / 不满足 / 问本人). A 'person' decision is a fact
+// about the person for every case asking the same; a 'pair' decision holds for one case version only. Removed with
+// the person, and a pair decision with its case (foreign keys). One current decision per person, scope, case and
+// requirement wording.
+export const migrationV67 =
+  `
+BEGIN IMMEDIATE;
+CREATE TABLE requirement_confirmations (
+ id TEXT PRIMARY KEY,
+ document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
+ scope TEXT NOT NULL CHECK (scope IN ('person','pair')),
+ job_case_id TEXT REFERENCES job_cases(id) ON DELETE CASCADE,
+ job_case_version INTEGER,
+ requirement_key TEXT NOT NULL,
+ requirement_label TEXT NOT NULL,
+ outcome TEXT NOT NULL CHECK (outcome IN ('met','conflict','asking')),
+ note TEXT,
+ question TEXT,
+ decided_at TEXT NOT NULL,
+ decided_by TEXT,
+ CHECK ((scope = 'person' AND job_case_id IS NULL AND job_case_version IS NULL)
+     OR (scope = 'pair' AND job_case_id IS NOT NULL AND job_case_version IS NOT NULL))
+);
+CREATE UNIQUE INDEX requirement_confirmations_target
+ ON requirement_confirmations(document_id, scope, COALESCE(job_case_id, ''), requirement_key);
+` +
+  ['INSERT', 'UPDATE', 'DELETE']
+    .map(
+      (
+        operation
+      ) => `CREATE TRIGGER backup_revision_requirement_confirmations_${operation.toLowerCase()} AFTER ${operation} ON requirement_confirmations
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+    )
+    .join('\n') +
+  `
+INSERT INTO schema_migrations(version,applied_at) VALUES(67,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
 `

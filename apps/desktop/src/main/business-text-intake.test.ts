@@ -132,12 +132,12 @@ describe('importChatPastedJobCaseText', () => {
     expect(repository.saveRedactedJobCaseSourceAndDraft).not.toHaveBeenCalled()
   })
 
-  it('reports an archived duplicate without restoring it', async () => {
-    const existing = { reviewId: 'review-1', status: 'completed', lifecycle: 'archived' } as unknown as JobCaseReviewSnapshot
-    const repository = jobCaseRepository({ findJobCaseReviewByBusinessFingerprint: vi.fn(() => existing) })
+  it('creates a new case when the only earlier one has ended (the store no longer matches it)', async () => {
+    // findJobCaseReviewByBusinessFingerprint skips ended cases: the client sending it again is recruiting again.
+    const repository = jobCaseRepository({ findJobCaseReviewByBusinessFingerprint: vi.fn(() => null) })
     const result = await importChatPastedJobCaseText({ repository, localNer: null }, anonymizedCaseText)
-    expect(result.outcome).toBe('archived')
-    expect(repository.saveRedactedJobCaseSourceAndDraft).not.toHaveBeenCalled()
+    expect(result.outcome).toBe('created')
+    expect(repository.saveRedactedJobCaseSourceAndDraft).toHaveBeenCalled()
   })
 
   it('lets verified cloud field values win over label-based ones and marks the draft as cloud-assisted', async () => {

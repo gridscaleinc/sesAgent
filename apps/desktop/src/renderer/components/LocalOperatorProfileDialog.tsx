@@ -15,7 +15,7 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
   const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null)
   const [displayName, setDisplayName] = useState(profile.configured ? profile.displayName : '')
   // i18n-ignore: default role value saved to the operator profile
-  const [roleLabel, setRoleLabel] = useState(profile.configured ? profile.roleLabel : '営業担当')
+  const [roleLabel, setRoleLabel] = useState(profile.configured ? profile.roleLabel : t('营业负责人', '営業担当'))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -90,7 +90,7 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
       >
         <header>
           <div>
-            <span>LOCAL OPERATOR IDENTITY</span>
+            <span>{t('本机操作员', 'この端末の操作員')}</span>
             <h2 id="operator-profile-title">{t('操作员档案', '操作員プロフィール')}</h2>
             <p>
               {t(
@@ -147,7 +147,7 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
             <div>
               <Icon name="shield" size={15} />
               <span>
-                <strong>Cloud</strong> {t('档案不属于发送对象', 'プロフィールは送信対象外')}
+                <strong>{t('云端', 'クラウド')}</strong> {t('档案不属于发送对象', 'プロフィールは送信対象外')}
               </span>
             </div>
             <div>

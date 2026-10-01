@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   candidateIdentityKey,
+  excludedByHr,
   sameCandidateRecord,
   type ApplicationLocale,
   type CandidateReviewSnapshot,
@@ -10,6 +11,8 @@ import {
   type JobCaseReviewSnapshot
 } from '@shared'
 import { localeText, localizedIpcError, localizedMainText } from '../i18n'
+import { onRequirementDecision } from '../requirement-decision-events'
+import { notifyBusinessDataChanged } from '../business-data-events'
 
 export interface CaseResumeTask {
   id: string
@@ -27,6 +30,8 @@ export interface CaseResumeTask {
   updatedAt?: number
   /** Operator request for the next assessment of this person; kept across a failed retry. */
   request?: string
+  /** Said once the upload turned out to be someone already in the system (该人员已入库). */
+  notice?: string
 }
 export interface CasePeopleSearch {
   pending: boolean
@@ -90,8 +95,13 @@ export function visibleCaseTasks(
   const hiddenReason = (item: CaseResumeTask): ExcludedCaseTask['reason'] | 'deleted' | null => {
     if (item.origin !== 'search') return null
     const status = personFor(item)?.recordStatus
-    if (status !== 'active') return status === 'archived' ? 'archived' : 'deleted'
-    if (item.assessment?.result.qualification?.status === 'excluded') return 'requirements'
+    if (status === 'deleted' || !status) return 'deleted'
+    // Someone in a follow-up for this case (in place here, say) stays listed with it, whatever else is true now.
+    if (hasFollowUp?.(item)) return null
+    if (status !== 'active') return 'archived'
+    // HR's 不满足 keeps the person listed, marked and last.
+    if (item.assessment?.result.qualification?.status === 'excluded' && !excludedByHr(item.assessment.result.qualification))
+      return 'requirements'
     return unavailable.has(item.documentId ?? '') ? 'unavailable' : null
   }
   const shown = own.filter((item) => hiddenReason(item) === null)
@@ -171,6 +181,24 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
     current.current = update(current.current)
     setTasks(current.current)
   }, [])
+  // An HR decision on an unclear requirement replaces the person's stored results here, without assessing again.
+  useEffect(
+    () =>
+      onRequirementDecision(({ assessments }) => {
+        if (!assessments.length) return
+        change((items) =>
+          items.map((item) => {
+            const next = assessments.find(
+              (assessment) =>
+                assessment.documentId === item.documentId &&
+                (assessment.jobCaseId === item.assessment?.jobCaseId || assessment.jobCaseId === item.jobCaseId)
+            )
+            return next && item.status === 'completed' ? { ...item, assessment: next } : item
+          })
+        )
+      }),
+    [change]
+  )
   // Placed or paused personnel are hidden from search results; the panel and the case card read the same set.
   const [unavailable, setUnavailable] = useState<Set<string>>(new Set())
   const refreshAvailability = useCallback(() => {
@@ -307,7 +335,7 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
                   : item
               )
             )
-            window.dispatchEvent(new Event('ses-business-data-changed'))
+            notifyBusinessDataChanged()
           }
           if (task.documentId) {
             patch(id, { status: 'assessing', error: undefined })
@@ -326,13 +354,22 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
               jobCaseId,
               file: { name: task.file.name, bytes: new Uint8Array(await task.file.arrayBuffer()) }
             })
+            const name = result.person.localIdentity?.displayName ?? result.person.fileName
             patch(id, {
               person: result.person,
               documentId: result.person.documentId,
-              name: result.person.localIdentity?.displayName ?? result.person.fileName,
-              file: undefined
+              name,
+              file: undefined,
+              ...(result.alreadyImported
+                ? {
+                    notice: localeText(localeRef.current === 'zh-CN')(
+                      `该人员已入库（${name}），已用已有资料评估，未重复导入。`,
+                      `この要員は登録済みです（${name}）。既存の情報で評価し、重複して取り込んでいません。`
+                    )
+                  }
+                : {})
             })
-            window.dispatchEvent(new Event('ses-business-data-changed'))
+            notifyBusinessDataChanged()
             if (result.assessment) completed(id, result.assessment, result.person)
             else
               patch(id, {
@@ -386,10 +423,16 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
     },
     [patch, schedule]
   )
+  const historyLoads = useRef(new Map<string, Promise<void>>())
   const loadHistory = useCallback(
-    async (job: JobCaseReviewSnapshot) => {
+    async (job: JobCaseReviewSnapshot): Promise<void> => {
       const jobCaseId = job.jobCase?.id
-      if (!jobCaseId || histories.current.has(job.reviewId) || loadedHistories.current.has(jobCaseId)) return
+      if (!jobCaseId || loadedHistories.current.has(jobCaseId)) return
+      // A second caller waits for the load already running instead of reading a half-filled list.
+      const running = historyLoads.current.get(job.reviewId)
+      if (running) return running
+      let finish = () => undefined as void
+      historyLoads.current.set(job.reviewId, new Promise<void>((resolve) => (finish = resolve)))
       histories.current.add(job.reviewId)
       setLoadingHistory((state) => ({ ...state, [job.reviewId]: true }))
       setHistoryErrors((state) => ({ ...state, [job.reviewId]: '' }))
@@ -421,6 +464,8 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
         setHistoryErrors((state) => ({ ...state, [job.reviewId]: errorText(localeRef.current, error) }))
       } finally {
         histories.current.delete(job.reviewId)
+        historyLoads.current.delete(job.reviewId)
+        finish()
         setLoadingHistory((state) => ({ ...state, [job.reviewId]: false }))
       }
     },
@@ -507,7 +552,7 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
           })
           id = prepared.jobCase?.id
           if (!id) throw new Error(localeText(localeRef.current === 'zh-CN')('案件暂不可评估。', 'この案件は評価できません。'))
-          window.dispatchEvent(new Event('ses-business-data-changed'))
+          notifyBusinessDataChanged()
         }
         if (activeSearches.current.has(id)) return
         activeSearches.current.set(id, { job, startedAt })
@@ -563,6 +608,27 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
     },
     [change, schedule]
   )
+  /**
+   * Shows one person's assessment for a case: the saved result while neither the case nor the profile changed since,
+   * a running one as is, and a new assessment only when there is none or it is out of date.
+   */
+  const openPerson = useCallback(
+    async (job: JobCaseReviewSnapshot, person: CandidateReviewSnapshot) => {
+      await loadHistory(job).catch(() => undefined)
+      const prior = current.current.find((item) => item.reviewId === job.reviewId && item.documentId === person.documentId)
+      if (prior && pendingResumeTask(prior)) return prior.id
+      const assessment = prior?.status === 'completed' ? prior.assessment : undefined
+      if (
+        prior &&
+        assessment &&
+        assessment.jobCaseVersion === job.jobCase?.version &&
+        (person.profile?.version === undefined || assessment.profileVersion === person.profile.version)
+      )
+        return prior.id
+      return addPerson(job, person)
+    },
+    [loadHistory, addPerson]
+  )
   return {
     tasks,
     visible,
@@ -578,7 +644,8 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
     searches,
     search,
     cancelSearch,
-    addPerson
+    addPerson,
+    openPerson
   }
 }
 export type CaseResumeController = ReturnType<typeof useCaseResumeAssessments>

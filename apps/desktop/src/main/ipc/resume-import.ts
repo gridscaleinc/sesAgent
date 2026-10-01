@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import { BrowserWindow, type OpenDialogOptions, dialog, ipcMain } from 'electron'
 import {
+  cancelWorkTask,
   createWorkTaskPreview,
   getDataScope,
   materializeWorkTask,
@@ -15,6 +16,7 @@ import {
 import { collectLocalPersonNameCandidates, mergeLocalOcr } from '@local-ai'
 import { documentIrSchema } from '@parsers'
 import { ParserWorkerClient } from '@parsers/worker-client'
+import type { StagedFileRecord } from '@files'
 import { DuplicateCandidateError, EncryptedApplicationRepository } from '@persistence'
 import { redactTextForCloud } from '@privacy'
 import { extractCandidateDraft } from '@resume'
@@ -26,6 +28,7 @@ import {
   type ProcessingJobSummary,
   type ResumeAnalysisSummary,
   type ResumeAnalysisTaskExecutionResult,
+  type SkippedResumeFile,
   type StagedLocalFile,
   analyzeResumeFileInputSchema,
   previewStagedResumeFileInputSchema,
@@ -197,6 +200,34 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
     })
   }
 
+  /**
+   * Files whose bytes someone was already imported from are given up one by one (该人员已入库), so the rest of the
+   * batch still comes in; when nothing is left the operator is told who each one already is.
+   */
+  const dropAlreadyImported = async (stagedFiles: StagedFileRecord[], names: string[]): Promise<SkippedResumeFile[]> => {
+    const skipped: SkippedResumeFile[] = []
+    for (let index = 0; index < stagedFiles.length;) {
+      const existing = repository.findCandidateByStagedSha256(stagedFiles[index]!.sha256)
+      if (!existing) {
+        index += 1
+        continue
+      }
+      await fileVault.discardStagedFile(stagedFiles[index]!).catch(() => undefined)
+      // Saved before only for a case assessment: importing it for real brings that person into the library.
+      const addedToLibrary = existing.inTalentLibrary === false && Boolean(existing.profile)
+      if (addedToLibrary) repository.addCandidateToLibrary(existing.documentId, existing.profile!.version)
+      skipped.push({
+        fileName: names[index] ?? stagedFiles[index]!.name,
+        existingName: existing.localIdentity?.displayName || existing.fileName,
+        ...(addedToLibrary ? { addedToLibrary: true } : {})
+      })
+      stagedFiles.splice(index, 1)
+      names.splice(index, 1)
+    }
+    if (!stagedFiles.length && skipped.length) throw new Error(alreadyImportedMessage(skipped))
+    return skipped
+  }
+
   ipcMain.handle(ipcChannels.beginResumeImport, async (event): Promise<BeginResumeImportResult> => {
     assertTrustedSender(event)
     const owner = BrowserWindow.fromWebContents(event.sender)
@@ -211,9 +242,17 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
     if (selection.filePaths.length === 0) throw new Error('取り込むファイルを1件以上選択してください。')
     if (selection.filePaths.length > 10) throw new Error('一度に取り込めるファイルは10件までです。')
 
-    const stagedFiles = []
+    const stagedFiles: StagedFileRecord[] = []
+    const names: string[] = []
+    let failedName: string | null = null
+    let skipped: SkippedResumeFile[] = []
     try {
-      for (const path of selection.filePaths) stagedFiles.push(await fileVault.stageFile(path))
+      for (const path of selection.filePaths) {
+        failedName = basename(path)
+        stagedFiles.push(await fileVault.stageFile(path))
+        names.push(basename(path))
+      }
+      failedName = null
       // Selecting the same bytes twice (including renamed copies) imports one file.
       const hashes = new Set<string>()
       for (let index = 0; index < stagedFiles.length;) {
@@ -221,11 +260,13 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
         if (hashes.has(file.sha256)) {
           await fileVault.discardStagedFile(file)
           stagedFiles.splice(index, 1)
+          names.splice(index, 1)
         } else {
           hashes.add(file.sha256)
           index += 1
         }
       }
+      skipped = await dropAlreadyImported(stagedFiles, names)
       const contextBindings = stagedFiles.map((file) => ({
         objectType: 'staged-file' as const,
         objectId: file.token,
@@ -239,13 +280,14 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
       if (preview.type !== 'IMPORT_RESUME') throw new Error('履歴書取込タスクを作成できませんでした。')
       const task = materializeWorkTask(preview, randomUUID(), new Date().toISOString())
       repository.saveResumeImportTask(task, stagedFiles)
-      return { cancelled: false, task, files: stagedFiles.map(rendererSafeFile) }
+      return { cancelled: false, task, files: stagedFiles.map(rendererSafeFile), ...(skipped.length ? { skipped } : {}) }
     } catch (error) {
       repository.removeStagedFiles(stagedFiles.map((file) => file.token))
       await Promise.allSettled(stagedFiles.map((file) => fileVault.discardStagedFile(file)))
-      const selectedName = basename(selection.filePaths[stagedFiles.length] ?? 'selected file')
+      // Already imported: the message names who; otherwise the file that failed to stage (if one did) is named.
+      if (error instanceof DuplicateCandidateError || !failedName) throw error
       const reason = error instanceof Error ? error.message : 'Unknown validation error.'
-      throw new Error(`${selectedName} を取り込めませんでした: ${reason}`)
+      throw new Error(`${failedName} を取り込めませんでした: ${reason}`)
     }
   })
 
@@ -256,9 +298,17 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
     // Same staging path as the native dialog import: the renderer supplied the
     // bytes instead of a path, so the vault still decides the format from magic
     // bytes and the renderer only ever receives tokens back.
-    const stagedFiles = []
+    const stagedFiles: StagedFileRecord[] = []
+    const names: string[] = []
+    let failedName: string | null = null
+    let skipped: SkippedResumeFile[] = []
     try {
-      for (const file of input.files) stagedFiles.push(await fileVault.stageBytes(file.name, Buffer.from(file.bytes)))
+      for (const file of input.files) {
+        failedName = file.name
+        stagedFiles.push(await fileVault.stageBytes(file.name, Buffer.from(file.bytes)))
+        names.push(file.name)
+      }
+      failedName = null
       // Selecting the same bytes twice (including renamed copies) imports one file.
       const hashes = new Set<string>()
       for (let index = 0; index < stagedFiles.length;) {
@@ -266,11 +316,13 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
         if (hashes.has(file.sha256)) {
           await fileVault.discardStagedFile(file)
           stagedFiles.splice(index, 1)
+          names.splice(index, 1)
         } else {
           hashes.add(file.sha256)
           index += 1
         }
       }
+      skipped = await dropAlreadyImported(stagedFiles, names)
       const contextBindings = stagedFiles.map((file) => ({
         objectType: 'staged-file' as const,
         objectId: file.token,
@@ -284,13 +336,13 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
       if (preview.type !== 'IMPORT_RESUME') throw new Error('履歴書取込タスクを作成できませんでした。')
       const task = materializeWorkTask(preview, randomUUID(), new Date().toISOString())
       repository.saveResumeImportTask(task, stagedFiles)
-      return { cancelled: false, task, files: stagedFiles.map(rendererSafeFile) }
+      return { cancelled: false, task, files: stagedFiles.map(rendererSafeFile), ...(skipped.length ? { skipped } : {}) }
     } catch (error) {
       repository.removeStagedFiles(stagedFiles.map((file) => file.token))
       await Promise.allSettled(stagedFiles.map((file) => fileVault.discardStagedFile(file)))
-      const rejectedName = input.files[stagedFiles.length]?.name ?? 'dropped file'
+      if (error instanceof DuplicateCandidateError || !failedName) throw error
       const reason = error instanceof Error ? error.message : 'Unknown validation error.'
-      throw new Error(`${rejectedName} を取り込めませんでした: ${reason}`)
+      throw new Error(`${failedName} を取り込めませんでした: ${reason}`)
     }
   })
 
@@ -546,7 +598,13 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
             throw new Error('スキルシート解析ジョブをキャンセルしました。')
           }
           repository.saveRedactionSession(redaction.session, redaction.mappings)
-          repository.saveParsedDocument(document, summary, redaction.session.id, extraction)
+          try {
+            repository.saveParsedDocument(document, summary, redaction.session.id, extraction)
+          } catch (error) {
+            // Given up (该人员已入库): the résumé's local name and contact mappings go with it.
+            if (error instanceof DuplicateCandidateError) repository.discardUnusedRedactionSession(redaction.session.id)
+            throw error
+          }
         }
 
         const latestTask = repository.getWorkTask(task.id)
@@ -583,7 +641,24 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
           )
         }
         const latestTask = repository.getWorkTask(task.id)
-        if (latestTask && latestTask.status !== 'cancelled' && processingJob.status !== 'cancelled') {
+        if (cause instanceof DuplicateCandidateError && latestTask && latestTask.status !== 'cancelled') {
+          // 该人员已入库 is a skip, not a failure: the file leaves the task, and the task finishes with the rest (or,
+          // when nothing is left to import, ends as given up instead of waiting forever).
+          const trimmed = {
+            ...latestTask,
+            contextBindings: latestTask.contextBindings.filter(
+              (binding) => !(binding.objectType === 'staged-file' && binding.objectId === input.fileToken)
+            )
+          }
+          const remaining = trimmed.contextBindings.some((binding) => binding.objectType === 'staged-file')
+          repository.saveWorkTask(
+            remaining
+              ? synchronizeImportTask(repository, trimmed, new Date(), currentOperator().displayName)
+              : ['completed', 'failed'].includes(trimmed.status)
+                ? trimmed
+                : cancelWorkTask(trimmed)
+          )
+        } else if (latestTask && latestTask.status !== 'cancelled' && processingJob.status !== 'cancelled') {
           const errorCode = processingJob.errorCode ?? 'RESUME_ANALYSIS_FAILED'
           repository.saveWorkTask(
             processingJob.status === 'retry_wait' && processingJob.nextRetryAt
@@ -597,6 +672,14 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
           processingJobId: processingJob.id,
           errorCode: processingJob.errorCode ?? 'RESUME_ANALYSIS_FAILED'
         })
+        // 该人员已入库: this import is given up entirely, its staged original included, so it never lingers.
+        if (cause instanceof DuplicateCandidateError) {
+          const staged = repository.getStagedFileRecords([input.fileToken])[0]
+          if (staged && !repository.getCandidateReview(input.fileToken)) {
+            repository.removeStagedFiles([staged.token])
+            await fileVault.discardStagedFile(staged).catch(() => undefined)
+          }
+        }
         throw cause
       }
     })
@@ -617,4 +700,11 @@ export function registerResumeImportHandlers(context: MainIpcContext) {
   })
 
   return { runResumeAnalysisTask }
+}
+
+/** 「该人员已入库」 for files given up at staging, each with who it already is. */
+function alreadyImportedMessage(skipped: SkippedResumeFile[]): string {
+  const zh = skipped.map((item) => `${item.fileName}（${item.existingName}${item.addedToLibrary ? '，已加入人员库' : ''}）`).join('、')
+  const ja = skipped.map((item) => `${item.fileName}（${item.existingName}${item.addedToLibrary ? '・要員一覧に追加' : ''}）`).join('、')
+  return `以下简历的人员已入库，本次导入已放弃：${zh}。 / 次の履歴書の要員は登録済みのため、取り込みを取り消しました：${ja}。`
 }

@@ -24,10 +24,11 @@ import type {
   SubmitJobCaseReviewResult,
   WechatVisibleMessageFeasibility
 } from '@shared'
-import { jobCaseFieldCanonicalLabels, normalizeJobCaseFieldLabel } from '@shared'
+import { isInactiveProgressStage, jobCaseFieldCanonicalLabels, normalizeJobCaseFieldLabel } from '@shared'
 import { Icon } from './Icon'
 import { JobCaseSourceTextSection } from './JobCaseSourceTextSection'
 import { localizedIpcError, useLocaleText, localizedCaseFieldLabel, localizedMainText, localizedJobCaseFieldLabel } from '../i18n'
+import { DeletionBusinessCountItems, DeletionPlacementBlock, deletionBlockedByPlacement } from './deletion-impact'
 
 type LocaleText = (cn: string, ja: string) => string
 
@@ -464,15 +465,46 @@ export function JobCaseManagement({
     }
   }, [onLoadHistory, review.reviewId])
 
-  const changeLifecycle = async () => {
+  // Ending a case with follow-ups still being arranged asks first, as 结束案件 in the case list does.
+  const [openFollowUps, setOpenFollowUps] = useState<number | null>(null)
+  const changeLifecycle = async (closeOpenFollowUps?: boolean) => {
     if (reason.trim().length < 3 || action !== 'idle') return
+    const ending = review.lifecycle !== 'archived'
+    if (ending && closeOpenFollowUps === undefined) {
+      setAction('lifecycle')
+      setActionError(null)
+      try {
+        const rows = (await window.sesAgent?.listBusinessFollowUps?.()) ?? []
+        const open = rows.filter(
+          (row) =>
+            row.reviewId === review.reviewId &&
+            row.progress &&
+            !isInactiveProgressStage(row.progress.stage) &&
+            row.progress.stage !== 'entry'
+        ).length
+        if (open) {
+          setOpenFollowUps(open)
+          setAction('idle')
+          return
+        }
+      } catch (cause) {
+        setActionError(
+          localizedIpcError(locale, cause, t('读取跟进失败，请重试。', '対応記録を読み込めませんでした。もう一度お試しください。'))
+        )
+        setAction('idle')
+        return
+      }
+      setAction('idle')
+    }
+    setOpenFollowUps(null)
     setAction('lifecycle')
     setActionError(null)
     try {
       const result = await onSetLifecycle({
         reviewId: review.reviewId,
-        state: review.lifecycle === 'archived' ? 'active' : 'archived',
-        reason: reason.trim()
+        state: ending ? 'archived' : 'active',
+        reason: reason.trim(),
+        ...(ending && closeOpenFollowUps ? { closeOpenFollowUps: true } : {})
       })
       setHistory(result.history)
       setReason('')
@@ -621,6 +653,17 @@ export function JobCaseManagement({
                     ? t('激活案件', '案件を再開')
                     : t('结束案件', '案件を終了')}
               </button>
+              {openFollowUps ? (
+                <span className="job-case-end-choice" role="group" aria-label={t('结束案件', '案件を終了')}>
+                  <small>{t(`还有 ${openFollowUps} 条跟进没有结束。`, `終了していない対応が ${openFollowUps} 件あります。`)}</small>
+                  <button disabled={action !== 'idle'} onClick={() => void changeLifecycle(false)} type="button">
+                    {t('只结束案件', '案件のみ終了')}
+                  </button>
+                  <button disabled={action !== 'idle'} onClick={() => void changeLifecycle(true)} type="button">
+                    {t('一并结束跟进', '対応もまとめて終了')}
+                  </button>
+                </span>
+              ) : null}
               {review.lifecycle === 'active' ? (
                 <button disabled={reason.trim().length < 3 || action !== 'idle'} onClick={() => void reopen()} type="button">
                   {action === 'reopen' ? t('准备中…', '準備中…') : t('开始修订审核', '改訂レビューを開始')}
@@ -670,11 +713,7 @@ export function JobCaseManagement({
                     `Gmailローカルコピー ${deletionPreview.counts.gmailMessages}件`
                   )}
                 </li>
-                {deletionPreview.counts.businessFollowUps ? (
-                  <li>
-                    {t(`跟进记录 ${deletionPreview.counts.businessFollowUps} 项`, `対応記録 ${deletionPreview.counts.businessFollowUps}件`)}
-                  </li>
-                ) : null}
+                <DeletionBusinessCountItems counts={deletionPreview.counts} />
                 {deletionPreview.counts.agentReferences ? (
                   <li>
                     {t(
@@ -684,14 +723,20 @@ export function JobCaseManagement({
                   </li>
                 ) : null}
               </ul>
+              <DeletionPlacementBlock kind="case" counts={deletionPreview.counts} />
               <p>{t('请输入“删除”以继续。', '続行するには「削除」と入力してください。')}</p>
               <input
                 aria-label={t('案件删除确认', '案件削除確認')}
+                disabled={Boolean(deletionBlockedByPlacement(deletionPreview.counts))}
                 onChange={(event) => setDeletionConfirmation(event.target.value)}
                 value={deletionConfirmation}
               />
               <button
-                disabled={deletionConfirmation !== t('删除', '削除') || action !== 'idle'}
+                disabled={
+                  deletionConfirmation !== t('删除', '削除') ||
+                  action !== 'idle' ||
+                  Boolean(deletionBlockedByPlacement(deletionPreview.counts))
+                }
                 onClick={() => void deleteCase()}
                 type="button"
               >
@@ -790,6 +835,12 @@ function BulkJobCaseDeletion({
         messages: 0
       }
     ) ?? null
+  // Every numeric count added up, for the business records list shared with the other delete dialogs.
+  const summedCounts = previews?.reduce<Record<string, number>>((sum, preview) => {
+    for (const [key, value] of Object.entries(preview.counts)) if (typeof value === 'number') sum[key] = (sum[key] ?? 0) + value
+    return sum
+  }, {}) as JobCaseDeletionPreview['counts'] | undefined
+  const placed = previews?.filter((preview) => deletionBlockedByPlacement(preview.counts)) ?? []
   const confirmed = confirmation === t('删除', '削除')
 
   const deleteAll = async () => {
@@ -800,7 +851,17 @@ function BulkJobCaseDeletion({
     const failures: BulkDeletionSummary['failures'] = []
     for (const [index, shown] of previews.entries()) {
       try {
+        if (deletionBlockedByPlacement(shown.counts))
+          throw new Error(t('有人员通过这个案件处于已进场，已跳过。', 'この案件で参画中の要員がいるため、スキップしました。'))
         const fresh = await onPreviewDeletion(shown.reviewId)
+        // What would go changed since HR confirmed it (new follow-ups, introductions…): skipped, not deleted unseen.
+        if (fresh.confirmationHash !== shown.confirmationHash)
+          throw new Error(
+            t(
+              '确认之后这个案件的删除影响有变化，已跳过；请重新确认后再删除。',
+              '確認後に削除の影響が変わったため、スキップしました。もう一度確認してから削除してください。'
+            )
+          )
         // i18n-ignore: confirmation token checked by Main
         const result = await onDelete({ reviewId: fresh.reviewId, confirmationHash: fresh.confirmationHash, confirmationText: '削除' })
         deleted += 1
@@ -853,11 +914,17 @@ function BulkJobCaseDeletion({
                   <li key={preview.reviewId}>{preview.title}</li>
                 ))}
               </ul>
+              {placed.length ? (
+                <p role="alert" className="business-delete-blocked">
+                  {t(
+                    `其中 ${placed.length} 个案件有人员处于已进场，会被跳过：${placed.map((preview) => preview.title).join('、')}`,
+                    `このうち ${placed.length} 件は参画中の要員がいるため、スキップします：${placed.map((preview) => preview.title).join('、')}`
+                  )}
+                </p>
+              ) : null}
               {totals ? (
                 <ul>
-                  {totals.businessFollowUps ? (
-                    <li>{t(`跟进记录 ${totals.businessFollowUps} 项`, `対応記録 ${totals.businessFollowUps}件`)}</li>
-                  ) : null}
+                  <DeletionBusinessCountItems counts={summedCounts} />
                   <li>{t(`JobCase ${totals.caseVersions} 个版本`, `JobCase ${totals.caseVersions}バージョン`)}</li>
                   <li>{t(`审计记录 ${totals.reviewAudits} 项`, `監査記録 ${totals.reviewAudits}件`)}</li>
                   <li>{t(`关联任务 ${totals.taskRecords} 项`, `関連タスク ${totals.taskRecords}件`)}</li>
@@ -1071,7 +1138,7 @@ function ChatPasteComposer({
           />
         </label>
         <small>
-          {text.length.toLocaleString('ja-JP')}
+          {text.length.toLocaleString(locale)}
           {t(' / 100,000 字 · 不会保存到浏览器存储、日志或云端', ' / 100,000文字 · ブラウザ保存・ログ・クラウドには保存しません')}
         </small>
         {error ? (
@@ -1284,7 +1351,6 @@ export function JobCaseInbox({
     <main className="job-case-inbox">
       <header className="job-case-page-header">
         <div>
-          <span className="eyebrow">{t('导入案件', '案件取込')}</span>
           <h1>{t('导入案件', '案件をインポート')}</h1>
           <p>
             {t(
@@ -1442,7 +1508,7 @@ export function JobCaseInbox({
               <Icon name="mail" size={23} />
             </span>
             <div>
-              <small>GOOGLE WORKSPACE</small>
+              <small>{t('公司邮箱', '会社メール')}</small>
               <h2>{t('从公司 Gmail 导入', '会社 Gmail から取り込む')}</h2>
               <p>
                 {t('仅只读同步已设置的 Label、时间范围和关键词。', '設定済みの Label、期間、キーワード範囲だけを読取専用で同期します。')}

@@ -15,7 +15,7 @@ import type {
   SetWorkTaskLifecycleInput,
   SubmitCandidateReviewResult
 } from '@shared'
-import { isInterviewCapabilityText, interviewQuestionPolicy, openInterviewMeetingInputSchema } from '@shared'
+import { isInterviewCapabilityText, interviewQuestionPolicy, openInterviewMeetingInputSchema, scheduleConflictMessage } from '@shared'
 import { Icon } from './Icon'
 import { localeText, localizedIpcError, useLocaleText } from '../i18n'
 import { copyTextToClipboard } from '../copy-text'
@@ -28,7 +28,7 @@ import { InterviewRoundEvidence } from './InterviewRoundEvidence'
 export type PipelineView = 'overview' | 'resume' | 'schedule' | 'prepare' | 'workbench' | 'decision' | 'client' | 'records' | 'entry'
 type CandidateTab = 'overview' | 'resume' | 'recruiting' | 'client' | 'activity'
 type SessionTab = 'schedule' | 'prepare' | 'record' | 'decision'
-type FinalDecision = Extract<CandidateInterviewDecision, 'passed' | 'next-round' | 'failed'>
+type FinalDecision = Extract<CandidateInterviewDecision, 'passed' | 'next-round' | 'failed' | 'no-show' | 'withdrawn'>
 
 type ScheduleDraft = {
   dateTime: string
@@ -80,9 +80,13 @@ interface CandidatePipelineProps {
   onOpenInterviewMeeting?(input: Parameters<typeof window.sesAgent.openInterviewMeeting>[0]): Promise<{ opened: true }>
   onCreateRound(input: Parameters<typeof window.sesAgent.createCandidateInterviewRound>[0]): Promise<CandidateInterviewSnapshot>
   onSaveSchedule(input: Parameters<typeof window.sesAgent.saveCandidateInterviewSchedule>[0]): Promise<CandidateInterviewSnapshot>
+  /** The candidate called off a booked recruiting interview: back to being arranged, no time held. */
+  onCancelSchedule?(input: { interviewId: string; sourceDocumentId: string }): Promise<CandidateInterviewSnapshot>
   onSavePreparation(input: Parameters<typeof window.sesAgent.saveCandidateInterviewPreparation>[0]): Promise<CandidateInterviewSnapshot>
   onSaveNotes(input: Parameters<typeof window.sesAgent.saveCandidateInterviewNotes>[0]): Promise<CandidateInterviewSnapshot>
   onRecordDecision(input: Parameters<typeof window.sesAgent.recordCandidateInterviewDecision>[0]): Promise<CandidateInterviewSnapshot>
+  /** 更正结论: replaces a decision recorded by mistake, with a reason. */
+  onCorrectDecision?(input: Parameters<typeof window.sesAgent.correctCandidateInterviewDecision>[0]): Promise<CandidateInterviewSnapshot>
   onConfirmCandidateProfile(input: Parameters<typeof window.sesAgent.submitCandidateReview>[0]): Promise<SubmitCandidateReviewResult>
   onSendCloudPrompt?(input: PrepareAiCommerceCloudPromptInput): Promise<AiCommerceCloudPromptResult>
   onSetTaskLifecycle?(input: SetWorkTaskLifecycleInput): Promise<WorkTask>
@@ -116,15 +120,17 @@ function candidateSkills(review: CandidateReviewSnapshot): string[] {
     .slice(0, 10)
 }
 
+/** The datetime-local value in Tokyo time, as everywhere else interviews are booked (whatever this computer's zone). */
 function localDateTimeInput(value: string | null): string {
   const date = value ? new Date(value) : new Date()
   if (!value) {
     date.setMinutes(date.getMinutes() + 60)
     date.setMinutes(Math.ceil(date.getMinutes() / 30) * 30, 0, 0)
   }
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
-  return date.toISOString().slice(0, 16)
+  return new Date(date.getTime() + 9 * 3600000).toISOString().slice(0, 16)
 }
+/** A datetime-local value read as Tokyo time. */
+const tokyoInputToIso = (value: string) => new Date(`${value}:00+09:00`).toISOString()
 
 function interviewLabel(interview: CandidateInterviewSnapshot, zh: boolean): string {
   const t = localeText(zh)
@@ -147,6 +153,7 @@ function formatDate(value: string | null, locale: 'ja-JP' | 'zh-CN'): string {
 
   if (!value) return t('尚未预约', '未予約')
   return new Intl.DateTimeFormat(locale, {
+    timeZone: 'Asia/Tokyo',
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
@@ -161,6 +168,11 @@ function processStage(interview: CandidateInterviewSnapshot | null, review: Cand
 
   if (!interview) return review.status === 'awaiting-review' ? t('HR 待查看', 'HR確認待ち') : t('待预约初面', '一次面談予約待ち')
   if (interview.decision === 'next-round') return t('待安排复试', '次回面談の調整待ち')
+  // The booking was cancelled: waiting for a new time.
+  if (interview.stage === 'contacting') return t(`${interviewLabel(interview, zh)}待重新预约`, `${interviewLabel(interview, zh)}再予約待ち`)
+  if (interview.decision === 'withdrawn') return t('候选人已撤回', '候補者辞退')
+  if (interview.decision === 'no-show') return t(`${interviewLabel(interview, zh)}未到场`, `${interviewLabel(interview, zh)}欠席`)
+  if (interview.decision === 'on-hold') return t('暂缓处理', '保留中')
   if (interview.stage === 'scheduled') return t(`${interviewLabel(interview, zh)}待准备`, `${interviewLabel(interview, zh)}準備待ち`)
   if (interview.stage === 'prepared') return t(`${interviewLabel(interview, zh)}待开始`, `${interviewLabel(interview, zh)}開始待ち`)
   if (interview.stage === 'interviewing') return t(`${interviewLabel(interview, zh)}进行中`, `${interviewLabel(interview, zh)}面談中`)
@@ -178,6 +190,10 @@ export function interviewStageLabel(interview: CandidateInterviewSnapshot, zh: b
 
   if (interview.decision === 'next-round') return t('已完成 · 已安排下一轮', '完了・次回面談あり')
   if (interview.stage === 'new') return t('待预约', '予約待ち')
+  if (interview.stage === 'contacting') return t('待重新预约', '再予約待ち')
+  if (interview.decision === 'withdrawn') return t('候选人已撤回', '候補者辞退')
+  if (interview.decision === 'no-show') return t('未到场 · 可重新预约', '欠席・再予約可')
+  if (interview.decision === 'on-hold') return t('暂缓处理', '保留中')
   if (interview.stage === 'scheduled') return t('已预约 · 待准备', '予約済み・準備待ち')
   if (interview.stage === 'prepared') return t('已准备 · 待开始', '準備済み・開始待ち')
   if (interview.stage === 'interviewing') return t('面试进行中', '面談中')
@@ -188,7 +204,7 @@ export function interviewStageLabel(interview: CandidateInterviewSnapshot, zh: b
 }
 
 function sessionTabFor(interview: CandidateInterviewSnapshot | null): SessionTab {
-  if (!interview || interview.stage === 'new') return 'schedule'
+  if (!interview || interview.stage === 'new' || interview.stage === 'contacting') return 'schedule'
   if (interview.decision || interview.stage === 'passed' || interview.stage === 'closed' || interview.stage === 'on-hold') return 'record'
   if (interview.stage === 'awaiting-decision') return 'decision'
   if (interview.stage === 'prepared' || interview.stage === 'interviewing') return 'record'
@@ -397,10 +413,12 @@ export function CandidatePipeline({
   onOpenInterviewMeeting,
   onOpenZoomMeeting,
   onRecordDecision,
+  onCorrectDecision,
   onSaveNotes,
   onSavePreparation,
   matchingHome,
   onSaveSchedule,
+  onCancelSchedule,
   onSendCloudPrompt,
   onSetTaskLifecycle,
   onViewChange
@@ -522,8 +540,15 @@ export function CandidatePipeline({
     setNotes(selectedInterview?.interviewNotes ?? '')
     setUnresolvedInput((selectedInterview?.unresolvedItems ?? []).join('\n'))
     setDecision(
-      selectedInterview?.decision === 'next-round' || selectedInterview?.decision === 'failed' ? selectedInterview.decision : 'passed'
+      (selectedInterview?.decision === 'next-round' && selectedInterview.kind !== 'client') ||
+        selectedInterview?.decision === 'failed' ||
+        selectedInterview?.decision === 'no-show' ||
+        selectedInterview?.decision === 'withdrawn'
+        ? selectedInterview.decision
+        : 'passed'
     )
+    setCorrecting(false)
+    setCorrectionReason('')
     setDecisionReason(selectedInterview?.decisionReason ?? '')
     setError(null)
     setRescheduling(false)
@@ -564,17 +589,20 @@ export function CandidatePipeline({
     onViewChange(tab === 'schedule' ? 'schedule' : tab === 'prepare' ? 'prepare' : tab === 'record' ? 'workbench' : 'decision')
   }
 
-  const saveSchedule = async () => {
+  // The schedule refused for overlapping another interview; 「仍然保存」 shows only while the form still holds it.
+  const [conflictedSchedule, setConflictedSchedule] = useState<string | null>(null)
+  const saveSchedule = async (allowConflict = false) => {
     if (!selected) return
     setSaving('schedule')
     setError(null)
+    setConflictedSchedule(null)
     try {
       const saved = await onSaveSchedule({
         ...(selectedInterview ? { interviewId: selectedInterview.id } : {}),
         sourceDocumentId: selected.documentId,
         kind: activeInterviewKind,
         roundNumber: selectedInterview?.roundNumber ?? 1,
-        scheduledAt: new Date(schedule.dateTime).toISOString(),
+        scheduledAt: tokyoInputToIso(schedule.dateTime),
         durationMinutes: Number(schedule.duration),
         meetingMethod: schedule.method,
         ...(schedule.method === 'zoom' || schedule.method === 'google-meet' ? { meetingUrl: schedule.meetingUrl } : {}),
@@ -589,13 +617,61 @@ export function CandidatePipeline({
                 }
               : {},
         interviewer: schedule.interviewer,
-        ...(schedule.note.trim() ? { contactNote: schedule.note } : {})
+        ...(schedule.note.trim() ? { contactNote: schedule.note } : {}),
+        ...(allowConflict ? { allowConflict: true } : {})
       })
       updateInterview(saved)
       setRescheduling(false)
       setSessionTab('prepare')
     } catch (cause) {
+      if (cause instanceof Error && cause.message.includes(scheduleConflictMessage))
+        setConflictedSchedule(JSON.stringify([selectedInterview?.id, schedule]))
       setError(localizedIpcError(locale, cause, t('无法保存面试预约。', '面談予約を保存できませんでした。')))
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  // The candidate called it off: the time is freed and the interview waits to be arranged again.
+  const cancelSchedule = async () => {
+    if (!selected || !selectedInterview || !onCancelSchedule) return
+    if (
+      !window.confirm(
+        t('取消这次面试预约？时间会被释放，之后可以重新预约。', 'この面談の予約を取り消しますか？時間は解放され、後で予約し直せます。')
+      )
+    )
+      return
+    setSaving('schedule')
+    setError(null)
+    try {
+      updateInterview(await onCancelSchedule({ interviewId: selectedInterview.id, sourceDocumentId: selected.documentId }))
+      setRescheduling(false)
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('无法取消预约。', '予約を取り消せませんでした。')))
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  // 复试 chosen by mistake: the empty next round goes, and the round before can have its result corrected.
+  const deleteMistakenRound = async () => {
+    if (!selected || !latest?.parentInterviewId) return
+    if (
+      !window.confirm(
+        t('删除这一轮尚未预约的面试？上一轮的结论之后可以更正。', 'この未予約の面談回を削除しますか？前回の結論は後で訂正できます。')
+      )
+    )
+      return
+    setSaving('schedule')
+    setError(null)
+    try {
+      await window.sesAgent.deleteUnbookedCandidateInterviewRound({ interviewId: latest.id, sourceDocumentId: selected.documentId })
+      const parentId = latest.parentInterviewId
+      setLocalInterviews((current) => current.filter((item) => item.id !== latest.id))
+      setSelectedInterviewId(parentId)
+      window.dispatchEvent(new Event('ses-business-data-changed'))
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('无法删除这一轮。', 'この回を削除できませんでした。')))
     } finally {
       setSaving(null)
     }
@@ -693,6 +769,32 @@ export function CandidatePipeline({
     }
   }
 
+  // 更正结论 on a decided round: the same choices, plus why the earlier decision was wrong.
+  const [correcting, setCorrecting] = useState(false)
+  const [correctionReason, setCorrectionReason] = useState('')
+  const correctDecision = async () => {
+    if (!selected || !selectedInterview || !onCorrectDecision || decisionReason.trim().length < 2 || correctionReason.trim().length < 2)
+      return
+    setSaving('decision')
+    setError(null)
+    try {
+      updateInterview(
+        await onCorrectDecision({
+          interviewId: selectedInterview.id,
+          sourceDocumentId: selected.documentId,
+          decision,
+          decisionReason: decisionReason.trim(),
+          correctionReason: correctionReason.trim()
+        })
+      )
+      setCorrecting(false)
+      setCorrectionReason('')
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('无法更正结论。', '結論を訂正できませんでした。')))
+    } finally {
+      setSaving(null)
+    }
+  }
   const recordDecision = async () => {
     if (!selected || !selectedInterview || decisionReason.trim().length < 2) return
     setSaving('decision')
@@ -701,18 +803,18 @@ export function CandidatePipeline({
       const saved = await onRecordDecision({
         interviewId: selectedInterview.id,
         sourceDocumentId: selected.documentId,
-        decision,
+        decision: chosenDecision,
         decisionReason: decisionReason.trim()
       })
       updateInterview(saved)
-      if (decision === 'next-round') {
+      if (chosenDecision === 'next-round') {
         const next = await onCreateRound({ sourceDocumentId: selected.documentId, parentInterviewId: saved.id, kind: activeInterviewKind })
         updateInterview(next)
         navigateSession('schedule')
         return
       }
       if (activeInterviewKind === 'client') return
-      if (decision === 'passed') onOpenCandidateLibrary(selected.documentId)
+      if (chosenDecision === 'passed') onOpenCandidateLibrary(selected.documentId)
       else onBackToQueue?.()
     } catch (cause) {
       setError(localizedIpcError(locale, cause, t('无法保存面试结论。', '面談結論を保存できませんでした。')))
@@ -939,8 +1041,35 @@ export function CandidatePipeline({
     selectedInterview && (selectedInterview.id !== latest?.id || isFinishedInterview(selectedInterview))
   )
   const currentStep = sessionTabFor(selectedInterview)
+  // Opened but nothing recorded yet (the candidate did not join) counts as not started, as Main allows.
   const scheduleCanBeChanged = Boolean(
-    selectedInterview && !viewingHistoricalRound && (selectedInterview.stage === 'scheduled' || selectedInterview.stage === 'prepared')
+    selectedInterview &&
+    !viewingHistoricalRound &&
+    (selectedInterview.stage === 'scheduled' ||
+      selectedInterview.stage === 'prepared' ||
+      (selectedInterview.stage === 'interviewing' && !selectedInterview.interviewNotes?.trim()))
+  )
+  // 候选人撤回 / 未到场 can close a recruiting round that never took place, without inventing a time or notes.
+  const closableEarly = Boolean(
+    selectedInterview &&
+    !isClientInterview &&
+    !selectedInterview.decision &&
+    !['awaiting-decision', 'passed', 'closed', 'on-hold'].includes(selectedInterview.stage)
+  )
+  // Opening 结论 before the interview took place offers only 撤回 / 未到场, so one of them is what is chosen.
+  const chosenDecision: FinalDecision =
+    closableEarly && !correcting && decision !== 'no-show' && decision !== 'withdrawn' ? 'withdrawn' : decision
+  // A 复试 created by mistake: never booked, nothing recorded, nothing after it.
+  const latestDeletable = Boolean(
+    latest &&
+    !isClientInterview &&
+    latest.roundNumber > 1 &&
+    latest.parentInterviewId &&
+    !latest.decision &&
+    !latest.scheduledAt &&
+    !latest.interviewNotes?.trim() &&
+    ['new', 'contacting'].includes(latest.stage) &&
+    latest.questionPlan.every((question) => question.source === 'inherited')
   )
   const preparationEditable = Boolean(
     selectedInterview && !viewingHistoricalRound && (selectedInterview.stage === 'scheduled' || selectedInterview.stage === 'prepared')
@@ -964,7 +1093,11 @@ export function CandidatePipeline({
       [t('HR 已查看', 'HR確認済み'), selected.status === 'completed' || selectedSessions.length > 0],
       [t('初面', '一次面談'), selectedSessions.some((item) => item.roundNumber === 1)],
       [t('复试/最终结论', '再面談・最終結論'), selectedSessions.some((item) => item.roundNumber > 1) || Boolean(latest?.decision)],
-      [t('可参与案件匹配', '案件マッチング対象'), selected.talentPoolStatus === 'eligible']
+      // Matching follows the person's record and business status, not the recruiting result.
+      [
+        t('已进入人员库', '要員ライブラリに登録'),
+        selected.recordStatus === 'active' && selected.inTalentLibrary !== false && Boolean(selected.profile)
+      ]
     ] as const
     return (
       <section className="recruiting-overview">
@@ -992,10 +1125,37 @@ export function CandidatePipeline({
                 {t('先确认人员资料', '要員プロフィールを確認')}
               </button>
             ) : null}
-            {(!latest && selected.status === 'completed') || latest?.stage === 'new' ? (
+            {(!latest && selected.status === 'completed') ||
+            latest?.stage === 'new' ||
+            latest?.stage === 'contacting' ||
+            (latest?.decision === 'no-show' && !isClientInterview) ? (
               <button className="is-primary" onClick={() => navigateSession('schedule')} type="button">
                 <Icon name="clock" size={16} />
-                {latest?.roundNumber && latest.roundNumber > 1 ? t('预约复试', '再面談を予約') : t('预约初面', '一次面談を予約')}
+                {latest?.stage === 'contacting' || latest?.decision === 'no-show'
+                  ? t('重新预约', '再予約')
+                  : latest?.roundNumber && latest.roundNumber > 1
+                    ? t('预约复试', '再面談を予約')
+                    : t('预约初面', '一次面談を予約')}
+              </button>
+            ) : null}
+            {latest &&
+            !isClientInterview &&
+            !latest.decision &&
+            !['awaiting-decision', 'passed', 'closed', 'on-hold'].includes(latest.stage) ? (
+              <button
+                onClick={() => {
+                  setSelectedInterviewId(latest.id)
+                  setDecision('withdrawn')
+                  navigateSession('decision')
+                }}
+                type="button"
+              >
+                {t('候选人撤回 / 未到场', '辞退・欠席を記録')}
+              </button>
+            ) : null}
+            {latestDeletable ? (
+              <button className="is-warning" disabled={saving !== null} onClick={() => void deleteMistakenRound()} type="button">
+                {t('删除这一轮（误建）', 'この回を削除（誤作成）')}
               </button>
             ) : null}
             {latest?.stage === 'scheduled' ? (
@@ -1022,16 +1182,19 @@ export function CandidatePipeline({
                 >
                   {t('直接通过', '通過')}
                 </button>
-                <button
-                  className="is-primary"
-                  onClick={() => {
-                    setDecision('next-round')
-                    navigateSession('decision')
-                  }}
-                  type="button"
-                >
-                  {t('安排复试', '再面談を設定')}
-                </button>
+                {/* A client 复试 is booked on the case's 跟进, not as another round here. */}
+                {isClientInterview ? null : (
+                  <button
+                    className="is-primary"
+                    onClick={() => {
+                      setDecision('next-round')
+                      navigateSession('decision')
+                    }}
+                    type="button"
+                  >
+                    {t('安排复试', '再面談を設定')}
+                  </button>
+                )}
                 <button
                   className="is-warning"
                   onClick={() => {
@@ -1044,7 +1207,15 @@ export function CandidatePipeline({
                 </button>
               </>
             ) : null}
-            {latest?.decision === 'next-round' && !selectedSessions.some((item) => item.parentInterviewId === latest.id) ? (
+            {latest?.decision === 'next-round' && isClientInterview ? (
+              // An older client interview decided 复试 before rounds moved to 跟进: the next one is arranged there.
+              <p className="recruiting-followup-hint">
+                {t(
+                  '客户复试请在「跟进」中为这个人员和案件安排；可在跟进里「关联此前的客户面试」接上这段记录。',
+                  '顧客の再面談は「対応記録」でこの要員と案件について設定してください。「過去の顧客面談を関連付け」でこの記録をつなげられます。'
+                )}
+              </p>
+            ) : latest?.decision === 'next-round' && !selectedSessions.some((item) => item.parentInterviewId === latest.id) ? (
               <button
                 className="is-primary"
                 onClick={() =>
@@ -1125,8 +1296,8 @@ export function CandidatePipeline({
             </header>
             <p>
               {t(
-                '导入并确认资料的人员会进入人员库；记录有效、营业状态为「待营业」或「待营业（近期可入场）」的人员即可参与案件匹配。招聘面试结论只记录为招聘状态，不影响案件匹配。',
-                '取り込んでプロフィールを確認した要員は要員一覧に登録されます。記録が有効で、営業状態が「営業待ち」または「営業待ち（近日稼働可能）」の要員が案件マッチングの対象です。採用面談の結論は採用状態として記録され、案件マッチングには影響しません。'
+                '导入并确认资料的人员会进入人员库；记录有效、营业状态为「待机中」或「近期可入场」的人员即可参与案件匹配。招聘面试结论只记录为招聘状态，不影响案件匹配。',
+                '取り込んでプロフィールを確認した要員は要員一覧に登録されます。記録が有効で、営業状態が「待機中」または「近日稼働可能」の要員が案件マッチングの対象です。採用面談の結論は採用状態として記録され、案件マッチングには影響しません。'
               )}
             </p>
             <button onClick={() => onOpenCandidateLibrary()} type="button">
@@ -1230,9 +1401,16 @@ export function CandidatePipeline({
               </p>
             </div>
             {scheduleCanBeChanged ? (
-              <button className="is-primary" onClick={() => setRescheduling(true)} type="button">
-                {t('改期', '日程変更')}
-              </button>
+              <div className="recruiting-schedule-actions">
+                {!isClientInterview && onCancelSchedule ? (
+                  <button disabled={saving !== null} onClick={() => void cancelSchedule()} type="button">
+                    {t('取消预约', '予約を取り消す')}
+                  </button>
+                ) : null}
+                <button className="is-primary" onClick={() => setRescheduling(true)} type="button">
+                  {t('改期', '日程変更')}
+                </button>
+              </div>
             ) : null}
           </header>
           <dl>
@@ -1947,8 +2125,8 @@ export function CandidatePipeline({
             <p>
               {isClientInterview
                 ? t(
-                    '根据客户反馈和面试事实，决定进入入场准备、安排客户复试或返回案件匹配。',
-                    '顧客フィードバックと面談事実をもとに、参画準備・顧客再面談・案件マッチングへ進めます。'
+                    '根据客户反馈和面试事实，决定进入入场准备或返回案件匹配；客户复试在跟进中安排。',
+                    '顧客フィードバックと面談事実をもとに、参画準備か案件マッチングへ進めます。顧客の再面談は対応記録で設定します。'
                   )
                 : t('先核对本轮解决了哪些问题，再决定通过、复试或不通过。', '今回確認できた点を整理してから結論を選びます。')}
             </p>
@@ -2022,9 +2200,12 @@ export function CandidatePipeline({
             [
               [
                 'passed',
-                isClientInterview ? t('客户通过，进入入场准备', '顧客通過・参画準備へ') : t('招聘通过', '採用通過'),
+                isClientInterview ? t('客户通过', '顧客通過') : t('招聘通过', '採用通過'),
                 isClientInterview
-                  ? t('开始确认入场条件', '参画条件の確認へ進む')
+                  ? t(
+                      '入场在跟进中安排：关联这段面试记录后，在跟进里确认入场条件。',
+                      '参画は対応記録で手配します。この面談記録を関連付けてから、対応記録で参画条件を確認してください。'
+                    )
                   : t('记录为招聘通过；案件匹配仍按营业状态判断', '採用通過として記録します。案件マッチングは営業状態で判断します')
               ],
               [
@@ -2038,17 +2219,29 @@ export function CandidatePipeline({
                 isClientInterview
                   ? t('人员仍可继续匹配其他案件', '要員は引き続き別案件のマッチング対象です')
                   : t('保留完整档案和原因，不改变案件匹配资格', '履歴と理由を保存します。案件マッチングの対象は変わりません')
-              ]
+              ],
+              [
+                'no-show',
+                t('未到场', '欠席'),
+                t('候选人没有出席，记录事实，不作通过与否的判断', '候補者が欠席しました。合否は判断せず事実を記録します')
+              ],
+              ['withdrawn', t('候选人撤回', '候補者辞退'), t('候选人主动退出本次招聘', '候補者が今回の選考を辞退しました')]
             ] as const
-          ).map(([value, label, detail]) => (
-            <label className={decision === value ? `is-selected is-${value}` : ''} key={value}>
-              <input checked={decision === value} name="final-decision" onChange={() => setDecision(value)} type="radio" />
-              <span>
-                <strong>{label}</strong>
-                <small>{detail}</small>
-              </span>
-            </label>
-          ))}
+          )
+            // A client 复试 is booked on the case's 跟进 now, not as another round here; a correction creates no round.
+            .filter(([value]) => !((isClientInterview || correcting) && value === 'next-round'))
+            // Before the interview took place only 未到场 / 撤回 can close it.
+            .filter(([value]) => !(closableEarly && !correcting && value !== 'no-show' && value !== 'withdrawn'))
+            .filter(([value]) => !(isClientInterview && (value === 'no-show' || value === 'withdrawn')))
+            .map(([value, label, detail]) => (
+              <label className={chosenDecision === value ? `is-selected is-${value}` : ''} key={value}>
+                <input checked={chosenDecision === value} name="final-decision" onChange={() => setDecision(value)} type="radio" />
+                <span>
+                  <strong>{label}</strong>
+                  <small>{detail}</small>
+                </span>
+              </label>
+            ))}
         </div>
         <label className="recruiting-decision-reason">
           <span>{isClientInterview ? t('客户反馈与人工判断', '顧客フィードバックと人の判断') : t('人工判断理由', '人の判断理由')}</span>
@@ -2058,8 +2251,37 @@ export function CandidatePipeline({
             value={decisionReason}
           />
         </label>
+        {correcting ? (
+          <label className="recruiting-decision-reason">
+            <span>{t('更正原因', '訂正の理由')}</span>
+            <textarea
+              onChange={(event) => setCorrectionReason(event.target.value)}
+              placeholder={t(
+                '说明原结论为什么不对。原结论会保留在记录里。',
+                '元の結論が誤っていた理由を入力してください。元の結論は記録に残ります。'
+              )}
+              value={correctionReason}
+            />
+          </label>
+        ) : null}
+        {correcting ? (
+          <div className="recruiting-schedule-actions">
+            <button disabled={saving !== null} onClick={() => setCorrecting(false)} type="button">
+              {t('取消', 'キャンセル')}
+            </button>
+            <button
+              className="is-primary"
+              disabled={saving !== null || decisionReason.trim().length < 2 || correctionReason.trim().length < 2}
+              onClick={() => void correctDecision()}
+              type="button"
+            >
+              {saving === 'decision' ? t('正在保存…', '保存中…') : t('确认更正', '訂正を確定')}
+            </button>
+          </div>
+        ) : null}
         <button
           className="is-primary"
+          hidden={correcting}
           disabled={saving !== null || decisionReason.trim().length < 2}
           onClick={() => void recordDecision()}
           type="button"
@@ -2167,67 +2389,99 @@ export function CandidatePipeline({
                 {formatDate(selectedInterview.decidedAt, locale)} · {selectedInterview.decidedBy ?? '—'}
               </small>
             ) : null}
+            {/* A decision recorded by mistake is corrected here, unless a later round already follows from it. */}
+            {selectedInterview.decision &&
+            onCorrectDecision &&
+            !selectedInterview.businessFollowUpId &&
+            !selectedSessions.some((item) => item.parentInterviewId === selectedInterview.id) ? (
+              <button
+                onClick={() => {
+                  setDecision(selectedInterview.decision === 'failed' ? 'passed' : 'failed')
+                  setDecisionReason('')
+                  setCorrectionReason('')
+                  setCorrecting(true)
+                }}
+                type="button"
+              >
+                {t('更正结论', '結論を訂正')}
+              </button>
+            ) : null}
           </section>
         </div>
       </section>
     )
   }
 
-  const renderInterviewFlow = () => (
-    <section className="recruiting-session-area">
-      <div className="recruiting-session-tabs">
-        {selectedSessions.map((interview) => (
-          <button
-            className={interview.id === selectedInterview?.id ? 'is-active' : ''}
-            key={interview.id}
-            onClick={() => {
-              setSelectedInterviewId(interview.id)
-              setSessionTab(sessionTabFor(interview))
-              setRescheduling(false)
-            }}
-            type="button"
-          >
-            {interviewLabel(interview, zh)}
-            <small>{interviewStageLabel(interview, zh)}</small>
-          </button>
-        ))}
-        {selectedSessions.length === 0 ? (
-          <button className="is-active" type="button">
-            {isClientInterview ? t('客户面试 1', '顧客面談 1') : t('初面', '一次面談')}
-            <small>{t('待预约', '未予約')}</small>
-          </button>
-        ) : null}
-      </div>
-      {viewingHistoricalRound ? (
-        renderHistoricalRound()
-      ) : (
-        <>
-          <nav className="recruiting-workflow-tabs">
-            {workflowSteps.map((step, index) => {
-              const targetIndex = workflowSteps.findIndex((item) => item.id === currentStep)
-              const disabled = !selectedInterview ? step.id !== 'schedule' : index > targetIndex
-              return (
-                <button
-                  className={sessionTab === step.id ? 'is-active' : ''}
-                  disabled={disabled}
-                  key={step.id}
-                  onClick={() => navigateSession(step.id)}
-                  type="button"
-                >
-                  <span>{index + 1}</span>
-                  {step.label}
-                </button>
-              )
-            })}
-          </nav>
-          {sessionTab === 'schedule' ? renderSchedule() : null}
-          {sessionTab === 'prepare' && selectedInterview ? renderPreparation() : null}
-          {sessionTab === 'record' && selectedInterview ? renderRecord() : null}
-          {sessionTab === 'decision' && selectedInterview ? renderDecision() : null}
-        </>
-      )}
-    </section>
-  )
+  const renderInterviewFlow = () =>
+    isClientInterview && selectedSessions.length === 0 ? (
+      // Client interviews are booked for a case, on its 跟进; older ones recorded here stay readable.
+      <section className="recruiting-placeholder-page">
+        <Icon name="clock" size={28} />
+        <h2>{t('客户面试在案件跟进中安排', '顧客面談は案件の対応記録で設定します')}</h2>
+        <p>
+          {t(
+            '客户面试要关联到具体案件：请在「跟进」中打开这个人员和案件的跟进，再预约面试，进度和日程会一起更新。',
+            '顧客面談は案件に紐づけて登録します。「対応記録」でこの要員と案件の対応を開いて予約すると、進捗と日程がまとめて更新されます。'
+          )}
+        </p>
+      </section>
+    ) : (
+      <section className="recruiting-session-area">
+        <div className="recruiting-session-tabs">
+          {selectedSessions.map((interview) => (
+            <button
+              className={interview.id === selectedInterview?.id ? 'is-active' : ''}
+              key={interview.id}
+              onClick={() => {
+                setSelectedInterviewId(interview.id)
+                setSessionTab(sessionTabFor(interview))
+                setRescheduling(false)
+              }}
+              type="button"
+            >
+              {interviewLabel(interview, zh)}
+              <small>{interviewStageLabel(interview, zh)}</small>
+            </button>
+          ))}
+          {selectedSessions.length === 0 ? (
+            <button className="is-active" type="button">
+              {isClientInterview ? t('客户面试 1', '顧客面談 1') : t('初面', '一次面談')}
+              <small>{t('待预约', '未予約')}</small>
+            </button>
+          ) : null}
+        </div>
+        {correcting && selectedInterview ? (
+          renderDecision()
+        ) : viewingHistoricalRound ? (
+          renderHistoricalRound()
+        ) : (
+          <>
+            <nav className="recruiting-workflow-tabs">
+              {workflowSteps.map((step, index) => {
+                const targetIndex = workflowSteps.findIndex((item) => item.id === currentStep)
+                const disabled = !selectedInterview ? step.id !== 'schedule' : index > targetIndex
+                return (
+                  <button
+                    className={sessionTab === step.id ? 'is-active' : ''}
+                    disabled={disabled}
+                    key={step.id}
+                    onClick={() => navigateSession(step.id)}
+                    type="button"
+                  >
+                    <span>{index + 1}</span>
+                    {step.label}
+                  </button>
+                )
+              })}
+            </nav>
+            {sessionTab === 'schedule' ? renderSchedule() : null}
+            {sessionTab === 'prepare' && selectedInterview ? renderPreparation() : null}
+            {sessionTab === 'record' && selectedInterview ? renderRecord() : null}
+            {sessionTab === 'decision' && selectedInterview ? renderDecision() : null}
+          </>
+        )}
+      </section>
+    )
 
   const renderClient = () => renderInterviewFlow()
 
@@ -2300,6 +2554,11 @@ export function CandidatePipeline({
           <div className="recruiting-error" role="alert">
             <Icon name="alert" size={16} />
             {error}
+            {conflictedSchedule && conflictedSchedule === JSON.stringify([selectedInterview?.id, schedule]) ? (
+              <button className="recruiting-error-action" disabled={saving !== null} onClick={() => void saveSchedule(true)} type="button">
+                {t('仍然保存', 'このまま保存')}
+              </button>
+            ) : null}
             <button aria-label={t('关闭错误', 'エラーを閉じる')} onClick={() => setError(null)} type="button">
               ×
             </button>

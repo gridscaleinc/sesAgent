@@ -106,7 +106,10 @@ it('displays a clear unsuitable result for missing required skills in the requir
   const table = within(screen.getByRole('table', { name: '匹配依据' }))
   const cells = within(table.getByRole('row', { name: /Java/ })).getAllByRole('cell')
   expect(table.getByRole('rowheader', { name: '必需技能' })).toBeInTheDocument()
-  expect(cells.map((cell) => cell.textContent)).toEqual(['Java', '—', '✗ 不满足'])
+  expect(cells.slice(0, 2).map((cell) => cell.textContent)).toEqual(['Java', '—'])
+  expect(cells[2]!.textContent).toMatch(/^✗ 不满足/u)
+  // A conflict the material may have wrong can still be settled by HR.
+  expect(within(cells[2]!).getByRole('button', { name: '满足' })).toBeInTheDocument()
   // A missing value is only the em dash and the state; no sentence is repeated per requirement.
   expect(screen.queryByText(/当前简历未体现|人员资料尚未说明/)).not.toBeInTheDocument()
 })

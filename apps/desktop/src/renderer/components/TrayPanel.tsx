@@ -73,7 +73,7 @@ function AiQuota({ summary, t }: { summary: TrayReadySummary; t: Text }) {
           ? t('未知', '不明')
           : ai.state === 'exhausted'
             ? t('已用完', '使い切り')
-            : t(`剩余 ${credits(ai.availableCredits, t)}`, `残り ${credits(ai.availableCredits, t)}`)
+            : t(`剩余 ${credits(ai.availableCredits, t)} 点`, `残り ${credits(ai.availableCredits, t)} クレジット`)
   const available = ai.availableCredits
   return (
     <>
@@ -221,13 +221,13 @@ export function TrayPanel({ api }: { api: TrayDesktopApi }) {
       </button>
       <div className="tray-cards">
         <Card
-          detail={t(`未读 ${summary.cases.unseen}`, `未読 ${summary.cases.unseen}`)}
+          detail={t(`今天新到 ${summary.cases.newToday}`, `本日着 ${summary.cases.newToday}`)}
           label={t('新案件', '新着案件')}
           onClick={() => open('cases', { caseView: 'unseen' })}
-          value={summary.cases.newToday}
+          value={summary.cases.unseen}
         />
         <Card
-          detail={t(`可以提案 ${summary.matching.proposable}`, `提案可能 ${summary.matching.proposable}`)}
+          detail={t(`共 ${summary.matching.proposable} 组可以提案`, `提案可能 計${summary.matching.proposable}組`)}
           label={t('新匹配机会', '新しいマッチング候補')}
           onClick={() => open('cases', { caseView: 'opportunities' })}
           value={summary.matching.newOpportunities}
@@ -235,7 +235,8 @@ export function TrayPanel({ api }: { api: TrayDesktopApi }) {
         <Card
           detail={t(`今天面试 ${summary.interviews.today}`, `今日の面談 ${summary.interviews.today}`)}
           label={t('待约面', '日程調整中')}
-          onClick={() => open('followups', { followUpFilter: 'today' })}
+          // The number counts follow-ups waiting for an interview date; it opens exactly those.
+          onClick={() => open('followups', { followUpFilter: 'coordinating' })}
           value={summary.interviews.coordinating}
         />
         <Card detail={null} label={t('AI 额度', 'AI クレジット')} onClick={() => open('ai-member')}>
@@ -243,7 +244,11 @@ export function TrayPanel({ api }: { api: TrayDesktopApi }) {
         </Card>
       </div>
       {next ? (
-        <button className="tray-upcoming" onClick={() => open('followups', { followUpFilter: 'today' })} type="button">
+        <button
+          className="tray-upcoming"
+          onClick={() => (next.kind === 'recruiting' ? open('interview-schedule') : open('followups', { followUpFilter: 'today' }))}
+          type="button"
+        >
           <time dateTime={next.at}>{tokyoTime(next.at)}</time>
           <span>
             {roundLabel(next.roundNumber, t)} · {next.caseTitle || t('案件', '案件')}

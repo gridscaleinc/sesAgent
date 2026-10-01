@@ -68,6 +68,27 @@ describe('ApplicationSettingsDialog', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ locale: 'zh-CN', expectedRevision: null }))
   })
 
+  it('offers 外観 with システムに合わせる selected by default and applies a chosen theme to <html> without saving preferences', () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key)
+    })
+    document.documentElement.removeAttribute('data-theme')
+    const onSave = vi.fn()
+    render(<ApplicationSettingsDialog {...integrationProps} onClose={vi.fn()} onSave={onSave} preferences={preferences} />)
+    expect(screen.getByRole('radio', { name: /システムに合わせる/u })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('radio', { name: /^ダーク/u }))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(values.get('ses-theme-v1')).toBe('dark')
+    expect(screen.getByRole('radio', { name: /^ダーク/u })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(screen.getByRole('radio', { name: /システムに合わせる/u }))
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
+    expect(onSave).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
   it('shows the menu-bar icon and hides person names by default, and saves each switch with the current revision', async () => {
     const saved = { ...preferences, configured: true, revision: 4, updatedAt: '2026-09-30T00:00:00.000Z' }
     const onSave = vi.fn().mockResolvedValue(saved)

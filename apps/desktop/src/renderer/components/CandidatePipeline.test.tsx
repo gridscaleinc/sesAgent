@@ -304,6 +304,43 @@ describe('CandidatePipeline recruiting workspace', () => {
     expect(onOpenZoomMeeting).toHaveBeenCalledWith({ url: 'https://company.zoom.us/j/1234567890' })
   })
 
+  it('offers 重新预约 and 撤回 / 未到场 for a recruiting interview whose booking was cancelled', async () => {
+    const cancelled: CandidateInterviewSnapshot = {
+      ...interview,
+      id: '44444444-4444-4444-8444-444444444444',
+      stage: 'contacting',
+      scheduledAt: null
+    }
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          initialCandidateId={documentId}
+          interviews={[cancelled]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="overview"
+        />
+      </UiLocaleProvider>
+    )
+    expect(await screen.findByRole('button', { name: /重新预约/u })).toBeInTheDocument()
+    expect(screen.getAllByText('初面待重新预约').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: '候选人撤回 / 未到场' }))
+    // Before the interview took place only 未到场 / 撤回 are offered.
+    expect(await screen.findByText('候选人撤回')).toBeInTheDocument()
+    expect(screen.queryByText('招聘通过')).not.toBeInTheDocument()
+  })
+
   it('keeps a client-interview decision separate from talent-pool membership', async () => {
     const clientInterview: CandidateInterviewSnapshot = {
       ...interview,
@@ -348,6 +385,99 @@ describe('CandidatePipeline recruiting workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认面试结论' }))
     await waitFor(() => expect(onRecordDecision).toHaveBeenCalled())
     expect(onRecordDecision).toHaveBeenCalledWith(expect.objectContaining({ decision: 'passed' }))
+  })
+
+  it('corrects a recruiting decision recorded by mistake, with a reason, offering 未到场 and 候选人撤回', async () => {
+    const decided: CandidateInterviewSnapshot = {
+      ...interview,
+      stage: 'passed',
+      decision: 'passed',
+      decisionReason: '基础扎实',
+      decidedAt: '2026-07-18T01:00:00.000Z',
+      decidedBy: 'HR'
+    }
+    const onCorrectDecision = vi.fn().mockResolvedValue({ ...decided, stage: 'closed', decision: 'no-show' })
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline
+          analyses={[]}
+          initialCandidateId={documentId}
+          interviewKind="recruiting"
+          interviews={[decided]}
+          onConfirmCandidateProfile={vi.fn()}
+          onCorrectDecision={onCorrectDecision}
+          onCreateRound={vi.fn()}
+          onImportResume={vi.fn()}
+          onOpenCandidateLibrary={vi.fn()}
+          onOpenIntegrationSettings={vi.fn()}
+          onOpenZoomMeeting={vi.fn()}
+          onRecordDecision={vi.fn()}
+          onSaveNotes={vi.fn()}
+          onSavePreparation={vi.fn()}
+          onSaveSchedule={vi.fn()}
+          onViewChange={vi.fn()}
+          reviews={[review]}
+          view="decision"
+        />
+      </UiLocaleProvider>
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '更正结论' }))
+    fireEvent.click(screen.getByRole('radio', { name: /未到场/u }))
+    expect(screen.queryByRole('radio', { name: /安排复试/u })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /候选人撤回/u })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('人工判断理由'), { target: { value: '候选人未出席' } })
+    const confirm = screen.getByRole('button', { name: '确认更正' })
+    expect(confirm).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('更正原因'), { target: { value: '点错了结论' } })
+    fireEvent.click(confirm)
+    await waitFor(() =>
+      expect(onCorrectDecision).toHaveBeenCalledWith(
+        expect.objectContaining({ decision: 'no-show', decisionReason: '候选人未出席', correctionReason: '点错了结论' })
+      )
+    )
+  })
+
+  it('sends a new client interview to the case’s 跟进 and offers no client 复试 round here', async () => {
+    const props = {
+      analyses: [],
+      initialCandidateId: documentId,
+      interviewKind: 'client' as const,
+      onConfirmCandidateProfile: vi.fn(),
+      onCreateRound: vi.fn(),
+      onImportResume: vi.fn(),
+      onOpenCandidateLibrary: vi.fn(),
+      onOpenIntegrationSettings: vi.fn(),
+      onOpenZoomMeeting: vi.fn(),
+      onRecordDecision: vi.fn(),
+      onSaveNotes: vi.fn(),
+      onSavePreparation: vi.fn(),
+      onSaveSchedule: vi.fn(),
+      onViewChange: vi.fn(),
+      reviews: [review]
+    }
+    const view = render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline {...props} interviews={[]} view="schedule" />
+      </UiLocaleProvider>
+    )
+    expect(await screen.findByRole('heading', { name: '客户面试在案件跟进中安排' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /预约客户面试/u })).not.toBeInTheDocument()
+    view.unmount()
+    // An older client interview recorded here stays readable and decidable, without a 复试 option.
+    const older: CandidateInterviewSnapshot = {
+      ...interview,
+      id: '33333333-3333-4333-8333-333333333333',
+      kind: 'client',
+      stage: 'awaiting-decision'
+    }
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <CandidatePipeline {...props} interviews={[older]} view="decision" />
+      </UiLocaleProvider>
+    )
+    expect(await screen.findByRole('heading', { name: '客户面试结论' })).toBeInTheDocument()
+    expect(screen.queryByText('安排客户复试')).not.toBeInTheDocument()
+    expect(screen.getByText('客户未通过')).toBeInTheDocument()
   })
 
   it('sends only anonymous interview context to Cloud AI and adds confirmed questions to the plan', async () => {

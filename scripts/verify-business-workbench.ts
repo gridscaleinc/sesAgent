@@ -433,6 +433,7 @@ try {
   db.pragma('foreign_keys=OFF')
   db.exec('BEGIN IMMEDIATE')
   for (const table of [
+    'requirement_confirmations',
     'recommendation_points',
     'person_case_match_run_items',
     'person_case_match_runs',
@@ -499,7 +500,7 @@ try {
   assert.equal((db.pragma('foreign_key_check') as unknown[]).length, 0)
   db.close()
   repository = new EncryptedApplicationRepository({ path: databasePath, databaseKey, mappingKey })
-  assert.equal(currentSchemaVersion, 66)
+  assert.equal(currentSchemaVersion, 67)
   assert.equal(repository.getSchemaVersion(), currentSchemaVersion)
   assert.equal(repository.getPersonnelWorkspace().states.length, 0)
   assert.equal(repository.getPersonnelWorkspace().templates.length, 2)

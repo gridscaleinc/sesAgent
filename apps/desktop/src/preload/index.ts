@@ -1,4 +1,4 @@
-import type { CaseResumeImportProgress, TrayNavigation } from '@shared'
+import type { CaseResumeImportProgress, TodaySummary, TrayNavigation } from '@shared'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   ipcChannels,
@@ -92,6 +92,7 @@ export const trayNavigationRoutes = [
   'cases:new',
   'people:import',
   'followups',
+  'interview-schedule',
   'agent',
   'ai-member',
   'settings:models',
@@ -106,9 +107,19 @@ function parseTrayNavigation(value: unknown): TrayNavigation | null {
   if (!Object.keys(record).every((key) => keys.includes(key))) return null
   if (!uuidPattern.test(String(record.id)) || !trayNavigationRoutes.includes(String(record.route))) return null
   if (record.caseView !== undefined && record.caseView !== 'unseen' && record.caseView !== 'opportunities') return null
-  if (record.followUpFilter !== undefined && record.followUpFilter !== 'today') return null
+  if (record.followUpFilter !== undefined && !['today', 'active', 'coordinating'].includes(record.followUpFilter as string)) return null
   if (record.text !== undefined && (typeof record.text !== 'string' || record.text.length > 2000)) return null
   return record as unknown as TrayNavigation
+}
+
+/** The 「今天」 summary Main pushes: a known status and locale; a ready one carries its lists. */
+function isTodaySummary(value: unknown): value is TodaySummary {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  if (record.locale !== 'zh-CN' && record.locale !== 'ja-JP') return false
+  if (typeof record.generatedAt !== 'string') return false
+  if (record.status === 'not-ready') return true
+  return record.status === 'ready' && typeof record.lists === 'object' && record.lists !== null
 }
 
 function parseGmailSyncCompletion(value: unknown): GmailScheduledSyncCompletion | null {
@@ -140,6 +151,7 @@ const api: DesktopApi = {
   listBusinessProgressMail: () => ipcRenderer.invoke(ipcChannels.listBusinessProgressMail),
   updateBusinessProgressMail: (input) => ipcRenderer.invoke(ipcChannels.updateBusinessProgressMail, input),
   listBusinessFollowUps: () => ipcRenderer.invoke(ipcChannels.listBusinessFollowUps),
+  listHrRejectedFollowUps: () => ipcRenderer.invoke(ipcChannels.listHrRejectedFollowUps),
   saveBusinessFollowUp: (input) => ipcRenderer.invoke(ipcChannels.saveBusinessFollowUp, input),
   onBusinessMatchingProgress: (listener) => {
     const handler = (_event: IpcRendererEvent, value: BusinessMatchingProgress) => listener(value)
@@ -222,6 +234,9 @@ const api: DesktopApi = {
   listPersonnelIntroductionDrafts: (documentId) => ipcRenderer.invoke(ipcChannels.listPersonnelIntroductionDrafts, documentId),
   generateRecommendationPoints: (input) => ipcRenderer.invoke(ipcChannels.generateRecommendationPoints, input),
   getRecommendationPoints: (input) => ipcRenderer.invoke(ipcChannels.getRecommendationPoints, input),
+  listRequirementConfirmations: (documentId) => ipcRenderer.invoke(ipcChannels.listRequirementConfirmations, documentId),
+  decideRequirement: (input) => ipcRenderer.invoke(ipcChannels.decideRequirement, input),
+  withdrawRequirementDecision: (input) => ipcRenderer.invoke(ipcChannels.withdrawRequirementDecision, input),
   exportSkillSheet: (input) => ipcRenderer.invoke(ipcChannels.exportSkillSheet, input),
   regenerateIntroduction: (input) => ipcRenderer.invoke(ipcChannels.regenerateIntroduction, input),
   saveBusinessField: (input) => ipcRenderer.invoke(ipcChannels.saveBusinessField, input),
@@ -251,9 +266,12 @@ const api: DesktopApi = {
   submitCandidateReview: (input) => ipcRenderer.invoke(ipcChannels.submitCandidateReview, input),
   createCandidateInterviewRound: (input) => ipcRenderer.invoke(ipcChannels.createCandidateInterviewRound, input),
   saveCandidateInterviewSchedule: (input) => ipcRenderer.invoke(ipcChannels.saveCandidateInterviewSchedule, input),
+  cancelCandidateInterviewSchedule: (input) => ipcRenderer.invoke(ipcChannels.cancelCandidateInterviewSchedule, input),
   saveCandidateInterviewPreparation: (input) => ipcRenderer.invoke(ipcChannels.saveCandidateInterviewPreparation, input),
   saveCandidateInterviewNotes: (input) => ipcRenderer.invoke(ipcChannels.saveCandidateInterviewNotes, input),
   recordCandidateInterviewDecision: (input) => ipcRenderer.invoke(ipcChannels.recordCandidateInterviewDecision, input),
+  correctCandidateInterviewDecision: (input) => ipcRenderer.invoke(ipcChannels.correctCandidateInterviewDecision, input),
+  deleteUnbookedCandidateInterviewRound: (input) => ipcRenderer.invoke(ipcChannels.deleteUnbookedCandidateInterviewRound, input),
   openZoomMeeting: (input) => ipcRenderer.invoke(ipcChannels.openZoomMeeting, input),
   openInterviewMeeting: (input) => ipcRenderer.invoke(ipcChannels.openInterviewMeeting, input),
   openZoomTestMeeting: () => ipcRenderer.invoke(ipcChannels.openZoomTestMeeting),
@@ -334,6 +352,14 @@ const api: DesktopApi = {
       ipcRenderer.removeListener(ipcChannels.trayNavigate, handler)
     }
   },
+  getTodaySummary: () => ipcRenderer.invoke(ipcChannels.getTodaySummary),
+  onTodaySummaryChanged: (listener) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => {
+      if (isTodaySummary(payload)) listener(payload)
+    }
+    ipcRenderer.on(ipcChannels.todaySummaryChanged, handler)
+    return () => ipcRenderer.removeListener(ipcChannels.todaySummaryChanged, handler)
+  },
   onGmailSyncCompleted: (listener) => {
     const handler = (_event: IpcRendererEvent, payload: unknown) => {
       const parsed = parseGmailSyncCompletion(payload)
@@ -346,6 +372,8 @@ const api: DesktopApi = {
   createRecoveryPackage: (input) => ipcRenderer.invoke(ipcChannels.createRecoveryPackage, input),
   snoozeRecoveryReminder: (input) => ipcRenderer.invoke(ipcChannels.snoozeRecoveryReminder, input),
   previewRecoveryPackage: (input) => ipcRenderer.invoke(ipcChannels.previewRecoveryPackage, input),
+  listHeldDeletions: () => ipcRenderer.invoke(ipcChannels.listHeldDeletions),
+  resolveHeldDeletion: (input) => ipcRenderer.invoke(ipcChannels.resolveHeldDeletion, input),
   confirmRecovery: (input) => ipcRenderer.invoke(ipcChannels.confirmRecovery, input),
   restartApplication: () => ipcRenderer.invoke(ipcChannels.restartApplication),
   previewWorkTask: (input) => ipcRenderer.invoke(ipcChannels.previewWorkTask, input),

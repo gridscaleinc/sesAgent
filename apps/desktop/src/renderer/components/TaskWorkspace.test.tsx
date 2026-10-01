@@ -341,7 +341,7 @@ describe('TaskWorkspace result routing', () => {
     expect(screen.getByText('Recall@20 は全量真値が揃うまで未算出')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: '証跡 4' }))
     expect(screen.getByRole('region', { name: '検索ランキング証跡' })).toHaveTextContent('hard-filter-hybrid-local-rerank-v1')
-    expect(screen.getByText('Result Set Hash')).toBeInTheDocument()
+    expect(screen.getByText('結果セットハッシュ')).toBeInTheDocument()
     expect(screen.getByText('出典：Projects · 2行（出典セル1件）')).toBeInTheDocument()
     expect(screen.getByText(/匿名結果 · Result Hash/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: '統制' }))

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { JobCaseReviewSnapshot, WorkRuleLibrary, WorkRulePreview, WorkRuleRecord, WorkRuleScope } from '@shared'
 import { localizedIpcError, useUiLocale, localeText } from '../i18n'
 import './ai-work-rules.css'
+import { formatTokyoDateTime } from '../format-time'
 
 export const workRulesChangedEvent = 'ses-ai-work-rules-changed'
 export function AiWorkRulesPanel({
@@ -307,7 +308,7 @@ export function AiWorkRulesPanel({
               {history.map((version) => (
                 <li key={version.revision}>
                   <span>
-                    v{version.revision} · {new Date(version.updatedAt).toLocaleString()} ·{' '}
+                    v{version.revision} · {formatTokyoDateTime(locale, version.updatedAt)} ·{' '}
                     {version.enabled ? t('启用', '有効') : t('停用', '無効')}
                   </span>
                   <p>{version.text}</p>

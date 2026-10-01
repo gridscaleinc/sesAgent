@@ -27,6 +27,7 @@ export function CasePersonDetail({
   person,
   stale,
   archived,
+  intakeNotice,
   status,
   blocked,
   followLabel,
@@ -52,6 +53,8 @@ export function CasePersonDetail({
   person?: CandidateReviewSnapshot
   stale: boolean
   archived?: boolean
+  /** A note above the result, e.g. that the uploaded résumé was someone already in the system. */
+  intakeNotice?: string
   /** A badge replacing the conclusion, e.g. while the result is outdated. */
   status?: { tone: ConclusionTone; label: string }
   /** Why the next steps are unavailable; empty when they can be used. */
@@ -140,7 +143,7 @@ export function CasePersonDetail({
     })
   const confirmQuestions = value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text)
   const followCount = followUpItems(value.result.qualification, confirmQuestions)
-  const followTotal = followCount.items.length + followCount.questions.length
+  const followTotal = followCount.items.length + followCount.questions.length + followCount.asking.length
   const projects = relatedProjects(person, value.result.qualification?.requirements ?? [])
   const actionsBlocked = Boolean(blocked) || Boolean(starting)
   const staleNotice = t(
@@ -151,7 +154,14 @@ export function CasePersonDetail({
     {
       id: 'evidence',
       label: t('匹配依据', 'マッチングの根拠'),
-      content: stale ? <p className="match-muted">{staleNotice}</p> : <MatchEvidenceTab qualification={value.result.qualification} />
+      content: stale ? (
+        <p className="match-muted">{staleNotice}</p>
+      ) : (
+        <MatchEvidenceTab
+          qualification={value.result.qualification}
+          pair={archived ? undefined : { documentId: value.documentId, jobCaseId }}
+        />
+      )
     },
     {
       id: 'points',
@@ -401,6 +411,7 @@ export function CasePersonDetail({
       }
       notice={
         <>
+          {intakeNotice ? <p role="status">{intakeNotice}</p> : null}
           {archived ? (
             <p>
               {t(

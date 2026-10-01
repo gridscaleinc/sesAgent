@@ -271,6 +271,42 @@ export function sameCandidateRecord(
   return (b.projectExperiences ?? []).some((project) => project.title && titles.has(project.title))
 }
 
+/** Phone digits only, so 090-1234-5678 and 09012345678 compare equal. */
+const phoneKey = (value?: string | null) => (value ?? '').normalize('NFKC').replace(/\D/gu, '')
+// Spacing, punctuation and every kind of dash (1-2-3, 1‐2‐3, 1ー2ー3) are left out of the comparison.
+const addressKey = (value?: string | null) =>
+  (value ?? '').normalize('NFKC').replace(/[\s\p{P}ー−]/gu, '').toLowerCase()
+/** Birth year, read from a birth date (1985年3月, 1985/03/01) or from an age (39歳) as of `now`. */
+function birthYear(value: string | null | undefined, now: Date): number | null {
+  const text = (value ?? '').normalize('NFKC')
+  const year = /(19|20)\d{2}/u.exec(text)
+  if (year) return Number(year[0])
+  const age = /(\d{1,2})\s*(?:歳|才|岁|yo)/u.exec(text) ?? /^\s*(\d{1,2})\s*$/u.exec(text)
+  return age ? now.getFullYear() - Number(age[1]) : null
+}
+/**
+ * The same human for import purposes: the same name and, on top of it, the same mobile number, the same address or
+ * the same age. A name alone is not enough (two people can share one), so such a person is imported as someone new.
+ */
+export function samePersonByDetails(
+  a?: Pick<CandidateReviewSnapshot, 'localIdentity'>,
+  b?: Pick<CandidateReviewSnapshot, 'localIdentity'>,
+  now = new Date()
+): boolean {
+  const key = candidateIdentityKey(a)
+  if (!key || key !== candidateIdentityKey(b)) return false
+  const left = a?.localIdentity,
+    right = b?.localIdentity
+  const phone = phoneKey(left?.phone)
+  if (phone.length >= 8 && phone === phoneKey(right?.phone)) return true
+  const address = addressKey(left?.address)
+  if (address.length >= 4 && address === addressKey(right?.address)) return true
+  const born = birthYear(left?.birthDate, now),
+    otherBorn = birthYear(right?.birthDate, now)
+  // An age read on another day can be a year apart from a birth year: within one year counts as the same age.
+  return born !== null && otherBorn !== null && Math.abs(born - otherBorn) <= 1
+}
+
 export function builtInPersonnelTemplates(): PersonnelTemplate[] {
   return [
     {

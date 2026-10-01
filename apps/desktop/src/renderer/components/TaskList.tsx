@@ -33,16 +33,17 @@ interface TaskListProps {
   onSelect(task: WorkTask): void
   onViewAll?(): void
   title?: string
+  /** An optional small label above the title; none by default, like the app's other section headings. */
   eyebrow?: string
 }
 
-export function TaskList({ tasks, onSelect, onViewAll, title, eyebrow = 'ACTIVE WORK' }: TaskListProps) {
+export function TaskList({ tasks, onSelect, onViewAll, title, eyebrow }: TaskListProps) {
   const { locale, t } = useLocaleText()
   return (
     <section className="task-section">
       <div className="section-heading-row">
         <div>
-          <span className="eyebrow">{eyebrow}</span>
+          {eyebrow ? <span className="eyebrow">{eyebrow}</span> : null}
           <h2>{title ?? t('进行中的任务', '進行中の作業')}</h2>
         </div>
         {onViewAll ? (
@@ -79,8 +80,7 @@ export function TaskList({ tasks, onSelect, onViewAll, title, eyebrow = 'ACTIVE 
               <small>{task.progress}%</small>
             </span>
             <span className="task-updated">
-              {t('更新', '更新')}{' '}
-              {new Date(task.updatedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
+              {t('更新', '更新')} {new Date(task.updatedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
             </span>
             <Icon name="chevron-right" size={18} />
           </button>

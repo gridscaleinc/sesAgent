@@ -245,11 +245,18 @@ describe.skipIf(!nativeSqliteAvailable)('PersonnelStore via EncryptedApplication
       request: '管理経験',
       drafts: [{ lang: 'ja', text: '案件向け2', experienceRunId: 'run' }]
     })
-    const stored = handle.reopen().listPersonnelIntroductionDrafts(person.documentId)
+    const stored = repository.listPersonnelIntroductionDrafts(person.documentId)
     expect(stored.map((draft) => [draft.caseReviewId, draft.jobCaseVersion, draft.text, draft.request])).toEqual([
       [null, null, '一般紹介', null],
       [caseReviewId, 3, '案件向け2', '管理経験']
     ])
+    // That case does not exist (deleted before deletion took its introductions along): reopening drops its text.
+    expect(
+      handle
+        .reopen()
+        .listPersonnelIntroductionDrafts(person.documentId)
+        .map((draft) => draft.text)
+    ).toEqual(['一般紹介'])
     const repository2 = handle.repository
     const preview = repository2.previewCandidateDeletion(person.documentId)
     repository2.deleteCandidateDatabaseData(person.documentId, preview.confirmationHash)

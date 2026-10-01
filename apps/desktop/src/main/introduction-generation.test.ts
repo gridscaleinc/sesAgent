@@ -258,11 +258,11 @@ it('writes with the 文案与分析 model the operator chose, not the 批量核�
   const generate = createIntroductionGenerator({
     repository: {
       getCurrentCandidateProfile: () => ({ profileVersion: 1, fields: [], projectExperiences: [] }),
-      getLocalApplicationPreferences: () => ({ aiModels: { checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' } })
+      getLocalApplicationPreferences: () => ({ aiModels: { checking: 'gpt-6-luna', writing: 'gpt-6-sol' } })
     },
     agentNarrativeStreamer: { regenerateIntroduction: cloud },
     agentChatModelCatalog: loadAgentChatModelCatalog()
   } as any)
   await generate({ kind: 'person', id, version: 1, lang: 'ja', style: 'standard' })
-  expect(cloud.mock.calls[0]?.[0]?.model.key).toBe('gpt-6.1-sol-pro')
+  expect(cloud.mock.calls[0]?.[0]?.model.key).toBe('gpt-6-sol')
 })

@@ -14,7 +14,7 @@ const options = { path: join(directory, 'test.db'), databaseKey: randomBytes(32)
 let repository = new EncryptedApplicationRepository(options)
 const fileVault = new EncryptedFileVault({ directory: join(directory, 'vault'), key: randomBytes(32) })
 try {
-  assert.equal(currentSchemaVersion, 66)
+  assert.equal(currentSchemaVersion, 67)
   assert.deepEqual(repository.listWorkRules(), { revision: 0, rules: [] })
   const first = repository.saveWorkRule({
     expectedRevision: 0,

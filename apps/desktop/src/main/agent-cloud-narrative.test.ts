@@ -1645,7 +1645,8 @@ describe('business-text extraction protocol', () => {
     expect(mixed).toEqual({
       kind: 'records',
       records: [{ kind: 'job-case', startLine: 3, endLine: 4, fields: { location: '東京' } }],
-      personnel: [{ startLine: 1, endLine: 2 }]
+      personnel: [{ startLine: 1, endLine: 2 }],
+      ignored: []
     })
     const onlyPersonnel = parseAgentBusinessTextExtractionResponse(
       JSON.stringify({ decision: 'records', records: [], ignored: [{ startLine: 1, endLine: 2, reason: 'personnel' }] }),
@@ -1653,7 +1654,7 @@ describe('business-text extraction protocol', () => {
       [],
       true
     )
-    expect(onlyPersonnel).toEqual({ kind: 'records', records: [], personnel: [{ startLine: 1, endLine: 2 }] })
+    expect(onlyPersonnel).toEqual({ kind: 'records', records: [], personnel: [{ startLine: 1, endLine: 2 }], ignored: [] })
     // Nothing at all, or an empty answer outside case intake, is still a protocol failure.
     expect(() =>
       parseAgentBusinessTextExtractionResponse(

@@ -430,11 +430,42 @@ describe('JobCaseInbox', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '案件管理の理由' }), { target: { value: '募集終了のため' } })
     fireEvent.click(archive)
 
-    expect(onSetLifecycle).toHaveBeenCalledWith({
-      reviewId: completedReview.reviewId,
-      state: 'archived',
-      reason: '募集終了のため'
+    // Ending first looks for follow-ups still open; with none it ends the case straight away.
+    await waitFor(() =>
+      expect(onSetLifecycle).toHaveBeenCalledWith({
+        reviewId: completedReview.reviewId,
+        state: 'archived',
+        reason: '募集終了のため'
+      })
+    )
+  })
+
+  it('asks whether to end the open follow-ups too before ending a case', async () => {
+    const original = window.sesAgent
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: {
+        ...original,
+        listBusinessFollowUps: vi.fn(async () => [
+          { id: 'f1', documentId: 'd1', reviewId: completedReview.reviewId, progress: { stage: 'scheduled' } },
+          { id: 'f2', documentId: 'd2', reviewId: completedReview.reviewId, progress: { stage: 'ended' } }
+        ])
+      }
     })
+    try {
+      const onSetLifecycle = vi.fn().mockResolvedValue({ review: { ...completedReview, lifecycle: 'archived' }, history: [] })
+      render(<JobCaseManagement {...managementProps} onSetLifecycle={onSetLifecycle} review={completedReview} />)
+      fireEvent.change(await screen.findByRole('textbox', { name: '案件管理の理由' }), { target: { value: '募集終了のため' } })
+      fireEvent.click(screen.getByRole('button', { name: '案件を終了' }))
+      expect(await screen.findByText('終了していない対応が 1 件あります。')).toBeInTheDocument()
+      expect(onSetLifecycle).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: '対応もまとめて終了' }))
+      await waitFor(() =>
+        expect(onSetLifecycle).toHaveBeenCalledWith(expect.objectContaining({ state: 'archived', closeOpenFollowUps: true }))
+      )
+    } finally {
+      Object.defineProperty(window, 'sesAgent', { configurable: true, value: original })
+    }
   })
 
   it('shows deletion impact and requires typed confirmation', async () => {
@@ -590,6 +621,61 @@ describe('JobCaseInbox', () => {
     expect(onDelete).toHaveBeenNthCalledWith(2, { reviewId: second.reviewId, confirmationHash: 'b'.repeat(64), confirmationText: '削除' })
     expect(await screen.findByText('2件の案件データを削除しました。')).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'すべての案件データを永久削除' })).not.toBeInTheDocument()
+  })
+
+  it('skips a case whose deletion impact changed after HR confirmed, and one with someone in place', async () => {
+    const second: JobCaseReviewSnapshot = {
+      ...completedReview,
+      reviewId: 'f0e1d2c3-b4a5-4968-8778-695a4b3c2d1e',
+      redactedSubject: 'PHP 案件'
+    }
+    const third: JobCaseReviewSnapshot = {
+      ...completedReview,
+      reviewId: 'a1b2c3d4-e5f6-4789-8abc-def012345678',
+      redactedSubject: 'Go 案件'
+    }
+    const counts = {
+      caseVersions: 1,
+      reviewAudits: 0,
+      taskRecords: 0,
+      proposalDrafts: 0,
+      evaluationDraftCases: 0,
+      piiMappings: 0,
+      sourceRecords: 1,
+      gmailMessages: 0,
+      agentReferences: { conversations: 0, messages: 0 }
+    }
+    let reads = 0
+    const onPreviewDeletion = vi.fn(async (reviewId: string) => {
+      reads += 1
+      return {
+        reviewId,
+        sourceId: `source-${reviewId}`,
+        title: reviewId === review.reviewId ? 'Java 案件' : reviewId === second.reviewId ? 'PHP 案件' : 'Go 案件',
+        sourceType: 'chat-paste' as const,
+        counts: reviewId === third.reviewId ? { ...counts, activePlacements: 1 } : counts,
+        // The PHP case gains a follow-up after the dialog opened: its hash changes on the second read.
+        confirmationHash: (reviewId === second.reviewId && reads > 3 ? 'd' : reviewId === review.reviewId ? 'a' : 'b').repeat(64),
+        warningCodes: []
+      }
+    })
+    const onDelete = vi.fn(async () => ({ report: { components: { backups: 'not_present' } } }) as never)
+    render(
+      <JobCaseInbox
+        {...governanceProps}
+        onCreateManual={vi.fn()}
+        onDelete={onDelete}
+        onPreviewDeletion={onPreviewDeletion}
+        reviews={[review, second, third]}
+      />
+    )
+    fireEvent.click(screen.getByText('管理'))
+    fireEvent.click(screen.getByRole('button', { name: '全案件を削除' }))
+    expect(await screen.findByText(/参画中の要員がいるため、スキップします：Go 案件/u)).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: '全案件削除確認' }), { target: { value: '削除' } })
+    fireEvent.click(screen.getByRole('button', { name: '完全に削除' }))
+    await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1))
+    expect(onDelete).toHaveBeenCalledWith(expect.objectContaining({ reviewId: review.reviewId }))
   })
 
   it('offers no bulk deletion when there are no cases', () => {

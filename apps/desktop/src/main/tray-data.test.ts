@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { businessMatchingPolicyVersion } from '@shared'
-import { createTraySummarySource, recordAiCommerceWallet, resetObservedAiCommerceWallet, trayWalletRefreshMs } from './tray-data'
+import {
+  createSummarySources,
+  createTraySummarySource,
+  recordAiCommerceWallet,
+  resetObservedAiCommerceWallet,
+  trayWalletRefreshMs
+} from './tray-data'
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const recommended = { policyVersion: businessMatchingPolicyVersion, status: 'recommended', requirements: [] }
@@ -94,16 +100,13 @@ describe('createTraySummarySource', () => {
     expect(await load({ refreshWallet: true })).toMatchObject({ ai: { state: 'ok' } })
   })
 
-  it('counts 可以提案 from current case-side and person-side results, re-reading them only after local data changed', async () => {
-    let revision = 7
-    const { load, repository } = setup({ revision: () => revision })
-    // uuid(1)×case 51 from the case side, uuid(3)×case 52 from the person side; the others are stale or unavailable.
-    expect(await load()).toMatchObject({ matching: { proposable: 2 } })
-    await load()
-    expect(repository.listCaseAssessments).toHaveBeenCalledTimes(2)
-    revision = 8
-    await load()
-    expect(repository.listCaseAssessments).toHaveBeenCalledTimes(4)
+  it('counts 可以提案 as the 可以提案 group of 新匹配机会, and leaves out follow-ups of people in place elsewhere', async () => {
+    const { load, repository } = setup()
+    vi.mocked(repository.listMatchingOpportunities).mockReturnValue([
+      { id: uuid(201), documentId: uuid(1), reviewId: uuid(51), status: 'recommended', state: 'seen' },
+      { id: uuid(202), documentId: uuid(2), reviewId: uuid(52), status: 'needs-confirmation', state: 'new' }
+    ] as never)
+    expect(await load()).toMatchObject({ matching: { newOpportunities: 1, proposable: 1 } })
   })
 
   it('checks the privacy gate at most every ten minutes and treats a failing check as closed', async () => {
@@ -114,5 +117,53 @@ describe('createTraySummarySource', () => {
     expect(privacyQualityGatePassed).toHaveBeenCalledTimes(1)
     advance(10 * 60_000)
     expect(await load()).toMatchObject({ alerts: [] })
+  })
+})
+
+describe('createSummarySources', () => {
+  it('gives the main window names while the panel keeps the menu-bar setting', async () => {
+    const repository = {
+      getLocalApplicationPreferences: () => ({ locale: 'zh-CN', menuBar: { visible: true, showPersonNames: false } }),
+      listBusinessFollowUps: () => [
+        {
+          id: uuid(9),
+          documentId: uuid(3),
+          reviewId: uuid(53),
+          status: 'interview',
+          updatedAt: '2026-10-01T00:00:00Z',
+          events: [],
+          progress: {
+            stage: 'scheduled',
+            rounds: [{ roundNumber: 1, scheduledAt: '2026-10-01T05:00:00Z', durationMinutes: 60 }],
+            entry: { plannedDate: '', actualDate: null }
+          }
+        }
+      ],
+      getBusinessFeed: () => [],
+      listJobCaseReviews: () => [],
+      listMatchingOpportunities: () => [],
+      listActiveJobCases: () => [],
+      listCaseAssessments: () => [],
+      listPersonCaseMatchRunSummaries: () => [],
+      getPersonCaseMatchRun: () => null,
+      getPersonnelWorkspace: () => ({ states: [] }),
+      getCandidateReview: () => ({ localIdentity: { displayName: '山田 太郎' }, fileName: 'resume.pdf' }),
+      getLocalDataRevision: () => ({ revision: 1, updatedAt: null })
+    }
+    const sources = createSummarySources({
+      repository: repository as never,
+      aiCommerce: null,
+      gmailState: async () => null,
+      privacyQualityGatePassed: async () => true,
+      now: () => new Date('2026-10-01T01:00:00Z')
+    })
+    expect(await sources.tray()).toMatchObject({ showPersonNames: false, interviews: { next: { personName: null } } })
+    const today = await sources.today()
+    expect(today).toMatchObject({
+      status: 'ready',
+      showPersonNames: true,
+      interviews: { next: { personName: '山田 太郎' } },
+      lists: { followUps: [{ id: uuid(9), personName: '山田 太郎', action: '查看面试安排' }] }
+    })
   })
 })

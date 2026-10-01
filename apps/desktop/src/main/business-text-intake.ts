@@ -159,8 +159,8 @@ export async function importChatPastedJobCaseText(
     processed.source.redactedBody,
     processed.redaction.mappings
   )
+  // An ended case never matches here (the same text sent again comes in as a new case), so a match is still active.
   if (duplicate) {
-    if (duplicate.lifecycle === 'archived') return { review: duplicate, outcome: 'archived', validity: 'unknown', attentionReason: null }
     return {
       review: duplicate,
       outcome: duplicate.status === 'completed' ? 'already-imported' : 'existing-review',
@@ -237,10 +237,8 @@ export async function importPastedCandidateText(
   const existing = deps.repository.findStagedTextSourceBySha256(sha256)
   if (existing) {
     const review = deps.repository.getCandidateReview(existing.token)
-    if (review && review.recordStatus === 'archived') {
-      return { review, outcome: 'archived', facts: null }
-    }
-    if (review && review.recordStatus === 'active') {
+    // People are never archived (only deleted), so an existing record is simply already imported.
+    if (review && review.recordStatus !== 'deleted') {
       return {
         review,
         outcome: review.status === 'completed' ? 'already-imported' : 'existing-review',
@@ -324,7 +322,13 @@ export async function importPastedCandidateText(
     const duplicate = deps.repository.findCandidateByDocumentContent(document)
     if (duplicate) throw new DuplicateCandidateError(duplicate.documentId)
     deps.repository.saveRedactionSession(redaction.session, redaction.mappings)
-    deps.repository.saveParsedDocument(document, summary, redaction.session.id, extraction)
+    try {
+      deps.repository.saveParsedDocument(document, summary, redaction.session.id, extraction)
+    } catch (error) {
+      // Given up (该人员已入库): the pasted text's local name and contact mappings go with it.
+      if (error instanceof DuplicateCandidateError) deps.repository.discardUnusedRedactionSession(redaction.session.id)
+      throw error
+    }
     const review = deps.repository.getCandidateReview(record.token)
     if (!review) throw new Error('作成した人材レビューを再読み込みできませんでした。')
     const facts = agentDraftFactsFromResumeAnalysis(summary, `TEXT_${sha256.slice(0, 4).toUpperCase()}`)
@@ -346,7 +350,7 @@ export async function importPastedCandidateText(
       if (review)
         return {
           review,
-          outcome: review.recordStatus === 'archived' ? 'archived' : review.status === 'completed' ? 'already-imported' : 'existing-review',
+          outcome: review.status === 'completed' ? 'already-imported' : 'existing-review',
           facts: null
         }
     }
@@ -609,16 +613,17 @@ function candidateOutcomeText(zh: boolean, outcome: BusinessTextImportOutcome, e
         : '貼り付けテキストから要員レビュー草稿を1件作成しました。解析は端末内で完結し、原文は内部ソースとして暗号化保存しています。レビューセンターで確認して候補者プロファイルを作成してください。'
     case 'existing-review':
       return zh
-        ? '相同内容此前已提交，已打开现有的人员待审核草稿，未重复创建。'
-        : '同じ内容は提出済みです。既存の要員レビュー草稿を開きました。重複作成はしていません。'
+        ? '该人员已入库，本次导入已放弃，已打开现有的人员资料。本次粘贴的内容没有写入；如有新的条件，请在人员资料中修改。'
+        : 'この要員は登録済みのため、今回の取り込みは取り消し、既存の要員情報を開きました。貼り付けた内容は反映していません。条件が変わった場合は要員情報で修正してください。'
     case 'already-imported':
       return zh
-        ? '相同内容已确认为候选人档案，本次未重复创建。'
-        : '同じ内容は候補者プロファイルとして確定済みです。今回は再作成していません。'
+        ? '该人员已入库，本次导入已放弃。本次粘贴的内容没有写入；如有新的条件，请在人员资料中修改。'
+        : 'この要員は登録済みのため、今回の取り込みは取り消しました。貼り付けた内容は反映していません。条件が変わった場合は要員情報で修正してください。'
     case 'archived':
+      // Not produced for people (no archive for them); worded as already imported should an old caller pass it.
       return zh
-        ? '相同内容对应的候选人记录已归档，本次未创建新草稿。'
-        : '同じ内容の候補者レコードはアーカイブ済みです。新しい草稿は作成していません。'
+        ? '该人员已入库，本次导入已放弃。本次粘贴的内容没有写入；如有新的条件，请在人员资料中修改。'
+        : 'この要員は登録済みのため、今回の取り込みは取り消しました。貼り付けた内容は反映していません。条件が変わった場合は要員情報で修正してください。'
   }
 }
 

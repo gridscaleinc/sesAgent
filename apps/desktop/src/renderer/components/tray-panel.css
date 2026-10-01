@@ -1,7 +1,7 @@
 /* Menu-bar / system-tray quick panel. The tokens repeat the main window's names; the panel also follows dark mode. */
 :root {
   color-scheme: light dark;
-  font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP', sans-serif;
+  font-family: var(--font-ui);
   font-synthesis: none;
   --blue: #175cd3;
   --blue-dark: #104aa8;
@@ -24,10 +24,37 @@
   --on-forest: #ffffff;
   --tray-surface: var(--surface);
   --tray-card: var(--surface-faint);
+  /* Status colors, same names and values as styles.css. */
+  --status-active-fg: #245fae;
+  --status-active-bg: #edf4ff;
+  --status-active-border: #c7daf6;
+  --status-attention-fg: #a15c05;
+  --status-attention-bg: #fff5df;
+  --status-attention-border: #efd7a8;
+  --status-danger-fg: #b42318;
+  --status-danger-bg: #fef3f2;
+  --status-danger-border: #f1cbc6;
+  --status-ok-fg: #087a5b;
+  --status-ok-bg: #e7f7f1;
+  --status-ok-border: #bfe3d4;
+  --status-muted-fg: #5f6b7a;
+  --status-muted-bg: #eef1f4;
+  --status-muted-border: #dce2eb;
 }
 
+/* UI font per interface language: Chinese text must use Simplified Chinese glyphs, Japanese text Japanese glyphs.
+   Every component inherits --font-ui (font: inherit / font-family: inherit); monospace rules stay separate. */
+:root,
+html:lang(ja),
+html[lang='ja-JP'],
+:root[data-locale='ja-JP'] {
+  --font-ui: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Meiryo', 'Noto Sans JP', system-ui, sans-serif;
+}
+
+html:lang(zh),
+html[lang='zh-CN'],
 :root[data-locale='zh-CN'] {
-  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-ui: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
 }
 
 /* macOS draws the popover material behind the page; keep the page translucent so it shows through. */
@@ -56,6 +83,21 @@
     --forest: #7cc29d;
     --forest-dark: #9ad3b4;
     --on-forest: #0b1a12;
+    --status-active-fg: #94b9f2;
+    --status-active-bg: rgba(106, 165, 255, 0.16);
+    --status-active-border: #2f4a72;
+    --status-attention-fg: #f2b45a;
+    --status-attention-bg: rgba(242, 180, 90, 0.14);
+    --status-attention-border: #664c1d;
+    --status-danger-fg: #ff7a6e;
+    --status-danger-bg: rgba(255, 122, 110, 0.14);
+    --status-danger-border: #6b302b;
+    --status-ok-fg: #4cc59b;
+    --status-ok-bg: rgba(76, 197, 155, 0.14);
+    --status-ok-border: #245a47;
+    --status-muted-fg: #a6afbc;
+    --status-muted-bg: #272d36;
+    --status-muted-border: #3a424e;
   }
   :root[data-vibrancy='on'] {
     --tray-surface: rgba(28, 34, 48, 0.5);
@@ -85,7 +127,7 @@ input {
 
 button:focus-visible,
 input:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--forest);
   outline-offset: 1px;
 }
 
@@ -160,7 +202,7 @@ input:focus-visible {
 }
 
 .tray-headline:hover {
-  color: var(--blue);
+  color: var(--forest);
 }
 
 .tray-cards {
@@ -183,7 +225,7 @@ input:focus-visible {
 }
 
 .tray-card:hover {
-  border-color: var(--blue);
+  border-color: var(--forest);
 }
 
 .tray-card-label {
@@ -217,20 +259,20 @@ input:focus-visible {
   inset: 0 auto 0 0;
   width: var(--tray-quota, 0%);
   border-radius: 3px;
-  background: var(--green);
+  background: var(--status-ok-fg);
   content: '';
 }
 
 .tray-quota-bar.is-low::after {
-  background: var(--amber);
+  background: var(--status-attention-fg);
 }
 
 .tray-quota-bar.is-rejected::after {
-  background: var(--amber);
+  background: var(--status-attention-fg);
 }
 
 .tray-quota-bar.is-exhausted::after {
-  background: var(--red);
+  background: var(--status-danger-fg);
 }
 
 .tray-card-status {
@@ -241,7 +283,7 @@ input:focus-visible {
 
 .tray-card-status.is-low,
 .tray-card-status.is-rejected {
-  color: var(--amber);
+  color: var(--status-attention-fg);
 }
 
 .tray-card-note {
@@ -252,7 +294,7 @@ input:focus-visible {
 
 .tray-card-status.is-exhausted,
 .tray-card-status.is-signed-out {
-  color: var(--red);
+  color: var(--status-danger-fg);
 }
 
 .tray-card-status.is-unknown,
@@ -268,7 +310,7 @@ input:focus-visible {
   padding: 8px 10px;
   border: 0;
   border-radius: 8px;
-  background: var(--blue-soft);
+  background: var(--status-active-bg);
   text-align: left;
   font-size: 13px;
   cursor: pointer;
@@ -311,8 +353,8 @@ input:focus-visible {
   padding: 6px 10px;
   border: 0;
   border-radius: 6px;
-  background: var(--red-soft);
-  color: var(--red);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
   text-align: left;
   font-size: 13px;
   font-weight: 600;
@@ -324,12 +366,12 @@ input:focus-visible {
   gap: 6px;
   padding: 8px 10px;
   border-radius: 6px;
-  background: var(--red-soft);
+  background: var(--status-danger-bg);
 }
 
 .tray-alert-detail p {
   margin: 0;
-  color: var(--red);
+  color: var(--status-danger-fg);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -342,7 +384,7 @@ input:focus-visible {
 .tray-alerts .tray-alert-detail button {
   width: auto;
   padding: 4px 10px;
-  border: 1px solid var(--red);
+  border: 1px solid var(--status-danger-border);
   background: transparent;
   font-size: 12px;
 }
@@ -370,7 +412,7 @@ input:focus-visible {
 }
 
 .tray-actions button:hover {
-  border-color: var(--blue);
+  border-color: var(--forest);
 }
 
 .tray-actions button.is-primary {

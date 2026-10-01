@@ -31,12 +31,12 @@
 }
 .business-intake-heading p,
 .business-help {
-  color: #61716a;
+  color: var(--tone-green-53-3);
   margin: 0;
   font-size: 13px;
 }
 .business-workbench .eyebrow {
-  color: #587c6b;
+  color: var(--tone-green-55-3);
   font-size: 10px;
   letter-spacing: 1.8px;
   font-weight: 700;
@@ -46,9 +46,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #d7dfd8;
+  border: 1px solid var(--border-color);
   background: var(--surface);
-  color: #334c40;
+  color: var(--tone-green-39);
   padding: 8px 12px;
   border-radius: 7px;
   font-size: 12px;
@@ -56,23 +56,23 @@
   line-height: 1.4;
 }
 .business-workbench button:hover:not(:disabled) {
-  background: #eff9f5;
-  border-color: #9fb6a6;
+  background: var(--tint-gray-97);
+  border-color: var(--line-green-75);
 }
 .business-workbench button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 .business-workbench button.is-primary {
-  background: var(--forest);
-  border-color: var(--forest);
-  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 .business-workbench button:focus-visible,
 .business-workbench input:focus-visible,
 .business-workbench textarea:focus-visible,
 .business-workbench select:focus-visible {
-  outline: 3px solid #7faf96;
+  outline: 3px solid var(--line-green-71);
   outline-offset: 2px;
 }
 .business-workbench input:not([type='checkbox']),
@@ -80,7 +80,7 @@
 .business-workbench select {
   color: inherit;
   background: var(--surface);
-  border: 1px solid #d7dfd8;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 9px 11px;
   font: inherit;
@@ -99,7 +99,7 @@
   line-height: 1.7;
 }
 .business-workbench input[type='checkbox'] {
-  accent-color: var(--forest);
+  accent-color: var(--accent);
   margin-right: 6px;
 }
 .business-metrics {
@@ -113,21 +113,21 @@
   align-items: baseline;
   gap: 10px;
   padding: 17px 20px;
-  border: 1px solid #dfe6dd;
+  border: 1px solid var(--border-color);
   border-radius: 9px;
-  background: #f5f8f7;
+  background: var(--tint-gray-99);
   font-size: 12px;
-  color: #68756c;
+  color: var(--tone-green-55);
 }
 .business-metrics strong {
   font-size: 25px;
   font-weight: 600;
-  color: var(--forest);
+  color: var(--ink);
 }
 .business-paste-box {
   background: var(--surface);
   padding: 22px;
-  border: 1px solid #dce6de;
+  border: 1px solid var(--border-color);
   border-radius: 10px;
 }
 .business-paste-box label {
@@ -136,7 +136,7 @@
   font-weight: 600;
 }
 .business-paste-box textarea {
-  background: #fafcf9;
+  background: var(--tint-gray-99);
 }
 .business-inline-actions {
   display: flex;
@@ -150,7 +150,7 @@
   flex: 1;
 }
 .business-inline-actions small {
-  color: #778276;
+  color: var(--tone-green-58-2);
   margin-right: auto;
 }
 .business-inline-actions label {
@@ -164,25 +164,25 @@
   margin-top: 18px;
 }
 .business-segment {
-  border: 1px solid #dce6de;
-  background: white;
+  border: 1px solid var(--border-color);
+  background: var(--surface);
   border-radius: 9px;
   padding: 17px;
 }
 .business-segment.is-failed,
 .business-segment.is-partial {
-  border-color: #d2af6f;
+  border-color: var(--status-attention-border);
 }
 .business-segment header {
   display: flex;
   align-items: center;
   gap: 15px;
   font-size: 12px;
-  color: #6d7e76;
+  color: var(--tone-green-58);
   margin-bottom: 12px;
 }
 .business-segment header strong {
-  color: #364b3e;
+  color: var(--tone-green-39);
 }
 .business-segment pre {
   white-space: pre-wrap;
@@ -212,13 +212,13 @@
 .personnel-detail {
   min-width: 0;
   background: var(--surface);
-  border: 1px solid #dce6de;
+  border: 1px solid var(--border-color);
   border-radius: 9px;
   padding: 20px;
 }
 .personnel-status {
   padding: 12px 14px;
-  background: #fafcf9;
+  background: var(--tint-gray-99);
   border-radius: 8px;
   margin: 18px 0;
   display: flex;
@@ -256,27 +256,27 @@
 }
 .personnel-detail-eyebrow {
   font-size: 11px;
-  color: #7b897f;
+  color: var(--tone-green-62);
 }
 .business-workbench button.personnel-text-action {
   border: 0;
   background: transparent;
   padding: 5px 0;
-  color: #587663;
+  color: var(--tone-green-54-2);
   font-size: 11px;
   white-space: nowrap;
 }
 .business-workbench button.personnel-text-action:hover {
   background: transparent;
-  color: #214d36;
+  color: var(--tone-green-38-2);
   text-decoration: underline;
 }
 .personnel-readiness-note {
   margin: 0 0 14px;
-  border-left: 2px solid #d3b67b;
+  border-left: 2px solid var(--line-amber-79);
   padding: 8px 12px;
-  background: #faf4ee;
-  color: #887043;
+  background: var(--tint-gray-97-3);
+  color: var(--tone-amber-56);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -287,13 +287,13 @@
   font-weight: 600;
 }
 .candidate-projects-disclosure > summary > span {
-  color: #7a8b7e;
+  color: var(--tone-green-62);
   font-weight: 400;
   margin-left: 6px;
 }
 .business-error,
 .business-workbench [role='alert'] {
-  color: #a43d31;
+  color: var(--status-danger-fg);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
@@ -303,7 +303,7 @@
 }
 .business-workbench summary {
   cursor: pointer;
-  color: #587663;
+  color: var(--tone-green-54-2);
 }
 @media (max-width: 1100px) {
   .business-workbench {

@@ -59,7 +59,12 @@ export function registerBootstrapHandlers(context: MainIpcContext) {
       operatorProfile: currentOperator(),
       preferences: effectiveApplicationPreferences(repository),
       jobCaseFieldAliases: effectiveJobCaseFieldAliases(repository),
-      agentChatModels: agentChatModelCatalog.map(({ key, displayName, tier }) => ({ key, displayName, ...(tier ? { tier } : {}) })),
+      agentChatModels: agentChatModelCatalog.map(({ key, displayName, tier, unavailable }) => ({
+        key,
+        displayName,
+        ...(tier ? { tier } : {}),
+        ...(unavailable ? { unavailable } : {})
+      })),
       // The Agent chat starts on the 批量核对 model unless the operator picks another in the chat.
       defaultAgentChatModelKey: businessModelKey(repository.getLocalApplicationPreferences(), agentChatModelCatalog, 'checking'),
       tasks: repository.listWorkTasks(),

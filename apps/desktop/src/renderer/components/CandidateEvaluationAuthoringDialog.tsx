@@ -208,7 +208,7 @@ export function CandidateEvaluationAuthoringDialog({
       >
         <header>
           <div>
-            <span>LOCAL SES BENCHMARK</span>
+            <span>{t('本机评测集', 'ローカル評価セット')}</span>
             <h2 id="evaluation-authoring-title">{t('创建专家标签集', '専門家ラベルセットを作成')}</h2>
             <p>
               {t(
@@ -258,10 +258,10 @@ export function CandidateEvaluationAuthoringDialog({
               <>
                 <section className="evaluation-draft-progress">
                   <div>
-                    <span>DATASET</span>
+                    <span>{t('数据集', 'データセット')}</span>
                     <strong>{draft.name}</strong>
                     <small>
-                      Revision {draft.revision} · Reviewer {draft.reviewerCount || '—'}
+                      {t(`版本 ${draft.revision} · 审核人 ${draft.reviewerCount || '—'}`, `版 ${draft.revision} · レビュー担当 ${draft.reviewerCount || '—'}`)}
                       {t(' 人', '名')}
                     </small>
                   </div>

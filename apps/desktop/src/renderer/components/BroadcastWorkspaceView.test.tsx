@@ -44,6 +44,7 @@ function actionsWith(overrides: Partial<BroadcastPanelActions> = {}): BroadcastP
     }),
     draftUpdateNotice: vi.fn().mockResolvedValue({ status: 'no-changes' }),
     recordCopy: vi.fn().mockResolvedValue({ copy: { id: 'copy-1' } }),
+    validateCopy: vi.fn(async (input) => input),
     openEmail: vi.fn().mockResolvedValue({ opened: true }),
     listBroadcasts: vi.fn().mockResolvedValue([]),
     ...overrides
@@ -90,7 +91,8 @@ describe('BroadcastWorkspaceView', () => {
     renderView(actionsWith())
     expect(await screen.findByText('Java 案件')).toBeInTheDocument()
     const counts = screen.getByText('Java 案件').closest('.broadcast-view')!.querySelector('.agent-business-metrics')!
-    expect(counts.textContent).toBe('1新增（未复制）1已复制0待补充')
+    // The copied case revised since counts as 有更新, not as done.
+    expect(counts.textContent).toBe('1新增（未复制）1有更新（待重发）0已复制0待补充')
     expect(screen.getByText('有更新')).toBeInTheDocument()
     expect(screen.getByText(/复制可用于微信/u)).toBeInTheDocument()
     expect(screen.getByText(/收件人与最终发送由您在默认邮件客户端中确认/u)).toBeInTheDocument()
@@ -114,6 +116,26 @@ describe('BroadcastWorkspaceView', () => {
     expect(screen.getByRole('button', { name: '复制' })).toBeDisabled()
   })
 
+  it('lets the operator delete the identifier in the text and checks the edited text before copying', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    const actions = actionsWith({
+      draftBroadcast: vi.fn().mockResolvedValue({
+        textJa: '【案件】<PERSON_NAME_001>',
+        textZh: '【案件】<PERSON_NAME_001>',
+        forbiddenJa: ['person_name'],
+        forbiddenZh: ['person_name']
+      })
+    })
+    renderView(actions, newReviewId)
+    expect(await screen.findByRole('alert')).toHaveTextContent('person_name')
+    fireEvent.change(screen.getByRole('textbox', { name: '案件文案' }), { target: { value: '【案件】Java 案件' } })
+    const copy = screen.getByRole('button', { name: '复制' })
+    await waitFor(() => expect(copy).toBeEnabled())
+    fireEvent.click(copy)
+    await waitFor(() => expect(actions.recordCopy).toHaveBeenCalled())
+    expect(actions.validateCopy).toHaveBeenCalledWith(expect.objectContaining({ text: '【案件】Java 案件' }))
+  })
+
   it('copies the visible text and records the copy against the case, with no destination', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
@@ -125,14 +147,48 @@ describe('BroadcastWorkspaceView', () => {
     fireEvent.click(copy)
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('【案件】Java 案件'))
-    expect(actions.recordCopy).toHaveBeenCalledWith({
+    // Recorded against the versions the text was drawn from, after Main checked it.
+    const recorded = {
       reviewId: newReviewId,
       lang: 'ja',
       kind: 'new',
       templateId: builtInBroadcastTemplate().id,
-      text: '【案件】Java 案件'
-    })
+      text: '【案件】Java 案件',
+      expectedJobCaseVersion: 1,
+      expectedTemplateRevision: builtInBroadcastTemplate().revision
+    }
+    expect(actions.validateCopy).toHaveBeenCalledWith(recorded)
+    expect(actions.recordCopy).toHaveBeenCalledWith(recorded)
     expect(await screen.findByRole('status')).toHaveTextContent('已复制，可以去微信粘贴了。')
+  })
+
+  it('leaves the clipboard alone when Main refuses the text, and records nothing', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const actions = actionsWith({ validateCopy: vi.fn().mockRejectedValue(new Error('文本包含电话号码。 / 電話番号が含まれています。')) })
+    renderView(actions, newReviewId)
+    const copy = await screen.findByRole('button', { name: '复制' })
+    await waitFor(() => expect(copy).toBeEnabled())
+    fireEvent.click(copy)
+    expect(await screen.findByRole('alert')).toHaveTextContent('文本包含电话号码。')
+    expect(writeText).not.toHaveBeenCalled()
+    expect(actions.recordCopy).not.toHaveBeenCalled()
+  })
+
+  it('offers a case still 待补充 to be opened and completed', async () => {
+    const onOpenCase = vi.fn()
+    const pending = { ...workspace.queue[0]!, reviewId: copiedReviewId, status: 'attention' as const, title: '待补充案件' }
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <BroadcastWorkspaceView
+          actions={actionsWith({ loadWorkspace: vi.fn().mockResolvedValue({ ...workspace, queue: [pending] }) })}
+          initialReviewId={copiedReviewId}
+          onOpenCase={onOpenCase}
+        />
+      </UiLocaleProvider>
+    )
+    fireEvent.click(await screen.findByRole('button', { name: '打开案件补充' }))
+    expect(onOpenCase).toHaveBeenCalledWith(copiedReviewId)
   })
 
   it('copies and records the language version the operator is looking at', async () => {
@@ -165,12 +221,15 @@ describe('BroadcastWorkspaceView', () => {
         lang: 'ja',
         kind: 'new',
         templateId: builtInBroadcastTemplate().id,
-        text: '【案件】Java 案件'
+        text: '【案件】Java 案件',
+        expectedJobCaseVersion: expect.any(Number),
+        expectedTemplateRevision: builtInBroadcastTemplate().revision
       })
     )
+    // Main records the hand-off itself (as the baseline for 「有更新」); the view never records a copy for it.
     expect(actions.recordCopy).not.toHaveBeenCalled()
     expect(await screen.findByRole('status')).toHaveTextContent('请确认收件人和正文后手动发送')
-    expect(screen.getByRole('status')).toHaveTextContent('不会标记为已发送')
+    expect(screen.getByRole('status')).toHaveTextContent('对比基准')
   })
 
   it('offers the update notice only for a case revised since its last copy', async () => {
@@ -191,6 +250,8 @@ describe('BroadcastWorkspaceView', () => {
     fireEvent.click(screen.getByText('RPA 案件'))
     fireEvent.click(await screen.findByRole('button', { name: '更新通知' }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: '案件文案' })).toHaveValue('【更新】RPA 案件\n・単価：60万円 → 65万円'))
+    // Compared through the template the operator has selected.
+    expect(actions.draftUpdateNotice).toHaveBeenCalledWith({ reviewId: copiedReviewId, templateId: builtInBroadcastTemplate().id })
 
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
     await waitFor(() => expect(actions.recordCopy).toHaveBeenCalledWith(expect.objectContaining({ kind: 'update' })))

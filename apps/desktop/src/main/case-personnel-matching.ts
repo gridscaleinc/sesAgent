@@ -1,11 +1,17 @@
 import { applyLearnedRanking, withRankingRefs } from './experience-ranking'
 import { experienceBundle, experienceContext, matchingExperienceInput } from './experience-context'
 import { withLearningForeground } from './learning-activity'
-import { emptyWorkRules, evaluateWithWorkRules, workRuleContext } from './work-rule-matching'
+import { confirmationIndex, emptyWorkRules, evaluateWithWorkRules, workRuleContext } from './work-rule-matching'
 import { randomUUID } from 'node:crypto'
 import { businessModel } from './business-model'
 import { candidateBenchmarkQueryFromJobCase } from '@job-cases'
-import { proposalConclusion, candidateProfileSourceInputSchema, cloudFailureReason, type CasePersonnelMatchResult } from '@shared'
+import {
+  proposalConclusion,
+  candidateProfileSourceInputSchema,
+  cloudFailureReason,
+  excludedByHr,
+  type CasePersonnelMatchResult
+} from '@shared'
 import { effectiveApplicationPreferences } from './app-defaults'
 import { casePeopleShortlistSize } from './agent-cloud-narrative'
 import type { MainIpcContext } from './ipc/context'
@@ -79,14 +85,21 @@ export function createCasePersonnelMatcher(
   ): Promise<CasePersonnelMatchResult> => {
     options?.signal?.throwIfAborted()
     const job = repository.listActiveJobCases().find((item) => item.id === jobCaseId)
-    if (!job) throw new Error('案件不存在或已停用，请刷新后重试。 / 案件が存在しないか停止されています。再読込してください。')
+    if (!job)
+      throw new Error('案件不存在、已结束或还没确认，请刷新后重试。 / 案件が存在しないか、終了または未確認です。再読込してください。')
     const library = options?.withoutRules ? emptyWorkRules : (repository.listWorkRules?.() ?? emptyWorkRules)
     const ruleContext = workRuleContext(library, job)
     const locale = effectiveApplicationPreferences(repository).locale
     const target = options?.documentId ? repository.getCandidateProfileForAssessment(options.documentId) : null
     const profiles = options?.documentId ? (target ? [target] : []) : repository.listEligibleTalentProfiles()
     if (options?.documentId && !profiles.length) throw new Error('人员资料不可用。 / 要員情報が利用できません。')
-    const evaluations = new Map(profiles.map((profile) => [profile.sourceDocumentId, evaluateWithWorkRules(profile, job, library)]))
+    const decisions = confirmationIndex(repository)
+    const evaluations = new Map(
+      profiles.map((profile) => [
+        profile.sourceDocumentId,
+        evaluateWithWorkRules(profile, job, library, undefined, decisions(profile.sourceDocumentId))
+      ])
+    )
     const toItem = (profile: (typeof profiles)[number]) => {
       const evaluated = evaluations.get(profile.sourceDocumentId)!
       const { score, matched, missing, hardFilters, qualification } = evaluated
@@ -171,7 +184,10 @@ export function createCasePersonnelMatcher(
     }
     const visible = () => ({
       ...result,
-      items: result.items.filter((item) => options?.documentId || item.qualification?.status !== 'excluded')
+      // HR's 不满足 keeps a person listed, marked and last; other exclusions are left out.
+      items: result.items.filter(
+        (item) => options?.documentId || item.qualification?.status !== 'excluded' || excludedByHr(item.qualification)
+      )
     })
     options?.onLocal?.(structuredClone(visible()))
     if (!result.items.length || !cloud?.assessMatchCandidates) {
@@ -257,7 +273,8 @@ export function createCasePersonnelMatcher(
           profiles.find((profile) => profile.sourceDocumentId === item.documentId)!,
           job,
           library,
-          verdict
+          verdict,
+          decisions(item.documentId)
         )
         evaluations.set(item.documentId, evaluated)
         return {

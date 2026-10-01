@@ -203,13 +203,15 @@ export function registerWorkRuleHandlers(context: MainIpcContext) {
       if (error instanceof DuplicateCandidateError) documentId = error.documentId
       else throw error
     }
-    // Return the imported record even if a subsequent assessment needs retry.
+    // Return the imported record even if a subsequent assessment needs retry. Not the dropped file's record: the person
+    // was already in the system (same résumé, or same name plus mobile, address or age), and HR is told so.
     const person = repository.getCandidateReview(documentId)!
+    const alreadyImported = documentId !== record.token
     progress('assessing', documentId)
     try {
-      return { person, assessment: await assess({ jobCaseId: input.jobCaseId, documentId }), error: null }
+      return { person, assessment: await assess({ jobCaseId: input.jobCaseId, documentId }), error: null, alreadyImported }
     } catch (error) {
-      return { person, assessment: null, error: error instanceof Error ? error.message : String(error) }
+      return { person, assessment: null, error: error instanceof Error ? error.message : String(error), alreadyImported }
     }
   })
   ipcMain.handle(ipcChannels.generateRuleQuestions, async (event, raw) => {

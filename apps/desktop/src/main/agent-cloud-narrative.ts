@@ -242,6 +242,8 @@ export type AgentBusinessTextExtractionResult =
         startLine: number
         endLine: number
       }>
+      /** Case intake only: other ranges the model set aside (greetings, signatures…); kept for the operator to check. */
+      ignored?: Array<{ startLine: number; endLine: number }>
     }
   | { kind: 'unusable' }
 
@@ -1100,9 +1102,11 @@ export function parseAgentBusinessTextExtractionResponse(
     records.push({ kind: record.kind, startLine: record.startLine, endLine: record.endLine, fields })
   }
   const personnel: Array<{ startLine: number; endLine: number }> = []
+  const setAside: Array<{ startLine: number; endLine: number }> = []
   if (caseBatch) {
     for (const ignored of decision.data.ignored ?? []) {
       if (ignored.reason === 'personnel') personnel.push({ startLine: ignored.startLine, endLine: ignored.endLine })
+      else setAside.push({ startLine: ignored.startLine, endLine: ignored.endLine })
       if (ignored.startLine > ignored.endLine || ignored.endLine > lineCount) throw new Error('業務テキスト分割の除外範囲が不正です。')
       for (let line = ignored.startLine; line <= ignored.endLine; line++) {
         if (covered.has(line)) throw new Error('業務テキスト分割の除外範囲が重複しています。')
@@ -1117,7 +1121,7 @@ export function parseAgentBusinessTextExtractionResponse(
     // Keys only - never values - so the log stays free of business content.
     console.warn('[business-text-extraction-fields-dropped]', { dropped })
   }
-  return caseBatch ? { kind: 'records', records, personnel } : { kind: 'records', records }
+  return caseBatch ? { kind: 'records', records, personnel, ignored: setAside } : { kind: 'records', records }
 }
 
 const projectHistoryInstructions =

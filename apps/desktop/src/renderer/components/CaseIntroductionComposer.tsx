@@ -1,9 +1,10 @@
 import { useIntroductionExperience } from './use-introduction-experience'
 import { useEffect, useId, useRef, useState } from 'react'
-import type { BroadcastTemplate, DraftCaseBroadcastResult, JobCaseReviewSnapshot } from '@shared'
+import type { BroadcastQueueItem, BroadcastTemplate, DraftCaseBroadcastResult, JobCaseReviewSnapshot } from '@shared'
 import { localizedIpcError, useLocaleText } from '../i18n'
 import { copyTextToClipboard } from '../copy-text'
 import { IntroductionOptions } from './IntroductionOptions'
+import { notifyBusinessDataChanged } from '../business-data-events'
 
 // AI-regenerated introductions are saved in the encrypted database (latest per case, language and style) and loaded
 // when the dialog opens. Unsaved hand edits outlive the dialog for this app session only: business text is never
@@ -42,6 +43,9 @@ export function CaseIntroductionComposer({
     setDraftState((current) => ({ ...current, ...change }))
   }
   const [generated, setGenerated] = useState<Record<string, DraftCaseBroadcastResult>>({})
+  // Copied before and revised since: HR may send just what changed (更新通知) instead of the whole case again.
+  const [queueItem, setQueueItem] = useState<BroadcastQueueItem | null>(null)
+  const [updateNotice, setUpdateNotice] = useState<{ ja: string; zh: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [preparing, setPreparing] = useState(false)
@@ -78,7 +82,10 @@ export function CaseIntroductionComposer({
     void window.sesAgent
       .listBroadcastWorkspace()
       .then((value) => {
-        if (active) setTemplates(value.templates)
+        if (!active) return
+        setTemplates(value.templates)
+        setQueueItem(value.queue.find((item) => item.reviewId === target.reviewId) ?? null)
+        setUpdateNotice(null)
       })
       .catch((cause) => {
         if (active) setError(localizedIpcError(locale, cause, t('无法读取文案模板。', '紹介文テンプレートを読み込めませんでした。')))
@@ -174,7 +181,29 @@ export function CaseIntroductionComposer({
       active = false
     }
   }, [reviewId, key, valid])
-  const text = drafts[textKey] ?? experience.text
+  const text = updateNotice ? updateNotice[lang] : (drafts[textKey] ?? experience.text)
+  const loadUpdateNotice = async () => {
+    if (lock.current || !target || !template) return
+    lock.current = true
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await window.sesAgent.draftCaseUpdateNotice({ reviewId: target.reviewId, templateId: template.id })
+      if (result.status === 'ready') setUpdateNotice({ ja: result.textJa, zh: result.textZh })
+      else
+        setNotice(
+          result.status === 'no-changes'
+            ? t('与上次复制的版本没有差异。', '前回コピーした内容から変更はありません。')
+            : t('还没有复制过的版本可以对比。', '比較できるコピー済みバージョンがありません。')
+        )
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('无法生成更新通知。', '更新通知を作成できませんでした。')))
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
   // One request per case and style: it applies to both languages.
   const request = (requests[styleKey] ?? '').trim()
   const regenerate = async () => {
@@ -240,9 +269,9 @@ export function CaseIntroductionComposer({
         expectedJobCaseVersion: target.jobCaseVersion,
         expectedTemplateRevision: template.revision,
         lang,
-        kind: 'new' as const,
+        kind: updateNotice ? ('update' as const) : ('new' as const),
         text,
-        experienceRunId: await experience.runId()
+        ...(updateNotice ? {} : { experienceRunId: await experience.runId() })
       }
       if (method === 'copy') {
         const checked = await window.sesAgent.validateCaseBroadcastMessage(input)
@@ -253,6 +282,12 @@ export function CaseIntroductionComposer({
         await window.sesAgent.openCaseBroadcastEmail(input)
         setNotice(t('已打开邮件，请选择收件人并发送。', 'メールを開きました。宛先と送信を確認してください。'))
       }
+      // Copied or handed to mail: this version is now the baseline, so 「有更新」 is settled — here and in 群发.
+      notifyBusinessDataChanged()
+      void window.sesAgent
+        .listBroadcastWorkspace()
+        .then((value) => setQueueItem(value.queue.find((item) => item.reviewId === target.reviewId) ?? null))
+        .catch(() => undefined)
     } catch (cause) {
       setError(
         localizedIpcError(
@@ -341,12 +376,29 @@ export function CaseIntroductionComposer({
             {busy ? t('处理中', '処理中') : t('AI 重新生成', 'AIで再生成')}
           </button>
         </div>
+        {queueItem?.hasUpdateSinceLastCopy && valid ? (
+          <p className="hr-intro-update" role="status">
+            {updateNotice
+              ? t('当前是更新通知，只列出上次复制后改动的条件。', '更新通知です。前回コピー以降に変わった条件だけを記載しています。')
+              : t(
+                  '上次复制后案件有更新：可以重发完整介绍，或只发更新通知。',
+                  '前回コピー後に案件が更新されています。紹介文を再送するか、更新通知だけを送れます。'
+                )}
+            <button type="button" disabled={busy} onClick={() => (updateNotice ? setUpdateNotice(null) : void loadUpdateNotice())}>
+              {updateNotice ? t('改回完整介绍', '紹介文に戻す') : t('生成更新通知', '更新通知を作る')}
+            </button>
+          </p>
+        ) : null}
         <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body">
           <textarea
             aria-label={t('介绍文案', '紹介文')}
             disabled={busy || loading || !valid}
             value={text}
             onChange={(event) => {
+              if (updateNotice) {
+                setUpdateNotice({ ...updateNotice, [lang]: event.target.value })
+                return
+              }
               experience.markEdited()
               setDrafts({ [textKey]: event.target.value })
             }}

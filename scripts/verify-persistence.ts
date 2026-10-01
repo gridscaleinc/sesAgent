@@ -1160,7 +1160,7 @@ try {
         },
         '検証担当者'
       ),
-    /schedule is locked/iu,
+    /不能再改期/u,
     'IPC could change a schedule after the interview reached a decision state'
   )
   assert.throws(

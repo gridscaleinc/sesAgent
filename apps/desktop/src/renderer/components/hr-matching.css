@@ -1,9 +1,32 @@
 /* 为此人员找案件: next actions sit above the evidence; AI and rule internals stay under 详情. */
 .hr-match-last-run {
-  color: #7a8b7e;
+  color: var(--tone-green-62);
   font-size: 11px;
 }
 .hr-match-unavailable button,
 .hr-match-rules-error button {
   margin-left: 6px;
+}
+/* New cases since the last 找案件: a quiet offer to search again, not a lock on the results. */
+.hr-match-new-cases {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--status-active-bg);
+  color: var(--status-active-fg);
+  font-size: 11px;
+}
+.hr-match-new-cases.is-missing {
+  border-radius: 8px;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+}
+.hr-match-new-cases button {
+  margin-left: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
 }

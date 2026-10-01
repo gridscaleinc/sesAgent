@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { nativeSqliteAvailable, openTestRepository, type TestRepositoryHandle } from './store-test-repository'
-import { saveManualJobCaseDraft } from './store-test-fixtures-jobcases'
+import { confirmAllJobCaseFields, saveManualJobCaseDraft } from './store-test-fixtures-jobcases'
 
 describe.skipIf(!nativeSqliteAvailable)('JobCaseSeenStore via EncryptedApplicationRepository', () => {
   let handle: TestRepositoryHandle
@@ -34,5 +34,21 @@ describe.skipIf(!nativeSqliteAvailable)('JobCaseSeenStore via EncryptedApplicati
     const preview = repository.previewJobCaseDeletion(reviewId)
     repository.deleteJobCaseDatabaseData({ reviewId, confirmationHash: preview.confirmationHash, confirmationText: '削除' })
     expect(repository.listSeenJobCaseReviewIds()).toEqual([])
+  })
+
+  it('reads a case once for every screen: the sidebar count and the HR list agree whichever marks it', () => {
+    const { repository } = handle
+    const first = saveManualJobCaseDraft(repository, { subject: 'Rust案件', body: '必須スキル：Rust\n単価：80万円/月' }).reviewId
+    const second = saveManualJobCaseDraft(repository, { subject: 'PHP案件', body: '必須スキル：PHP\n単価：60万円/月' }).reviewId
+    confirmAllJobCaseFields(repository, first)
+    confirmAllJobCaseFields(repository, second)
+    const entry = (reviewId: string) => repository.getBusinessFeed().find((item) => item.kind === 'case' && item.objectId === reviewId)!
+    expect(entry(first).unseen).toBe(true)
+    // Opened from the sidebar's new cases: the HR list no longer shows it unread.
+    repository.markJobCaseReviewSeen(first, '2026-07-17T01:00:00.000Z')
+    expect(entry(first).unseen).toBe(false)
+    // Read in the HR list: the sidebar count no longer counts it.
+    repository.markBusinessFeed({ kind: 'case', objectId: second, revision: entry(second).revision, action: 'seen' })
+    expect(repository.listSeenJobCaseReviewIds().sort()).toEqual([first, second].sort())
   })
 })

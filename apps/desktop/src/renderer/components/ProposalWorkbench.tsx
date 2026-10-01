@@ -91,7 +91,7 @@ function ProposalFollowUpPanel({
     setBusy(true)
     setError(null)
     try {
-      await onRecord({
+      const result = await onRecord({
         draftId: draft.id,
         expectedRevision: draft.followUp.revision,
         stage,
@@ -99,6 +99,14 @@ function ProposalFollowUpPanel({
         ...(note.trim() ? { note: note.trim() } : {}),
         manuallyConfirmed: true
       })
+      // Recorded; when the pair's 跟进 could not follow, say so.
+      if (result.followUpNote) setError(localizedIpcError(locale, new Error(result.followUpNote), result.followUpNote))
+      // Ready for the next result: the form starts over at the next stage this one allows.
+      const next = nextFollowUpStages(result.draft.followUp.stage)
+      if (next[0]) setStage(next[0])
+      setNote('')
+      setConfirmed(false)
+      setBusy(false)
     } catch (cause) {
       setError(localizedIpcError(locale, cause, t('无法记录销售结果。', '営業結果を記録できませんでした。')))
       setBusy(false)
@@ -510,7 +518,7 @@ function ProposalDraftEditor({
     <div className="proposal-responsive-confirmation">
       <aside className="proposal-evidence-pane job-case-evidence" aria-label={t('案件的已确认依据', '案件の確認済み証跡')}>
         <header>
-          <span className="eyebrow">JOB CASE</span>
+          <span className="eyebrow">{t('案件', '案件')}</span>
           <h3>{jobCase.title}</h3>
           <p>
             JobCase v{jobCase.version} · {t('已固定到此草稿', 'この草稿に固定')}
@@ -530,7 +538,7 @@ function ProposalDraftEditor({
       </aside>
       <aside className="proposal-evidence-pane candidate-evidence" aria-label={t('人员的已确认依据', '候補者の確認済み証跡')}>
         <header>
-          <span className="eyebrow">CANDIDATE EVIDENCE</span>
+          <span className="eyebrow">{t('人员依据', '要員の根拠')}</span>
           <h3>{candidate.anonymousLabel}</h3>
           <p>
             CandidateProfile v{candidate.version} · {t('不含直接标识符', '直接識別子なし')}
@@ -826,7 +834,6 @@ export function ProposalWorkbench({
     <div className="proposal-workbench">
       <header className="proposal-workbench-header">
         <div>
-          <span className="eyebrow">PROPOSAL REVIEW</span>
           <h2>{t('提案草稿', '提案草稿')}</h2>
           <p>{t('本地生成 · 内容哈希审批 · 不自动发送', 'ローカル生成 · 内容ハッシュ承認 · 自動送信なし')}</p>
         </div>

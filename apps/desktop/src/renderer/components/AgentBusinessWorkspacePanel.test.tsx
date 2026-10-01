@@ -345,6 +345,16 @@ describe('AgentBusinessWorkspacePanel', () => {
     expect(onSubmitJobCaseReview).not.toHaveBeenCalled()
   })
 
+  it('shows a stored Japanese work style in Chinese with the original in the tooltip', () => {
+    const remote = { ...jobCase.fields[0]!, key: 'remote' as const, label: 'リモート', originalValue: '週3出勤', value: '週3出勤' }
+    renderPanel(
+      { type: 'system-access', destination: 'case-review', reviewId: jobCase.reviewId },
+      { jobCaseReviews: [{ ...jobCase, fields: [...jobCase.fields, remote] }] }
+    )
+    const shown = screen.getAllByText('每周到岗3天')[0]!
+    expect(shown).toHaveAttribute('title', '週3出勤')
+  })
+
   it('shows no back control on the first screen', () => {
     renderPanel({ type: 'system-access', destination: 'job-cases' })
     expect(screen.queryByRole('button', { name: '返回上一级' })).not.toBeInTheDocument()

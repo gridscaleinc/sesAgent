@@ -137,7 +137,7 @@ it('ranks saved results by fit, names who was excluded and when the search ran',
   // The best fit is selected and shown; its row is the current one.
   expect(row('可提案')).toHaveAttribute('aria-current', 'true')
   expect(within(row('可提案')).getByText('可以提案')).toBeInTheDocument()
-  expect(within(row('待补充')).getByText('核心信息待补充')).toBeInTheDocument()
+  expect(within(row('待补充')).getByText('待确认')).toBeInTheDocument()
   expect(screen.getByText(/上次找人：2026\/9\/10 10:30/)).toBeInTheDocument()
   const excluded = screen.getByText('已排除 1', { selector: 'summary' }).closest('details')!
   expect(within(excluded).getByText('1 人因硬性条件被排除')).toBeInTheDocument()

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   splitBusinessBatch,
+  samePersonByDetails,
   builtInPersonnelTemplates,
   generatePersonnelMessage,
   savePersonnelTemplateSchema,
@@ -75,5 +76,24 @@ describe('personnel promotion templates', () => {
         to: 'nobody@example.com'
       }).success
     ).toBe(false)
+  })
+})
+
+describe('samePersonByDetails', () => {
+  const person = (identity: Record<string, string | null>) =>
+    ({ localIdentity: { displayName: '山田 太郎', phone: null, address: null, birthDate: null, ...identity } }) as never
+  const now = new Date('2026-10-01T00:00:00Z')
+  it('needs the same name plus the same mobile number, address or age', () => {
+    expect(samePersonByDetails(person({ phone: '090-1234-5678' }), person({ displayName: '山田太郎', phone: '09012345678' }), now)).toBe(
+      true
+    )
+    expect(samePersonByDetails(person({ address: '東京都港区芝1-2-3' }), person({ address: '東京都 港区芝1‐2‐3' }), now)).toBe(true)
+    expect(samePersonByDetails(person({ birthDate: '1990年4月1日' }), person({ birthDate: '36歳' }), now)).toBe(true)
+    // The name alone, or the details under another name, is not the same person.
+    expect(samePersonByDetails(person({}), person({}), now)).toBe(false)
+    expect(samePersonByDetails(person({ phone: '090-1234-5678' }), person({ displayName: '佐藤花子', phone: '090-1234-5678' }), now)).toBe(
+      false
+    )
+    expect(samePersonByDetails(person({ birthDate: '1990年' }), person({ birthDate: '1975年' }), now)).toBe(false)
   })
 })

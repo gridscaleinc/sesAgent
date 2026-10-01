@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import {
+  excludedByHr,
   isProposalRequirement,
   requirementDimension,
   requirementDisplayLabel,
@@ -119,8 +120,10 @@ export function shortConclusion(qualification: BusinessMatchQualification | unde
   return qualification?.status === 'recommended'
     ? t('可以提案', '提案可能')
     : qualification?.status === 'excluded'
-      ? t('不建议', '推奨しない')
-      : t('核心信息待补充', 'コア情報の補足が必要')
+      ? excludedByHr(qualification)
+        ? t('不满足', '未充足')
+        : t('不建议', '推奨しない')
+      : t('待确认', '確認待ち')
 }
 export function ConclusionBadge({ tone, children }: { tone: ConclusionTone; children: ReactNode }) {
   return <span className={`match-badge is-${tone}`}>{children}</span>
@@ -153,7 +156,13 @@ export function RequirementChips({ qualification, limit = 4 }: { qualification?:
         const label = requirementDisplayLabel(item.requirement, zh)
         const state = requirementState(item)
         return (
-          <span key={item.requirement.id} className={`match-chip is-${state}`} title={`${label} · ${stateLabel(item)}`}>
+          <span
+            key={item.requirement.id}
+            className={`match-chip is-${state}`}
+            title={`${label} · ${stateLabel(item)}`}
+            // A click on the chip opens the person and shows this row of 匹配依据 (see MatchResultRow).
+            data-requirement-label={item.requirement.label}
+          >
             {state === 'met' ? '✓' : state === 'conflict' ? '✗' : '?'} {label}
           </span>
         )
@@ -175,12 +184,15 @@ export function MatchResultRow({
   select,
   titleHint,
   experienceRun,
-  rank
+  rank,
+  onRequirement
 }: {
   id: string
   title: string
   badge: ReactNode
   chips?: ReactNode
+  /** A requirement chip was clicked: the row is selected, then this shows that requirement in the detail. */
+  onRequirement?(label: string): void
   tags?: ReactNode
   selected: boolean
   onSelect(): void
@@ -209,7 +221,11 @@ export function MatchResultRow({
         data-match-row={id}
         aria-current={selected ? 'true' : undefined}
         title={titleHint}
-        onClick={onSelect}
+        onClick={(event) => {
+          const label = (event.target as HTMLElement).closest<HTMLElement>('[data-requirement-label]')?.dataset.requirementLabel
+          onSelect()
+          if (label && onRequirement) onRequirement(label)
+        }}
       >
         <span className="match-row-head">
           <strong>{title}</strong>

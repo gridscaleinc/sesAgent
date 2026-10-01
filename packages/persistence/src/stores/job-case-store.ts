@@ -203,28 +203,42 @@ export class JobCaseStore extends DomainStore {
       )
   }
 
+  /**
+   * The case this text was already taken in as. An ended case does not count: the client sending it again is
+   * recruiting again, so it comes in as a new case instead of being skipped where HR would not see it.
+   */
   findJobCaseReviewByBusinessFingerprint(subject: string, body: string, mappings: LocalPiiMapping[] = []): JobCaseReviewSnapshot | null {
-    const row = this.database
+    const rows = this.database
       .prepare<[string], { review_id: string }>(
         `SELECT extraction.review_id FROM job_case_sources source
          JOIN job_case_extractions extraction ON extraction.source_id = source.id
          WHERE source.intake_fingerprint = ?
-         ORDER BY source.created_at ASC LIMIT 1`
+         ORDER BY source.created_at ASC`
       )
-      .get(jobCaseIntakeFingerprint(subject, body, mappings))
-    return row ? this.getJobCaseReview(row.review_id) : null
+      .all(jobCaseIntakeFingerprint(subject, body, mappings))
+    for (const row of rows) {
+      const review = this.getJobCaseReview(row.review_id)
+      if (review && review.lifecycle !== 'archived') return review
+    }
+    return null
   }
 
   getEmlJobCaseReview(sourceMessageKey: string): JobCaseReviewSnapshot | null {
     if (!/^eml_[a-f0-9]{64}$/u.test(sourceMessageKey)) throw new Error('EML source message key is invalid.')
-    const row = this.database
+    const rows = this.database
       .prepare<[string], { review_id: string }>(
         `SELECT extraction.review_id FROM job_case_sources source
          JOIN job_case_extractions extraction ON extraction.source_id = source.id
-         WHERE source.source_type = 'eml' AND source.provider_message_id = ?`
+         WHERE source.source_type = 'eml' AND source.provider_message_id = ?
+         ORDER BY source.created_at DESC`
       )
-      .get(sourceMessageKey)
-    return row ? this.getJobCaseReview(row.review_id) : null
+      .all(sourceMessageKey)
+    // The same mail imported again after its case ended is a new case: the active one answers first.
+    const reviews = rows.flatMap((row) => {
+      const review = this.getJobCaseReview(row.review_id)
+      return review ? [review] : []
+    })
+    return reviews.find((review) => review.lifecycle !== 'archived') ?? reviews[0] ?? null
   }
 
   private insertJobCaseDraft(draft: JobCaseExtractionDraftV2): boolean {
@@ -599,8 +613,35 @@ export class JobCaseStore extends DomainStore {
         'SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.review_id=? ORDER BY mail.id'
       )
       .all(reviewId)
+    const placements = this.stores.businessProgress.list().filter((row) => row.reviewId === reviewId)
+    const activePlacements = placements.filter((row) => row.progress?.stage === 'started').length
+    const endedPlacements = placements.filter((row) => row.progress?.stage === 'ended').length
+    const introductionDrafts = this.database
+      .prepare<[string], { n: number }>('SELECT COUNT(*) AS n FROM personnel_introduction_drafts WHERE case_review_id = ?')
+      .get(reviewId)!.n
+    // Everything else that goes with the case (ON DELETE CASCADE), so the preview and the report name it.
+    const caseVersionIds = history.map((version) => version.id)
+    const countBy = (table: string, column: string, ids: string[]) =>
+      ids.length
+        ? this.database
+            .prepare<string[], { n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} IN (${ids.map(() => '?').join(',')})`)
+            .get(...ids)!.n
+        : 0
+    const cascaded = {
+      caseBroadcastCopies: countBy('case_broadcast_copies', 'review_id', [reviewId]) + countBy('case_broadcasts', 'review_id', [reviewId]),
+      caseIntroductionDrafts: countBy('case_introduction_drafts', 'review_id', [reviewId]),
+      recommendationPoints: countBy('recommendation_points', 'review_id', [reviewId]),
+      matchingOpportunities: countBy('matching_opportunities', 'review_id', [reviewId]),
+      requirementDecisions: countBy('requirement_confirmations', 'job_case_id', caseVersionIds),
+      questionDrafts: countBy('case_person_question_drafts', 'job_case_id', caseVersionIds),
+      personAssessments: countBy('case_person_assessments', 'job_case_id', caseVersionIds)
+    }
     const counts = {
       ...(followUps.length ? { businessFollowUps: followUps.length } : {}),
+      ...(activePlacements ? { activePlacements } : {}),
+      ...(endedPlacements ? { endedPlacements } : {}),
+      ...(introductionDrafts ? { introductionDrafts } : {}),
+      ...Object.fromEntries(Object.entries(cascaded).filter(([, n]) => n > 0)),
       caseVersions: history.length,
       reviewAudits,
       taskRecords,
@@ -647,6 +688,11 @@ export class JobCaseStore extends DomainStore {
     if (preview.confirmationHash !== input.confirmationHash) {
       throw new Error('Job case deletion preview changed. Review the impact again before deleting.')
     }
+    // Deleting the case would take the placement record with it and leave the person 已进场 with nothing to undo.
+    if (preview.counts.activePlacements)
+      throw new Error(
+        '这个案件还有人员处于已进场，请先在跟进中记录退场或撤销进场，再删除案件。 / この案件には参画中の要員がいます。対応記録で退場または参画取消を記録してから削除してください。'
+      )
     const sourceRow = this.database
       .prepare<[string], JobCaseSourceRow>(
         `SELECT source.* FROM job_case_sources source
@@ -690,6 +736,8 @@ export class JobCaseStore extends DomainStore {
       }
       this.database.prepare("DELETE FROM change_outbox WHERE entity_type = 'job_case_lifecycle' AND entity_id = ?").run(input.reviewId)
       this.database.prepare('DELETE FROM job_cases WHERE source_review_id = ?').run(input.reviewId)
+      // Introductions written for this case quote it; they go with it (the table has no foreign key to cascade).
+      this.database.prepare('DELETE FROM personnel_introduction_drafts WHERE case_review_id = ?').run(input.reviewId)
       if (source.sourceType === 'gmail' && source.providerAccount && source.providerMessageId) {
         this.database
           .prepare(
@@ -858,6 +906,13 @@ export class JobCaseStore extends DomainStore {
            ) VALUES (?, ?, ?, ?, 'active', ?, ?)`
         )
         .run(caseId, validated.reviewId, version, JSON.stringify(jobCase), reviewedAt, reviewerDisplayName)
+      // HR's 「仅本案件」 decisions belong to the case, not to one version of it: they move to the new version.
+      this.database
+        .prepare(
+          `UPDATE requirement_confirmations SET job_case_id = ?, job_case_version = ?
+           WHERE scope = 'pair' AND job_case_id IN (SELECT id FROM job_cases WHERE source_review_id = ? AND id <> ?)`
+        )
+        .run(caseId, version, validated.reviewId, caseId)
       this.database
         .prepare(
           `INSERT INTO job_case_lifecycle(source_review_id, state, reason, changed_by, changed_at)

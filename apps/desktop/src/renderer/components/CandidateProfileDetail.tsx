@@ -22,6 +22,7 @@ import { localeText, localizedCandidateFieldLabel, localizedIpcError, useLocaleT
 import { summarizeSourceLabels } from '../source-evidence'
 import { Icon } from './Icon'
 import { OriginalDocumentWorkspace } from './OriginalDocumentWorkspace'
+import { DeletionBusinessCountItems, DeletionPlacementBlock, deletionBlockedByPlacement } from './deletion-impact'
 
 type CandidateDetailTab = 'overview' | 'skills' | 'projects' | 'commercial' | 'source' | 'versions'
 type AssistantMode = 'local' | 'cloud'
@@ -1390,12 +1391,7 @@ export function CandidateProfileDetail({
                             {t('加密文件', '暗号化ファイル')} {deletionPreview.counts.encryptedFiles}
                             {t('项', '件')}
                           </li>
-                          {deletionPreview.counts.businessFollowUps ? (
-                            <li>
-                              {t('跟进', '対応記録')} {deletionPreview.counts.businessFollowUps}
-                              {t('项', '件')}
-                            </li>
-                          ) : null}
+                          <DeletionBusinessCountItems counts={deletionPreview.counts} />
                           {deletionPreview.counts.agentReferences ? (
                             <li>
                               {t(
@@ -1405,14 +1401,20 @@ export function CandidateProfileDetail({
                             </li>
                           ) : null}
                         </ul>
+                        <DeletionPlacementBlock kind="person" counts={deletionPreview.counts} />
                         <p>{t('请输入“删除”以继续。', '続行するには「削除」と入力してください。')}</p>
                         <input
                           aria-label={t('删除确认', '削除確認')}
+                          disabled={Boolean(deletionBlockedByPlacement(deletionPreview.counts))}
                           onChange={(event) => setDeletionConfirmation(event.target.value)}
                           value={deletionConfirmation}
                         />
                         <button
-                          disabled={deletionConfirmation !== t('删除', '削除') || deletionStatus === 'deleting'}
+                          disabled={
+                            deletionConfirmation !== t('删除', '削除') ||
+                            deletionStatus === 'deleting' ||
+                            Boolean(deletionBlockedByPlacement(deletionPreview.counts))
+                          }
                           onClick={() => void deleteCandidate()}
                           type="button"
                         >

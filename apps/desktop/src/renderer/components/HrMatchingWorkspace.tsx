@@ -1,3 +1,4 @@
+import { focusRequirement, hasPendingRequirementFocus, onRequirementFocus } from '../requirement-decision-events'
 import { AiOpinion } from './AiOpinion'
 import { InterviewEvidencePanel } from './InterviewEvidencePanel'
 import { RankingReason } from './RankingReason'
@@ -14,7 +15,14 @@ import type {
   PersonnelCaseMatchResult,
   CandidateMatchAssessment
 } from '@shared'
-import { businessMatchingPolicyVersion, isPersonnelAvailable, qualificationStatus, matchFollowUpLabels, proposalConclusion } from '@shared'
+import {
+  businessMatchingPolicyVersion,
+  excludedByHr,
+  isPersonnelAvailable,
+  qualificationStatus,
+  matchFollowUpLabels,
+  proposalConclusion
+} from '@shared'
 import { consumeMatchingIntent } from '../hr-matching-intents'
 import {
   isPersonCaseMatchBusy,
@@ -142,6 +150,11 @@ export function HrMatchingWorkspace({
   const [checked, setChecked] = useState<Record<string, string[]>>({})
   const [starting, setStarting] = useState(false)
   const [tab, setTab] = useState('evidence')
+  // A requirement to show (a list chip, 「确认条件」) opens 匹配依据, where its row is highlighted.
+  useEffect(() => {
+    if (hasPendingRequirementFocus()) setTab('evidence')
+    return onRequirementFocus(() => setTab('evidence'))
+  }, [])
   const [showDetail, setShowDetail] = useState(false)
   const startLock = useRef(false)
   // null until the business states load: matching waits so an unavailable person is never run.
@@ -195,6 +208,10 @@ export function HrMatchingWorkspace({
   }, [sourceId])
   const person = source ? people.find((item) => item.documentId === source.id) : undefined
   const businessStatus = person ? businessStates?.get(person.documentId) : undefined
+  // The person's recorded placement, if any: 已进场 then leads to it.
+  const placement = person
+    ? (progress?.indexes.person.get(person.documentId) ?? []).find((row) => row.progress?.stage === 'started')
+    : undefined
   const ready = businessStates !== null && rulesRevision !== 'loading'
   const valid = ready && person?.recordStatus === 'active' && isPersonnelAvailable(businessStatus) && Boolean(person.profile)
   // pending also covers the moment before a run starts; running is the run itself (progress, stop, notices).
@@ -210,13 +227,14 @@ export function HrMatchingWorkspace({
         job: cases.find((entry) => entry.reviewId === item.reviewId)
       }))
     : []
-  const freshRows = rows.filter(
-    (row) =>
-      person?.recordStatus === 'active' &&
-      isPersonnelAvailable(businessStatus) &&
-      row.job?.lifecycle === 'active' &&
-      row.jobCaseVersion === row.job?.jobCase?.version
-  )
+  const personUsable = person?.recordStatus === 'active' && isPersonnelAvailable(businessStatus)
+  // A case ended or edited since the run drops out of the result; the rest stays usable.
+  const rowCurrent = (row: (typeof rows)[number]) => row.job?.lifecycle === 'active' && row.jobCaseVersion === row.job?.jobCase?.version
+  const freshRows = rows.filter((row) => personUsable && rowCurrent(row))
+  const droppedRows = rows.filter((row) => !rowCurrent(row)).length
+  // Cases added since the run are not in the result: offered as a new search, without locking what was found.
+  const caseIds = (signature: string) => signature.split(',').flatMap((key) => (key ? [key.split(':')[0]!] : []))
+  const newCases = Boolean(saved && caseIds(caseSignature(cases)).some((id) => !caseIds(saved.caseSignature).includes(id)))
   const policyCurrent = rows.every((row) => row.qualification?.policyVersion === businessMatchingPolicyVersion)
   const recommendedRows = policyCurrent ? freshRows.filter((row) => row.qualification?.status === 'recommended') : []
   const confirmationRows = policyCurrent
@@ -224,6 +242,8 @@ export function HrMatchingWorkspace({
         (row) => row.qualification?.status === 'needs-confirmation' && qualificationStatus(row.qualification.requirements) !== 'excluded'
       )
     : []
+  // HR judged a requirement 不满足: still listed, marked and last, so the decision can be reviewed or withdrawn.
+  const rejectedRows = policyCurrent ? freshRows.filter((row) => excludedByHr(row.qualification)) : []
   useExperienceExposure(exposureRoot, `person:${sourceId}:${rows.map((row) => row.experienceRunId ?? '').join(',')}`)
   const stale = Boolean(
     saved &&
@@ -231,8 +251,7 @@ export function HrMatchingWorkspace({
       !current ||
       !policyCurrent ||
       (saved.policyVersion !== undefined && saved.policyVersion !== businessMatchingPolicyVersion) ||
-      rows.length !== freshRows.length ||
-      saved.caseSignature !== caseSignature(cases))
+      (rows.length > 0 && !personUsable))
   )
   // A stored result is shown instead of re-running only when every version it depends on is verified.
   const reusable = Boolean(stored && !partial[sourceId] && !stale && typeof rulesRevision === 'number')
@@ -352,28 +371,38 @@ export function HrMatchingWorkspace({
           action: backLabel ?? t('返回人员列表', '要員一覧に戻る'),
           run: onBack
         }
-      : businessStatus === 'assigned' || businessStatus === 'paused'
+      : businessStatus === 'assigned' && placement && onContinue
         ? {
-            text:
-              businessStatus === 'assigned'
-                ? t(
-                    '此人员已入场，暂不找案件。如已结束，请把营业状态改为待营业。',
-                    'この要員は参画中のため、案件を探しません。終了した場合は営業状態を営業待ちに変更してください。'
-                  )
-                : t(
-                    '此人员暂停营业，暂不找案件。恢复营业后请调整营业状态。',
-                    'この要員は営業停止中のため、案件を探しません。再開する場合は営業状態を変更してください。'
-                  ),
-            action: t('调整营业状态', '営業状態を変更'),
-            run: () => onView('person', source.id)
+            // In place through a recorded start: the placement record is where 记录退场 is.
+            text: t(
+              '此人员已进场，暂不找案件。项目快结束时可在人员资料里改为近期可入场；项目结束后请在跟进中记录退场。',
+              'この要員は参画中のため、案件を探しません。終了が近ければ要員情報で「近日稼働可能」に変更できます。案件終了後は対応記録で退場を記録してください。'
+            ),
+            action: t('查看进场记录', '参画記録を見る'),
+            run: () => onContinue({ documentId: placement.documentId, reviewId: placement.reviewId })
           }
-        : !person.profile
+        : businessStatus === 'assigned' || businessStatus === 'paused'
           ? {
-              text: t('此人员资料尚未确认，确认后即可找案件。', 'この要員情報はまだ確認されていません。確認後に案件を探せます。'),
-              action: t('查看人员资料', '要員情報を見る'),
+              text:
+                businessStatus === 'assigned'
+                  ? t(
+                      '此人员的营业状态是已进场，但没有对应的进场记录，暂不找案件。如需继续，请调整营业状态。',
+                      'この要員は参画中になっていますが、参画記録がないため案件を探しません。続ける場合は営業状態を変更してください。'
+                    )
+                  : t(
+                      '此人员暂停营业，暂不找案件。如需恢复，请调整营业状态。',
+                      'この要員は営業停止中のため、案件を探しません。再開する場合は営業状態を変更してください。'
+                    ),
+              action: t('调整营业状态', '営業状態を変更'),
               run: () => onView('person', source.id)
             }
-          : null
+          : !person.profile
+            ? {
+                text: t('此人员资料尚未确认，确认后即可找案件。', 'この要員情報はまだ確認されていません。確認後に案件を探せます。'),
+                action: t('查看人员资料', '要員情報を見る'),
+                run: () => onView('person', source.id)
+              }
+            : null
   const tokyoTime = (value: string) =>
     new Date(value).toLocaleString(zh ? 'zh-CN' : 'ja-JP', {
       timeZone: 'Asia/Tokyo',
@@ -388,8 +417,17 @@ export function HrMatchingWorkspace({
   const excludedCount = saved?.result.excludedCount ?? 0
   const ownCompanyExcluded = saved?.result.ownCompanyExcludedCount ?? 0
   const showResults = Boolean(saved && current && (valid || !ready))
-  const listed = showResults ? [...recommendedRows, ...confirmationRows] : []
+  const listed = showResults ? [...recommendedRows, ...confirmationRows, ...rejectedRows] : []
   const currentRow = listed.find((row) => row.id === selected[sourceId]) ?? listed[0]
+  // A case asked for (from 新匹配机会) that this person's result does not hold is said, not silently replaced.
+  const missingTarget =
+    source?.selectReviewId &&
+    saved &&
+    !running &&
+    selected[sourceId] === source.selectReviewId &&
+    !listed.some((row) => row.id === source.selectReviewId)
+      ? cases.find((item) => item.reviewId === source.selectReviewId)
+      : undefined
   const choose = (row: Row, pointer: boolean) => {
     if (row.id !== currentRow?.id) recordExperienceOpened(row.experienceRunId)
     setSelected((state) => ({ ...state, [sourceId]: row.id }))
@@ -405,6 +443,10 @@ export function HrMatchingWorkspace({
         title={caseTitle(row.job!)}
         selected={row.id === currentRow?.id}
         onSelect={() => choose(row, true)}
+        onRequirement={(label) => {
+          setTab('evidence')
+          focusRequirement(label)
+        }}
         experienceRun={row.experienceRunId}
         rank={rank + 1}
         badge={<ConclusionBadge tone={conclusionTone(row.qualification)}>{shortConclusion(row.qualification, t)}</ConclusionBadge>}
@@ -414,7 +456,7 @@ export function HrMatchingWorkspace({
             ? {
                 label: t('选择此案件', 'この案件を選択'),
                 checked: (checked[sourceId] ?? []).includes(row.id),
-                disabled: busyActions || Boolean(follow),
+                disabled: busyActions || Boolean(follow) || excludedByHr(row.qualification),
                 onChange: () => toggle(row)
               }
             : null
@@ -484,6 +526,24 @@ export function HrMatchingWorkspace({
           >
             {t('停止', '停止')}
           </button>
+        </span>
+      ) : null}
+      {missingTarget ? (
+        <span className="hr-match-new-cases is-missing" role="status">
+          {t(
+            `「${caseTitle(missingTarget)}」不在这个人员的找案件结果里（结果只保留匹配度最高的几个案件），可以从案件一侧查看这一组。`,
+            `「${caseTitle(missingTarget)}」はこの要員の検索結果にありません（結果は適合度の高い案件のみ）。案件側からこの組み合わせを確認できます。`
+          )}
+          <button type="button" onClick={() => onView('case', missingTarget.reviewId)}>
+            {t('打开案件', '案件を開く')}
+          </button>
+        </span>
+      ) : null}
+      {!stale && !running && (newCases || droppedRows) ? (
+        <span className="hr-match-new-cases" role="status">
+          {newCases
+            ? t('有新案件加入，可以重新找案件', '新しい案件があります。案件を探し直せます')
+            : t(`${droppedRows} 个案件已结束或更新，已从结果中移除`, `${droppedRows} 件の案件が終了・更新されたため結果から外しました`)}
         </span>
       ) : null}
       {stored && !running ? (
@@ -624,6 +684,15 @@ export function HrMatchingWorkspace({
               </li>
             ) : null}
             {confirmationRows.map((row, rank) => resultRow(row, rank))}
+            {rejectedRows.length ? (
+              <li className="match-group-head is-rejected" role="presentation">
+                <strong>
+                  {t('HR 确认不满足', 'HRが未充足と確認')} <span>{rejectedRows.length}</span>
+                </strong>
+                <small>{t('在「匹配依据」里可以查看或撤销这个判断。', '「マッチングの根拠」で判断を確認・取り消しできます。')}</small>
+              </li>
+            ) : null}
+            {rejectedRows.map((row, rank) => resultRow(row, rank))}
           </MatchResultList>
         ) : null}
         <ExcludedSection count={excludedCount + ownCompanyExcluded}>
@@ -662,8 +731,10 @@ export function HrMatchingWorkspace({
                 tab={tab}
                 onTab={setTab}
                 onBackToList={() => setShowDetail(false)}
-                disabled={busyActions}
-                prepareDisabled={busyActions || !current}
+                // HR's 不满足 keeps the case listed for review, not for proposing.
+                // An existing follow-up stays reachable whatever the result says; a new one needs a current, proposable result.
+                disabled={existing(currentRow) ? starting : busyActions || excludedByHr(currentRow.qualification)}
+                prepareDisabled={busyActions || !current || excludedByHr(currentRow.qualification)}
                 pointsBlocked={
                   !valid
                     ? t('此人员当前不可用于提案。', 'この要員は現在提案に使えません。')
@@ -735,13 +806,17 @@ function CaseMatchDetail({
   const title = caseTitle(row.job!)
   const questions = row.appliedRules?.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text) ?? []
   const follow = followUpItems(row.qualification, questions)
-  const followTotal = follow.items.length + follow.questions.length
+  const followTotal = follow.items.length + follow.questions.length + follow.asking.length
   const draft = useCaseQuestionDraft(documentId, row.jobCaseId)
   const [notice, setNotice] = useState('')
   const exposureRoot = useRef<HTMLElement>(null)
   useExperienceExposure(exposureRoot, row.experienceRunId ?? '')
   const tabs = [
-    { id: 'evidence', label: t('匹配依据', 'マッチングの根拠'), content: <MatchEvidenceTab qualification={row.qualification} /> },
+    {
+      id: 'evidence',
+      label: t('匹配依据', 'マッチングの根拠'),
+      content: <MatchEvidenceTab qualification={row.qualification} pair={{ documentId, jobCaseId: row.jobCaseId }} />
+    },
     {
       id: 'points',
       label: t('推荐要点', '推薦ポイント'),

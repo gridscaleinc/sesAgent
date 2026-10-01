@@ -1,7 +1,7 @@
 import { collectLocalPersonNameCandidates, mergeLocalOcr } from '@local-ai'
 import { documentIrSchema } from '@parsers'
 import type { ParserWorkerClient } from '@parsers/worker-client'
-import type { EncryptedApplicationRepository } from '@persistence'
+import { DuplicateCandidateError, type EncryptedApplicationRepository } from '@persistence'
 import { redactTextForCloud } from '@privacy'
 import { extractCandidateDraft } from '@resume'
 import type { ResumeAnalysisSummary, StagedLocalFile } from '@shared'
@@ -161,6 +161,16 @@ export async function importStagedResumeLocally(
     return duplicate.documentId
   }
   repository.saveRedactionSession(redaction.session, redaction.mappings)
-  repository.saveParsedDocument(document, summary, redaction.session.id, extraction, inTalentLibrary)
+  try {
+    repository.saveParsedDocument(document, summary, redaction.session.id, extraction, inTalentLibrary)
+  } catch (error) {
+    // 该人员已入库 (same name plus mobile, address or age): the import is given up like an identical résumé, its
+    // local name and contact mappings included, and the existing person is used.
+    if (!(error instanceof DuplicateCandidateError)) throw error
+    repository.discardUnusedRedactionSession(redaction.session.id)
+    repository.removeStagedFiles([record.token])
+    await context.fileVault.discardStagedFile(record)
+    return error.documentId
+  }
   return record.token
 }

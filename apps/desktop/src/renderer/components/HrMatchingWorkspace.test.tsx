@@ -168,17 +168,22 @@ it('after a restart shows the stored run with 「前回の検索」 instead of r
   await waitFor(() => expect(sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1))
 })
 
-it('reruns automatically when the stored run is stale (a case changed since it ran)', async () => {
+it('keeps a stored run usable when cases were added or ended since, offering a new search instead of rerunning', async () => {
   const sesAgent = Object.assign(api(), {
     getPersonnelCaseMatchRun: vi.fn(async () => ({
       result,
       searchedAt: '2026-09-30T01:00:00.000Z',
-      caseSignature: `${job.jobCase!.id}:1,44444444-4444-4444-8444-444444444444:1`,
+      // A case that has ended since, and the current case missing: one case added, one gone.
+      caseSignature: '44444444-4444-4444-8444-444444444444:1',
       policyVersion: 'technical-language-v5'
     }))
   })
   render(<HrMatchingWorkspace {...props(11)} />)
-  await waitFor(() => expect(sesAgent.findCasesForPersonnel).toHaveBeenCalledTimes(1))
+  expect(await screen.findByRole('article', { name: 'Java project' })).toBeInTheDocument()
+  expect(screen.getByText('新しい案件があります。案件を探し直せます')).toBeInTheDocument()
+  expect(sesAgent.findCasesForPersonnel).not.toHaveBeenCalled()
+  // The result stays actionable.
+  await waitFor(() => expect(screen.getByRole('button', { name: '紹介を準備' })).toBeEnabled())
 })
 
 it('hydrates list badge counts from stored summaries on first use', async () => {
@@ -247,7 +252,8 @@ it('waits for business states, then names why an assigned person cannot be match
   const callbacks = props(4)
   render(<HrMatchingWorkspace {...callbacks} />)
   expect(screen.getByText('要員の状態を確認しています…')).toBeVisible()
-  expect(await screen.findByText(/この要員は参画中のため/)).toBeVisible()
+  // 参画中 with no placement record (set by hand before): the status is adjusted in the profile.
+  expect(await screen.findByText(/参画記録がないため/)).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: '営業状態を変更' }))
   expect(callbacks.onView).toHaveBeenCalledWith('person', documentId)
   expect(sesAgent.findCasesForPersonnel).not.toHaveBeenCalled()

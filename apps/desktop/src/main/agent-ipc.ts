@@ -21,7 +21,7 @@ import type { JobCaseFieldAliasMap } from '@shared/contracts'
 import { candidateSearchTerms, scorableCandidateSearchTerms, searchConfirmedCandidateProfiles } from '@resume'
 import { hashActionInput, type ActionContext, type ActionOrchestrator } from '@action-runtime'
 import type { MatchRuntimeIdentity } from '@matching'
-import type { EncryptedApplicationRepository } from '@persistence'
+import { DuplicateCandidateError, type EncryptedApplicationRepository } from '@persistence'
 import {
   agentTurnEventSchema,
   cancelAgentTurnInputSchema,
@@ -37,7 +37,8 @@ import {
   type CandidateMatchTaskExecutionResult,
   type ExecuteAgentTurnResult
 } from '@shared'
-import { isUnassessableMatchCard } from '@shared'
+import { isUnassessableMatchCard, scheduleConflictMessage } from '@shared'
+import { rejectedByHr } from './work-rule-matching'
 import type {
   AgentCandidateDraftFacts,
   AgentCloudReviewOutcome,
@@ -53,8 +54,13 @@ import {
   type AgentActiveWorkspaceEvidence,
   type AgentNarrativeStreamer
 } from './agent-cloud-narrative'
-import { deriveBroadcastQueue } from './broadcast-workspace'
-import { activeCaseTitle, draftCaseBroadcastForReview, requireSendableReview, resolveBroadcastTemplate } from './broadcast-service'
+import {
+  activeCaseTitle,
+  broadcastQueueOf,
+  draftCaseBroadcastForReview,
+  requireSendableReview,
+  resolveBroadcastTemplate
+} from './broadcast-service'
 import type { BusinessTextIntakeTurnHooks } from './business-text-intake'
 
 interface AgentMatchTaskResult extends CandidateMatchTaskExecutionResult {
@@ -116,6 +122,8 @@ export interface AgentIpcDependencies {
     meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
     meetingUrl?: string
     kind: 'recruiting' | 'client'
+    /** The case a client interview is for; required for kind 'client'. */
+    caseReviewId?: string
     contactNote?: string
   }): void
   modelCatalog?: readonly AgentChatModelDefinition[]
@@ -482,11 +490,7 @@ function buildActiveWorkspaceEvidence(
     // Counts only. What a broadcast says is written on this device and never
     // becomes part of a cloud narrative projection. Where a copied message was
     // pasted is not recorded at all, so no count can imply it.
-    const queue = deriveBroadcastQueue({
-      reviews: deps.repository.listJobCaseReviews(),
-      ledger: deps.repository.listAllCaseBroadcasts(),
-      copies: deps.repository.listAllCaseBroadcastCopies()
-    })
+    const queue = broadcastQueueOf(deps.repository)
     return {
       destination: access.destination,
       data: {
@@ -873,12 +877,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
   }
 
   /** The 配信 queue, derived the same way the 案件配信 screen derives it. */
-  const broadcastQueue = () =>
-    deriveBroadcastQueue({
-      reviews: deps.repository.listJobCaseReviews(),
-      ledger: deps.repository.listAllCaseBroadcasts(),
-      copies: deps.repository.listAllCaseBroadcastCopies()
-    })
+  const broadcastQueue = () => broadcastQueueOf(deps.repository)
 
   const port: LocalAgentPort = {
     listActiveJobCases: () => deps.repository.listActiveJobCases().map(safeJobCaseRecord),
@@ -997,28 +996,40 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         if (input.candidateDocumentId && execution.matches.some((match) => match.sourceDocumentId !== input.candidateDocumentId)) {
           throw new AgentExecutionError('AGENT_TOOL_FAILED', '匹配结果超出所选人员范围，请重新评估。')
         }
-        const cards: AgentCandidateMatchRecord[] = execution.matches.map((match, index) => ({
-          candidateProfileId: match.id,
-          sourceDocumentId: match.sourceDocumentId,
-          runId: execution.run.id,
-          resultId: match.matchResultId,
-          resultHash: match.matchResultHash,
-          rank: match.retrieval.rank ?? index + 1,
-          anonymousLabel: match.anonymousLabel,
-          fitScore: match.matchScore,
-          matched: match.matchedTerms,
-          missing: match.retrieval.hardFilters.filter((filter) => filter.outcome !== 'passed').map((filter) => filter.requested),
-          hardFilterStatus:
-            match.retrieval.hardFilters.length === 0
-              ? 'none'
-              : match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
-                ? 'failed'
-                : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown')
-                  ? 'unknown'
-                  : 'passed',
-          projectEvidence: match.projectEvidence?.summary ?? null,
-          status: 'current'
-        }))
+        // People HR already judged 不满足 for this case are not proposed again here (the 找人 page lists them last, marked).
+        // The case and rules are read only when someone has such a decision.
+        // The same reading as 找人 and every other entry (any requirement HR judged 不满足 for this case).
+        const job = deps.repository
+          .listActiveJobCases()
+          .find((item) => item.id === input.jobCaseId && item.version === input.jobCaseVersion)
+        const hrRejected = (documentId: string) => Boolean(job && rejectedByHr(deps.repository, documentId, job.sourceReviewId))
+        // Numbered by their place in the run, before anyone is left out, so 「第 2 位」 still names the same person.
+        const cards: AgentCandidateMatchRecord[] = execution.matches
+          .map((match, index) => ({ match, index }))
+          .filter(({ match }) => input.candidateDocumentId || !hrRejected(match.sourceDocumentId))
+          .map(({ match, index }) => ({
+            candidateProfileId: match.id,
+            sourceDocumentId: match.sourceDocumentId,
+            jobCaseId: input.jobCaseId,
+            runId: execution.run.id,
+            resultId: match.matchResultId,
+            resultHash: match.matchResultHash,
+            rank: match.retrieval.rank ?? index + 1,
+            anonymousLabel: match.anonymousLabel,
+            fitScore: match.matchScore,
+            matched: match.matchedTerms,
+            missing: match.retrieval.hardFilters.filter((filter) => filter.outcome !== 'passed').map((filter) => filter.requested),
+            hardFilterStatus:
+              match.retrieval.hardFilters.length === 0
+                ? 'none'
+                : match.retrieval.hardFilters.some((filter) => filter.outcome === 'failed')
+                  ? 'failed'
+                  : match.retrieval.hardFilters.some((filter) => filter.outcome === 'unknown')
+                    ? 'unknown'
+                    : 'passed',
+            projectEvidence: match.projectEvidence?.summary ?? null,
+            status: 'current'
+          }))
         const cloudReview = await attachCloudMatchAssessments(input, execution, cards, active, metadata)
         return {
           toolName,
@@ -1035,8 +1046,14 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           meetingMethod: 'zoom' | 'google-meet' | 'phone' | 'onsite'
           meetingUrl?: string
           kind: 'recruiting' | 'client'
+          jobCaseId?: string
           contactNote?: string
         }
+        // The case a client interview is for, as its active review (the key 跟进 is filed under).
+        const caseReviewId = input.jobCaseId
+          ? // An ended case is still mapped: 跟进 then says the case has ended, instead of asking which case.
+            deps.repository.listJobCaseReviews().find((review) => review.jobCase?.id === input.jobCaseId)?.reviewId
+          : undefined
         const preflight = deps.actionOrchestrator.preflight(
           toolName,
           context,
@@ -1046,6 +1063,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             durationMinutes: input.durationMinutes,
             meetingMethod: input.meetingMethod,
             kind: input.kind,
+            ...(input.jobCaseId ? { jobCaseId: input.jobCaseId } : {}),
             ...(input.meetingUrl ? { meetingUrlHash: createHash('sha256').update(input.meetingUrl).digest('hex') } : {}),
             ...(input.contactNote ? { contactNote: input.contactNote } : {})
           },
@@ -1065,15 +1083,26 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             meetingMethod: input.meetingMethod,
             ...(input.meetingUrl ? { meetingUrl: input.meetingUrl } : {}),
             kind: input.kind,
+            ...(caseReviewId ? { caseReviewId } : {}),
             contactNote: input.contactNote
           })
-        } catch {
+        } catch (cause) {
           deps.repository.updateActionRun(preflight.actionRunId, 'failed', { errorCode: 'INTERVIEW_SCHEDULE_FAILED' })
+          // A business rule's own bilingual refusal (time conflict, 暂停营业, ended case…) says more than the generic one.
+          // A time conflict asks for 「仍然保存」, which the conversation does not offer: point to where it is.
+          const conflict = cause instanceof Error && cause.message.includes(scheduleConflictMessage)
+          const reason = conflict
+            ? deps.locale() === 'zh-CN'
+              ? '这个时间和另一场面试重叠。如确认无误，请在面试日程（客户面试在跟进）中保存这个时间。'
+              : 'この時間は別の面談と重なっています。問題なければ、面談日程（顧客面談は対応記録）でこの時間を保存してください。'
+            : cause instanceof Error
+              ? bilingualHalf(cause.message, deps.locale())
+              : null
           throw new AgentExecutionError(
             'AGENT_INTERVIEW_SCHEDULE_FAILED',
             deps.locale() === 'zh-CN'
-              ? '面试登记失败，未保存任何记录。请确认日期、时间、时长和会议链接后重试。'
-              : '面談の登録に失敗し、レコードは保存されませんでした。日付、時刻、所要時間、会議リンクを確認して再試行してください。'
+              ? `面试登记失败，未保存任何记录。${reason ?? '请确认日期、时间、时长和会议链接后重试。'}`
+              : `面談の登録に失敗し、レコードは保存されませんでした。${reason ?? '日付、時刻、所要時間、会議リンクを確認して再試行してください。'}`
           )
         }
         const output = {
@@ -1225,7 +1254,10 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
         deps.repository.updateActionRun(preflight.actionRunId, 'running')
         const imported: AgentResumeImportOutput['imported'] = []
         const failed: AgentResumeImportOutput['failed'] = []
+        const alreadyImported: NonNullable<AgentResumeImportOutput['alreadyImported']> = []
         for (const fileToken of input.fileTokens) {
+          // Read before analysing: a given-up import (该人员已入库) removes its staged file.
+          const fileName = deps.repository.getStagedFileRecords([fileToken])[0]?.name ?? 'unknown'
           try {
             const analysed = await deps.runResumeAnalysisTask(fileToken, metadata)
             imported.push({
@@ -1237,16 +1269,14 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
             })
             deps.registerConversationImport?.(metadata.conversationId, fileToken)
           } catch (error) {
-            failed.push({
-              name: deps.repository.getStagedFileRecords([fileToken])[0]?.name ?? 'unknown',
-              code: error instanceof AgentExecutionError ? error.code : 'AGENT_TOOL_FAILED'
-            })
+            if (error instanceof DuplicateCandidateError) alreadyImported.push({ name: fileName, existingDocumentId: error.documentId })
+            else failed.push({ name: fileName, code: error instanceof AgentExecutionError ? error.code : 'AGENT_TOOL_FAILED' })
           }
         }
-        const output: AgentResumeImportOutput = { imported, failed }
+        const output: AgentResumeImportOutput = { imported, failed, ...(alreadyImported.length ? { alreadyImported } : {}) }
         deps.repository.updateActionRun(
           preflight.actionRunId,
-          imported.length > 0 ? 'succeeded' : 'failed',
+          imported.length > 0 || (alreadyImported.length > 0 && !failed.length) ? 'succeeded' : 'failed',
           imported.length > 0 ? { resultHash: hashActionInput(output) } : { errorCode: 'RESUME_IMPORT_FAILED' }
         )
         return { toolName, output, actionRunId: preflight.actionRunId }
@@ -1961,4 +1991,15 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
     inFlightRequests.clear()
     requestResults.clear()
   }
+}
+
+/** The half of a "中文 / 日本語" business-rule message for this locale; null for anything else. */
+function bilingualHalf(message: string, locale: string): string | null {
+  const index = message.indexOf(' / ')
+  // Most store refusals are Chinese only: shown as they are to a Chinese operator.
+  if (index < 0) return locale === 'zh-CN' && /\p{Script=Han}/u.test(message) && !/[\u3040-\u30ff]/u.test(message) ? message : null
+  const zh = message.slice(0, index).trim(),
+    ja = message.slice(index + 3).trim()
+  if (!/\p{Script=Han}/u.test(zh) || !/[\u3040-\u30ff]/u.test(ja)) return null
+  return locale === 'zh-CN' ? zh : ja
 }

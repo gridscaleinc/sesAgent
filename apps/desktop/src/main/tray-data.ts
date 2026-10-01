@@ -1,8 +1,10 @@
 import type { AiCommerceNativeClient } from '@aicommerce'
 import type { EncryptedApplicationRepository } from '@persistence'
-import type { AiCommerceMembershipState, AiCommerceWalletSnapshot, GmailSyncState, TraySummary } from '@shared'
+import { followUpBlock, isInactiveProgressStage } from '@shared'
+import { rejectedByHr } from './work-rule-matching'
+import type { AiCommerceMembershipState, AiCommerceWalletSnapshot, GmailSyncState, TodaySummary, TraySummary } from '@shared'
 import { currentAiGatewayRejection } from './ai-gateway-signal'
-import { buildTraySummary, defaultMenuBarPreferences, isProposable, trayAiQuota } from './tray-summary'
+import { buildTodaySummary, buildTraySummary, defaultMenuBarPreferences, trayAiQuota, type TraySummaryInput } from './tray-summary'
 
 /** The panel never asks AICommerce for the wallet more often than this; results other screens fetched count too. */
 export const trayWalletRefreshMs = 10 * 60_000
@@ -24,6 +26,7 @@ export interface TraySummarySourceDependencies {
     EncryptedApplicationRepository,
     | 'getLocalApplicationPreferences'
     | 'listBusinessFollowUps'
+    | 'listCandidateInterviews'
     | 'getBusinessFeed'
     | 'listJobCaseReviews'
     | 'listMatchingOpportunities'
@@ -34,6 +37,9 @@ export interface TraySummarySourceDependencies {
     | 'getPersonnelWorkspace'
     | 'getCandidateReview'
     | 'getLocalDataRevision'
+    | 'listWorkRules'
+    | 'getCandidateProfileForAssessment'
+    | 'listRequirementConfirmations'
   >
   aiCommerce: Pick<AiCommerceNativeClient, 'getState' | 'getDashboard'> | null
   gmailState(): Promise<Pick<GmailSyncState, 'configuration' | 'status' | 'lastError'> | null>
@@ -41,16 +47,21 @@ export interface TraySummarySourceDependencies {
   now?(): Date
 }
 
-/**
- * Reads the local repositories the HR screens use and builds the panel summary. Nothing here reaches the cloud
- * AI; the only network request is the AICommerce wallet, at most every ten minutes and only when the panel opens.
- */
+/** The menu-bar panel's summary; see createSummarySources. */
 export function createTraySummarySource(dependencies: TraySummarySourceDependencies) {
+  return createSummarySources(dependencies).tray
+}
+
+/**
+ * Reads the local repositories the HR screens use and builds the panel summary and the main window's 「今天」
+ * summary, sharing one set of caches. Nothing here reaches the cloud AI; the only network request is the
+ * AICommerce wallet, at most every ten minutes and only when the panel or the 「今天」 page asks for it.
+ */
+export function createSummarySources(dependencies: TraySummarySourceDependencies) {
   const { repository, aiCommerce } = dependencies
   const now = () => dependencies.now?.() ?? new Date()
   let privacy: { ready: boolean; at: number } | null = null
   let walletAttemptAt = 0
-  let proposable: { revision: number; pairs: Array<{ documentId: string; reviewId: string }> } | null = null
 
   const privacyReady = async () => {
     const at = now().getTime()
@@ -82,33 +93,28 @@ export function createTraySummarySource(dependencies: TraySummarySourceDependenc
     return trayAiQuota(state, observedWallet?.wallet ?? null)
   }
 
-  /** 可以提案 pairs from the stored case-side and person-side results, re-read only when local data changed. */
-  const proposablePairs = () => {
-    const revision = repository.getLocalDataRevision().revision
-    if (proposable?.revision === revision) return proposable.pairs
-    const unavailable = new Set(
-      repository
-        .getPersonnelWorkspace()
-        .states.filter((state) => !['available', 'soon'].includes(state.status))
-        .map((state) => state.documentId)
-    )
-    const active = new Map(repository.listActiveJobCases().map((job) => [job.id, job]))
-    const pairs: Array<{ documentId: string; reviewId: string }> = []
-    for (const job of active.values())
-      for (const assessment of repository.listCaseAssessments(job.id))
-        if (assessment.jobCaseVersion === job.version && isProposable(assessment.result.qualification))
-          pairs.push({ documentId: assessment.documentId, reviewId: job.sourceReviewId })
-    for (const summary of repository.listPersonCaseMatchRunSummaries()) {
-      if (!summary.listedCount) continue
-      for (const item of repository.getPersonCaseMatchRun(summary.documentId)?.result.items ?? [])
-        if (active.get(item.jobCaseId)?.version === item.jobCaseVersion && isProposable(item.qualification))
-          pairs.push({ documentId: summary.documentId, reviewId: item.reviewId })
-    }
-    proposable = { revision, pairs: pairs.filter((pair) => !unavailable.has(pair.documentId)) }
-    return proposable.pairs
+  /**
+   * Which follow-ups cannot move now (see followUpBlock): nothing is due for a person not being offered or an ended case.
+   * The summary still reads every follow-up for weekly counts and pairs already followed.
+   */
+  const blockedFollowUps = () => {
+    const status = new Map(repository.getPersonnelWorkspace().states.map((state) => [state.documentId, state.status]))
+    const lifecycle = new Map(repository.listJobCaseReviews().map((review) => [review.reviewId, review.lifecycle]))
+    return (row: import('@shared').BusinessFollowUp) =>
+      Boolean(
+        followUpBlock(row, {
+          personStatus: status.get(row.documentId),
+          caseLifecycle: lifecycle.get(row.reviewId),
+          // Asked only for follow-ups still under way (the others are not blocked anyway).
+          hrRejected:
+            Boolean(row.progress) &&
+            !isInactiveProgressStage(row.progress!.stage) &&
+            rejectedByHr(repository, row.documentId, row.reviewId)
+        })
+      )
   }
 
-  return async ({ refreshWallet = false }: { refreshWallet?: boolean } = {}): Promise<TraySummary> => {
+  const collect = async (refreshWallet: boolean): Promise<TraySummaryInput> => {
     const preferences = repository.getLocalApplicationPreferences()
     const locale = preferences?.locale ?? 'ja-JP'
     const menuBar = preferences?.menuBar ?? defaultMenuBarPreferences
@@ -117,25 +123,32 @@ export function createTraySummarySource(dependencies: TraySummarySourceDependenc
       dependencies.gmailState().catch(() => null),
       privacyReady()
     ])
-    return buildTraySummary(
-      {
-        locale,
-        menuBar,
-        followUps: repository.listBusinessFollowUps(),
-        feed: repository.getBusinessFeed(),
-        caseReviews: repository.listJobCaseReviews(),
-        opportunities: repository.listMatchingOpportunities(),
-        proposablePairs: proposablePairs(),
-        personName: (documentId) => {
-          const person = repository.getCandidateReview(documentId)
-          return person?.localIdentity?.displayName ?? person?.fileName ?? null
-        },
-        ai,
-        gmail,
-        cloudPrivacyReady,
-        aiRejection: currentAiGatewayRejection()
+    return {
+      locale,
+      menuBar,
+      followUps: repository.listBusinessFollowUps(),
+      candidateInterviews: repository.listCandidateInterviews?.() ?? [],
+      blocked: blockedFollowUps(),
+      feed: repository.getBusinessFeed(),
+      caseReviews: repository.listJobCaseReviews(),
+      opportunities: repository.listMatchingOpportunities(),
+      personName: (documentId) => {
+        const person = repository.getCandidateReview(documentId)
+        return person?.localIdentity?.displayName ?? person?.fileName ?? null
       },
-      now()
-    )
+      ai,
+      gmail,
+      cloudPrivacyReady,
+      aiRejection: currentAiGatewayRejection()
+    }
+  }
+
+  return {
+    /** Names only when the operator turned them on for the menu bar. */
+    tray: async ({ refreshWallet = false }: { refreshWallet?: boolean } = {}): Promise<TraySummary> =>
+      buildTraySummary(await collect(refreshWallet), now()),
+    /** The main window always shows names: it is the full app, not a panel over other people's screens. */
+    today: async ({ refreshWallet = false }: { refreshWallet?: boolean } = {}): Promise<TodaySummary> =>
+      buildTodaySummary(await collect(refreshWallet), now())
   }
 }

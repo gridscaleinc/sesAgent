@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { ipcMain, shell } from 'electron'
 import { type WorkTask } from '@domain'
 import {
@@ -36,17 +37,41 @@ export function registerInterviewHandlers(context: MainIpcContext) {
     return { review, updatedTasks }
   })
 
+  const clientInterviewNeedsCase = '客户面试需要关联案件，请在案件的跟进中安排。 / 顧客面談は案件に紐づけて、対応記録から設定してください。'
+
   ipcMain.handle(ipcChannels.createCandidateInterviewRound, (event, rawInput): CandidateInterviewSnapshot => {
     assertTrustedSender(event)
     const input = createCandidateInterviewRoundInputSchema.parse(rawInput)
     const operator = currentOperator()
+    const parent = repository.listCandidateInterviews().find((item) => item.id === input.parentInterviewId)
+    if ((input.kind ?? parent?.kind) === 'client') throw new Error(clientInterviewNeedsCase)
     return repository.createCandidateInterviewRound(input, operator.displayName)
+  })
+
+  ipcMain.handle(ipcChannels.cancelCandidateInterviewSchedule, (event, rawInput): CandidateInterviewSnapshot => {
+    assertTrustedSender(event)
+    const input = z.object({ interviewId: z.string().uuid(), sourceDocumentId: z.string().uuid() }).strict().parse(rawInput)
+    return repository.cancelCandidateInterviewSchedule(input, currentOperator().displayName)
   })
 
   ipcMain.handle(ipcChannels.saveCandidateInterviewSchedule, (event, rawInput): CandidateInterviewSnapshot => {
     assertTrustedSender(event)
     const input = saveCandidateInterviewScheduleInputSchema.parse(rawInput)
     const operator = currentOperator()
+    // A new client interview is booked on a case's 跟进; one recorded before that rule can still be corrected here.
+    if (
+      input.kind === 'client' &&
+      !repository
+        .listCandidateInterviews()
+        .some(
+          (item) =>
+            item.id === input.interviewId &&
+            item.kind === 'client' &&
+            item.sourceDocumentId === input.sourceDocumentId &&
+            !item.businessFollowUpId
+        )
+    )
+      throw new Error(clientInterviewNeedsCase)
     return repository.saveCandidateInterviewSchedule(input, operator.displayName)
   })
 
@@ -89,5 +114,19 @@ export function registerInterviewHandlers(context: MainIpcContext) {
     const input = recordCandidateInterviewDecisionInputSchema.parse(rawInput)
     const operator = currentOperator()
     return repository.recordCandidateInterviewDecision(input, operator.displayName)
+  })
+
+  ipcMain.handle(ipcChannels.correctCandidateInterviewDecision, (event, rawInput): CandidateInterviewSnapshot => {
+    assertTrustedSender(event)
+    const input = recordCandidateInterviewDecisionInputSchema
+      .extend({ correctionReason: z.string().trim().min(2).max(500) })
+      .parse(rawInput)
+    return repository.correctCandidateInterviewDecision(input, currentOperator().displayName)
+  })
+
+  ipcMain.handle(ipcChannels.deleteUnbookedCandidateInterviewRound, (event, rawInput): void => {
+    assertTrustedSender(event)
+    const input = z.object({ interviewId: z.string().uuid(), sourceDocumentId: z.string().uuid() }).strict().parse(rawInput)
+    repository.deleteUnbookedCandidateInterviewRound(input)
   })
 }

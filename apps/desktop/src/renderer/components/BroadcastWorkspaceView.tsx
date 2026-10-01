@@ -24,6 +24,8 @@ export interface BroadcastPanelActions {
   draftBroadcast(input: DraftCaseBroadcastInput): Promise<DraftCaseBroadcastResult>
   draftUpdateNotice(input: DraftCaseUpdateNoticeInput): Promise<DraftCaseUpdateNoticeResult>
   recordCopy(input: RecordCaseBroadcastCopyInput): Promise<RecordCaseBroadcastCopyResult>
+  /** Main's checks (identifiers, versions) before the text reaches the clipboard; Main's own check when absent. */
+  validateCopy?(input: RecordCaseBroadcastCopyInput): Promise<RecordCaseBroadcastCopyInput>
   openEmail(input: OpenCaseBroadcastEmailInput): Promise<OpenCaseBroadcastEmailResult>
   listBroadcasts(reviewId: string): Promise<CaseBroadcastHistoryEntry[]>
 }
@@ -34,6 +36,8 @@ interface BroadcastWorkspaceViewProps {
   initialReviewId?: string
   /** Fires when the operator picks another case, so the host can follow the focus. */
   onSelectedReviewChange?: (reviewId: string) => void
+  /** Opens a case still 待补充 where its missing details are filled in. */
+  onOpenCase?: (reviewId: string) => void
 }
 
 function statusLabel(status: BroadcastQueueStatus, zh: boolean): string {
@@ -62,7 +66,7 @@ function formatTime(value: string, locale: 'ja-JP' | 'zh-CN'): string {
   }).format(new Date(value))
 }
 
-export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedReviewChange }: BroadcastWorkspaceViewProps) {
+export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedReviewChange, onOpenCase }: BroadcastWorkspaceViewProps) {
   const locale = useUiLocale()
   const zh = locale === 'zh-CN'
   const t = localeText(zh)
@@ -103,8 +107,12 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
     void reload().catch((cause: unknown) => {
       if (active) setError(localizedIpcError(locale, cause, t('无法读取案件介绍工作区。', '案件紹介の画面を読み込めませんでした。')))
     })
+    // A copy recorded elsewhere (the case's introduction window) updates the queue and its counts here too.
+    const refresh = () => void reload().catch(() => undefined)
+    window.addEventListener('ses-business-data-changed', refresh)
     return () => {
       active = false
+      window.removeEventListener('ses-business-data-changed', refresh)
     }
   }, [reload])
 
@@ -124,6 +132,8 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
     setEdits({})
     setKind('new')
     setHistory(null)
+    // Another case's history is not loaded: the panel starts closed rather than open and empty.
+    setHistoryOpen(false)
     void actions
       .draftBroadcast({ reviewId: selected.reviewId, ...(templateId ? { templateId } : {}) })
       .then((result) => {
@@ -140,11 +150,19 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
     }
   }, [actions, selected?.reviewId, selected?.jobCaseVersion, templateId])
 
-  const text = edits[lang] ?? (lang === 'zh' ? draft?.textZh : draft?.textJa) ?? ''
-  // Identifier findings belong to the generated text; once the operator edits
-  // the box, the warning is the last server answer and the copy stays blocked
-  // until the case is redrawn - deliberately conservative.
-  const forbidden = (lang === 'zh' ? draft?.forbiddenZh : draft?.forbiddenJa) ?? []
+  const generated = (lang === 'zh' ? draft?.textZh : draft?.textJa) ?? ''
+  const text = edits[lang] ?? generated
+  // Identifier findings belong to the generated text. Once the operator edits the box (say, deletes the phone
+  // number), Main checks the edited text itself before anything reaches the clipboard or the mail client.
+  const edited = edits[lang] !== undefined && edits[lang] !== generated
+  const forbidden = edited ? [] : ((lang === 'zh' ? draft?.forbiddenZh : draft?.forbiddenJa) ?? [])
+  const versionCheck = () => {
+    const template = workspace?.templates.find((item) => item.id === templateId)
+    return {
+      ...(selected?.jobCaseVersion ? { expectedJobCaseVersion: selected.jobCaseVersion } : {}),
+      ...(template ? { expectedTemplateRevision: template.revision } : {})
+    }
+  }
 
   const copy = async () => {
     if (!selected || !templateId || busy || forbidden.length > 0 || text.trim().length === 0) return
@@ -152,10 +170,21 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
     setError(null)
     setNotice(null)
     try {
-      await copyTextToClipboard(text)
+      const input: RecordCaseBroadcastCopyInput = {
+        reviewId: selected.reviewId,
+        templateId,
+        lang,
+        kind,
+        text,
+        // The versions the text was drawn from: a case or template changed meanwhile is refused, not recorded as copied.
+        ...versionCheck()
+      }
+      // Checked before the clipboard, so text Main refuses (a phone number typed in) never leaves the app.
+      const checked = await (actions.validateCopy ?? window.sesAgent?.validateCaseBroadcastMessage)?.(input)
+      await copyTextToClipboard(checked?.text ?? text)
       // The copy is the only thing this app witnessed, so it is the only thing
       // it writes down. Whether it reaches a group is the operator's business.
-      await actions.recordCopy({ reviewId: selected.reviewId, templateId, lang, kind, text })
+      await actions.recordCopy(checked ?? input)
       setNotice(t('已复制，可以去微信粘贴了。', 'コピーしました。微信に貼り付けてください。'))
       await reload()
       if (historyOpen) setHistory(await actions.listBroadcasts(selected.reviewId))
@@ -172,13 +201,15 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
     setError(null)
     setNotice(null)
     try {
-      await actions.openEmail({ reviewId: selected.reviewId, templateId, lang, kind, text })
+      await actions.openEmail({ reviewId: selected.reviewId, templateId, lang, kind, text, ...versionCheck() })
       setNotice(
         t(
-          '已打开默认邮件客户端。请确认收件人和正文后手动发送；本应用不会标记为已发送。',
-          '既定のメールアプリを開きました。宛先と本文を確認して送信してください。このアプリは送信済みとは記録しません。'
+          '已打开默认邮件客户端。请确认收件人和正文后手动发送；这次交给邮件的版本会作为以后「有更新」的对比基准。',
+          '既定のメールアプリを開きました。宛先と本文を確認して送信してください。今回メールに渡した版が、以降の「更新あり」の比較基準になります。'
         )
       )
+      await reload()
+      if (historyOpen) setHistory(await actions.listBroadcasts(selected.reviewId))
     } catch (cause) {
       setError(localizedIpcError(locale, cause, t('无法打开邮件，请重试。', 'メールを開けませんでした。もう一度お試しください。')))
     } finally {
@@ -192,7 +223,7 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
     setError(null)
     setNotice(null)
     try {
-      const result = await actions.draftUpdateNotice({ reviewId: selected.reviewId })
+      const result = await actions.draftUpdateNotice({ reviewId: selected.reviewId, ...(templateId ? { templateId } : {}) })
       if (result.status === 'no-copy-baseline') {
         setNotice(t('还没有复制过的版本可以对比。', '比較できるコピー済みバージョンがありません。'))
         return
@@ -225,7 +256,9 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
   }
 
   const queue = workspace?.queue ?? []
-  const count = (status: BroadcastQueueStatus) => queue.filter((item) => item.status === status).length
+  const count = (status: BroadcastQueueStatus) =>
+    queue.filter((item) => item.status === status && !(status === 'copied' && item.hasUpdateSinceLastCopy)).length
+  const updatedCount = queue.filter((item) => item.status === 'copied' && item.hasUpdateSinceLastCopy).length
   const templateName = (id: string) => workspace?.templates.find((template) => template.id === id)?.name ?? '—'
 
   return (
@@ -235,6 +268,10 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
           <span>
             <strong>{count('new')}</strong>
             {t('新增（未复制）', '新着（未コピー）')}
+          </span>
+          <span>
+            <strong>{updatedCount}</strong>
+            {t('有更新（待重发）', '更新あり（再配信待ち）')}
           </span>
           <span>
             <strong>{count('copied')}</strong>
@@ -257,8 +294,8 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
       )}
       <p className="broadcast-hint">
         {t(
-          '复制可用于微信；“打开邮件”会预填标题和正文，收件人与最终发送由您在默认邮件客户端中确认。本机不会把打开邮件记录成已发送。',
-          'コピーは微信で利用できます。「メールを開く」は件名と本文だけを既定のメールアプリへ渡し、宛先と最終送信はそこで確認します。メールを開いただけでは送信済みと記録しません。'
+          '复制可用于微信；“打开邮件”会预填标题和正文，收件人与最终发送由您在默认邮件客户端中确认。复制和打开邮件都记作“已交出”，但不会记成已发送。',
+          'コピーは微信で利用できます。「メールを開く」は件名と本文だけを既定のメールアプリへ渡し、宛先と最終送信はそこで確認します。コピーもメールを開くことも「受け渡し済み」として記録しますが、送信済みとは記録しません。'
         )}
       </p>
 
@@ -310,6 +347,11 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
       {selected && selected.status === 'attention' ? (
         <p className="broadcast-notice">
           {t('该案件还在待补充状态，确认后才能群发。', 'この案件は要補完です。確定してから配信できます。')}
+          {onOpenCase ? (
+            <button type="button" onClick={() => onOpenCase(selected.reviewId)}>
+              {t('打开案件补充', '案件を開いて補完')}
+            </button>
+          ) : null}
         </p>
       ) : null}
 
@@ -350,11 +392,16 @@ export function BroadcastWorkspaceView({ actions, initialReviewId, onSelectedRev
             value={text}
           />
 
+          {edited ? (
+            <p className="broadcast-hint">
+              {t('已手动修改：复制或打开邮件前会重新检查识别符。', '手動で編集済み：コピー・メール前に識別子を再確認します。')}
+            </p>
+          ) : null}
           {forbidden.length > 0 ? (
             <p className="broadcast-forbidden" role="alert">
               {t(
-                `文案里还有识别符（${forbidden.join('、')}），删除后才能复制。`,
-                `本文に識別子が残っています（${forbidden.join('、')}）。削除するまでコピーできません。`
+                `文案里还有识别符（${forbidden.join('、')}），请在文案里删除后再复制。`,
+                `本文に識別子が残っています（${forbidden.join('、')}）。本文から削除してからコピーしてください。`
               )}
             </p>
           ) : null}

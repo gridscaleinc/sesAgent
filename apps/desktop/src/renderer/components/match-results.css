@@ -19,7 +19,7 @@
   cursor: pointer;
   border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--forest);
+  color: var(--accent-text);
   border-radius: 7px;
   padding: 6px 11px;
 }
@@ -28,15 +28,15 @@
   cursor: default;
 }
 .match-page .hr-primary {
-  background: var(--forest);
-  border-color: var(--forest);
+  background: var(--accent);
+  border-color: var(--accent);
   color: var(--on-accent);
 }
 .match-page button:focus-visible,
 .match-page input:focus-visible,
 .match-page select:focus-visible,
 .match-page summary:focus-visible {
-  outline: 2px solid var(--forest);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .match-page select,
@@ -132,11 +132,11 @@
   line-height: 1.6;
 }
 .match-page-notices [role='alert'] {
-  color: var(--red);
+  color: var(--status-danger-fg);
 }
 .match-page-notices .hr-match-stale {
-  background: var(--amber-faint);
-  color: var(--amber);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
 }
 .match-page-notices button {
   margin-left: 6px;
@@ -284,7 +284,7 @@
 .match-page .match-row.is-selected .match-row-main {
   border-color: var(--line);
   background: var(--surface);
-  box-shadow: inset 3px 0 var(--forest);
+  box-shadow: inset 3px 0 var(--accent);
 }
 .match-row-head {
   display: flex;
@@ -323,34 +323,35 @@
 }
 .match-chip.is-met {
   border-color: transparent;
-  background: var(--green-soft);
-  color: var(--green);
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
 }
 .match-chip.is-unknown {
-  border-color: var(--amber-soft);
-  background: var(--amber-faint);
-  color: var(--amber);
+  border-color: var(--status-attention-border);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
 }
 .match-chip.is-conflict {
-  border-color: var(--line);
-  color: var(--red);
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
 }
 .match-tag {
   padding: 0 7px;
   border-radius: 999px;
-  background: var(--blue-soft);
-  color: var(--blue-ink);
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-size: 11px;
   line-height: 1.6;
   white-space: nowrap;
 }
 .match-tag.is-follow {
-  background: var(--green-soft);
-  color: var(--green);
+  background: var(--status-active-bg);
+  color: var(--status-active-fg);
 }
 .match-tag.is-outside {
-  background: var(--amber-soft);
-  color: var(--amber);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
 }
 .match-tag.is-muted {
   padding: 0;
@@ -371,30 +372,31 @@
 }
 .match-badge.is-fit {
   border-color: transparent;
-  background: var(--green-soft);
-  color: var(--green);
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
 }
 .match-badge.is-pending,
 .match-badge.is-stale {
   border-color: transparent;
-  background: var(--amber-soft);
-  color: var(--amber);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
 }
 .match-badge.is-no,
 .match-badge.is-failed {
-  border-color: var(--line);
-  color: var(--red);
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
 }
 .match-badge.is-busy {
   border-color: transparent;
-  background: var(--blue-soft);
-  color: var(--blue-ink);
+  background: var(--status-active-bg);
+  color: var(--status-active-fg);
 }
 .match-group-head {
   display: grid;
   gap: 2px;
   padding: 14px 10px 4px 34px;
-  color: var(--amber);
+  color: var(--status-attention-fg);
   font-size: 12px;
 }
 .match-group-head span {
@@ -410,8 +412,8 @@
   top: 0;
   z-index: 2;
   margin: 0 0 8px 34px;
-  background: var(--forest);
-  border-color: var(--forest);
+  background: var(--accent);
+  border-color: var(--accent);
   color: var(--on-accent);
 }
 .match-excluded {
@@ -486,7 +488,7 @@
   overflow-wrap: anywhere;
 }
 .match-detail-status {
-  color: var(--green);
+  color: var(--status-ok-fg);
   font-size: 12px;
 }
 .match-detail-actions {
@@ -523,13 +525,13 @@
   margin: 0;
 }
 .match-detail-notice [role='status'] {
-  color: var(--amber);
+  color: var(--status-attention-fg);
 }
 .match-detail-notice [role='alert'] {
-  color: var(--red);
+  color: var(--status-danger-fg);
 }
 .match-blocked {
-  color: var(--amber);
+  color: var(--status-attention-fg);
 }
 .match-inline-form {
   display: flex;
@@ -559,7 +561,7 @@
   white-space: nowrap;
 }
 .match-page .match-tabs [role='tab'][aria-selected='true'] {
-  border-bottom-color: var(--forest);
+  border-bottom-color: var(--accent);
   color: var(--ink);
   font-weight: 600;
 }
@@ -624,7 +626,7 @@
 }
 .match-questions-list > summary {
   cursor: pointer;
-  color: var(--forest);
+  color: var(--accent-text);
   font-weight: 600;
   font-size: 12px;
 }
@@ -668,6 +670,13 @@
   color: var(--ink-tertiary);
   font-weight: 500;
 }
+/* Shown in the UI language; the stored Japanese wording is the tooltip. */
+.requirement-table .is-normalized-value {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--muted-soft);
+  text-underline-offset: 3px;
+  cursor: help;
+}
 .requirement-source {
   display: block;
   margin-top: 2px;
@@ -684,30 +693,31 @@
   white-space: nowrap;
 }
 .requirement-pill.is-met {
-  background: var(--green-soft);
-  color: var(--green);
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
 }
 .requirement-pill.is-unknown {
-  background: var(--amber-soft);
-  color: var(--amber);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
 }
 .requirement-pill.is-conflict {
-  border: 1px solid var(--line);
-  color: var(--red);
+  border: 1px solid var(--status-danger-border);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
 }
 .requirement-pill.is-negotiate {
-  background: var(--blue-soft);
-  color: var(--blue-ink);
+  background: var(--status-active-bg);
+  color: var(--status-active-fg);
 }
 .requirement-tag {
   display: inline-block;
   margin: 2px 0 0 4px;
-  color: var(--blue-ink);
+  color: var(--accent-text);
   font-size: 10px;
   white-space: nowrap;
 }
 .requirement-tag.is-years-unconfirmed {
-  color: var(--amber);
+  color: var(--status-attention-fg);
 }
 
 .match-drop-overlay {
@@ -717,14 +727,167 @@
   display: grid;
   place-content: center;
   gap: 6px;
-  border: 2px dashed var(--forest);
+  border: 2px dashed var(--accent);
   border-radius: 12px;
   background: var(--surface);
   opacity: 0.94;
-  color: var(--forest);
+  color: var(--accent-text);
   text-align: center;
   pointer-events: none;
 }
 .match-drop-overlay small {
   color: var(--muted);
+}
+
+/* HR decisions on unclear items: 满足 / 不满足 / 问本人 beside the state, a short form under the row. */
+.requirement-pill.is-asking {
+  background: var(--status-active-bg);
+  color: var(--status-active-fg);
+}
+.requirement-tag.is-hr {
+  color: var(--accent-text);
+  font-weight: 600;
+  cursor: help;
+}
+.requirement-decide {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 4px;
+}
+.requirement-question {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.requirement-decide-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+.match-page .requirement-decide button {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.match-page .requirement-decide button.is-met:hover:not(:disabled) {
+  border-color: var(--status-ok-fg);
+  color: var(--status-ok-fg);
+}
+.match-page .requirement-decide button.is-conflict:hover:not(:disabled) {
+  border-color: var(--status-danger-fg);
+  color: var(--status-danger-fg);
+}
+.match-page .requirement-decide .requirement-withdraw {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.requirement-table tr.is-hr-decided.is-met td:last-child .requirement-pill,
+.requirement-table tr.is-hr-decided.is-conflict td:last-child .requirement-pill {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.requirement-table tr.is-flash > * {
+  animation: requirement-flash 1.6s ease-out;
+}
+@keyframes requirement-flash {
+  0%,
+  40% {
+    background: var(--status-attention-bg);
+  }
+}
+.requirement-decision-row td {
+  padding: 0 8px 10px;
+  background: var(--surface-faint);
+}
+.requirement-decision {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+}
+.requirement-decision > strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+.requirement-decision label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+}
+.requirement-decision input:not([type='checkbox']),
+.requirement-decision textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+.requirement-decision .requirement-decision-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-tertiary);
+}
+.requirement-decision [role='alert'],
+.requirement-decision-error {
+  margin: 0;
+  color: var(--status-danger-fg);
+}
+.requirement-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.match-page .requirement-decision-actions button {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.match-page .requirement-decision-actions button[type='submit'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.match-page .requirement-decision-actions button[type='submit'].is-conflict {
+  border-color: var(--status-danger-fg);
+  background: var(--status-danger-fg);
+}
+.match-page .requirement-decision-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* A requirement chip in the list opens the person at that row of 匹配依据. */
+.match-row-main .match-chip[data-requirement-label] {
+  cursor: pointer;
+}
+.match-row-main .match-chip.is-unknown[data-requirement-label]:hover {
+  border-color: var(--status-attention-fg);
+}
+.match-group-head.is-rejected {
+  color: var(--status-danger-fg);
+}
+.match-rule-questions.is-asking h4 {
+  color: var(--status-active-fg);
 }

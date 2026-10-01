@@ -208,6 +208,70 @@ describe('separated candidate workspaces', () => {
     expect(within(table).queryByText('李磊')).not.toBeInTheDocument()
   })
 
+  it('drops people already in the matching pool, placed, or archived even if their resume review was never completed', () => {
+    const placed = {
+      ...makeReview('33333333-3333-4333-8333-333333333333', '林浩', 'awaiting-review'),
+      talentPoolStatus: 'suspended' as const
+    }
+    const pooled = {
+      ...makeReview('44444444-4444-4444-8444-444444444444', '王芳', 'awaiting-review'),
+      talentPoolStatus: 'eligible' as const
+    }
+    const archived = {
+      ...makeReview('55555555-5555-4555-8555-555555555555', '赵敏', 'awaiting-review'),
+      recordStatus: 'archived' as const
+    }
+    render(
+      <UiLocaleProvider locale="zh-CN">
+        <RecruitingInterviewWorkspace
+          interviews={[]}
+          onImportResume={vi.fn()}
+          onOpenCandidate={vi.fn()}
+          reviews={[reviewPending, placed, pooled, archived]}
+        />
+      </UiLocaleProvider>
+    )
+
+    expect(screen.getByText('招聘面试中的人员（1）')).toBeInTheDocument()
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('张伟')).toBeInTheDocument()
+    for (const name of ['林浩', '王芳', '赵敏']) expect(within(table).queryByText(name)).not.toBeInTheDocument()
+  })
+
+  it('leaves out someone paused or in place by their business status', async () => {
+    const paused = makeReview('66666666-6666-4666-8666-666666666666', '孙悦', 'awaiting-review')
+    const original = window.sesAgent
+    Object.defineProperty(window, 'sesAgent', {
+      configurable: true,
+      value: {
+        ...original,
+        getPersonnelWorkspace: vi.fn(async () => ({
+          templates: [],
+          copies: [],
+          states: [
+            { documentId: paused.documentId, profileVersion: 1, status: 'paused', confirmedAt: '2026-09-01T00:00:00Z', actorId: 'hr' }
+          ]
+        }))
+      }
+    })
+    try {
+      render(
+        <UiLocaleProvider locale="zh-CN">
+          <RecruitingInterviewWorkspace
+            interviews={[]}
+            onImportResume={vi.fn()}
+            onOpenCandidate={vi.fn()}
+            reviews={[reviewPending, paused]}
+          />
+        </UiLocaleProvider>
+      )
+      expect(await screen.findByText('招聘面试中的人员（1）')).toBeInTheDocument()
+      expect(within(screen.getByRole('table')).queryByText('孙悦')).not.toBeInTheDocument()
+    } finally {
+      Object.defineProperty(window, 'sesAgent', { configurable: true, value: original })
+    }
+  })
+
   it('keeps a recruiting interview detail route alongside the distinct next action', () => {
     const onOpenCandidate = vi.fn()
     const interview = makeInterview(reviewPending.documentId, 'recruiting', 'scheduled')

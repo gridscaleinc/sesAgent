@@ -22,6 +22,7 @@ import type { ProposalStore } from './proposal-store'
 import type { WorkTaskStore } from './work-task-store'
 import type { PersonCaseMatchStore } from './person-case-match-store'
 import type { RecommendationPointsStore } from './recommendation-points-store'
+import type { RequirementConfirmationStore } from './requirement-confirmation-store'
 
 export interface StoreRegistry {
   growth: BusinessGrowthStore
@@ -48,4 +49,5 @@ export interface StoreRegistry {
   readonly workTasks: WorkTaskStore
   readonly personCaseMatches: PersonCaseMatchStore
   readonly recommendationPoints: RecommendationPointsStore
+  readonly requirementConfirmations: RequirementConfirmationStore
 }

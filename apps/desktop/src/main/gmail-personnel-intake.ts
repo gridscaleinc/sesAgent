@@ -62,6 +62,9 @@ export async function importPendingGmailPersonnel(context: MainIpcContext, gmail
               const bytes = await gmail.getAttachment(message.id, attachment)
               try {
                 token = repository.findResumeDocumentByHash(createHash('sha256').update(bytes).digest('hex')) ?? undefined
+                // The same résumé saved before only for a case assessment: proposed by mail now, it joins the library.
+                const known = token ? repository.getCandidateReview(token) : null
+                if (known?.inTalentLibrary === false && known.profile) repository.addCandidateToLibrary(known.documentId, known.profile.version)
                 if (!token) {
                   const staged = await fileVault.stageBytes(attachment.name, bytes, new Date(message.internalDate))
                   repository.saveStagedFiles([staged])
@@ -75,7 +78,8 @@ export async function importPendingGmailPersonnel(context: MainIpcContext, gmail
             }
             if (!repository.getCandidateReview(token)) {
               const record = repository.getStagedFileRecords([token])[0]
-              if (!record) throw new Error('GMAIL_RESUME_FILE_MISSING')
+              // Neither a person nor a staged file any more: the person was deleted since; nothing left to import.
+              if (!record) continue
               const documentId = await context.processingResources.run('local-ai', () => importStagedResumeLocally(context, record))
               state.parts[attachment.id] = documentId
               repository.saveGmailBusinessIntake(state)

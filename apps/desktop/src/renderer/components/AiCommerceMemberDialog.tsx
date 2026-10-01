@@ -178,7 +178,7 @@ export function AiCommerceMemberDialog({
             <>
               <section className="aicommerce-member-status" aria-label={t('会员连接状态', '会員接続状態')}>
                 <div>
-                  <span>MEMBERSHIP</span>
+                  <span>{t('会员', 'メンバーシップ')}</span>
                   <strong>
                     {connected
                       ? (state.memberDisplayName ?? t('已连接会员', '接続済みメンバー'))
@@ -203,22 +203,22 @@ export function AiCommerceMemberDialog({
                   </small>
                 </div>
                 <div>
-                  <span>BILLING MODE</span>
+                  <span>{t('计费方式', '課金方式')}</span>
                   <strong>{billingLabel}</strong>
                   <small>{billingDetail}</small>
                 </div>
                 <div>
-                  <span>AI WALLET</span>
+                  <span>{t('AI 余额', 'AI 残高')}</span>
                   <strong>
                     {state.wallet
-                      ? `${formatCredits(Math.max(0, state.wallet.balanceCredits - state.wallet.reservedCredits))} credits`
+                      ? t(`${formatCredits(Math.max(0, state.wallet.balanceCredits - state.wallet.reservedCredits))} 点`, `${formatCredits(Math.max(0, state.wallet.balanceCredits - state.wallet.reservedCredits))} クレジット`)
                       : t('未查询', '未照会')}
                   </strong>
                   <small>
                     {state.wallet
                       ? t(
-                          `已预留 ${formatCredits(state.wallet.reservedCredits)} credits`,
-                          `予約済み ${formatCredits(state.wallet.reservedCredits)} credits`
+                          `已预留 ${formatCredits(state.wallet.reservedCredits)} 点`,
+                          `予約済み ${formatCredits(state.wallet.reservedCredits)} クレジット`
                         )
                       : t('连接后读取余额和可用能力。', '接続後に残高と利用可能な能力を読み込みます。')}
                   </small>
@@ -358,7 +358,7 @@ export function AiCommerceMemberDialog({
                         <span>
                           {result.usageCredits === null
                             ? t('未提供使用量', '利用量は未提供')
-                            : `${formatCredits(result.usageCredits)} credits`}
+                            : t(`${formatCredits(result.usageCredits)} 点`, `${formatCredits(result.usageCredits)} クレジット`)}
                         </span>
                       </header>
                       <p>{result.content}</p>

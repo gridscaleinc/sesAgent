@@ -172,6 +172,33 @@ describe('deriveBroadcastQueue', () => {
     expect(queue.map((item) => item.status)).toEqual(['new', 'copied'])
     expect(queue[0].reviewId).toBe(other)
   })
+
+  it('puts a copied case revised since right after new ones, before attention and done', () => {
+    const revisedId = '88888888-8888-4888-8888-888888888888',
+      doneId = '99999999-9999-4999-8999-999999999999',
+      draftId = '66666666-6666-4666-8666-666666666666'
+    const v2 = (id: string) =>
+      review(
+        {
+          reviewId: id,
+          jobCase: {
+            id: jobCaseId,
+            sourceReviewId: id,
+            version: 2,
+            status: 'active',
+            confirmedAt: '2026-08-26T00:00:00.000Z',
+            confirmedBy: 'HR',
+            containsDirectIdentifiers: false
+          }
+        },
+        cases
+      )
+    const queue = queueOf({
+      reviews: [v2(doneId), v2(revisedId), review({ reviewId: draftId, status: 'awaiting-review', jobCase: null }, cases), review({}, cases)],
+      copies: [copyRow({ reviewId: revisedId, jobCaseVersion: 1 }), copyRow({ reviewId: doneId, jobCaseVersion: 2 })]
+    })
+    expect(queue.map((item) => item.reviewId)).toEqual([reviewId, revisedId, draftId, doneId])
+  })
 })
 
 describe('update notice diff', () => {

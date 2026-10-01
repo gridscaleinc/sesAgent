@@ -595,6 +595,12 @@ export function IntroductionComposer({
                     ? `${t('已推荐', '推薦済み')} · ${tokyoTime(recommendedAt)}`
                     : `${t('跟进中', '対応中')} · ${followState?.label ?? ''}`}
                 </span>
+                {/* Introduced after the follow-up started: the recommendation still counts once recorded. */}
+                {!recommendedAt ? (
+                  <button type="button" disabled={working || !valid} onClick={() => void markRecommended()}>
+                    {t('标记已推荐', '推薦済みにする')}
+                  </button>
+                ) : null}
                 <button type="button" disabled={working} onClick={openFollow}>
                   {t('查看跟进', '対応を見る')}
                 </button>

@@ -4,7 +4,8 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import Database from 'better-sqlite3-multiple-ciphers'
 import { z } from 'zod'
-import { enqueueProcessingJobInputSchema } from '@shared'
+import { enqueueProcessingJobInputSchema, isInactiveProgressStage } from '@shared'
+import { randomUUID } from 'node:crypto'
 import { type MatchRuntimeIdentity } from '@matching'
 import type { WorkTask } from '@domain'
 import type { StagedFileRecord } from '@files'
@@ -397,6 +398,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.privacy.saveRedactionSession(session, mappings)
   }
 
+  discardUnusedRedactionSession(id: string): boolean {
+    return this.stores.privacy.discardUnusedRedactionSession(id)
+  }
+
   saveStagedFile(file: StagedFileRecord): void {
     return this.stores.candidates.saveStagedFile(file)
   }
@@ -407,6 +412,11 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   saveResumeImportTask(task: WorkTask, files: StagedFileRecord[]): void {
     return this.stores.candidates.saveResumeImportTask(task, files)
+  }
+
+  /** The person imported from exactly these bytes, if any. */
+  findCandidateByStagedSha256(sha256: string) {
+    return this.stores.candidates.findCandidateByStagedSha256(sha256)
   }
 
   removeStagedFiles(tokens: string[]): void {
@@ -491,6 +501,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.candidateInterviews.createCandidateInterviewRound(input, updatedBy, now)
   }
 
+  cancelCandidateInterviewSchedule(input: { interviewId: string; sourceDocumentId: string }, updatedBy: string) {
+    return this.stores.candidateInterviews.cancelCandidateInterviewSchedule(input, updatedBy)
+  }
+
   saveCandidateInterviewSchedule(
     input: SaveCandidateInterviewScheduleInput,
     updatedBy: string,
@@ -509,6 +523,17 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
 
   saveCandidateInterviewNotes(input: SaveCandidateInterviewNotesInput, updatedBy: string, now = new Date()): CandidateInterviewSnapshot {
     return this.stores.candidateInterviews.saveCandidateInterviewNotes(input, updatedBy, now)
+  }
+
+  correctCandidateInterviewDecision(
+    input: RecordCandidateInterviewDecisionInput & { correctionReason: string },
+    decidedBy: string
+  ): CandidateInterviewSnapshot {
+    return this.stores.candidateInterviews.correctCandidateInterviewDecision(input, decidedBy)
+  }
+
+  deleteUnbookedCandidateInterviewRound(input: { interviewId: string; sourceDocumentId: string }): void {
+    this.stores.candidateInterviews.deleteUnbookedCandidateInterviewRound(input)
   }
 
   recordCandidateInterviewDecision(
@@ -663,8 +688,11 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   saveGrowthCheckpoint(key: string, value: string) {
     this.stores.growth.setCheckpoint(key, value)
   }
-  listMatchingOpportunities() {
-    return this.stores.growth.opportunities()
+  listMatchingOpportunities(includeDismissed = false) {
+    return this.stores.growth.opportunities(includeDismissed)
+  }
+  listMatchingOpportunityRows(reviewId: string) {
+    return this.stores.growth.opportunityRows(reviewId)
   }
   saveMatchingOpportunities(
     reviewId: string,
@@ -831,6 +859,18 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   getRecommendationPoints(documentId: string, reviewId: string) {
     return this.stores.recommendationPoints.get(documentId, reviewId)
   }
+  saveRequirementConfirmation(record: import('@shared').RequirementConfirmation) {
+    return this.stores.requirementConfirmations.save(record)
+  }
+  listRequirementConfirmations(documentId: string) {
+    return this.stores.requirementConfirmations.list(documentId)
+  }
+  listAllRequirementConfirmations() {
+    return this.stores.requirementConfirmations.listAll()
+  }
+  deleteRequirementConfirmation(id: string, documentId: string) {
+    return this.stores.requirementConfirmations.delete(id, documentId)
+  }
   saveCaseQuestionDraft(input: import('@shared').CasePersonQuestionDraft) {
     return this.stores.workRules.saveQuestionDraft(input)
   }
@@ -940,6 +980,9 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   getCaseMailSource(reviewId: string) {
     return this.stores.gmail.getCaseMailSource(reviewId)
   }
+  restoreGmailMessageTombstones(rows: ReadonlyArray<{ accountEmail: string; gmailMessageId: string }>) {
+    return this.stores.gmail.restoreGmailMessageTombstones(rows)
+  }
   getCaseReplyRecipient(reviewId: string) {
     return this.stores.gmail.getCaseReplyRecipient(reviewId)
   }
@@ -1017,8 +1060,14 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   }
 
   /** 今日新着案件: idempotent, so opening the same case twice changes nothing. */
+  /**
+   * A case is read in one place for every screen: the sidebar's new-case count (job_case_seen) and the HR list,
+   * 「今天」 and the menu bar (business feed marks) record the same reading.
+   */
   markJobCaseReviewSeen(reviewId: string, seenAt: string): void {
     this.stores.jobCaseSeen.markJobCaseReviewSeen(reviewId, seenAt)
+    const entry = this.stores.personnel.feed().find((item) => item.kind === 'case' && item.objectId === reviewId)
+    if (entry?.unseen) this.stores.personnel.markFeed({ kind: 'case', objectId: reviewId, revision: entry.revision, action: 'seen' })
   }
 
   listSeenJobCaseReviewIds(): string[] {
@@ -1037,8 +1086,11 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   listBusinessProgressMail() {
     return this.stores.businessProgress.mail()
   }
-  captureBusinessProgressMail(input: Parameters<StoreRegistry['businessProgress']['captureMail']>[0]) {
-    return this.stores.businessProgress.captureMail(input)
+  captureBusinessProgressMail(
+    input: Parameters<StoreRegistry['businessProgress']['captureMail']>[0],
+    options?: Parameters<StoreRegistry['businessProgress']['captureMail']>[1]
+  ) {
+    return this.stores.businessProgress.captureMail(input, options)
   }
   updateBusinessProgressMail(input: Parameters<StoreRegistry['businessProgress']['updateMail']>[0]) {
     return this.stores.businessProgress.updateMail(input)
@@ -1053,7 +1105,11 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.personnel.feed()
   }
   markBusinessFeed(input: import('@shared').MarkBusinessFeedInput) {
-    return this.stores.personnel.markFeed(input)
+    const entries = this.stores.personnel.markFeed(input)
+    // Reading a case in the HR list also clears it from the sidebar's new-case count (see markJobCaseReviewSeen).
+    if (input.kind === 'case' && input.action !== 'defer')
+      this.stores.jobCaseSeen.markJobCaseReviewSeen(input.objectId, new Date().toISOString())
+    return entries
   }
   setCaseWorking(input: import('@shared').SetCaseWorkingInput, actor: string) {
     return this.stores.personnel.setCaseWorking(input, actor)
@@ -1132,8 +1188,46 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.broadcast.listAllCaseBroadcasts()
   }
 
+  /** Main's reading of HR's 不满足 for a pair, asked by every follow-up action that proposes or books it. */
+  setPairRejectionCheck(check: ((documentId: string, reviewId: string) => boolean) | null) {
+    this.stores.businessProgress.pairRejected = check
+  }
+
   setJobCaseLifecycle(input: SetJobCaseLifecycleInput, changedBy: string, now = new Date()): JobCaseReviewSnapshot {
-    return this.stores.jobCases.setJobCaseLifecycle(input, changedBy, now)
+    const { closeOpenFollowUps, ...lifecycle } = input
+    // One transaction: the case and the follow-ups ended (or brought back) with it change together or not at all.
+    return this.database.transaction(() => {
+      const rows = this.stores.businessProgress.list().filter((row) => row.reviewId === input.reviewId && row.progress)
+      const change = (row: (typeof rows)[number], command: { action: 'close'; reason: string; withCase: true } | { action: 'resume' }) =>
+        this.stores.businessProgress.advance(
+          {
+            documentId: row.documentId,
+            reviewId: row.reviewId,
+            expectedRevision: row.revision,
+            mutationId: randomUUID(),
+            ...command
+          },
+          changedBy,
+          now
+        )
+      if (lifecycle.state === 'archived' && closeOpenFollowUps)
+        for (const row of rows)
+          // 待进场 goes on after the case is closed to new people: the person agreed and starts on the date.
+          if (!isInactiveProgressStage(row.progress!.stage) && row.progress!.stage !== 'entry')
+            // i18n-ignore: reason stored with the follow-up
+            change(row, { action: 'close', reason: '案件已结束 / 案件終了', withCase: true })
+      const review = this.stores.jobCases.setJobCaseLifecycle(lifecycle, changedBy, now)
+      // Active again: what was ended with the case comes back, where it can still move (暂停营业 keeps it ended).
+      if (lifecycle.state === 'active')
+        for (const row of rows)
+          if (row.progress!.stage === 'closed' && row.progress!.closedWithCase)
+            try {
+              change(row, { action: 'resume' })
+            } catch (cause) {
+              if (!(cause instanceof Error) || !/暂停营业|已进场|无需恢复|不满足/u.test(cause.message)) throw cause
+            }
+      return review
+    })()
   }
 
   reopenJobCaseReview(input: ReopenJobCaseReviewInput, changedBy: string, now = new Date()): JobCaseReviewSnapshot {

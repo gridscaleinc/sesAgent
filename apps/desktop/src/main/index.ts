@@ -1,3 +1,4 @@
+import { deviceDeletionJournal, journalRecordExists, reapplyDeletions } from './deletion-journal'
 import { startOpportunityDiscovery } from './opportunity-discovery'
 import { startExperienceLearning } from './experience-learning'
 import { registerSystemExperienceHandlers } from './ipc/system-experience'
@@ -103,9 +104,11 @@ import { cloudPrivacyGateLoadOptions, gmailSyncState } from './app-defaults'
 import { loadCloudPrivacyGates } from './privacy-gates'
 import { onApplicationPreferencesSaved } from './preference-events'
 import { createTrayController, type TrayController } from './tray'
-import { createTraySummarySource, recordAiCommerceWallet } from './tray-data'
+import { createSummarySources, recordAiCommerceWallet } from './tray-data'
+import { registerTodaySummary, type TodaySummaryService } from './today-summary'
 import { onAiGatewaySignalChanged } from './ai-gateway-signal'
 import { defaultMenuBarPreferences } from './tray-summary'
+import { rejectedByHr } from './work-rule-matching'
 
 const releaseSmokeMode = process.env.SES_RELEASE_SMOKE === '1'
 const windowsPackageWorkerSmokeMode = process.env.SES_WINDOWS_PACKAGE_WORKER_SMOKE === '1'
@@ -157,6 +160,8 @@ let aiCommerceCallbackDelivery: Promise<void> = Promise.resolve()
 // The main window, as opposed to the menu-bar panel: pushes, focus and "reopen on activate" only concern it.
 let mainWindow: BrowserWindow | null = null
 let trayController: TrayController | null = null
+// The main window's 「今天」 summary over the same local data as the panel.
+let todaySummary: TodaySummaryService | null = null
 let stopPreferenceListener: (() => void) | null = null
 // A place the menu-bar panel asked for while the main window was still loading; kept briefly for the renderer to take.
 let pendingTrayNavigation: TrayNavigation | null = null
@@ -226,6 +231,7 @@ function receiveAiCommerceProtocolUrl(rawUrl: string): void {
       recordAiCommerceWallet(state)
       sendToMainWindow(ipcChannels.aiCommerceStateChanged, { state, error: null })
       trayController?.refresh()
+      todaySummary?.refresh()
     } catch (cause) {
       const state = await client.getState()
       const error = cause instanceof Error ? cause.message : 'Member Center のログインを完了できませんでした。'
@@ -646,6 +652,7 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
     onCompleted: (counts) => {
       sendToMainWindow(ipcChannels.gmailSyncCompleted, counts)
       trayController?.refresh()
+      todaySummary?.refresh()
     },
     onImported: (counts) => {
       // HR may not be looking at the app when mail lands. Counts only - case
@@ -1096,6 +1103,11 @@ async function startApplication(): Promise<void> {
     }
     const services = await initializeServices()
     startingServices = services
+    // HR's 不满足 is read with the matching rules, which live here: every follow-up path asks it.
+    services.repository.setPairRejectionCheck((documentId, reviewId) => rejectedByHr(services.repository, documentId, reviewId))
+    // A deletion a crash interrupted between journal and database is settled: done if the record is gone.
+    const deletionJournal = deviceDeletionJournal(services.userDataPath)
+    await deletionJournal.settlePending(journalRecordExists(services.repository)).catch(() => undefined)
     if (aiCommerceProductionProbeMode) {
       if (!services.aiCommerce) throw new Error('AICommerce production configuration is unavailable.')
       const dashboard = await services.aiCommerce.getDashboard()
@@ -1135,6 +1147,13 @@ async function startApplication(): Promise<void> {
     if (activation) {
       await verifyActivatedRecovery(activation, services)
       await finalizePendingRestore(userDataPath, activation)
+      // Once the restored data is verified (its files match the backup): deletions made after that backup are
+      // applied again, once. Any the restored data refuses are held for HR in the app, never retried silently.
+      await reapplyDeletions(deletionJournal, services.repository, services.fileVault)
+        .then((result) => {
+          if (result.reapplied || result.held) console.info('[deletion-journal-reapplied]', result)
+        })
+        .catch(() => undefined)
       if (!app.isPackaged) {
         console.info('[recovery-completed]', {
           backupId: activation.marker.summary.backupId,
@@ -1246,11 +1265,19 @@ async function startApplication(): Promise<void> {
 /** The menu-bar / system-tray panel over the unlocked local data. */
 function startTray(services: Awaited<ReturnType<typeof initializeServices>>): void {
   const { repository, aiCommerce, googleWorkspace, gmailSyncConfig } = services
-  const loadSummary = createTraySummarySource({
+  const sources = createSummarySources({
     repository,
     aiCommerce,
     gmailState: async () => (googleWorkspace ? gmailSyncState(repository, await googleWorkspace.getState(), gmailSyncConfig) : null),
     privacyQualityGatePassed: async () => (await loadCloudPrivacyGates(cloudPrivacyGateLoadOptions())).qualityGate.status === 'passed'
+  })
+  const loadSummary = sources.tray
+  todaySummary = registerTodaySummary({
+    load: sources.today,
+    dataRevision: () => repository.getLocalDataRevision().revision,
+    locale: () => repository.getLocalApplicationPreferences()?.locale ?? systemLocale(),
+    target: () => currentMainWindow()?.webContents ?? null,
+    assertSender: assertTrustedSender
   })
   trayController = createTrayController({
     loadSummary,
@@ -1262,12 +1289,21 @@ function startTray(services: Awaited<ReturnType<typeof initializeServices>>): vo
     preloadPath: join(__dirname, '../preload/tray.js'),
     rendererUrl: usesBundledRenderer() ? undefined : process.env.ELECTRON_RENDERER_URL
   })
-  const stopPreferences = onApplicationPreferencesSaved(() => trayController?.applyVisibility())
+  const stopPreferences = onApplicationPreferencesSaved(() => {
+    trayController?.applyVisibility()
+    // The 「今天」 labels follow the saved language.
+    todaySummary?.refresh()
+  })
   // A cloud call the AI gateway refused (or accepted again) changes the panel's AI alert at once.
-  const stopGatewaySignal = onAiGatewaySignalChanged(() => trayController?.refresh())
+  const stopGatewaySignal = onAiGatewaySignalChanged(() => {
+    trayController?.refresh()
+    todaySummary?.refresh()
+  })
   stopPreferenceListener = () => {
     stopPreferences()
     stopGatewaySignal()
+    todaySummary?.dispose()
+    todaySummary = null
   }
 }
 

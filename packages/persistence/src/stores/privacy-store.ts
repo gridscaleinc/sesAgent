@@ -44,6 +44,19 @@ export class PrivacyStore extends DomainStore {
     }
   }
 
+  /**
+   * Drops the session of an import that was given up (该人员已入库): its local name, phone and address mappings must not
+   * outlive it. A session something else still refers to is left alone.
+   */
+  discardUnusedRedactionSession(id: string): boolean {
+    try {
+      // Mappings go with it (ON DELETE CASCADE); a parsed document or case source still using it makes this fail.
+      return this.database.transaction(() => this.database.prepare('DELETE FROM redaction_sessions WHERE id = ?').run(id).changes > 0)()
+    } catch {
+      return false
+    }
+  }
+
   getRedactionSessionIdForDocument(documentId: string): string | null {
     return (
       this.database

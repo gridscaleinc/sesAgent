@@ -99,3 +99,20 @@ it('hands the main window menu-bar requests, including one waiting in Main, and 
 it('knows every menu-bar route Main can send', () => {
   expect(trayNavigationRoutes).toEqual([...trayRoutes])
 })
+
+it('reads the 今天 summary over the main-window channel and follows only well-formed pushes', () => {
+  void api.getTodaySummary!()
+  expect(ipcRenderer.invoke).toHaveBeenLastCalledWith(ipcChannels.getTodaySummary)
+  const listener = vi.fn()
+  const unsubscribe = api.onTodaySummaryChanged!(listener)
+  const [channel, handler] = vi.mocked(ipcRenderer.on).mock.calls.at(-1)!
+  expect(channel).toBe(ipcChannels.todaySummaryChanged)
+  const notReady = { status: 'not-ready', locale: 'zh-CN', generatedAt: '2026-10-01T01:00:00.000Z' }
+  handler({} as any, notReady)
+  handler({} as any, { ...notReady, status: 'ready', lists: { followUps: [] } })
+  for (const invalid of [null, { ...notReady, locale: 'en' }, { ...notReady, status: 'ready' }, { ...notReady, generatedAt: 1 }])
+    handler({} as any, invalid)
+  expect(listener).toHaveBeenCalledTimes(2)
+  unsubscribe()
+  expect(ipcRenderer.removeListener).toHaveBeenCalledWith(channel, handler)
+})

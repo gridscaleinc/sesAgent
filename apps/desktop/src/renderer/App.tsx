@@ -1,4 +1,4 @@
-import { matchFollowUpLabels } from '@shared'
+import { isInactiveProgressStage, matchFollowUpLabels } from '@shared'
 import { CaseResumeAssessmentPanel } from './components/CaseResumeAssessmentPanel'
 import { useCaseResumeAssessments } from './components/use-case-resume-assessments'
 import {
@@ -7,7 +7,7 @@ import {
   useMatchingOpportunities,
   type OpportunityGrouping
 } from './components/MatchingOpportunities'
-import { usePersonCaseMatchCounts } from './person-case-match-cache'
+import { setActiveCaseVersions, usePersonCaseMatchCounts } from './person-case-match-cache'
 import { BusinessProgressContext, progressPairKey, useBusinessProgressData } from './business-progress-data'
 import { BusinessProgressOverview } from './components/BusinessProgressOverview'
 import { CaseIntroductionComposer, type CaseIntroductionTarget } from './components/CaseIntroductionComposer'
@@ -63,9 +63,12 @@ import { AgentBusinessWorkspacePanel } from './components/AgentBusinessWorkspace
 import type { BroadcastPanelActions } from './components/BroadcastWorkspaceView'
 import type { BroadcastSettingsActions } from './components/BroadcastSettingsSection'
 import { AgentSystemRail } from './components/AgentSystemRail'
+import { TodayOverview, useTodaySummary } from './components/TodayOverview'
 import { StartupRecoveryScreen } from './components/StartupRecoveryScreen'
 import { aiSignInRequestEvent, localeText, localizedIpcError, UiLocaleProvider, localizedTaskTitle, localizedMainText } from './i18n'
 import { joinCreatedCases, revealCreatedCases } from './case-adoption'
+import { HeldDeletionsNotice } from './components/HeldDeletionsNotice'
+import { notifyBusinessDataChanged } from './business-data-events'
 
 /** What the right workspace shows when nothing else was opened: today's arrivals. */
 const defaultAgentContextTrail = (): AgentSystemAccessBlock[] => []
@@ -125,12 +128,39 @@ export function App() {
   // People whose 「找案件」 is running; only their cards and actions are locked, never the whole list.
   const [hrBusyIds, setHrBusyIds] = useState<string[]>([])
   useEffect(() => {
+    // A burst of changes (a batch of 20 résumés, a case ended with its follow-ups) is one reload, not one per change.
+    let timer: number | undefined,
+      latest = 0
     const refresh = () => {
-      void window.sesAgent.getBootstrap().then(setBootstrap)
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        // Only the newest read lands: a slow earlier one never overwrites fresher data.
+        const request = ++latest
+        void window.sesAgent
+          .getBootstrap()
+          .then((value) => {
+            if (request === latest) setBootstrap(value)
+          })
+          .catch(() => undefined)
+      }, 200)
     }
     window.addEventListener('ses-business-data-changed', refresh)
-    return () => window.removeEventListener('ses-business-data-changed', refresh)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('ses-business-data-changed', refresh)
+    }
   }, [])
+  // Badges 「查看案件 (n)」 count only cases still active at the version the run saw.
+  useEffect(() => {
+    if (!bootstrap) return
+    setActiveCaseVersions(
+      new Map(
+        bootstrap.jobCaseReviews.flatMap((job) =>
+          job.lifecycle === 'active' && job.jobCase ? [[job.jobCase.id, job.jobCase.version] as const] : []
+        )
+      )
+    )
+  }, [bootstrap?.jobCaseReviews])
   // Any AI surface can ask for the AI member sign-in (e.g. 「去登录」 after "AI 未登录").
   useEffect(() => {
     const open = () => setAiCommerceOpen(true)
@@ -138,6 +168,8 @@ export function App() {
     return () => window.removeEventListener(aiSignInRequestEvent, open)
   }, [])
   const [hrChatRequest, setHrChatRequest] = useState(0)
+  // ⌘K 「创建新任务」 starts a fresh conversation instead of reopening the last one.
+  const [hrNewChatRequest, setHrNewChatRequest] = useState(0)
   const [trayNavigation, setTrayNavigation] = useState<TrayNavigation | null>(null)
   const trayNavigationHandled = useRef(new Set<string>())
   const trayNavigationHandler = useRef<((navigation: TrayNavigation) => void) | null>(null)
@@ -150,7 +182,12 @@ export function App() {
     bootstrap !== null && activeView === 'agent' && !hrFollowOpen,
     bootstrap?.preferences.locale ?? 'ja-JP'
   )
-  const [followUpFilterRequest, setFollowUpFilterRequest] = useState<{ filter: 'today'; id: number } | null>(null)
+  // 今天 is where the app opens; it stays underneath the results it opens, which return to it.
+  const [todayOpen, setTodayOpen] = useState(false)
+  const today = useTodaySummary(bootstrap !== null && startupRecovery === null, bootstrap?.preferences.locale ?? 'ja-JP')
+  const [followUpFilterRequest, setFollowUpFilterRequest] = useState<{ filter: 'today' | 'active' | 'coordinating'; id: number } | null>(
+    null
+  )
   const [caseIntroductionTarget, setCaseIntroductionTarget] = useState<CaseIntroductionTarget | null>(null)
   const caseIntroductionPrepared = useCallback((review: JobCaseReviewSnapshot) => {
     setBootstrap((current) =>
@@ -210,7 +247,7 @@ export function App() {
   const commandPaletteOpener = useRef<HTMLElement | null>(null)
   /** Mirrors commandPaletteOpen synchronously so ⌘K right after a command closes the palette never reads a stale value. */
   const commandPaletteOpenRef = useRef(false)
-  // ⌘1–4 (Ctrl on Windows) open the rail items 案件/人员/跟进/Agent; refreshed each render so they act on current state.
+  // ⌘1–5 (Ctrl on Windows) open the rail items 今天/案件/人员/跟进/Agent; refreshed each render so they act on current state.
   const railShortcuts = useRef<Array<() => void>>([])
   const candidateMatchStateRef = useRef(candidateMatch)
   candidateMatchStateRef.current = candidateMatch
@@ -275,6 +312,8 @@ export function App() {
           if (!initialRouteApplied.current) {
             initialRouteApplied.current = true
             setActiveView('agent')
+            // Launch lands on 今天 (when this build's bridge can read it), not on the last section.
+            setTodayOpen(Boolean(window.sesAgent.getTodaySummary))
           }
           setBootstrap(payload)
         }
@@ -291,7 +330,7 @@ export function App() {
     if (!commandPaletteAvailable) return undefined
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return
-      const railIndex = ['1', '2', '3', '4'].indexOf(event.key)
+      const railIndex = ['1', '2', '3', '4', '5'].indexOf(event.key)
       if (railIndex >= 0 && !event.altKey && !event.shiftKey) {
         const open = railShortcuts.current[railIndex]
         if (!open) return
@@ -515,6 +554,7 @@ export function App() {
       loadWorkspace: () => window.sesAgent.listBroadcastWorkspace(),
       draftBroadcast: (input) => window.sesAgent.draftCaseBroadcast(input),
       draftUpdateNotice: (input) => window.sesAgent.draftCaseUpdateNotice(input),
+      validateCopy: (input) => window.sesAgent.validateCaseBroadcastMessage(input),
       recordCopy: (input) => window.sesAgent.recordCaseBroadcastCopy(input),
       openEmail: (input) => window.sesAgent.openCaseBroadcastEmail(input),
       listBroadcasts: (reviewId) => window.sesAgent.listCaseBroadcasts(reviewId),
@@ -854,8 +894,18 @@ export function App() {
     return saved
   }
 
+  // The same case already in the list: nothing new joins 负责中; HR is told and taken to the case that exists.
+  const showExistingCase = (reviewId: string) => {
+    showToast(t('相同案件已存在，已打开原有案件。', '同じ案件は登録済みです。既存の案件を開きました。'))
+    openHrObject('case', reviewId)
+  }
+
   const createManualJobCaseDraft = async (input: Parameters<typeof window.sesAgent.createManualJobCaseDraft>[0]) => {
     const result = await window.sesAgent.createManualJobCaseDraft(input)
+    if (result.outcome === 'existing') {
+      showExistingCase(result.review.reviewId)
+      return result
+    }
     const working = await joinCreatedCases([result.review.reviewId])
     setBootstrap((current) => {
       if (!current) return current
@@ -873,6 +923,10 @@ export function App() {
 
   const createChatPasteJobCaseDraft = async (input: Parameters<typeof window.sesAgent.createChatPasteJobCaseDraft>[0]) => {
     const result = await window.sesAgent.createChatPasteJobCaseDraft(input)
+    if (result.outcome && result.outcome !== 'created') {
+      showExistingCase(result.review.reviewId)
+      return result
+    }
     const working = await joinCreatedCases([result.review.reviewId])
     setBootstrap((current) => {
       if (!current) return current
@@ -891,12 +945,18 @@ export function App() {
       throw new Error(`${t('微信读取预检未通过：', '微信の読取事前確認に失敗しました：')}${prepared.failureCodes.join(', ') || 'UNKNOWN'}`)
     }
     const result = await window.sesAgent.executeWechatVisibleRead({ scopeToken: prepared.scopeToken })
+    if (result.outcome === 'existing') {
+      showExistingCase(result.review.reviewId)
+      return result
+    }
     const working = await joinCreatedCases([result.review.reviewId])
     setBootstrap((current) => {
       if (!current) return current
       const remaining = current.jobCaseReviews.filter((review) => review.reviewId !== result.review.reviewId)
       return { ...current, jobCaseReviews: [result.review, ...remaining] }
     })
+    // Confirmed at once like manual and paste intake: the active cases, digest and counts are read again.
+    setBootstrap(await window.sesAgent.getBootstrap())
     revealCreatedCases([result.review.reviewId], working)
     return result
   }
@@ -928,6 +988,8 @@ export function App() {
           ]
         }
       })
+      // Confirmed at once like manual and paste intake: the active cases, digest and counts are read again.
+      setBootstrap(await window.sesAgent.getBootstrap())
     }
     revealCreatedCases(createdIds, working)
     return result
@@ -945,6 +1007,8 @@ export function App() {
   const setJobCaseLifecycle = async (input: Parameters<typeof window.sesAgent.setJobCaseLifecycle>[0]) => {
     const result = await window.sesAgent.setJobCaseLifecycle(input)
     updateJobCaseReview(result.review)
+    // Follow-ups ended or brought back with the case: 跟进, 今天 and the lists re-read them.
+    notifyBusinessDataChanged()
     return result
   }
 
@@ -1068,6 +1132,8 @@ export function App() {
       setHrBatchStarted(null)
       if (section !== 'follow') setAgentFeedSelection(readHrPosition(section!).selected)
     }
+    // A section's sub-page belongs to that section, not to 今天 underneath.
+    if (section) setTodayOpen(false)
     if (section === 'follow') setHrFollowOpen(true)
     else if (section) {
       setHrFollowOpen(false)
@@ -1313,14 +1379,17 @@ export function App() {
     interviewId?: string | null,
     interviewKind?: 'recruiting' | 'client'
   ) =>
-    openAgentSystemAccess({
-      type: 'system-access',
-      destination: 'candidate',
-      sourceDocumentId,
-      view,
-      ...(interviewId !== undefined ? { interviewId } : {}),
-      ...(interviewKind ? { interviewKind } : {})
-    })
+    // Booking and preparing happen in the recruiting pipeline; the side panel only shows the person and résumé.
+    view === 'schedule' || view === 'prepare' || view === 'workbench' || view === 'decision'
+      ? openRecruiting(sourceDocumentId, view)
+      : openAgentSystemAccess({
+          type: 'system-access',
+          destination: 'candidate',
+          sourceDocumentId,
+          view,
+          ...(interviewId !== undefined ? { interviewId } : {}),
+          ...(interviewKind ? { interviewKind } : {})
+        })
 
   const openApplicationSettings = (section: ApplicationSettingsSection = 'general') => {
     setApplicationSettingsSection(section)
@@ -1383,6 +1452,8 @@ export function App() {
         )
       } catch (cause) {
         if (resumeImportRequest.current !== request) return latestConversation
+        // 该人员已入库 is a skip, not a failure: the file is shown as skipped with who the person already is.
+        const alreadyImported = cause instanceof Error && /该人员已入库|登録済み/u.test(cause.message)
         setResumeImportProgress((current) =>
           current?.taskId === task.id
             ? {
@@ -1391,7 +1462,7 @@ export function App() {
                   file.token === binding.objectId
                     ? {
                         ...file,
-                        status: 'error',
+                        status: alreadyImported ? 'skipped' : 'error',
                         error: localizedIpcError(locale, cause, t('本机解析失败。', 'ローカル解析に失敗しました。'))
                       }
                     : file
@@ -1467,6 +1538,19 @@ export function App() {
         resumeImportRequest.current = 0
         return null
       }
+      // Files of people already in the system were given up; the rest import as usual.
+      for (const item of created.skipped ?? [])
+        showToast(
+          item.addedToLibrary
+            ? t(
+                `${item.fileName}：该人员已有资料（${item.existingName}），已加入人员库，本次未重复导入。`,
+                `${item.fileName}：この要員の情報は登録済みです（${item.existingName}）。要員一覧に追加し、重複して取り込んでいません。`
+              )
+            : t(
+                `${item.fileName}：该人员已入库（${item.existingName}），本次导入已放弃。`,
+                `${item.fileName}：この要員は登録済みです（${item.existingName}）。取り込みを取り消しました。`
+              )
+        )
       setBootstrap((current) => (current ? { ...current, tasks: [created.task, ...current.tasks] } : current))
       setResumeImportProgress({ phase: 'parsing', taskId: created.task.id, files: progressFiles(created.files), error: null })
       return await runResumeImportTask(created.task, request, conversationId)
@@ -1551,7 +1635,7 @@ export function App() {
         : { zh: '未选择案件，打开案件列表后选择。', ja: '案件が選択されていません。案件一覧から選びます。' },
       // i18n-ignore: search keywords match either language
       keywords: ['找人', '要員を探す', 'matching', 'マッチング', '案件'],
-      icon: 'users',
+      icon: 'search',
       run: () => {
         if (paletteCase) openCasePeople(paletteCase)
         else openHrList('case')
@@ -1566,7 +1650,7 @@ export function App() {
         : { zh: '未选择人员，打开人员列表后选择。', ja: '要員が選択されていません。要員一覧から選びます。' },
       // i18n-ignore: search keywords match either language
       keywords: ['找案件', '案件を探す', 'matching', 'マッチング', '要員', '人员'],
-      icon: 'briefcase',
+      icon: 'search',
       run: () => {
         if (palettePerson) openAgentPersonnel(palettePerson.documentId, true)
         else openHrList('person')
@@ -1577,8 +1661,8 @@ export function App() {
       group: '業務',
       label: { zh: '打开案件列表', ja: '案件一覧を開く' },
       description: {
-        zh: `待确认 ${bootstrap.jobCaseReviews.filter((review) => review.status === 'awaiting-review').length} 件。`,
-        ja: `確認待ち ${bootstrap.jobCaseReviews.filter((review) => review.status === 'awaiting-review').length}件。`
+        zh: `导入后待逐项确认的案件 ${bootstrap.jobCaseReviews.filter((review) => review.lifecycle === 'active' && review.status === 'awaiting-review').length} 件。`,
+        ja: `取込後の項目確認待ち案件 ${bootstrap.jobCaseReviews.filter((review) => review.lifecycle === 'active' && review.status === 'awaiting-review').length}件。`
       },
       // i18n-ignore: search keywords match either language
       keywords: ['案件', 'case', 'review', '案件レビュー', 'eml'],
@@ -1595,7 +1679,7 @@ export function App() {
       },
       // i18n-ignore: search keywords match either language
       keywords: ['新匹配机会', 'マッチング候補', 'opportunity', 'matching', 'マッチング', '机会'],
-      icon: 'users',
+      icon: 'sparkles',
       run: () => openOpportunities()
     },
     {
@@ -1615,7 +1699,7 @@ export function App() {
       description: { zh: '查看已开始跟进的人员与案件组合。', ja: '対応中の要員と案件の組み合わせを確認します。' },
       // i18n-ignore: search keywords match either language
       keywords: ['跟进', '対応', 'follow', '面談', 'interview'],
-      icon: 'clock',
+      icon: 'tasks',
       run: () => openFollowUps()
     },
     {
@@ -1654,7 +1738,7 @@ export function App() {
       description: { zh: '人员 → 招聘面试：初面、复试和招聘结论。', ja: '要員 → 採用面談：一次面談・再面談・採用結論。' },
       // i18n-ignore: search keywords match either language
       keywords: ['招聘面试', '採用面談', '招聘', '採用', 'recruiting', 'interview', '人员', '要員'],
-      icon: 'users',
+      icon: 'phone',
       run: () => openRecruiting()
     },
     {
@@ -1697,7 +1781,7 @@ export function App() {
       id: 'input-resume',
       group: '入力',
       label: { zh: '导入技能表', ja: 'スキルシートを取り込む' },
-      icon: 'upload',
+      icon: 'file',
       description: { zh: '选择文件后仍保持执行前预览和本地解析。', ja: 'ファイル選択後も実行前プレビューとローカル解析を維持します。' },
       // i18n-ignore: search keywords match either language
       keywords: ['履歴書', '職務経歴書', 'resume', 'candidate', '候補者', 'ファイル'],
@@ -1709,7 +1793,7 @@ export function App() {
       id: 'input-case',
       group: '入力',
       label: { zh: '手工添加案件', ja: '案件を手動で追加' },
-      icon: 'briefcase',
+      icon: 'edit',
       description: {
         zh: '在设备内对粘贴的主题和正文脱敏，并生成审核草稿。',
         ja: '貼り付けた件名・本文を端末内で脱敏してレビュー草稿にします。'
@@ -1739,13 +1823,16 @@ export function App() {
       description: { zh: '输入自然语言目标，并在执行前确认数据范围。', ja: '自然言語で目的を入力し、データ範囲を実行前に確認します。' },
       // i18n-ignore: search keywords match either language
       keywords: ['task', '新規', '指示', 'agent'],
-      run: () => openAgentChat()
+      run: () => {
+        openAgentChat()
+        setHrNewChatRequest((value) => value + 1)
+      }
     },
     {
       id: 'work-list',
       group: '作業',
       label: { zh: '打开活动记录', ja: 'アクティビティを開く' },
-      icon: 'tasks',
+      icon: 'file',
       description: {
         zh: `查看 ${bootstrap.tasks.length} 项处理历史及其状态、进度和证据。`,
         ja: `処理履歴 ${bootstrap.tasks.length}件を状態・進捗・証跡とともに確認します。`
@@ -1758,7 +1845,7 @@ export function App() {
       id: 'control-reviews',
       group: '統制',
       label: { zh: '打开审核中心', ja: 'レビューセンターを開く' },
-      icon: 'shield',
+      icon: 'check',
       description: {
         zh: `待确认 ${reviewQueue.length} 项（案件、简历、审批）待处理。`,
         ja: `確認待ち ${reviewQueue.length} 件（案件・履歴書・承認）を確認します。`
@@ -1771,7 +1858,7 @@ export function App() {
       id: 'control-governance',
       group: '統制',
       label: { zh: '打开数据与审批', ja: 'データと承認を開く' },
-      icon: 'shield',
+      icon: 'database',
       description: { zh: '查看脱敏、本地 AI、质量门和备份。', ja: '脱敏、Local AI、品質門とバックアップを確認します。' },
       // i18n-ignore: search keywords match either language
       keywords: ['privacy', 'pii', '脱敏', 'バックアップ', '設定', 'security'],
@@ -1838,6 +1925,15 @@ export function App() {
     )
     return interview
   }
+  const cancelCandidateInterviewSchedule = async (input: { interviewId: string; sourceDocumentId: string }) => {
+    const interview = await window.sesAgent.cancelCandidateInterviewSchedule(input)
+    setBootstrap((current) =>
+      current
+        ? { ...current, candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)] }
+        : current
+    )
+    return interview
+  }
 
   const renderCandidatePipelineDetail = (detail: NonNullable<typeof candidateWorkspaceDetail>, showBackToQueue = true) => (
     <CandidatePipeline
@@ -1883,6 +1979,18 @@ export function App() {
         )
         return interview
       }}
+      onCorrectDecision={async (input) => {
+        const interview = await window.sesAgent.correctCandidateInterviewDecision(input)
+        setBootstrap((current) =>
+          current
+            ? {
+                ...current,
+                candidateInterviews: [interview, ...current.candidateInterviews.filter((item) => item.id !== interview.id)]
+              }
+            : current
+        )
+        return interview
+      }}
       onSaveNotes={async (input) => {
         const interview = await window.sesAgent.saveCandidateInterviewNotes(input)
         setBootstrap((current) =>
@@ -1908,6 +2016,7 @@ export function App() {
         return interview
       }}
       onSaveSchedule={saveCandidateInterviewSchedule}
+      onCancelSchedule={cancelCandidateInterviewSchedule}
       onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
       onSetTaskLifecycle={setWorkTaskLifecycle}
       onViewChange={(nextView) =>
@@ -1918,20 +2027,23 @@ export function App() {
     />
   )
 
+  const openFollowUpById = (followUpId: string) => {
+    void window.sesAgent
+      .listBusinessFollowUps()
+      .then((rows) => {
+        const item = rows.find((row) => row.id === followUpId)
+        if (item) {
+          setHrFollowTarget({ documentId: item.documentId, reviewId: item.reviewId })
+          setHrFollowOpen(true)
+          returnToHr()
+          closeAgentPanel()
+        }
+      })
+      .catch((cause) => setLoadError(localizedIpcError(locale, cause, t('无法读取跟进记录。', '対応記録を読み込めませんでした。'))))
+  }
   const openInterviewFromSchedule = (route: InterviewScheduleRoute) => {
     if (route.businessFollowUpId) {
-      void window.sesAgent
-        .listBusinessFollowUps()
-        .then((rows) => {
-          const item = rows.find((row) => row.id === route.businessFollowUpId)
-          if (item) {
-            setHrFollowTarget({ documentId: item.documentId, reviewId: item.reviewId })
-            setHrFollowOpen(true)
-            returnToHr()
-            closeAgentPanel()
-          }
-        })
-        .catch((cause) => setLoadError(localizedIpcError(locale, cause, t('无法读取跟进记录。', '対応記録を読み込めませんでした。'))))
+      openFollowUpById(route.businessFollowUpId)
       return
     }
     setCandidateWorkspaceDetail({
@@ -1949,6 +2061,7 @@ export function App() {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   const failedImports = resumeImports.filter((task) => task.status === 'failed')
   const openHrList = (kind: HrBusinessKind) => {
+    setTodayOpen(false)
     setActiveView('agent')
     setSelectedTask(null)
     setGovernanceOpen(false)
@@ -1978,6 +2091,7 @@ export function App() {
     setGovernanceOpen(false)
   }
   const openFollowUps = () => {
+    setTodayOpen(false)
     returnToHr()
     setHrFollowOpen(true)
     setHrBatchStarted(null)
@@ -1988,7 +2102,13 @@ export function App() {
     returnToHr()
     setHrChatRequest((value) => value + 1)
   }
-  railShortcuts.current = [() => openHrList('case'), () => openHrList('person'), openFollowUps, openAgentChat]
+  /** 今天 in place of the section's list, panels and results closed. */
+  const openToday = () => {
+    openHrList(hrKind)
+    setTodayOpen(true)
+    today.reload()
+  }
+  railShortcuts.current = [openToday, () => openHrList('case'), () => openHrList('person'), openFollowUps, openAgentChat]
   // Each menu-bar panel link opens the screen its number came from.
   trayNavigationHandler.current = (navigation) => {
     setCommandPaletteOpen(false)
@@ -2009,6 +2129,9 @@ export function App() {
       case 'followups':
         openFollowUps()
         if (navigation.followUpFilter) setFollowUpFilterRequest({ filter: navigation.followUpFilter, id: Date.now() })
+        return
+      case 'interview-schedule':
+        openInterviewSchedule()
         return
       case 'agent':
         openAgentChat()
@@ -2041,6 +2164,17 @@ export function App() {
   // Results opened from 新匹配机会 go back there; the same results opened another way go back to the list.
   const caseFromOpportunities = opportunitiesOpen && opportunityReturn?.kind === 'case' && opportunityReturn.id === assessmentJob?.reviewId
   const personFromOpportunities = opportunitiesOpen && opportunityReturn?.kind === 'person' && opportunityReturn.id === hrSource?.id
+  // Results opened while 今天 is the page go back to it (closing them uncovers it).
+  const todayVisible = todayOpen && !hrSource && !caseResultsOpen && !hrFollowOpen && !opportunitiesOpen
+  const caseFromToday = todayOpen && caseResultsOpen && !caseFromOpportunities
+  // The case and person lists are on screen (not 今天, 跟进, results or 新匹配机会 covering them).
+  const listSurfaceVisible = agentPrimary && !todayVisible && !hrSource && !caseResultsOpen && !hrFollowOpen && !opportunitiesOpen
+  const businessContextOpen =
+    agentPrimary && !(matchPanelHidden && hrSource) && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)
+  // Over the lists, an object's detail is the right pane of the list surface; the shell's side panel only serves
+  // the other pages. The panels stay where they are while closed so their state survives until they open elsewhere.
+  const detailInList = !(businessContextOpen && !listSurfaceVisible)
+  const personFromToday = todayOpen && Boolean(hrSource) && !personFromOpportunities
   const returnToOpportunities = () => {
     setOpportunityReturn(null)
     setHrKind(opportunitiesSection)
@@ -2051,7 +2185,7 @@ export function App() {
     } catch {}
   }
   /** 按案件 opens the case's 找人 results with this person selected; 按人员 opens the person's 找案件 with this case. */
-  const openOpportunity = (item: MatchingOpportunity, grouping: OpportunityGrouping) => {
+  const openOpportunity = (item: Pick<MatchingOpportunity, 'documentId' | 'reviewId' | 'jobCaseId'>, grouping: OpportunityGrouping) => {
     const person = bootstrap.candidateReviews.find((entry) => entry.documentId === item.documentId)
     if (!person) return
     if (grouping === 'person') {
@@ -2064,8 +2198,9 @@ export function App() {
       bootstrap.jobCaseReviews.find((job) => job.jobCase?.id === item.jobCaseId)
     if (!review) return
     openCasePeople(review)
-    setAssessmentFocus(caseResumes.addPerson(review, person))
     setOpportunityReturn({ kind: 'case', id: review.reviewId })
+    // A pair assessed before opens on its saved result; only a missing or outdated one is assessed again.
+    void caseResumes.openPerson(review, person).then(setAssessmentFocus)
   }
   // The card counts exactly the people the panel would show; before the panel has data, the saved count from Main.
   const resumeStates = caseResumes.cardStates(bootstrap.candidateReviews, (task) =>
@@ -2125,10 +2260,230 @@ export function App() {
     />
   )
 
+  // One business side panel: the list surface's right pane over the lists, the shell's side panel elsewhere.
+  const businessContextPanel = (
+    <>
+      {sideProgressTarget ? (
+        <HrProgressWorkbench
+          embedded
+          key={`${sideProgressTarget.documentId}:${sideProgressTarget.reviewId}`}
+          onBack={() => setSideProgressTarget(null)}
+          target={sideProgressTarget}
+          reloadToken={bootstrap}
+          people={bootstrap.candidateReviews}
+          cases={bootstrap.jobCaseReviews}
+          interviews={bootstrap.candidateInterviews}
+          onView={(kind, id) =>
+            kind === 'person'
+              ? openAgentPersonnel(id)
+              : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })
+          }
+          onUpdated={() => {
+            caseResumes.refreshAvailability()
+            void window.sesAgent
+              .getBootstrap()
+              .then(setBootstrap)
+              .catch((cause) =>
+                setLoadError(localizedIpcError(locale, cause, t('无法读取最新数据。', '最新の情報を読み込めませんでした。')))
+              )
+          }}
+        />
+      ) : null}
+      <div className="hr-object-context" hidden={Boolean(sideProgressTarget)}>
+        <div className="agent-business-tools" hidden={agentSideMode !== 'intake' && agentSideMode !== 'personnel'}>
+          <header className="agent-tool-header">
+            {agentSideMode === 'personnel' && agentContextBack ? (
+              <button aria-label={t('返回上一级', '前の画面に戻る')} onClick={agentContextBack} type="button">
+                ←
+              </button>
+            ) : null}
+            <strong>
+              {agentSideMode === 'intake'
+                ? hrKind === 'case'
+                  ? t('新增案件', '案件を追加')
+                  : t('信息整理', '情報整理')
+                : t('人员资料', '要員情報')}
+            </strong>
+            <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
+              ×
+            </button>
+          </header>
+          <div className="business-workbench agent-tool-content">
+            <div hidden={agentSideMode !== 'intake'}>
+              <div hidden={hrKind !== 'case'}>
+                <CaseTextImport
+                  inputSeed={hrKind === 'case' ? agentBatchSeed : undefined}
+                  cases={bootstrap.jobCaseReviews}
+                  onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                  onFindPeople={(reviewId) => {
+                    const review = bootstrap.jobCaseReviews.find((item) => item.reviewId === reviewId)
+                    if (review) openCasePeople(review)
+                  }}
+                  onOpenCase={(reviewId) => openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })}
+                  onShowInList={closeAgentPanel}
+                  onOpenPersonImport={(text) => {
+                    openHrList('person')
+                    openAgentBatch(text)
+                  }}
+                />
+              </div>
+              <div hidden={hrKind === 'case'}>
+                {failedImports.length > 0 ? (
+                  <details className="hr-intake-issues">
+                    <summary>
+                      {t('导入失败，需要处理', '対応が必要な取込エラー')} ({failedImports.length})
+                    </summary>
+                    {failedImports.map((task) => (
+                      <button key={task.id} type="button" onClick={() => selectTask(task)}>
+                        {localizedTaskTitle(locale, task)}
+                        <span>{t('查看失败原因', '失敗理由を確認')}</span>
+                      </button>
+                    ))}
+                  </details>
+                ) : null}
+                <BusinessIntakeWorkspace
+                  inputSeed={agentBatchSeed}
+                  modelKey={agentDefaultModelKey ?? 'gpt-5.6-luna'}
+                  cases={bootstrap.jobCaseReviews}
+                  candidates={bootstrap.candidateReviews}
+                  onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                  onCase={(reviewId) => openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })}
+                  onPerson={(documentId) => openAgentPersonnel(documentId)}
+                  onCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
+                />
+              </div>
+            </div>
+            <div hidden={agentSideMode !== 'personnel'}>
+              <PersonnelWorkspace
+                renderBusinessProgress={renderBusinessProgress}
+                onMatch={() => openAgentPersonnel(agentPersonId!, true)}
+                onPrepare={() => {
+                  const person = bootstrap.candidateReviews.find((item) => item.documentId === agentPersonId)
+                  if (person?.profile)
+                    setIntroductionTarget({
+                      documentId: person.documentId,
+                      profileVersion: person.profile.version,
+                      matched: []
+                    })
+                }}
+                initialDocumentId={agentPersonId}
+                focusRequest={agentPersonFocusRequest}
+                reviews={bootstrap.candidateReviews}
+                onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                onOpenProfile={openPersonnelProfile}
+                onOpenRecruiting={(documentId) => openRecruiting(documentId)}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="agent-business-tools" hidden={agentSideMode !== 'profile'}>
+          <header className="agent-tool-header">
+            {agentPersonId ? (
+              <button aria-label={t('返回人员资料', '要員情報に戻る')} onClick={() => setAgentSideMode('personnel')} type="button">
+                ←
+              </button>
+            ) : null}
+            <strong>{t('完整人员档案', '要員プロフィール')}</strong>
+            <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
+              ×
+            </button>
+          </header>
+          <div className="agent-tool-content">
+            {agentSideMode === 'profile' && agentProfileId ? (
+              <CandidateProfilePanel
+                documentId={agentProfileId}
+                aiCommerce={bootstrap.aiCommerce}
+                analyses={bootstrap.resumeAnalyses}
+                onClose={() => setAgentSideMode(agentPersonId ? 'personnel' : null)}
+                onDeleteCandidate={async (input) => {
+                  const result = await deleteCandidateData(input)
+                  setAgentPersonId(undefined)
+                  return result
+                }}
+                onLoadHistory={(sourceDocumentId) => window.sesAgent.getCandidateProfileHistory(sourceDocumentId)}
+                onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
+                onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
+                onOpenCloudSettings={() => setAiCommerceOpen(true)}
+                onPreviewDeletion={(sourceDocumentId) => window.sesAgent.previewCandidateDeletion(sourceDocumentId)}
+                onSearch={(input) => window.sesAgent.searchCandidateProfiles(input)}
+                onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
+                onUpdateCandidate={async (input) => {
+                  const result = await window.sesAgent.updateCandidateProfile(input)
+                  setBootstrap(await window.sesAgent.getBootstrap())
+                  return result
+                }}
+              />
+            ) : null}
+          </div>
+        </div>
+        <div className="agent-standard-context" hidden={agentSideMode !== null}>
+          {agentContextAccess && agentContextAccess.destination !== 'matching' ? (
+            agentContextAccess.destination === 'interview-schedule' ? (
+              <AgentInterviewSchedulePanel
+                access={agentContextAccess}
+                // Client interviews the Agent books live on 跟进: they are listed too and changed there. A round whose
+                // follow-up ended, paused or went back to 待约面 before it took place holds no time and is left out.
+                interviews={bootstrap.candidateInterviews.filter((row) => {
+                  const follow = row.businessFollowUpId
+                    ? businessProgress.rows.find((item) => item.id === row.businessFollowUpId)
+                    : undefined
+                  const stage = follow?.progress?.stage
+                  return !follow || row.decision || !(isInactiveProgressStage(stage) || stage === 'coordinating')
+                })}
+                onBack={agentContextBack}
+                onClose={() => setAgentContextTrail([])}
+                onOpenFollowUp={openFollowUpById}
+                onCancel={cancelCandidateInterviewSchedule}
+                onSave={saveCandidateInterviewSchedule}
+                reviews={bootstrap.candidateReviews}
+              />
+            ) : (
+              <AgentBusinessWorkspacePanel
+                renderBusinessProgress={renderBusinessProgress}
+                onFindPeople={openCasePeople}
+                access={agentContextAccess}
+                focusRequest={caseFocusRequest}
+                broadcastActions={broadcastActions}
+                candidateReviews={bootstrap.candidateReviews}
+                interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
+                jobCaseReviews={bootstrap.jobCaseReviews}
+                onBack={agentContextBack}
+                onClose={() => setAgentContextTrail([])}
+                onCreateManualCase={createManualJobCaseDraft}
+                onLoadJobCaseSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
+                onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
+                onOpenAccess={openAgentSystemAccess}
+                onResolveActionApproval={resolveActionApproval}
+                caseManagement={{
+                  onSubmit: submitJobCaseReview,
+                  fieldAliases: bootstrap.jobCaseFieldAliases,
+                  onSaveFieldAliases: saveJobCaseFieldAliases,
+                  onSetLifecycle: setJobCaseLifecycle,
+                  onReopen: reopenJobCaseReview,
+                  onLoadHistory: (reviewId) => window.sesAgent.getJobCaseHistory(reviewId),
+                  onPreviewDeletion: (reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId),
+                  onDelete: deleteJobCaseData,
+                  onDeleted: () => setAgentContextTrail([])
+                }}
+                onSubmitJobCaseReview={submitJobCaseReview}
+                newCaseDigest={newCaseDigest}
+                gmailLastSyncedAt={bootstrap.gmail.status === 'readonly' ? bootstrap.gmailSync.lastSyncedAt : null}
+                onMarkSeen={markJobCaseSeen}
+                reviewQueue={pendingActionApprovals}
+                tasks={bootstrap.tasks}
+              />
+            )
+          ) : null}
+        </div>
+      </div>
+    </>
+  )
+
   return (
     <UiLocaleProvider locale={locale}>
       <BusinessProgressContext.Provider value={businessProgress}>
         <div className="app-shell is-agent-primary is-hr-navigation">
+          <HeldDeletionsNotice />
           {toasts.length > 0 ? (
             <div className="app-toasts" role="status">
               {toasts.map((toast) => (
@@ -2149,12 +2504,16 @@ export function App() {
             </div>
           ) : null}
           <AgentSystemRail
+            todayActive={todayOpen && !hrFollowOpen && !opportunitiesOpen}
+            onToday={openToday}
+            todayCount={today.summary?.status === 'ready' ? today.summary.followUpsDueToday : 0}
             businessKind={hrKind}
             followActive={hrFollowOpen}
             onFollowUps={openFollowUps}
             onBusinessCases={() => openHrList('case')}
             onBusinessPeople={() => openHrList('person')}
-            caseUnseenCount={newCaseDigest?.unseenCount ?? 0}
+            // The same unread rule as the case list, 今天 and the menu bar (per revision, no time window).
+            caseUnseenCount={today.summary?.status === 'ready' ? today.summary.cases.unseen : (newCaseDigest?.unseenCount ?? 0)}
             onAgent={openAgentChat}
             onSettings={() => openApplicationSettings('general')}
             onCommandPalette={showCommandPalette}
@@ -2207,9 +2566,11 @@ export function App() {
                   <Icon name="arrow-left" size={16} />
                   {hrFollowOpen
                     ? t('返回跟进', '対応記録に戻る')
-                    : hrKind === 'case'
-                      ? t('返回案件', '案件に戻る')
-                      : t('返回人员', '要員に戻る')}
+                    : todayOpen
+                      ? t('返回今天', '今日に戻る')
+                      : hrKind === 'case'
+                        ? t('返回案件', '案件に戻る')
+                        : t('返回人员', '要員に戻る')}
                 </button>
               </nav>
             ) : null}
@@ -2217,19 +2578,22 @@ export function App() {
               <AgentWorkspace
                 businessMatchingBusy={composerPerson ? hrBusyIds.includes(composerPerson.documentId) : false}
                 businessTitle={
-                  hrFollowOpen
-                    ? t('跟进', '対応記録')
-                    : hrSource
-                      ? t('为此人员找案件', 'この要員の案件を探す')
-                      : caseResultsOpen
-                        ? t('为此案件找人', 'この案件の要員を探す')
-                        : opportunitiesOpen
-                          ? t('新匹配机会', '新しいマッチング候補')
-                          : hrKind === 'case'
-                            ? t('案件', '案件')
-                            : t('人员', '要員')
+                  todayVisible
+                    ? t('今天', '今日')
+                    : hrFollowOpen
+                      ? t('跟进', '対応記録')
+                      : hrSource
+                        ? t('为此人员找案件', 'この要員の案件を探す')
+                        : caseResultsOpen
+                          ? t('为此案件找人', 'この案件の要員を探す')
+                          : opportunitiesOpen
+                            ? t('新匹配机会', '新しいマッチング候補')
+                            : hrKind === 'case'
+                              ? t('案件', '案件')
+                              : t('人员', '要員')
                 }
                 chatRequest={hrChatRequest}
+                newChatRequest={hrNewChatRequest}
                 businessObject={
                   agentFeedSelection
                     ? {
@@ -2245,10 +2609,53 @@ export function App() {
                 composerDraft={agentComposerDraft}
                 latestContent={
                   <div className="hr-board">
-                    <div className="hr-list-surface" hidden={Boolean(hrSource) || caseResultsOpen || hrFollowOpen || opportunitiesOpen}>
+                    <div className="hr-today-surface" hidden={!todayVisible}>
+                      <TodayOverview
+                        state={today}
+                        onOpenRecruitingInterview={(documentId) => openRecruiting(documentId, 'schedule')}
+                        onOpenFollowUp={(target) => {
+                          openFollowUps()
+                          setHrFollowTarget({ documentId: target.documentId, reviewId: target.reviewId })
+                        }}
+                        onOpenFollowUps={() => {
+                          openFollowUps()
+                          setFollowUpFilterRequest({ filter: 'today', id: Date.now() })
+                        }}
+                        onOpenCoordinating={() => {
+                          openFollowUps()
+                          setFollowUpFilterRequest({ filter: 'coordinating', id: Date.now() })
+                        }}
+                        onOpenOpportunity={async (item) => {
+                          // Marked seen first, as the 新匹配机会 page does; a row not loaded yet is read before opening.
+                          const row =
+                            opportunities.rows.find((entry) => entry.id === item.id) ??
+                            (await window.sesAgent.listMatchingOpportunities?.().catch(() => []))?.find((entry) => entry.id === item.id)
+                          if (!row || (await opportunities.control(row, 'seen'))) openOpportunity(item, 'case')
+                        }}
+                        onOpenOpportunities={() => openOpportunities('case')}
+                        onOpenCase={(reviewId) => openHrObject('case', reviewId)}
+                        onOpenUnseenCases={() => {
+                          openHrList('case')
+                          setHrListFilterRequest({ kind: 'case', filter: 'unseen', id: Date.now() })
+                        }}
+                        onNavigate={(route, payload) =>
+                          trayNavigationHandler.current?.({ id: crypto.randomUUID(), route, ...(payload ?? {}) })
+                        }
+                        onAsk={(text) => {
+                          openAgentChat()
+                          // Prefilled only, as from the menu-bar panel: the operator reads and sends it.
+                          setAgentComposerDraft(text)
+                        }}
+                      />
+                    </div>
+                    <div
+                      className="hr-list-surface"
+                      hidden={todayVisible || Boolean(hrSource) || caseResultsOpen || hrFollowOpen || opportunitiesOpen}
+                    >
                       <MatchingOpportunitiesBanner
                         count={opportunities.newCount}
                         recommended={opportunities.newRecommendedCount}
+                        proposable={opportunities.proposableCount}
                         onOpen={() => openOpportunities(hrKind)}
                       />
                       <HrObjectList
@@ -2264,6 +2671,10 @@ export function App() {
                         onOpenProgress={(entry) => {
                           openLatestEntry(entry, 'view')
                           setProgressFocus({ kind: entry.kind, id: entry.objectId, request: ++feedFocusSequence.current })
+                        }}
+                        onOpenFollowUp={(target) => {
+                          openFollowUps()
+                          setHrFollowTarget({ documentId: target.documentId, reviewId: target.reviewId })
                         }}
                         cases={bootstrap.jobCaseReviews}
                         kind={hrKind}
@@ -2295,6 +2706,10 @@ export function App() {
                           }
                         ]}
                         onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
+                        detail={detailInList ? businessContextPanel : undefined}
+                        detailOpen={businessContextOpen && listSurfaceVisible}
+                        detailLabel={t('业务工作区', '業務ワークスペース')}
+                        onCloseDetail={closeAgentPanel}
                       />
                     </div>
                     <div
@@ -2308,6 +2723,8 @@ export function App() {
                         backLabel={
                           opportunitiesSection === 'case' ? t('返回案件列表', '案件一覧に戻る') : t('返回人员列表', '要員一覧に戻る')
                         }
+                        cases={bootstrap.jobCaseReviews}
+                        people={bootstrap.candidateReviews}
                         onBack={() => openHrList(opportunitiesSection)}
                         onOpen={openOpportunity}
                       />
@@ -2319,7 +2736,13 @@ export function App() {
                           people={bootstrap.candidateReviews}
                           controller={caseResumes}
                           focusTaskId={assessmentFocus}
-                          backLabel={caseFromOpportunities ? t('返回新匹配机会', '新しいマッチング候補に戻る') : undefined}
+                          backLabel={
+                            caseFromOpportunities
+                              ? t('返回新匹配机会', '新しいマッチング候補に戻る')
+                              : caseFromToday
+                                ? t('返回今天', '今日に戻る')
+                                : undefined
+                          }
                           onBack={() => {
                             setCasePeopleOpen(false)
                             closeAgentPanel()
@@ -2403,7 +2826,13 @@ export function App() {
                         onFollowUp={(target) => startHrProgress([target])}
                         onScheduleMany={startHrProgress}
                         onPrepare={setIntroductionTarget}
-                        backLabel={personFromOpportunities ? t('返回新匹配机会', '新しいマッチング候補に戻る') : undefined}
+                        backLabel={
+                          personFromOpportunities
+                            ? t('返回新匹配机会', '新しいマッチング候補に戻る')
+                            : personFromToday
+                              ? t('返回今天', '今日に戻る')
+                              : undefined
+                        }
                         onBack={() => {
                           setHrSource(null)
                           closeAgentPanel()
@@ -2504,224 +2933,10 @@ export function App() {
                 homeRequestToken={agentHomeRequest}
                 focusRequest={agentFocusRequest}
                 onOpenBatch={openAgentBatch}
-                contextPanelOpen={
-                  agentPrimary && !(matchPanelHidden && hrSource) && Boolean(sideProgressTarget || agentSideMode || agentContextAccess)
-                }
-                contextPanel={
-                  <>
-                    {sideProgressTarget ? (
-                      <HrProgressWorkbench
-                        embedded
-                        key={`${sideProgressTarget.documentId}:${sideProgressTarget.reviewId}`}
-                        onBack={() => setSideProgressTarget(null)}
-                        target={sideProgressTarget}
-                        reloadToken={bootstrap}
-                        people={bootstrap.candidateReviews}
-                        cases={bootstrap.jobCaseReviews}
-                        interviews={bootstrap.candidateInterviews}
-                        onView={(kind, id) =>
-                          kind === 'person'
-                            ? openAgentPersonnel(id)
-                            : openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId: id })
-                        }
-                        onUpdated={() => {
-                          caseResumes.refreshAvailability()
-                          void window.sesAgent
-                            .getBootstrap()
-                            .then(setBootstrap)
-                            .catch((cause) =>
-                              setLoadError(localizedIpcError(locale, cause, t('无法读取最新数据。', '最新の情報を読み込めませんでした。')))
-                            )
-                        }}
-                      />
-                    ) : null}
-                    <div className="hr-object-context" hidden={Boolean(sideProgressTarget)}>
-                      <div className="agent-business-tools" hidden={agentSideMode !== 'intake' && agentSideMode !== 'personnel'}>
-                        <header className="agent-tool-header">
-                          {agentSideMode === 'personnel' && agentContextBack ? (
-                            <button aria-label={t('返回上一级', '前の画面に戻る')} onClick={agentContextBack} type="button">
-                              ←
-                            </button>
-                          ) : null}
-                          <strong>
-                            {agentSideMode === 'intake'
-                              ? hrKind === 'case'
-                                ? t('新增案件', '案件を追加')
-                                : t('信息整理', '情報整理')
-                              : t('人员资料', '要員情報')}
-                          </strong>
-                          <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
-                            ×
-                          </button>
-                        </header>
-                        <div className="business-workbench agent-tool-content">
-                          <div hidden={agentSideMode !== 'intake'}>
-                            <div hidden={hrKind !== 'case'}>
-                              <CaseTextImport
-                                inputSeed={hrKind === 'case' ? agentBatchSeed : undefined}
-                                cases={bootstrap.jobCaseReviews}
-                                onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
-                                onFindPeople={(reviewId) => {
-                                  const review = bootstrap.jobCaseReviews.find((item) => item.reviewId === reviewId)
-                                  if (review) openCasePeople(review)
-                                }}
-                                onOpenCase={(reviewId) =>
-                                  openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })
-                                }
-                                onShowInList={closeAgentPanel}
-                                onOpenPersonImport={() => {
-                                  openHrList('person')
-                                  openAgentBatch()
-                                }}
-                              />
-                            </div>
-                            <div hidden={hrKind === 'case'}>
-                              {failedImports.length > 0 ? (
-                                <details className="hr-intake-issues">
-                                  <summary>
-                                    {t('导入失败，需要处理', '対応が必要な取込エラー')} ({failedImports.length})
-                                  </summary>
-                                  {failedImports.map((task) => (
-                                    <button key={task.id} type="button" onClick={() => selectTask(task)}>
-                                      {localizedTaskTitle(locale, task)}
-                                      <span>{t('查看失败原因', '失敗理由を確認')}</span>
-                                    </button>
-                                  ))}
-                                </details>
-                              ) : null}
-                              <BusinessIntakeWorkspace
-                                inputSeed={agentBatchSeed}
-                                modelKey={agentDefaultModelKey ?? 'gpt-5.6-luna'}
-                                cases={bootstrap.jobCaseReviews}
-                                candidates={bootstrap.candidateReviews}
-                                onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
-                                onCase={(reviewId) =>
-                                  openAgentSystemAccess({ type: 'system-access', destination: 'case-review', reviewId })
-                                }
-                                onPerson={(documentId) => openAgentPersonnel(documentId)}
-                                onCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
-                              />
-                            </div>
-                          </div>
-                          <div hidden={agentSideMode !== 'personnel'}>
-                            <PersonnelWorkspace
-                              renderBusinessProgress={renderBusinessProgress}
-                              onMatch={() => openAgentPersonnel(agentPersonId!, true)}
-                              onPrepare={() => {
-                                const person = bootstrap.candidateReviews.find((item) => item.documentId === agentPersonId)
-                                if (person?.profile)
-                                  setIntroductionTarget({
-                                    documentId: person.documentId,
-                                    profileVersion: person.profile.version,
-                                    matched: []
-                                  })
-                              }}
-                              initialDocumentId={agentPersonId}
-                              focusRequest={agentPersonFocusRequest}
-                              reviews={bootstrap.candidateReviews}
-                              onRefresh={async () => setBootstrap(await window.sesAgent.getBootstrap())}
-                              onOpenProfile={openPersonnelProfile}
-                              onOpenRecruiting={(documentId) => openRecruiting(documentId)}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="agent-business-tools" hidden={agentSideMode !== 'profile'}>
-                        <header className="agent-tool-header">
-                          {agentPersonId ? (
-                            <button
-                              aria-label={t('返回人员资料', '要員情報に戻る')}
-                              onClick={() => setAgentSideMode('personnel')}
-                              type="button"
-                            >
-                              ←
-                            </button>
-                          ) : null}
-                          <strong>{t('完整人员档案', '要員プロフィール')}</strong>
-                          <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
-                            ×
-                          </button>
-                        </header>
-                        <div className="agent-tool-content">
-                          {agentSideMode === 'profile' && agentProfileId ? (
-                            <CandidateProfilePanel
-                              documentId={agentProfileId}
-                              aiCommerce={bootstrap.aiCommerce}
-                              analyses={bootstrap.resumeAnalyses}
-                              onClose={() => setAgentSideMode(agentPersonId ? 'personnel' : null)}
-                              onDeleteCandidate={async (input) => {
-                                const result = await deleteCandidateData(input)
-                                setAgentPersonId(undefined)
-                                return result
-                              }}
-                              onLoadHistory={(sourceDocumentId) => window.sesAgent.getCandidateProfileHistory(sourceDocumentId)}
-                              onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
-                              onOpenOriginalDocument={(sourceDocumentId) => window.sesAgent.openOriginalDocument(sourceDocumentId)}
-                              onOpenCloudSettings={() => setAiCommerceOpen(true)}
-                              onPreviewDeletion={(sourceDocumentId) => window.sesAgent.previewCandidateDeletion(sourceDocumentId)}
-                              onSearch={(input) => window.sesAgent.searchCandidateProfiles(input)}
-                              onSendCloudPrompt={runReviewedAiCommerceCloudPrompt}
-                              onUpdateCandidate={async (input) => {
-                                const result = await window.sesAgent.updateCandidateProfile(input)
-                                setBootstrap(await window.sesAgent.getBootstrap())
-                                return result
-                              }}
-                            />
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="agent-standard-context" hidden={agentSideMode !== null}>
-                        {agentContextAccess && agentContextAccess.destination !== 'matching' ? (
-                          agentContextAccess.destination === 'interview-schedule' ? (
-                            <AgentInterviewSchedulePanel
-                              access={agentContextAccess}
-                              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-                              onBack={agentContextBack}
-                              onClose={() => setAgentContextTrail([])}
-                              onSave={saveCandidateInterviewSchedule}
-                              reviews={bootstrap.candidateReviews}
-                            />
-                          ) : (
-                            <AgentBusinessWorkspacePanel
-                              renderBusinessProgress={renderBusinessProgress}
-                              onFindPeople={openCasePeople}
-                              access={agentContextAccess}
-                              focusRequest={caseFocusRequest}
-                              broadcastActions={broadcastActions}
-                              candidateReviews={bootstrap.candidateReviews}
-                              interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
-                              jobCaseReviews={bootstrap.jobCaseReviews}
-                              onBack={agentContextBack}
-                              onClose={() => setAgentContextTrail([])}
-                              onCreateManualCase={createManualJobCaseDraft}
-                              onLoadJobCaseSourceText={(reviewId) => window.sesAgent.getJobCaseSourceText(reviewId)}
-                              onLoadOriginalDocument={(sourceDocumentId) => window.sesAgent.getOriginalDocumentPreview(sourceDocumentId)}
-                              onOpenAccess={openAgentSystemAccess}
-                              onResolveActionApproval={resolveActionApproval}
-                              caseManagement={{
-                                onSubmit: submitJobCaseReview,
-                                fieldAliases: bootstrap.jobCaseFieldAliases,
-                                onSaveFieldAliases: saveJobCaseFieldAliases,
-                                onSetLifecycle: setJobCaseLifecycle,
-                                onReopen: reopenJobCaseReview,
-                                onLoadHistory: (reviewId) => window.sesAgent.getJobCaseHistory(reviewId),
-                                onPreviewDeletion: (reviewId) => window.sesAgent.previewJobCaseDeletion(reviewId),
-                                onDelete: deleteJobCaseData,
-                                onDeleted: () => setAgentContextTrail([])
-                              }}
-                              onSubmitJobCaseReview={submitJobCaseReview}
-                              newCaseDigest={newCaseDigest}
-                              gmailLastSyncedAt={bootstrap.gmail.status === 'readonly' ? bootstrap.gmailSync.lastSyncedAt : null}
-                              onMarkSeen={markJobCaseSeen}
-                              reviewQueue={pendingActionApprovals}
-                              tasks={bootstrap.tasks}
-                            />
-                          )
-                        ) : null}
-                      </div>
-                    </div>
-                  </>
-                }
+                contextPanelOpen={businessContextOpen && !detailInList}
+                businessHeaderInline={listSurfaceVisible}
+                hideAskAgent={todayVisible}
+                contextPanel={detailInList ? undefined : businessContextPanel}
                 contextPanelLabel={t('业务工作区', '業務ワークスペース')}
                 newCaseUnseenCount={newCaseDigest?.unseenCount ?? 0}
                 onOpenNewCaseBoard={() => setAgentContextTrail(defaultAgentContextTrail())}
@@ -2738,7 +2953,17 @@ export function App() {
                 onOpenCandidate={openAgentCandidateAccess}
                 onOpenCaseImport={() => openAgentSystemAccess({ type: 'system-access', destination: 'case-import' })}
                 onOpenBroadcast={() => openAgentSystemAccess({ type: 'system-access', destination: 'broadcast' })}
-                onOpenCases={() => openAgentSystemAccess({ type: 'system-access', destination: 'job-cases' })}
+                onOpenCases={(jobCaseId) => {
+                  // The conversation's case opens itself; without one, the case list.
+                  const reviewId = jobCaseId
+                    ? bootstrap.jobCaseReviews.find((review) => review.jobCase?.id === jobCaseId)?.reviewId
+                    : undefined
+                  openAgentSystemAccess(
+                    reviewId
+                      ? { type: 'system-access', destination: 'case-review', reviewId }
+                      : { type: 'system-access', destination: 'job-cases' }
+                  )
+                }}
                 onOpenMatching={(jobCaseId) => openAgentSystemAccess({ type: 'system-access', destination: 'matching', jobCaseId })}
                 onOpenOriginalDocument={async (sourceDocumentId) =>
                   openAgentSystemAccess({ type: 'system-access', destination: 'original-document', sourceDocumentId })
@@ -2747,6 +2972,8 @@ export function App() {
                 onLocalDataChanged={async () => {
                   const refreshed = await window.sesAgent.getBootstrap()
                   setBootstrap(refreshed)
+                  // What the Agent changed also reaches 今天, 跟进 and 新匹配机会.
+                  window.dispatchEvent(new Event('ses-business-data-changed'))
                 }}
                 onOpenSystemAccess={openAgentSystemAccess}
                 operatorLabel={localizedMainText(locale, bootstrap.operatorProfile.displayName) || bootstrap.operatorProfile.operatorId}
@@ -2797,12 +3024,16 @@ export function App() {
                 task={selectedTask}
               />
             ) : activeView === 'tasks' && importHistoryOpen ? (
-              <ResumeImportHistory tasks={resumeImports} onSelect={selectTask} onImport={() => void startResumeImport()} />
+              <ResumeImportHistory
+                reviews={bootstrap.candidateReviews}
+                tasks={resumeImports}
+                onSelect={selectTask}
+                onImport={() => void startResumeImport()}
+              />
             ) : activeView === 'tasks' ? (
               <main className="task-center-page">
                 <header className="task-center-header">
                   <div>
-                    <span className="eyebrow">ACTIVITY & EVIDENCE</span>
                     <h1>{t('活动记录', 'アクティビティ')}</h1>
                     <p>
                       {t(
@@ -2834,12 +3065,7 @@ export function App() {
                     <span>{t('需处理', '要対応')}</span>
                   </div>
                 </section>
-                <TaskList
-                  eyebrow="LOCAL WORK HISTORY"
-                  onSelect={selectTask}
-                  tasks={bootstrap.tasks}
-                  title={t('处理记录与证据', '処理履歴と証跡')}
-                />
+                <TaskList onSelect={selectTask} tasks={bootstrap.tasks} title={t('处理记录与证据', '処理履歴と証跡')} />
                 <footer className="app-footer">
                   {t(
                     '任务指令、进度和证据保存在加密本地数据库 · 不发送到云端',
@@ -2901,7 +3127,8 @@ export function App() {
               ) : (
                 <InterviewScheduleCenter
                   cases={bootstrap.jobCaseReviews}
-                  interviews={bootstrap.candidateInterviews.filter((row) => !row.businessFollowUpId)}
+                  // Every interview, client rounds booked on 跟进 included; those open their follow-up.
+                  interviews={bootstrap.candidateInterviews}
                   onOpenInterview={openInterviewFromSchedule}
                   reviews={bootstrap.candidateReviews}
                 />

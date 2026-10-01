@@ -36,9 +36,12 @@ import {
   jobCaseReviewIdSchema,
   reopenJobCaseReviewInputSchema,
   setJobCaseLifecycleInputSchema,
-  submitJobCaseReviewInputSchema
+  submitJobCaseReviewInputSchema,
+  isInactiveProgressStage
 } from '@shared'
 import { MacWechatVisibleReader, WechatVisibleReadError } from '../wechat-visible-reader'
+import { emlReimport } from '../eml-reimport'
+import { deviceDeletionJournal } from '../deletion-journal'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 class EmlFileImportError extends Error {
@@ -138,7 +141,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
       processed.source.redactedBody,
       processed.redaction.mappings
     )
-    if (duplicate) return { review: duplicate }
+    if (duplicate) return { review: duplicate, outcome: 'existing' }
     const source = processed.source
     const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
     if (!repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, source, draft)) {
@@ -149,7 +152,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     // A hand-written case takes effect at once as well; what the store
     // refuses stays a draft for the operator to complete in the workspace.
     const confirmed = autoConfirmJobCaseDraft(repository, review, currentOperator(), now)
-    return { review: confirmed.review ?? review }
+    return { review: confirmed.review ?? review, outcome: 'created' }
   })
 
   ipcMain.handle(ipcChannels.createChatPasteJobCaseDraft, async (event, rawInput): Promise<CreateChatPasteJobCaseDraftResult> => {
@@ -344,13 +347,16 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
         !repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, source, draft)
       )
         throw new Error('微信可见消息的脱敏案件草稿无法保存。')
-      const review = duplicate ?? repository.getJobCaseReview(draft.reviewId)
-      if (!review) throw new Error('创建的微信案件草稿无法重新读取。')
+      const saved = duplicate ?? repository.getJobCaseReview(draft.reviewId)
+      if (!saved) throw new Error('创建的微信案件草稿无法重新读取。')
+      // Takes effect at once like a hand-written or pasted case; what the store refuses stays a draft to complete.
+      const review = duplicate ? saved : (autoConfirmJobCaseDraft(repository, saved, currentOperator(), now).review ?? saved)
       repository.updateActionRun(scope.actionRunId, 'succeeded', {
         resultHash: createHash('sha256').update(`${source.redactedSubject}\n${source.redactedBody}`, 'utf8').digest('hex')
       })
       return {
         review,
+        outcome: duplicate ? 'existing' : 'created',
         evidence: {
           captureMethod: readResult.captureMethod,
           visibleTextNodeCount: readResult.nodes.length,
@@ -415,11 +421,19 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
             })
             continue
           }
-          const existing = repository.getEmlJobCaseReview(parsed.sourceMessageKey)
-          if (existing) {
-            items.push({ fileName, status: 'duplicate', classification: parsed.classification, errorCode: null, review: existing })
+          // The same mail again: a duplicate while its case is active; after it ended, a new case under the next key.
+          const reimport = emlReimport(parsed.sourceMessageKey, (key) => repository.getEmlJobCaseReview(key))
+          if ('duplicate' in reimport) {
+            items.push({
+              fileName,
+              status: 'duplicate',
+              classification: parsed.classification,
+              errorCode: null,
+              review: reimport.duplicate
+            })
             continue
           }
+          const messageKey = reimport.messageKey
 
           const sourceId = randomUUID()
           const localText = `[SUBJECT]\n${parsed.subject}\n[FROM]\n担当者：${parsed.senderDisplayName ?? ''}\n[BODY]\n${parsed.body}`
@@ -431,7 +445,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
           }
           const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
           const now = new Date()
-          const processed = createRedactedEmlJobCaseSource(parsed, sourceId, knownPersonNames, now)
+          const processed = createRedactedEmlJobCaseSource({ ...parsed, sourceMessageKey: messageKey }, sourceId, knownPersonNames, now)
           const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
             processed.source.redactedSubject,
             processed.source.redactedBody,
@@ -445,15 +459,17 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
           try {
             repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, processed.source, draft)
           } catch (error) {
-            const duplicate = repository.getEmlJobCaseReview(parsed.sourceMessageKey)
-            if (duplicate) {
+            const duplicate = repository.getEmlJobCaseReview(messageKey)
+            if (duplicate && duplicate.lifecycle !== 'archived') {
               items.push({ fileName, status: 'duplicate', classification: parsed.classification, errorCode: null, review: duplicate })
               continue
             }
             throw new EmlFileImportError('PERSISTENCE_FAILED', 'EML の脱敏済み案件草稿を保存できませんでした。')
           }
-          const review = repository.getJobCaseReview(draft.reviewId)
-          if (!review) throw new EmlFileImportError('PERSISTENCE_FAILED', '取り込んだ案件草稿を再読み込みできませんでした。')
+          const saved = repository.getJobCaseReview(draft.reviewId)
+          if (!saved) throw new EmlFileImportError('PERSISTENCE_FAILED', '取り込んだ案件草稿を再読み込みできませんでした。')
+          // Takes effect at once like Gmail, paste and manual intake; what the store refuses stays a draft to complete.
+          const review = autoConfirmJobCaseDraft(repository, saved, currentOperator(), now).review ?? saved
           items.push({ fileName, status: 'imported', classification: parsed.classification, errorCode: null, review })
         } catch (error) {
           items.push({
@@ -500,6 +516,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.setJobCaseLifecycle, (event, rawInput): SetJobCaseLifecycleResult => {
     assertTrustedSender(event)
     const input = setJobCaseLifecycleInputSchema.parse(rawInput)
+    // Ending with 一并结束跟进, and reactivating (which brings back what ended with the case), are one transaction.
     const review = repository.setJobCaseLifecycle(input, currentOperator().displayName)
     return { review, history: repository.getJobCaseHistory(input.reviewId) }
   })
@@ -537,13 +554,43 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     return { unseenCount: newDigest().unseenCount }
   })
 
-  ipcMain.handle(ipcChannels.deleteJobCaseData, (event, rawInput): DeleteJobCaseDataResult => {
+  ipcMain.handle(ipcChannels.deleteJobCaseData, async (event, rawInput): Promise<DeleteJobCaseDataResult> => {
     assertTrustedSender(event)
     const input = deleteJobCaseDataInputSchema.parse(rawInput)
     const startedAt = new Date()
-    const preview = repository.deleteJobCaseDatabaseData(input, startedAt)
+    const mailSource = repository.getCaseMailSource(input.reviewId)
+    // Journaled before the delete (kept outside the database, so restoring an older backup deletes this case again
+    // and keeps its mail out); confirmed once the delete succeeded, dropped if it did not.
+    const journal = deviceDeletionJournal(context.userDataPath)
+    const journalId = await journal
+      .begin({
+        entityType: 'job-case',
+        entityId: input.reviewId,
+        deletedAt: startedAt.toISOString(),
+        ...(mailSource ? { gmailTombstones: [{ accountEmail: mailSource.accountEmail, gmailMessageId: mailSource.messageId }] } : {})
+      })
+      .catch(() => null)
+    let preview: ReturnType<typeof repository.deleteJobCaseDatabaseData>
+    try {
+      preview = repository.deleteJobCaseDatabaseData(input, startedAt)
+    } catch (error) {
+      if (journalId) await journal.discard(journalId).catch(() => undefined)
+      throw error
+    }
     const completedAt = new Date()
     const recoveryPackageExists = Boolean(repository.getRecoveryState().lastBackupAt)
+    const journaled =
+      Boolean(journalId) &&
+      (await journal.confirm(journalId!).then(
+        () => true,
+        () => false
+      ))
+    const warningCodes = [
+      // One or the other: there is no backup to rotate, or there is one that still holds the case.
+      ...preview.warningCodes.filter((code) => !(recoveryPackageExists && code === 'BACKUP_SYSTEM_NOT_CONFIGURED')),
+      ...(recoveryPackageExists ? ['RECOVERY_PACKAGE_ROTATION_REQUIRED'] : []),
+      ...(journaled ? [] : ['DELETION_JOURNAL_WRITE_FAILED'])
+    ]
     const report = repository.saveDataDeletionReport({
       id: randomUUID(),
       entityType: 'job_case',
@@ -561,9 +608,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
         backups: recoveryPackageExists ? 'expired_pending' : 'not_present'
       },
       deletedCounts: preview.counts,
-      warningCodes: recoveryPackageExists
-        ? [...new Set([...preview.warningCodes, 'RECOVERY_PACKAGE_ROTATION_REQUIRED'])]
-        : preview.warningCodes
+      warningCodes: [...new Set(warningCodes)]
     })
     return { report }
   })

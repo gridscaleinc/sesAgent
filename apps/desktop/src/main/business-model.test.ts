@@ -15,9 +15,13 @@ describe('businessModel', () => {
   })
 
   it('resolves each slot to the chosen catalog model', () => {
-    const context = contextWith({ checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' })
+    const context = contextWith({ checking: 'gpt-6-luna', writing: 'gpt-6-sol' })
     expect(businessModel(context as never, 'checking')).toMatchObject({ key: 'gpt-6-luna', provider: 'openai', endpoint: 'responses' })
-    expect(businessModel(context as never, 'writing')).toMatchObject({ key: 'gpt-6.1-sol-pro', displayName: 'GPT-6.1 Sol Pro' })
+    expect(businessModel(context as never, 'writing')).toMatchObject({ key: 'gpt-6-sol', displayName: 'GPT-6 Sol' })
+  })
+
+  it('falls back to the default for a model the gateway does not offer yet', () => {
+    expect(businessModel(contextWith({ checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' }) as never, 'writing').key).toBe('gpt-5.6-luna')
   })
 
   it('falls back to the default for a key the catalog no longer lists', () => {

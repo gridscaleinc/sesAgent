@@ -526,6 +526,23 @@ describe('local conversational matching agent', () => {
     expect(harness.calls).toEqual([])
   })
 
+  it('does not book someone imported in this conversation and deleted since', async () => {
+    const deleted = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }
+    const harness = createHarness([], [], null, [deleted])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '安排一个20号14点的电话面试',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60 })
+    )
+    expect(result.status).toBe('clarifying')
+    expect(harness.calls).toEqual([])
+  })
+
   it('prefers what this conversation imported over everything already on the device', async () => {
     // One resume was imported here while four candidates existed on the device,
     // and the device list answered - so the operator was offered four strangers
@@ -536,7 +553,8 @@ describe('local conversational matching agent', () => {
       sourceDocumentId: `${n}${n}${n}${n}${n}${n}${n}${n}-1111-4111-8111-111111111111`
     }))
     const book = async (imports: typeof deviceWide, device: typeof deviceWide, rank: number | null = null) => {
-      const harness = createHarness([], device, null, imports)
+      // The device list holds every active person, the ones imported here included.
+      const harness = createHarness([], [...imports, ...device], null, imports)
       const result = await harness.useCase.execute(
         {
           conversationId: '33333333-3333-4333-8333-333333333333',
@@ -739,6 +757,45 @@ describe('local conversational matching agent', () => {
     expect(harness.calls[0]).toMatchObject({
       toolName: 'candidate.interview.schedule.local',
       input: { sourceDocumentId: only.sourceDocumentId, candidateLabel: 'RESUME_1' }
+    })
+  })
+
+  it('asks for the case before booking a client interview it cannot tie to one', async () => {
+    const only = { anonymousLabel: 'RESUME_1', sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    const harness = createHarness([], [only])
+    const result = await harness.useCase.execute(
+      {
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        message: '给他约20号14点的客户面试',
+        expectedConversationRevision: null,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: null, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60, kind: 'client' })
+    )
+    expect(result.status).toBe('clarifying')
+    expect(result.assistantMessage.content).toContain('案件')
+    expect(harness.calls).toEqual([])
+  })
+
+  it('books a client interview for the case the conversation matched', async () => {
+    const harness = createHarness()
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const revision = await withMatchInContext(harness, conversationId)
+    const result = await harness.useCase.execute(
+      {
+        conversationId,
+        message: '给第一位约20号14点的客户电话面试',
+        expectedConversationRevision: revision,
+        requestId: '44444444-4444-4444-8444-444444444444',
+        selectedJobCaseRef: null
+      },
+      scheduleInput({ rank: 1, date: '2026-08-20', time: '14:00', method: 'phone', durationMinutes: 60, kind: 'client' })
+    )
+    expect(result.status).toBe('completed')
+    expect(harness.calls[0]).toMatchObject({
+      toolName: 'candidate.interview.schedule.local',
+      input: { kind: 'client', jobCaseId: caseOne }
     })
   })
 

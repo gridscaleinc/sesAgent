@@ -7,6 +7,7 @@ import {
   type PersonnelCaseMatchRunSummary,
   type StoredPersonnelCaseMatchRun
 } from '@shared'
+import { onRequirementDecision } from './requirement-decision-events'
 
 /**
  * The last 找案件 result per person. Main stores each completed run in the encrypted database; this
@@ -47,6 +48,26 @@ const fromStored = (run: StoredPersonnelCaseMatchRun): PersonCaseMatchEntry => (
   caseSignature: run.caseSignature,
   policyVersion: run.policyVersion
 })
+
+// Badge counts are re-read after business data changes (a case ended, a status changed), not only once per session.
+let rehydrate: ReturnType<typeof setTimeout> | null = null
+if (typeof window !== 'undefined')
+  window.addEventListener('ses-business-data-changed', () => {
+    if (!hydration) return
+    if (rehydrate) clearTimeout(rehydrate)
+    rehydrate = setTimeout(() => {
+      rehydrate = null
+      hydration = null
+      void hydratePersonCaseMatches()
+    }, 500)
+  })
+// An HR decision on an unclear requirement updates the person's stored 找案件 run in place.
+if (typeof window !== 'undefined')
+  onRequirementDecision(({ documentId, personRun }) => {
+    if (!personRun || personRun.result.documentId !== documentId) return
+    entries.set(documentId, fromStored(personRun))
+    emit()
+  })
 
 export function savePersonCaseMatch(entry: PersonCaseMatchEntry) {
   entries.set(entry.result.documentId, entry)
@@ -97,11 +118,24 @@ export function hydratePersonCaseMatches(): Promise<void> {
   return hydration
 }
 /** Listed cases from the last run, or null when this person has no result (or it is for an older profile version). */
-export function personCaseMatchCount(documentId: string, profileVersion?: number): number | null {
+/** jobCaseId → version of the active cases, kept by the app shell so every badge counts the same cases. */
+let knownActiveCases: ReadonlyMap<string, number> | null = null
+export function setActiveCaseVersions(value: ReadonlyMap<string, number>) {
+  knownActiveCases = value
+  emit()
+}
+export function personCaseMatchCount(
+  documentId: string,
+  profileVersion?: number,
+  /** jobCaseId → version of the active cases; with it, cases ended or edited since the run are not counted. */
+  activeCases: ReadonlyMap<string, number> | null = knownActiveCases
+): number | null {
   const entry = entries.get(documentId)
   if (entry) {
     if (profileVersion !== undefined && entry.result.profileVersion !== profileVersion) return null
-    return entry.result.items.filter(listedPersonCaseMatch).length
+    return entry.result.items.filter(
+      (item) => listedPersonCaseMatch(item) && (!activeCases || activeCases.get(item.jobCaseId) === item.jobCaseVersion)
+    ).length
   }
   const summary = summaries.get(documentId)
   if (!summary || (profileVersion !== undefined && summary.profileVersion !== profileVersion)) return null

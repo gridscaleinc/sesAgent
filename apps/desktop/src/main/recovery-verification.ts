@@ -40,3 +40,41 @@ export async function verifyStagedRecovery(staged: StagedRecoveryPackage, curren
     keys.fileVaultKey.fill(0)
   }
 }
+
+/**
+ * Of the deletions journaled after this backup, the ones restoring it would actually bring back (their id is in
+ * the backup), and how many of those the backup has someone in place for: those are not deleted automatically.
+ */
+export function countRestoredDeletions(
+  staged: StagedRecoveryPackage,
+  entries: ReadonlyArray<{ entityType: 'candidate' | 'job-case'; entityId: string }>
+): { total: number; inPlace: number } {
+  if (!entries.length) return { total: 0, inPlace: 0 }
+  const keys = deriveApplicationKeys(staged.masterKey)
+  const repository = new EncryptedApplicationRepository({
+    path: staged.databasePath,
+    databaseKey: keys.databaseKey,
+    mappingKey: keys.mappingKey
+  })
+  try {
+    let total = 0,
+      inPlace = 0
+    for (const entry of entries) {
+      if (entry.entityType === 'candidate') {
+        if (!repository.getCandidateReview(entry.entityId)) continue
+        total += 1
+        if (repository.previewCandidateDeletion(entry.entityId).counts.activePlacements) inPlace += 1
+      } else {
+        if (!repository.getJobCaseReview(entry.entityId)) continue
+        total += 1
+        if (repository.previewJobCaseDeletion(entry.entityId).counts.activePlacements) inPlace += 1
+      }
+    }
+    return { total, inPlace }
+  } finally {
+    repository.close()
+    keys.databaseKey.fill(0)
+    keys.mappingKey.fill(0)
+    keys.fileVaultKey.fill(0)
+  }
+}

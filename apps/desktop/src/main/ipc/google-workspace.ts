@@ -56,14 +56,18 @@ async function runGmailSync(
     const knownPersonNames = collectLocalPersonNameCandidates(localText, localNameDetection)
     const processed = redactGmailMessageForLocalStorage(message, accountEmail, knownPersonNames)
     repository.saveRedactionSession(processed.redaction.session, processed.redaction.mappings)
-    const progressMessage = repository.captureBusinessProgressMail({
-      accountEmail,
-      messageId: message.id,
-      threadId: message.threadId,
-      subject: message.subject,
-      body: message.body,
-      receivedAt: new Date(message.internalDate).toISOString()
-    })
+    // Taken as follow-up mail (and kept out of case/person intake) only when it belongs to a follow-up.
+    const progressMessage = repository.captureBusinessProgressMail(
+      {
+        accountEmail,
+        messageId: message.id,
+        threadId: message.threadId,
+        subject: message.subject,
+        body: message.body,
+        receivedAt: new Date(message.internalDate).toISOString()
+      },
+      { onlyIfMatched: true }
+    )
     return progressMessage ? { ...processed.message, classification: 'unclassified' as const } : processed.message
   })
   await coordinator.synchronize(accountEmail, config)

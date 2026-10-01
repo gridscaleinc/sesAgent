@@ -15,6 +15,8 @@ import {
   extractLocalCandidatePersonalDetails
 } from '@resume'
 import {
+  candidateIdentityKey,
+  samePersonByDetails,
   candidateDeletionPreviewSchema,
   candidateReviewSnapshotSchema,
   candidateWorkAuthorizationValues,
@@ -87,10 +89,9 @@ export class CandidateStore extends DomainStore {
     )
     const save = this.database.transaction(() => {
       for (const file of files) {
-        const duplicate = this.database
-          .prepare<[string], { token: string }>('SELECT token FROM staged_files WHERE sha256 = ? LIMIT 1')
-          .get(file.sha256)
-        if (duplicate) throw new DuplicateCandidateError(duplicate.token)
+        // Only bytes a person was imported from count: a file left staged by an earlier failed import does not block.
+        const duplicate = this.findCandidateByStagedSha256(file.sha256)
+        if (duplicate) throw this.alreadyImported(duplicate, true)
         insertFile.run(file.token, file.name, file.format, file.size, file.sha256, file.encryptedPath, file.privacyStatus, file.createdAt)
       }
       this.database
@@ -111,7 +112,15 @@ export class CandidateStore extends DomainStore {
         .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'work_task', validatedTask.id, 1, 'upsert', new Date().toISOString())
     })
-    save()
+    try {
+      save()
+    } catch (error) {
+      if (error instanceof DuplicateCandidateError && error.promoteToLibrary)
+        this.database
+          .prepare('UPDATE candidate_records SET in_talent_library = 1, updated_at = ? WHERE source_document_id = ?')
+          .run(new Date().toISOString(), error.documentId)
+      throw error
+    }
   }
 
   removeStagedFiles(tokens: string[]): void {
@@ -228,9 +237,10 @@ export class CandidateStore extends DomainStore {
       throw new Error('Candidate extraction and parsed document refer to different staged files.')
     }
     const save = this.database.transaction(() => {
-      if (validatedExtraction && !this.getCandidateReview(validatedDocument.documentId)) {
+      const isNewPerson = Boolean(validatedExtraction && !this.getCandidateReview(validatedDocument.documentId))
+      if (isNewPerson) {
         const duplicate = this.findCandidateByDocumentContent(validatedDocument)
-        if (duplicate) throw new DuplicateCandidateError(duplicate.documentId)
+        if (duplicate) throw this.alreadyImported(duplicate, inTalentLibrary)
       }
       this.database
         .prepare(
@@ -303,8 +313,61 @@ export class CandidateStore extends DomainStore {
         }
         this.materializeImportedProfile(validatedExtraction.documentId)
       }
+      // Someone already in the system under the same name: this import is given up (rolled back with the transaction).
+      if (isNewPerson) {
+        const twin = this.samePersonAs(validatedDocument.documentId)
+        if (twin) throw this.alreadyImported(twin, inTalentLibrary)
+      }
     })
-    save()
+    try {
+      save()
+    } catch (error) {
+      if (error instanceof DuplicateCandidateError && error.promoteToLibrary)
+        this.database
+          .prepare('UPDATE candidate_records SET in_talent_library = 1, updated_at = ? WHERE source_document_id = ?')
+          .run(new Date().toISOString(), error.documentId)
+      throw error
+    }
+  }
+
+  /**
+   * The active person, other than this record, who is the same human: the same name plus the same mobile number,
+   * address or age (samePersonByDetails). Someone who only shares a name is a different person and is imported.
+   */
+  private samePersonAs(documentId: string): CandidateReviewSnapshot | null {
+    const incoming = this.getCandidateReview(documentId) ?? undefined
+    const key = candidateIdentityKey(incoming)
+    if (!key) return null
+    return (
+      this.listCandidateReviews().find(
+        (review) =>
+          review.documentId !== documentId &&
+          review.recordStatus === 'active' &&
+          candidateIdentityKey(review) === key &&
+          samePersonByDetails(incoming, review)
+      ) ?? null
+    )
+  }
+
+  /** 「该人员已入库」 for an existing person; a library import also brings a case-assessment-only record into the library. */
+  private alreadyImported(existing: CandidateReviewSnapshot, inTalentLibrary: boolean): DuplicateCandidateError {
+    return new DuplicateCandidateError(
+      existing.documentId,
+      existing.localIdentity?.displayName || existing.fileName || null,
+      inTalentLibrary && existing.inTalentLibrary === false
+    )
+  }
+
+  /** The person whose staged résumé has exactly these bytes, if one was imported from them. */
+  findCandidateByStagedSha256(sha256: string): CandidateReviewSnapshot | null {
+    const row = this.database
+      .prepare<[string], { token: string }>(
+        `SELECT staged.token FROM staged_files staged
+         JOIN candidate_records record ON record.source_document_id = staged.token
+         WHERE staged.sha256 = ? ORDER BY staged.created_at LIMIT 1`
+      )
+      .get(sha256)
+    return row ? this.getCandidateReview(row.token) : null
   }
 
   /** Make extracted personnel usable immediately without claiming an HR review. */
@@ -956,8 +1019,13 @@ export class CandidateStore extends DomainStore {
         'SELECT mail.id,mail.payload FROM business_progress_mail mail JOIN business_followups followup ON followup.id=mail.followup_id WHERE followup.document_id=? ORDER BY mail.id'
       )
       .all(sourceDocumentId)
+    const placements = this.stores.businessProgress.list().filter((row) => row.documentId === sourceDocumentId)
+    const activePlacements = placements.filter((row) => row.progress?.stage === 'started').length
+    const endedPlacements = placements.filter((row) => row.progress?.stage === 'ended').length
     const counts = {
       ...(followUps.length ? { businessFollowUps: followUps.length } : {}),
+      ...(activePlacements ? { activePlacements } : {}),
+      ...(endedPlacements ? { endedPlacements } : {}),
       profileVersions: history.length,
       reviewAudits,
       taskRecords,
@@ -997,6 +1065,11 @@ export class CandidateStore extends DomainStore {
     if (preview.confirmationHash !== expectedConfirmationHash) {
       throw new Error('Candidate deletion preview changed. Review the impact again before deleting.')
     }
+    // As for a case: deleting would take the placement record with it while the person is still in place.
+    if (preview.counts.activePlacements)
+      throw new Error(
+        '这个人员还处于已进场，请先在跟进中记录退场或撤销进场，再删除。 / この要員は参画中です。対応記録で退場または参画取消を記録してから削除してください。'
+      )
     const taskIds = this.stores.workTasks
       .listWorkTasks()
       .filter((task) =>
@@ -1043,6 +1116,14 @@ export class CandidateStore extends DomainStore {
       this.database.prepare('DELETE FROM candidate_profiles WHERE source_document_id = ?').run(sourceDocumentId)
       const deleted = this.database.prepare('DELETE FROM staged_files WHERE token = ?').run(sourceDocumentId)
       if (deleted.changes !== 1) throw new Error('Candidate source record could not be deleted.')
+      // The résumé's redaction session goes too, as a case deletion removes its own; one another record still uses
+      // (the foreign keys refuse it) stays.
+      if (redactionSessionId)
+        try {
+          this.database.prepare('DELETE FROM redaction_sessions WHERE id = ?').run(redactionSessionId)
+        } catch {
+          /* still referenced elsewhere */
+        }
       this.database
         .prepare('INSERT INTO change_outbox(id, entity_type, entity_id, revision, operation, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), 'candidate', sourceDocumentId, 1, 'delete', now.toISOString())

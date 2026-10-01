@@ -442,6 +442,23 @@ export class GmailStore extends DomainStore {
       .run(accountEmail, configHash, lastRun ? JSON.stringify(lastRun) : null, errorCode.slice(0, 240), failedAt)
   }
 
+  /**
+   * Tombstones kept outside the database (the deletion journal) written back after a restore, so a deleted case's
+   * Gmail message is not imported again. Existing tombstones are left as they are.
+   */
+  restoreGmailMessageTombstones(rows: ReadonlyArray<{ accountEmail: string; gmailMessageId: string }>, now = new Date()): number {
+    const insert = this.database.prepare(
+      `INSERT INTO gmail_message_tombstones(account_email, gmail_message_id, deleted_at, reason)
+       VALUES (?, ?, ?, 'job-case-permanent-deletion')
+       ON CONFLICT(account_email, gmail_message_id) DO NOTHING`
+    )
+    let added = 0
+    this.database.transaction(() => {
+      for (const row of rows) added += insert.run(row.accountEmail, row.gmailMessageId, now.toISOString()).changes
+    })()
+    return added
+  }
+
   hasGmailMessage(accountEmail: string, gmailMessageId: string): boolean {
     return Boolean(
       this.database

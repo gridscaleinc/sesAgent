@@ -79,7 +79,7 @@ describe('interview progression assistance', () => {
   it('reads mail progress with the 批量核对 model the operator chose', async () => {
     const { context, repository, agentNarrativeStreamer } = setup()
     Object.assign(repository, {
-      getLocalApplicationPreferences: () => ({ aiModels: { checking: 'gpt-6-luna', writing: 'gpt-6.1-sol-pro' } })
+      getLocalApplicationPreferences: () => ({ aiModels: { checking: 'gpt-6-luna', writing: 'gpt-6-sol' } })
     })
     await createBusinessProgressAnalyzer(context)({
       documentId,

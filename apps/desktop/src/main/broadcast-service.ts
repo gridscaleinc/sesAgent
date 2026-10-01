@@ -63,13 +63,34 @@ export function requireSendableReview(repository: BroadcastServiceRepository, re
   return review as SendableJobCaseReview
 }
 
+/** The 配信 queue, 「有更新」 judged through the default template the way the update notice compares. */
+export function broadcastQueueOf(repository: BroadcastServiceRepository) {
+  const templates = repository.listBroadcastTemplates()
+  return deriveBroadcastQueue({
+    reviews: repository.listJobCaseReviews(),
+    ledger: repository.listAllCaseBroadcasts(),
+    copies: repository.listAllCaseBroadcastCopies(),
+    ...(templates[0]
+      ? {
+          shownChange: {
+            // No history to compare with: the version alone says there is an update.
+            history: (reviewId: string) => {
+              try {
+                return repository.getJobCaseHistory?.(reviewId) ?? []
+              } catch {
+                return []
+              }
+            },
+            template: templates[0]
+          }
+        }
+      : {})
+  })
+}
+
 export function loadBroadcastWorkspace(repository: BroadcastServiceRepository): BroadcastWorkspace {
   return {
-    queue: deriveBroadcastQueue({
-      reviews: repository.listJobCaseReviews(),
-      ledger: repository.listAllCaseBroadcasts(),
-      copies: repository.listAllCaseBroadcastCopies()
-    }),
+    queue: broadcastQueueOf(repository),
     templates: repository.listBroadcastTemplates()
   }
 }
@@ -144,7 +165,8 @@ export function draftCaseUpdateNotice(
   const baseline = history.find((version) => version.version === baselineVersion)
   const current = history.find((version) => version.version === review.jobCase.version)
   if (!baseline || !current) return { status: 'no-copy-baseline' }
-  const template = resolveBroadcastTemplate(repository)
+  // Compared through the template the operator is using, so the notice lists the lines that template shows.
+  const template = resolveBroadcastTemplate(repository, input.templateId)
   const changes = diffBroadcastFields(baseline, current, template)
   if (changes.ja.length === 0) return { status: 'no-changes' }
   const title = activeCaseTitle(review)
@@ -161,11 +183,15 @@ export function draftCaseUpdateNotice(
  * this text on the clipboard. Where it goes afterwards is theirs to manage.
  * A text still carrying an identifier records nothing at all.
  */
-export function recordCaseBroadcastCopy(
+/**
+ * What a text must pass before it may go on the clipboard: the case and template it was made from are still
+ * current, and the body (as the operator edited it) carries no direct identifier. Unlike a mail hand-off there is
+ * no subject and no URL length to respect, so long Chinese or Japanese introductions are fine.
+ */
+export function validateCaseBroadcastCopy(
   repository: BroadcastServiceRepository,
-  operator: { operatorId: string },
   input: RecordCaseBroadcastCopyInput
-): RecordCaseBroadcastCopyResult {
+): { review: SendableJobCaseReview; template: BroadcastTemplate } {
   const review = requireSendableReview(repository, input.reviewId)
   const template = resolveBroadcastTemplate(repository, input.templateId)
   if (
@@ -177,6 +203,15 @@ export function recordCaseBroadcastCopy(
   if (identifiers.length > 0) {
     throw new Error(`本文に識別子が残っています（${identifiers.join('、')}）。削除してからもう一度操作してください。`)
   }
+  return { review, template }
+}
+
+export function recordCaseBroadcastCopy(
+  repository: BroadcastServiceRepository,
+  operator: { operatorId: string },
+  input: RecordCaseBroadcastCopyInput
+): RecordCaseBroadcastCopyResult {
+  const { review, template } = validateCaseBroadcastCopy(repository, input)
   const copy = repository.appendCaseBroadcastCopy({
     reviewId: review.reviewId,
     jobCaseId: review.jobCase.id,

@@ -70,11 +70,15 @@ export class PersonCaseMatchStore extends DomainStore {
 
   listRunSummaries(): PersonnelCaseMatchRunSummary[] {
     const counts = new Map<string, number>()
+    // Only cases still active at the version the run saw count, as the result page shows them.
+    const active = new Map(this.stores.jobCases.listActiveJobCases().map((job) => [job.id, job.version]))
     for (const item of this.database
       .prepare<[], { document_id: string; payload: string }>('SELECT document_id, payload FROM person_case_match_run_items')
-      .all())
-      if (isListedPersonnelCaseMatch(JSON.parse(item.payload) as PersonnelCaseMatch))
+      .all()) {
+      const match = JSON.parse(item.payload) as PersonnelCaseMatch
+      if (isListedPersonnelCaseMatch(match) && active.get(match.jobCaseId) === match.jobCaseVersion)
         counts.set(item.document_id, (counts.get(item.document_id) ?? 0) + 1)
+    }
     return this.database
       .prepare<[], Omit<RunRow, 'summary'>>(
         'SELECT document_id, profile_version, rules_revision, policy_version, case_signature, searched_at FROM person_case_match_runs ORDER BY document_id'

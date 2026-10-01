@@ -10,9 +10,23 @@ export function candidateContentFingerprint(document: Pick<DocumentIR, 'blocks'>
   const content = normalizedIntakeText(document.blocks.map((block) => block.text).join('\n'))
   return content ? createHash('sha256').update(content).digest('hex') : null
 }
+/**
+ * The person is already in the system (the same résumé, or the same name plus the same mobile number, address or age):
+ * the import is given up, nothing of it is kept.
+ * `promoteToLibrary` asks the caller's store to add the existing record to the talent library (it was saved only for a
+ * case assessment and is now imported for real) once the import itself has been rolled back.
+ */
 export class DuplicateCandidateError extends Error {
-  constructor(readonly documentId: string) {
-    super('相同人员资料已存在，请查看已有记录。 / 同じ要員資料は登録済みです。既存の資料をご確認ください。')
+  constructor(
+    readonly documentId: string,
+    readonly existingName: string | null = null,
+    readonly promoteToLibrary = false
+  ) {
+    super(
+      existingName
+        ? `该人员已入库（${existingName}），本次导入已放弃。 / この要員は登録済みです（${existingName}）。今回の取り込みは取り消しました。`
+        : '该人员已入库，本次导入已放弃。 / この要員は登録済みです。今回の取り込みは取り消しました。'
+    )
     this.name = 'DuplicateCandidateError'
   }
 }

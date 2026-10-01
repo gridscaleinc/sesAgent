@@ -158,7 +158,7 @@ function TaskEvidenceView({
         <header>
           <Icon name="file" size={17} />
           <div>
-            <span>TRACEABLE RESULT</span>
+            <span>{t('可追溯结果', '追跡可能な結果')}</span>
             <strong>{t('支持此结果的证据', 'この結果を支える証跡')}</strong>
           </div>
         </header>
@@ -192,7 +192,7 @@ function TaskEvidenceView({
         <section className="task-ranking-evidence" aria-label={t('搜索排名证据', '検索ランキング証跡')}>
           <header>
             <div>
-              <span>LOCAL RETRIEVAL PIPELINE</span>
+              <span>{t('本机检索流程', 'ローカル検索の流れ')}</span>
               <strong>{t('搜索排名证据', '検索ランキング証跡')}</strong>
             </div>
             <em>{t('不使用云端', 'Cloud不使用')}</em>
@@ -202,23 +202,23 @@ function TaskEvidenceView({
             <b>→</b>
             <span>BM25</span>
             <b>+</b>
-            <span>Profile/Project Vector</span>
+            <span>{t('档案 / 项目向量', 'プロフィール / プロジェクトベクトル')}</span>
             <b>→</b>
             <span>RRF</span>
             <b>→</b>
-            <span>Local Rerank</span>
+            <span>{t('本机重排', 'ローカル再順位付け')}</span>
           </div>
           <dl>
             <div>
-              <dt>Algorithm</dt>
+              <dt>{t('算法', 'アルゴリズム')}</dt>
               <dd>{run.algorithmVersion}</dd>
             </div>
             <div>
-              <dt>Policy</dt>
+              <dt>{t('规则', 'ポリシー')}</dt>
               <dd>{run.hardFilterPolicyVersion}</dd>
             </div>
             <div>
-              <dt>Result Set Hash</dt>
+              <dt>{t('结果集哈希', '結果セットハッシュ')}</dt>
               <dd>{run.resultSetHash.slice(0, 12)}</dd>
             </div>
             <div>
@@ -260,7 +260,7 @@ function TaskEvidenceView({
               ))}
               {candidate.projectEvidence ? (
                 <li>
-                  <strong>Project</strong>
+                  <strong>{t('项目', 'プロジェクト')}</strong>
                   <span>{candidate.projectEvidence.title}</span>
                   <small>{summarizeSourceLabels(candidate.projectEvidence.sourceLabels, locale)}</small>
                 </li>
@@ -286,7 +286,7 @@ function TaskEvidenceView({
           </header>
           <dl>
             <div>
-              <dt>Parser</dt>
+              <dt>{t('解析器', 'パーサー')}</dt>
               <dd>{analysis.analysisVersion}</dd>
             </div>
             <div>
@@ -294,7 +294,7 @@ function TaskEvidenceView({
               <dd>{analysis.localProcessing.ocr}</dd>
             </div>
             <div>
-              <dt>Pages / Sheets</dt>
+              <dt>{t('页数 / 工作表数', 'ページ / シート数')}</dt>
               <dd>
                 {analysis.statistics.pages} / {analysis.statistics.sheets}
               </dd>
@@ -367,7 +367,7 @@ function TaskGovernanceView({ processingJob, task }: { processingJob: Processing
         <header>
           <Icon name="shield" size={17} />
           <div>
-            <span>ENFORCED BOUNDARY</span>
+            <span>{t('执行边界', '適用範囲')}</span>
             <strong>{t('数据范围与执行边界', 'データ範囲と実行境界')}</strong>
           </div>
         </header>
@@ -381,7 +381,7 @@ function TaskGovernanceView({ processingJob, task }: { processingJob: Processing
             <dd>{localizedMainText(locale, task.scope.detail)}</dd>
           </div>
           <div>
-            <dt>Privacy Policy</dt>
+            <dt>{t('隐私规则', 'プライバシールール')}</dt>
             <dd>{task.privacy.policyVersion}</dd>
           </div>
           <div>
@@ -454,7 +454,7 @@ function TaskGovernanceView({ processingJob, task }: { processingJob: Processing
 
       <section className="task-replay-boundary">
         <header>
-          <span>RECOVERY POLICY</span>
+          <span>{t('恢复规则', '復旧ルール')}</span>
           <strong>
             {processingJob
               ? processingJob.replayPolicy === 'safe-local'
@@ -466,21 +466,21 @@ function TaskGovernanceView({ processingJob, task }: { processingJob: Processing
         {processingJob ? (
           <dl>
             <div>
-              <dt>Status</dt>
+              <dt>{t('状态', '状態')}</dt>
               <dd>{processingJobStatusLabel(processingJob.status, t)}</dd>
             </div>
             <div>
-              <dt>Attempt</dt>
+              <dt>{t('尝试次数', '試行回数')}</dt>
               <dd>
                 {processingJob.attemptCount} / {processingJob.maxAttempts}
               </dd>
             </div>
             <div>
-              <dt>Progress</dt>
+              <dt>{t('进度', '進捗')}</dt>
               <dd>{processingJob.progress}%</dd>
             </div>
             <div>
-              <dt>Cancel</dt>
+              <dt>{t('取消', '取消')}</dt>
               <dd>{processingJob.cancelRequestedAt ? t('已请求', '要求済み') : t('未请求', '未要求')}</dd>
             </div>
           </dl>
@@ -883,7 +883,7 @@ function ResumeImportResults({
             </dd>
           </div>
           <div>
-            <dt>Project</dt>
+            <dt>{t('项目', 'プロジェクト')}</dt>
             <dd>{t(`${projectCount} 项 · 等待 HR 确认`, `${projectCount}件 · HR確認待ち`)}</dd>
           </div>
         </dl>
@@ -1135,7 +1135,7 @@ function TaskRecordSummary({ task, processingJob }: { task: WorkTask; processing
     <section className="task-record-summary" aria-label={t('加密任务记录', '暗号化された作業記録')}>
       <header>
         <div>
-          <span>PERSISTED TASK RECORD</span>
+          <span>{t('任务记录', '作業記録')}</span>
           <strong>{t('重启后仍可恢复的任务记录', '再起動後も復元される作業記録')}</strong>
         </div>
         <em>
@@ -1165,7 +1165,7 @@ function TaskRecordSummary({ task, processingJob }: { task: WorkTask; processing
       {processingJob ? (
         <div className={`processing-job-status is-${processingJob.status}`}>
           <div>
-            <span>PROCESSING JOB</span>
+            <span>{t('处理作业', '処理ジョブ')}</span>
             <strong>{processingJobStatusLabel(processingJob.status, t)}</strong>
           </div>
           <div className="processing-job-progress">
@@ -1367,7 +1367,7 @@ export function TaskWorkspace({
 
       <aside className="task-results-panel">
         <div className="results-heading">
-          <span className="eyebrow">RESULT & CONTROL</span>
+          <span className="eyebrow">{t('结果与操作', '結果と操作')}</span>
           <h2>{t('结果与治理', '結果と統制')}</h2>
         </div>
         <ResultControlTabs

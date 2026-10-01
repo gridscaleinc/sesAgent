@@ -79,7 +79,7 @@ describe('AiCommerceMemberDialog', () => {
       />
     )
 
-    expect(screen.getByText('1,000 credits')).toBeInTheDocument()
+    expect(screen.getByText('1,000 クレジット')).toBeInTheDocument()
     const submit = screen.getByRole('button', { name: '脱敏プレビューを確認' })
     expect(submit).toBeDisabled()
     fireEvent.change(screen.getByLabelText('依頼内容'), { target: { value: '候補者の経験を短く要約してください。' } })

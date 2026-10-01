@@ -15,7 +15,7 @@ const ready = (overrides: Partial<TrayReadySummary> = {}): TrayReadySummary => (
   interviews: {
     coordinating: 1,
     today: 2,
-    next: { at: '2026-09-30T05:00:00.000Z', roundNumber: 1, caseTitle: 'EC決済基盤の刷新', personName: null }
+    next: { kind: 'client', at: '2026-09-30T05:00:00.000Z', roundNumber: 1, caseTitle: 'EC決済基盤の刷新', personName: null }
   },
   ai: { state: 'ok', availableCredits: 1234, reservedCredits: 0, fraction: 0.8 },
   alerts: [],
@@ -61,7 +61,7 @@ describe('TrayPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /新匹配机会/u }))
     expect(api.openMain).toHaveBeenLastCalledWith('cases', { caseView: 'opportunities' })
     fireEvent.click(screen.getByRole('button', { name: /待约面/u }))
-    expect(api.openMain).toHaveBeenLastCalledWith('followups', { followUpFilter: 'today' })
+    expect(api.openMain).toHaveBeenLastCalledWith('followups', { followUpFilter: 'coordinating' })
     fireEvent.click(screen.getByRole('button', { name: /AI 额度/u }))
     expect(api.openMain).toHaveBeenLastCalledWith('ai-member', undefined)
     fireEvent.click(screen.getByRole('button', { name: /一面 · EC決済基盤の刷新/u }))
@@ -74,14 +74,28 @@ describe('TrayPanel', () => {
     expect(api.openMain).toHaveBeenLastCalledWith('cases', undefined)
   })
 
+  it('opens the interview schedule for a next interview that is a 招聘面试', async () => {
+    const { api } = setup(
+      ready({
+        interviews: {
+          coordinating: 0,
+          today: 1,
+          next: { kind: 'recruiting', at: '2026-09-30T05:00:00.000Z', roundNumber: 1, caseTitle: '招聘面试', personName: null }
+        }
+      })
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /一面 · 招聘面试/u }))
+    expect(api.openMain).toHaveBeenLastCalledWith('interview-schedule', undefined)
+  })
+
   it('shows the card counts and the AI balance', async () => {
     setup(ready())
     const cases = await screen.findByRole('button', { name: /新案件/u })
-    expect(within(cases).getByText('4')).toBeInTheDocument()
-    expect(within(cases).getByText('未读 7')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /新匹配机会/u })).getByText('可以提案 5')).toBeInTheDocument()
+    expect(within(cases).getByText('7')).toBeInTheDocument()
+    expect(within(cases).getByText('今天新到 4')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /新匹配机会/u })).getByText('共 5 组可以提案')).toBeInTheDocument()
     expect(within(screen.getByRole('button', { name: /待约面/u })).getByText('今天面试 2')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /AI 额度/u })).getByText('剩余 1,234')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /AI 额度/u })).getByText('剩余 1,234 点')).toBeInTheDocument()
   })
 
   it('names the person only when the setting allows it', async () => {
@@ -94,7 +108,7 @@ describe('TrayPanel', () => {
         interviews: {
           coordinating: 1,
           today: 2,
-          next: { at: '2026-09-30T05:00:00.000Z', roundNumber: 2, caseTitle: 'EC', personName: '王小明' }
+          next: { kind: 'client', at: '2026-09-30T05:00:00.000Z', roundNumber: 2, caseTitle: 'EC', personName: '王小明' }
         }
       })
     )
@@ -148,7 +162,7 @@ describe('TrayPanel', () => {
   it('shows reserved credits beside the balance only when some are reserved', async () => {
     const { push } = setup(ready({ ai: { state: 'ok', availableCredits: 1234, reservedCredits: 50, fraction: 0.8 } }))
     const card = await screen.findByRole('button', { name: /AI 额度/u })
-    expect(within(card).getByText('剩余 1,234')).toHaveClass('is-ok')
+    expect(within(card).getByText('剩余 1,234 点')).toHaveClass('is-ok')
     expect(within(card).getByText('预留 50')).toBeInTheDocument()
     push(ready())
     expect(within(screen.getByRole('button', { name: /AI 额度/u })).queryByText(/预留/u)).not.toBeInTheDocument()

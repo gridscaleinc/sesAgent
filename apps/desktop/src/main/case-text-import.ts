@@ -101,7 +101,34 @@ export function createCaseTextBatchImporter(context: Dependencies) {
           failed.push(record.text)
         }
       }
-      result.remainingText = failed.join('\n\n')
+      // Nothing pasted is lost: passages the model set aside (not a case, not a person) and any line no range covers
+      // stay in the box with the cases that failed to save, for the operator to check.
+      const covered = new Set<number>()
+      for (const range of [...extraction.records, ...personnel])
+        for (let line = range.startLine; line <= range.endLine; line++) covered.add(line)
+      // Each uncovered run is kept as the original slice, line breaks included. Blank runs and a bare greeting or
+      // sign-off (「お世話になっております」「以上」) are not business text: neither kept nor counted as unrecognized.
+      const unrecognized: string[] = []
+      let first: number | null = null
+      const flush = (last: number) => {
+        if (first === null) return
+        const slice = text.slice(units[first]!.start, units[last]!.end).replace(/^\s*\n|\n\s*$/gu, '')
+        first = null
+        if (!slice.trim() || isGreetingOnly(slice)) return
+        unrecognized.push(slice)
+      }
+      units.forEach((_unit, index) => {
+        if (covered.has(index + 1)) flush(index - 1)
+        else if (first === null) first = index
+      })
+      flush(units.length - 1)
+      result.unrecognized = unrecognized.length
+      // The personnel introductions set aside go to 人员 import as they were pasted.
+      result.skippedPersonnelText = personnel
+        .map((range) => text.slice(units[range.startLine - 1]!.start, units[range.endLine - 1]!.end).trim())
+        .filter(Boolean)
+        .join('\n\n')
+      result.remainingText = [...failed, ...unrecognized].join('\n\n')
       return result
     } finally {
       clearTimeout(timeout)
@@ -117,4 +144,15 @@ export function createCaseTextBatchImporter(context: Dependencies) {
     active.set(key, promise)
     return promise
   }
+}
+
+/** A short run of salutations and sign-offs only: what mails and chats wrap cases in, not a case. */
+function isGreetingOnly(text: string): boolean {
+  const rest = text
+    .normalize('NFKC')
+    .replace(
+      /お世話になっております|お世話になります|お疲れ様です|お疲れさまです|いつもありがとうございます|よろしくお願いいたします|よろしくお願いします|宜しくお願いいたします|宜しくお願いします|ご確認ください|ご検討ください|以上(?:です|となります)?|下記(?:の)?案件(?:を|の)?(?:ご紹介|ご案内)(?:いたします|します)?|您好|你好|大家好|谢谢|感谢|以上是[^\n]{0,20}|[-=_*~─━・。、,.!！?？:：\s]/gu,
+      ''
+    )
+  return text.trim().length <= 80 && rest.length === 0
 }

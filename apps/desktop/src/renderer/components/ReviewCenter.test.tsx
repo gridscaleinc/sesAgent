@@ -87,6 +87,19 @@ describe('ReviewCenter', () => {
     expect(queue.find((item) => item.kind === 'candidate')).not.toHaveProperty('fileName')
   })
 
+  it('waits for no review on a résumé saved only for a case assessment, an archived person or an ended case', () => {
+    const { candidateReview, jobCaseReview } = createFixtures()
+    const queue = buildReviewQueue(
+      [],
+      [
+        { ...candidateReview, documentId: 'case-only', inTalentLibrary: false },
+        { ...candidateReview, documentId: 'archived', recordStatus: 'archived' as const }
+      ],
+      [{ ...jobCaseReview, lifecycle: 'archived' as const }]
+    )
+    expect(queue).toEqual([])
+  })
+
   it('filters the local queue and opens the exact task, candidate task, and case review', () => {
     const { tasks, candidateReview, jobCaseReview } = createFixtures()
     const items = buildReviewQueue(tasks, [candidateReview], [jobCaseReview])

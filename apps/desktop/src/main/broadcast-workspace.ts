@@ -17,8 +17,9 @@ function fieldValue(review: JobCaseReviewSnapshot, key: JobCaseFieldKey): string
   return review.fields.find((field) => field.key === key)?.value ?? null
 }
 
-/** Queue order: what still needs doing first, what is finished last. */
-const statusRank: Record<BroadcastQueueStatus, number> = { new: 0, attention: 1, copied: 2 }
+/** Queue order: what still needs doing first, what is finished last. A copied case revised since comes right after new ones. */
+const statusRank: Record<BroadcastQueueStatus, number> = { new: 0, attention: 2, copied: 3 }
+const queueRank = (item: BroadcastQueueItem) => (item.status === 'copied' && item.hasUpdateSinceLastCopy ? 1 : statusRank[item.status])
 
 /**
  * One past copy, whatever wrote it down. A pre-v43 ledger row said what left
@@ -56,6 +57,11 @@ export function deriveBroadcastQueue(input: {
   reviews: ReadonlyArray<JobCaseReviewSnapshot>
   ledger: ReadonlyArray<CaseBroadcastRecord>
   copies: ReadonlyArray<CaseBroadcastCopy>
+  /**
+   * When given, 「有更新」 needs a change the template shows (as the update notice compares), not only a new version:
+   * a revision of fields the broadcast never shows leaves nothing to resend.
+   */
+  shownChange?: { history(reviewId: string): JobCaseVersionDetail[]; template: BroadcastTemplate }
 }): BroadcastQueueItem[] {
   const byReview = new Map<string, CopyEvent[]>()
   for (const row of [...input.ledger, ...input.copies]) {
@@ -92,10 +98,13 @@ export function deriveBroadcastQueue(input: {
         sourceType: review.sourceType,
         status: latest === null ? 'new' : 'copied',
         lastCopy: latest,
-        hasUpdateSinceLastCopy: latest !== null && review.jobCase!.version > copiedCeiling
+        hasUpdateSinceLastCopy:
+          latest !== null &&
+          review.jobCase!.version > copiedCeiling &&
+          (!input.shownChange || shownFieldsChanged(input.shownChange, review.reviewId, copiedCeiling, review.jobCase!.version))
       }
     })
-    .toSorted((left, right) => statusRank[left.status] - statusRank[right.status] || right.reviewId.localeCompare(left.reviewId))
+    .toSorted((left, right) => queueRank(left) - queueRank(right) || right.reviewId.localeCompare(left.reviewId))
 }
 
 const forbiddenKeys: ReadonlySet<string> = new Set<string>(broadcastForbiddenFieldKeys)
@@ -129,4 +138,17 @@ export function diffBroadcastFields(
     zh.push({ label: line.labelZh, before: before ?? empty, after: after ?? empty })
   }
   return { ja, zh }
+}
+
+function shownFieldsChanged(
+  shown: { history(reviewId: string): JobCaseVersionDetail[]; template: BroadcastTemplate },
+  reviewId: string,
+  copiedVersion: number,
+  currentVersion: number
+): boolean {
+  const history = shown.history(reviewId)
+  const baseline = history.find((version) => version.version === copiedVersion)
+  const current = history.find((version) => version.version === currentVersion)
+  // Without both versions nothing can be compared: say there is an update rather than hide one.
+  return !baseline || !current || diffBroadcastFields(baseline, current, shown.template).ja.length > 0
 }

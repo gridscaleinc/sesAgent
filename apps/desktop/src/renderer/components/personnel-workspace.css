@@ -1,0 +1,97 @@
+/* The person panel beside the HR list (PersonnelWorkspace). Loaded after business-workbench.css rules, scoped to the panel. */
+
+.personnel-detail .personnel-detail-header h3 {
+  margin-top: 0;
+}
+
+/* 营业状态 reads like the profile summary's field rows: a card with the label and its control on one line. */
+.personnel-detail .personnel-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.personnel-detail .personnel-status label:first-child {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.personnel-detail .personnel-status label > span {
+  flex-shrink: 0;
+  color: var(--tone-slate-57-2);
+  font-size: 11px;
+}
+
+.personnel-detail .personnel-status select {
+  width: auto;
+  min-width: 110px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.personnel-detail .personnel-status button {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  color: var(--ink-secondary);
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.personnel-detail .personnel-status button:hover:not(:disabled) {
+  background: var(--surface-faint);
+  border-color: var(--accent);
+}
+
+.personnel-detail .personnel-status [role='alert'] {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--status-danger-fg);
+  font-size: 11px;
+}
+.personnel-detail .personnel-status-hint { color: var(--muted); font-size: 12px; }
+
+/* HR's decisions written into the person's record, withdrawable here. */
+.person-requirement-decisions {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.person-requirement-decisions h3 {
+  margin: 0;
+  font-size: 13px;
+}
+.person-requirement-decisions p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted, inherit);
+}
+.person-requirement-decisions ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.person-requirement-decisions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.person-requirement-decisions li button {
+  margin-left: auto;
+}

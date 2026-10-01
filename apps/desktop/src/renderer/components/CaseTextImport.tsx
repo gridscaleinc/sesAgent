@@ -20,7 +20,7 @@ export function CaseTextImport({
   cases: JobCaseReviewSnapshot[]
   onRefresh(): Promise<void>
   onImport?(input: { text: string }): Promise<ImportCaseTextBatchResult>
-  /** Adds a newly created case to 我的案件 so it shows in the list's default view. */
+  /** Adds a newly created case to 负责中 so it shows in the list's default view. */
   onAddToWorking?(reviewId: string): Promise<unknown>
   /** 「找人」 for a newly created case (its reviewId, the case list object id). */
   onFindPeople?(caseObjectId: string): void
@@ -29,7 +29,7 @@ export function CaseTextImport({
   /** 「在列表中查看全部」 when more cases were created than are listed here. */
   onShowInList?(): void
   /** 「去人员页导入」 for passages that were personnel introductions. */
-  onOpenPersonImport?(): void
+  onOpenPersonImport?(text?: string): void
 }) {
   const zh = useUiLocale() === 'zh-CN'
   const t = localeText(zh)
@@ -39,6 +39,7 @@ export function CaseTextImport({
   const [notice, setNotice] = useState('')
   const [created, setCreated] = useState<string[]>([])
   const [skippedPersonnel, setSkippedPersonnel] = useState(0)
+  const [personnelText, setPersonnelText] = useState('')
   const [error, setError] = useState('')
   const busy = useRef(false)
   const seed = useRef<number | null>(null)
@@ -70,14 +71,18 @@ export function CaseTextImport({
       const result = await onImport({ text })
       setText(result.remainingText)
       const personnel = result.skippedPersonnel ?? 0
-      const createdIds = result.createdReviewIds ?? []
+      // New cases and the existing ones the paste repeated: both join 负责中 and are listed, so a duplicate can be opened.
+      const createdIds = [...new Set([...(result.createdReviewIds ?? []), ...(result.reviewIds ?? [])])]
       setNotice(
-        t(
-          `已新增 ${result.created} 个案件，跳过 ${result.duplicates} 个重复案件。`,
-          `${result.created}件を追加し、重複${result.duplicates}件をスキップしました。`
-        )
+        result.duplicates
+          ? t(
+              `已新增 ${result.created} 个案件；${result.duplicates} 个与已有案件相同，未重复导入，已列在下面。`,
+              `${result.created}件を追加しました。${result.duplicates}件は既存の案件と同じため取り込まず、下に表示しています。`
+            )
+          : t(`已新增 ${result.created} 个案件。`, `${result.created}件を追加しました。`)
       )
       setSkippedPersonnel(personnel)
+      setPersonnelText(result.skippedPersonnelText ?? '')
       if (result.failed)
         setError(
           t(
@@ -85,15 +90,27 @@ export function CaseTextImport({
             `${result.failed}件を保存できませんでした。入力を保持しています。修正して再試行してください。`
           )
         )
-      // New cases go straight into 我的案件, the list's default view, so they do not vanish after saving.
+      if (result.unrecognized)
+        setError((current) =>
+          [
+            current,
+            t(
+              `${result.unrecognized} 段未识别，已保留在输入框，请确认是否为案件。`,
+              `${result.unrecognized}段落を識別できませんでした。入力欄に残しています。案件かどうか確認してください。`
+            )
+          ]
+            .filter(Boolean)
+            .join(' ')
+        )
+      // New cases go straight into 负责中, the list's default view, so they do not vanish after saving.
       const allJoined = await joinCreatedCases(createdIds, onAddToWorking)
       if (createdIds.length && !allJoined)
         setError((current) =>
           [
             current,
             t(
-              '部分新案件未能加入我的案件，可在「全部」中找到。',
-              '一部の新しい案件を担当案件に追加できませんでした。「すべて」で確認できます。'
+              '部分新案件未能设为负责中，可在「案件池」中找到。',
+              '一部の新しい案件を担当中にできませんでした。「案件プール」で確認できます。'
             )
           ]
             .filter(Boolean)
@@ -153,7 +170,7 @@ export function CaseTextImport({
       ) : null}
       {skippedPersonnel && onOpenPersonImport ? (
         <div className="business-inline-actions">
-          <button type="button" onClick={onOpenPersonImport}>
+          <button type="button" onClick={() => onOpenPersonImport(personnelText || undefined)}>
             {t('去人员页导入', '要員として取り込む')}
           </button>
         </div>

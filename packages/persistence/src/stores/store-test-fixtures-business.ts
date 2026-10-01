@@ -17,7 +17,7 @@ export const defaultOperatorId = '00000000-0000-4000-8000-000000000001'
 
 export function seedImportedPerson(
   repository: EncryptedApplicationRepository,
-  options: { privateName?: string; text?: string } = {}
+  options: { privateName?: string; text?: string; inTalentLibrary?: boolean } = {}
 ): CandidateReviewSnapshot {
   const documentId = randomUUID()
   const privateName = options.privateName ?? 'TEST_PRIVATE_NAME'
@@ -86,7 +86,7 @@ export function seedImportedPerson(
     redactedPreview: '<PERSON_NAME_001> / Java / AWS',
     analyzedAt: '2026-07-17T00:01:00.000Z'
   }
-  repository.saveParsedDocument(document, summary, redaction.session.id, extraction)
+  repository.saveParsedDocument(document, summary, redaction.session.id, extraction, options.inTalentLibrary ?? true)
   const review = repository.getCandidateReview(documentId)
   if (!review) throw new Error('fixture person was not stored')
   return review

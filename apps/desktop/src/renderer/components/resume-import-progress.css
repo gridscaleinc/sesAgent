@@ -7,16 +7,16 @@
 }
 .resume-import-person-actions button {
   padding: 5px 8px;
-  color: #426080;
+  color: var(--tone-blue-48-3);
   font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
   background: var(--surface);
-  border: 1px solid #d5dbe3;
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 .resume-import-person-actions button.is-primary {
   color: var(--on-accent);
-  background: var(--blue-bright);
-  border-color: var(--blue-bright);
+  background: var(--accent);
+  border-color: var(--accent);
 }

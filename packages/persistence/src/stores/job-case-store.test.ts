@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { nativeSqliteAvailable, openTestRepository, type TestRepositoryHandle } from './store-test-repository'
 import { confirmAllJobCaseFields, saveManualJobCaseDraft } from './store-test-fixtures-jobcases'
+import { seedImportedPerson } from './store-test-fixtures-business'
 
 const contactName = '佐藤秘密担当'
 const contactPhone = '080-8765-4321'
@@ -61,6 +62,91 @@ describe.skipIf(!nativeSqliteAvailable)('JobCaseStore via EncryptedApplicationRe
       /同じ案件は登録済み/
     )
     expect(repository.listJobCaseReviews()).toHaveLength(1)
+  })
+
+  it('takes in an ended case sent again as a new case, and still rejects it while the new one is active', () => {
+    const { repository } = handle
+    const content = { subject: 'Rust案件', body: '必須スキル：Rust / AWS\n単価：90万円/月' }
+    const { reviewId } = saveManualJobCaseDraft(repository, content)
+    confirmAllJobCaseFields(repository, reviewId)
+    repository.setJobCaseLifecycle({ reviewId, state: 'archived', reason: '募集が充足したため' }, 'u')
+    // The client recruiting again: not silently skipped where HR would not see it.
+    const again = saveManualJobCaseDraft(repository, content)
+    expect(again.saved).toBe(true)
+    expect(again.reviewId).not.toBe(reviewId)
+    expect(repository.listJobCaseReviews()).toHaveLength(2)
+    expect(() => saveManualJobCaseDraft(repository, content)).toThrow(/同じ案件は登録済み/)
+  })
+
+  it('names the broadcast copies and other records that go with a deleted case in its preview', () => {
+    const { repository } = handle
+    const { reviewId } = saveManualJobCaseDraft(repository, { subject: '配信案件', body: '必須スキル：Go\n単価：70万円/月' })
+    const confirmed = confirmAllJobCaseFields(repository, reviewId)
+    repository.appendCaseBroadcastCopy({
+      reviewId,
+      jobCaseId: confirmed.jobCase!.id,
+      jobCaseVersion: confirmed.jobCase!.version,
+      templateId: repository.listBroadcastTemplates()[0]!.id,
+      templateRevision: repository.listBroadcastTemplates()[0]!.revision,
+      lang: 'ja',
+      kind: 'new',
+      text: '【案件】Go',
+      actorId: 'hr'
+    })
+    const preview = repository.previewJobCaseDeletion(reviewId)
+    expect(preview.counts.caseBroadcastCopies).toBe(1)
+    // A count that changes the deletion changes the confirmation.
+    repository.appendCaseBroadcastCopy({
+      reviewId,
+      jobCaseId: confirmed.jobCase!.id,
+      jobCaseVersion: confirmed.jobCase!.version,
+      templateId: repository.listBroadcastTemplates()[0]!.id,
+      templateRevision: repository.listBroadcastTemplates()[0]!.revision,
+      lang: 'zh',
+      kind: 'new',
+      text: '【案件】Go',
+      actorId: 'hr'
+    })
+    expect(repository.previewJobCaseDeletion(reviewId).confirmationHash).not.toBe(preview.confirmationHash)
+  })
+
+  it('writes nothing when an already-read case is opened again', () => {
+    const { repository } = handle
+    const { reviewId } = saveManualJobCaseDraft(repository, { subject: '既読案件', body: '必須スキル：PHP\n単価：60万円/月' })
+    const entry = () => repository.getBusinessFeed().find((item) => item.objectId === reviewId)!
+    repository.markBusinessFeed({ kind: 'case', objectId: reviewId, revision: entry().revision, action: 'seen' })
+    const revision = repository.getLocalDataRevision().revision
+    repository.markBusinessFeed({ kind: 'case', objectId: reviewId, revision: entry().revision, action: 'seen' })
+    repository.markJobCaseReviewSeen(reviewId, new Date().toISOString())
+    expect(repository.getLocalDataRevision().revision).toBe(revision)
+  })
+
+  it('writes back Gmail tombstones kept outside the database, once', () => {
+    const { repository } = handle
+    expect(repository.restoreGmailMessageTombstones([{ accountEmail: 'sales@example.test', gmailMessageId: 'm1' }])).toBe(1)
+    expect(repository.restoreGmailMessageTombstones([{ accountEmail: 'sales@example.test', gmailMessageId: 'm1' }])).toBe(0)
+    expect(repository.hasGmailMessage('sales@example.test', 'm1')).toBe(true)
+  })
+
+  it('deletes the introductions written for a case with it and names them in the preview', () => {
+    const { repository } = handle
+    const person = seedImportedPerson(repository)
+    const { reviewId } = saveManualJobCaseDraft(repository, { subject: '紹介案件', body: '必須スキル：Java\n単価：70万円/月' })
+    const base = { documentId: person.documentId, profileVersion: 1, style: 'standard' as const, request: null }
+    repository.savePersonnelIntroductionDrafts({
+      ...base,
+      caseContext: null,
+      drafts: [{ lang: 'ja', text: '一般紹介', experienceRunId: null }]
+    })
+    repository.savePersonnelIntroductionDrafts({
+      ...base,
+      caseContext: { reviewId, version: 1 },
+      drafts: [{ lang: 'ja', text: '案件向け', experienceRunId: null }]
+    })
+    const preview = repository.previewJobCaseDeletion(reviewId)
+    expect(preview.counts.introductionDrafts).toBe(1)
+    repository.deleteJobCaseDatabaseData({ reviewId, confirmationHash: preview.confirmationHash, confirmationText: '削除' })
+    expect(repository.listPersonnelIntroductionDrafts(person.documentId).map((draft) => draft.text)).toEqual(['一般紹介'])
   })
 
   it('refuses a stale review revision, a nationality condition and a direct identifier in a field', () => {

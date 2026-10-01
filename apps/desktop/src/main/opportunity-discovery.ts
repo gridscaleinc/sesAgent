@@ -1,7 +1,15 @@
 import { createHash } from 'node:crypto'
-import { businessMatchingPolicyVersion, isProposalRequirement, requirementDisplayLabel } from '@shared'
+import {
+  businessMatchingPolicyVersion,
+  excludedByHr,
+  isProposalRequirement,
+  requirementDisplayLabel,
+  type MatchingOpportunity,
+  type RankingAdjustment,
+  tokyoDateKey
+} from '@shared'
 import type { MainIpcContext } from './ipc/context'
-import { evaluateWithWorkRules } from './work-rule-matching'
+import { confirmationIndex, confirmationSignature, evaluateWithWorkRules } from './work-rule-matching'
 import { experienceContext, matchingExperienceInput } from './experience-context'
 import { applyLearnedRanking } from './experience-ranking'
 import { isLearningForegroundBusy } from './learning-activity'
@@ -35,9 +43,67 @@ export function shouldStartOpportunityPass(input: OpportunityScheduleInput): boo
   if (input.running || input.busy || input.idleSeconds < OPPORTUNITY_DISCOVERY_IDLE_SECONDS) return false
   return input.lastCompletedAt === null || input.now - input.lastCompletedAt >= OPPORTUNITY_DISCOVERY_INTERVAL_MS
 }
+type DiscoveredPair = Pick<ReturnType<typeof evaluateWithWorkRules>, 'qualification' | 'matched' | 'missing' | 'score'> & {
+  person: { sourceDocumentId: string; profileVersion: number; localPersonalDetails: { displayName?: string | null } }
+  ranking?: RankingAdjustment
+}
+/** One stored opportunity row for a person and case; HR decisions show through the qualification. */
+export function opportunityItem(
+  job: { id: string; version: number; sourceReviewId: string; fields: ReadonlyArray<{ key: string; value: string | null }> },
+  item: DiscoveredPair,
+  rulesRevision: number,
+  zh: boolean
+): Omit<MatchingOpportunity, 'id' | 'state' | 'updatedAt'> {
+  const status =
+    item.qualification.status === 'recommended'
+      ? ('recommended' as const)
+      : item.qualification.status === 'excluded'
+        ? ('not-suitable' as const)
+        : ('needs-confirmation' as const)
+  // Only unmet core requirements; rate, location, remote, start and contract terms wait for the full assessment.
+  const confirm = [
+    ...new Set(
+      item.qualification.requirements
+        .filter((entry) => isProposalRequirement(entry.requirement) && entry.outcome !== 'met')
+        .map((entry) => requirementDisplayLabel(entry.requirement, zh))
+    )
+  ].slice(0, 8)
+  return {
+    documentId: item.person.sourceDocumentId,
+    reviewId: job.sourceReviewId,
+    jobCaseId: job.id,
+    profileVersion: item.person.profileVersion,
+    jobCaseVersion: job.version,
+    rulesRevision,
+    personName: item.person.localPersonalDetails.displayName ?? '人员 / 要員',
+    caseTitle: job.fields.find((f) => f.key === 'title')?.value ?? '案件',
+    score: item.score ?? 0,
+    status,
+    reasons: item.matched,
+    confirm,
+    fingerprint: hash([
+      OPPORTUNITY_DISCOVERY_SCHEMA,
+      businessMatchingPolicyVersion,
+      item.person.sourceDocumentId,
+      item.person.profileVersion,
+      job.id,
+      job.version,
+      rulesRevision,
+      item.matched,
+      item.missing,
+      status,
+      confirm,
+      item.ranking?.reasons.map((r) => r.experience)
+    ])
+  }
+}
 /** Local, incremental discovery; detailed cloud assessment remains attached to opening a match. */
 export function createOpportunityDiscovery({ repository }: Pick<MainIpcContext, 'repository'>) {
   let running = false
+  // Cases already ranked today in this process. The day forces one fresh ranking per day (start dates and the like
+  // read against today), but it is not stored: a pass that changes nothing writes nothing, so the backup reminder
+  // does not see a daily change and 「稍后提醒」 holds.
+  const rankedOn = new Map<string, string>()
   return async (signal?: AbortSignal) => {
     if (running) return
     running = true
@@ -48,25 +114,29 @@ export function createOpportunityDiscovery({ repository }: Pick<MainIpcContext, 
         cases = repository.listActiveJobCases(),
         rules = repository.listWorkRules(),
         locale = repository.getLocalApplicationPreferences()?.locale ?? 'ja-JP'
+      const decisions = confirmationIndex(repository)
       const follow = repository.listBusinessFollowUps(),
-        busy = new Set(follow.filter((f) => f.status !== 'closed').map((f) => `${f.documentId}:${f.reviewId}`))
+        // A pair with any follow-up, ended ones included, is known work, not a new opportunity.
+        busy = new Set(follow.map((f) => `${f.documentId}:${f.reviewId}`))
       const common = hash([
         OPPORTUNITY_DISCOVERY_SCHEMA,
         businessMatchingPolicyVersion,
         locale,
-        people.map((p) => [p.sourceDocumentId, p.profileVersion]),
+        people.map((p) => [p.sourceDocumentId, p.profileVersion, confirmationSignature(decisions(p.sourceDocumentId))]),
         rules.revision,
         states,
         repository.listCustomerIdentities(),
-        repository.getActiveSystemExperiences().map((s) => [s.id, s.version]),
-        new Date().toISOString().slice(0, 10)
+        repository.getActiveSystemExperiences().map((s) => [s.id, s.version])
       ])
+      // Tokyo business days, as everywhere else the app counts days.
+      const day = tokyoDateKey(new Date())
       const zh = locale === 'zh-CN'
       for (const job of cases) {
         signal?.throwIfAborted()
         const signature = hash([common, job.version, job.id, follow.map((f) => [f.documentId, f.reviewId, f.status])]),
           key = `opportunities:${job.sourceReviewId}`
-        if (repository.getGrowthCheckpoint(key) === signature) continue
+        const checkpoint = repository.getGrowthCheckpoint(key)
+        if (checkpoint === signature && rankedOn.get(key) === day) continue
         const snapshots = new Map(
           people.map((p) => [
             p.sourceDocumentId,
@@ -76,10 +146,11 @@ export function createOpportunityDiscovery({ repository }: Pick<MainIpcContext, 
         const matched = []
         for (let index = 0; index < people.length; index++) {
           const person = people[index]!,
-            evaluation = evaluateWithWorkRules(person, job, rules)
+            evaluation = evaluateWithWorkRules(person, job, rules, undefined, decisions(person.sourceDocumentId))
           if (
             evaluation.reviewable &&
-            evaluation.qualification.status !== 'excluded' &&
+            // HR's 不满足 keeps the pair, marked and last; any other exclusion is not an opportunity.
+            (evaluation.qualification.status !== 'excluded' || excludedByHr(evaluation.qualification)) &&
             evaluation.matched.length &&
             !busy.has(`${person.sourceDocumentId}:${job.sourceReviewId}`)
           )
@@ -89,49 +160,41 @@ export function createOpportunityDiscovery({ repository }: Pick<MainIpcContext, 
             signal?.throwIfAborted()
           }
         }
-        const ranked = applyLearnedRanking(repository, matched, (p) => p.person.sourceDocumentId, snapshots).slice(0, 5)
-        const items = ranked.map((item) => {
-          const status = item.qualification.status === 'recommended' ? ('recommended' as const) : ('needs-confirmation' as const)
-          // Only unmet core requirements; rate, location, remote, start and contract terms wait for the full assessment.
-          const confirm = [
-            ...new Set(
-              item.qualification.requirements
-                .filter((entry) => isProposalRequirement(entry.requirement) && entry.outcome !== 'met')
-                .map((entry) => requirementDisplayLabel(entry.requirement, zh))
-            )
-          ].slice(0, 8)
-          return {
-            documentId: item.person.sourceDocumentId,
-            reviewId: job.sourceReviewId,
-            jobCaseId: job.id,
-            profileVersion: item.person.profileVersion,
-            jobCaseVersion: job.version,
-            rulesRevision: rules.revision,
-            personName: item.person.localPersonalDetails.displayName ?? '人员 / 要員',
-            caseTitle: job.fields.find((f) => f.key === 'title')?.value ?? '案件',
-            score: item.score ?? 0,
-            status,
-            reasons: item.matched,
-            confirm,
-            fingerprint: hash([
-              OPPORTUNITY_DISCOVERY_SCHEMA,
-              businessMatchingPolicyVersion,
-              item.person.sourceDocumentId,
-              item.person.profileVersion,
-              job.id,
-              job.version,
-              rules.revision,
-              item.matched,
-              item.missing,
-              status,
-              confirm,
-              item.ranking?.reasons.map((r) => r.experience)
-            ])
-          }
-        })
+        // A pair HR removed keeps its place out of the five while its conclusion is the same.
+        const removed = new Map(
+          (repository.listMatchingOpportunityRows?.(job.sourceReviewId) ?? [])
+            .filter((row) => row.state === 'dismissed' && row.jobCaseVersion === job.version)
+            .map((row) => [row.documentId, row] as const)
+        )
+        const statusOf = (item: { qualification: { status: string } }) =>
+          item.qualification.status === 'recommended'
+            ? 'recommended'
+            : item.qualification.status === 'excluded'
+              ? 'not-suitable'
+              : 'needs-confirmation'
+        const order = applyLearnedRanking(
+          repository,
+          matched.filter((item) => {
+            const row = removed.get(item.person.sourceDocumentId)
+            return !row || row.status !== statusOf(item) || row.profileVersion !== item.person.profileVersion
+          }),
+          (p) => p.person.sourceDocumentId,
+          snapshots
+        )
+        // The five best, plus every pair HR judged 不满足 so it stays visible (they rank last).
+        const ranked = [...order.slice(0, 5), ...order.slice(5).filter((item) => excludedByHr(item.qualification))]
+        const items = ranked.map((item) => opportunityItem(job, item, rules.revision, zh))
         signal?.throwIfAborted()
-        repository.saveMatchingOpportunities(job.sourceReviewId, items)
-        repository.saveGrowthCheckpoint(key, signature)
+        // Written only when the case's opportunities actually changed (see rankedOn).
+        const stored = repository.listMatchingOpportunityRows?.(job.sourceReviewId) ?? null
+        const current = new Map(items.map((item) => [item.documentId, item.fingerprint]))
+        const unchanged =
+          stored !== null &&
+          items.every((item) => stored.some((row) => row.documentId === item.documentId && row.fingerprint === item.fingerprint)) &&
+          stored.every((row) => row.state === 'dismissed' || current.has(row.documentId))
+        if (!unchanged) repository.saveMatchingOpportunities(job.sourceReviewId, items)
+        if (checkpoint !== signature) repository.saveGrowthCheckpoint(key, signature)
+        rankedOn.set(key, day)
       }
     } finally {
       running = false

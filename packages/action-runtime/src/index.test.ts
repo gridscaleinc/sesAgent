@@ -161,3 +161,18 @@ describe('action runtime policy', () => {
     expect(JSON.stringify(calls)).not.toContain('candidate@example.jp')
   })
 })
+
+describe('interview scheduling tool input', () => {
+  it('accepts the case a client interview is booked for, and nothing else unexpected', () => {
+    const schema = createDefaultDomainToolRegistry().get('candidate.interview.schedule.local').inputSchema
+    const base = {
+      sourceDocumentId: '11111111-1111-4111-8111-111111111111',
+      scheduledAt: '2026-10-08T01:00:00.000Z',
+      durationMinutes: 60,
+      meetingMethod: 'phone',
+      kind: 'client'
+    }
+    expect(schema.safeParse({ ...base, jobCaseId: '22222222-2222-4222-8222-222222222222' }).success).toBe(true)
+    expect(schema.safeParse({ ...base, reviewId: 'x' }).success).toBe(false)
+  })
+})

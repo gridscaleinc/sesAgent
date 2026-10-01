@@ -138,7 +138,7 @@ describe.skipIf(!nativeSqliteAvailable)('CandidateInterviewStore via EncryptedAp
         },
         '検証担当者'
       )
-    ).toThrow(/Complete the interview record/)
+    ).toThrow(/请先完成面试记录/)
     // Notes only once prepared / in progress.
     expect(() =>
       repository.saveCandidateInterviewNotes(
@@ -168,7 +168,7 @@ describe.skipIf(!nativeSqliteAvailable)('CandidateInterviewStore via EncryptedAp
       t(3)
     )
     // Schedule is locked once the interview is awaiting a decision.
-    expect(() => repository.saveCandidateInterviewSchedule(schedule, '検証担当者')).toThrow(/locked/)
+    expect(() => repository.saveCandidateInterviewSchedule(schedule, '検証担当者')).toThrow(/不能再改期/)
     repository.recordCandidateInterviewDecision(
       {
         interviewId: scheduled.id,
@@ -182,7 +182,7 @@ describe.skipIf(!nativeSqliteAvailable)('CandidateInterviewStore via EncryptedAp
     expect(() => repository.saveCandidateInterviewPreparation({ interviewId: scheduled.id, questions: [question] }, '検証担当者')).toThrow(
       /completed interview/
     )
-    expect(() => repository.saveCandidateInterviewSchedule(schedule, '検証担当者')).toThrow(/decision is already recorded/)
+    expect(() => repository.saveCandidateInterviewSchedule(schedule, '検証担当者')).toThrow(/已经记录结论/)
     expect(repository.getCandidateReview(documentId)?.recruitingStatus).toBe('rejected')
   })
 })

@@ -24,6 +24,7 @@ import { Icon } from './Icon'
 import { CandidateEvaluationAuthoringDialog } from './CandidateEvaluationAuthoringDialog'
 import { GoogleWorkspaceSettingsDialog } from './GoogleWorkspaceSettingsDialog'
 import { localizedIpcError, useLocaleText, localizedMainText } from '../i18n'
+import { formatTokyoDateTime } from '../format-time'
 
 interface GovernancePanelProps {
   bootstrap: BootstrapPayload
@@ -458,7 +459,6 @@ export function GovernancePanel({
       >
         <div className="panel-heading">
           <div>
-            <span className="eyebrow">TASK CONTROL</span>
             <h2>{t('数据与审批', 'データと承認')}</h2>
           </div>
           <div className="governance-panel-actions">
@@ -614,7 +614,7 @@ export function GovernancePanel({
                 <small>
                   {t(`保存 ${bootstrap.gmailSync.storedMessages} 项`, `保存 ${bootstrap.gmailSync.storedMessages}件`)}
                   {bootstrap.gmailSync.lastSyncedAt
-                    ? ` · ${t('最近', '最終')} ${new Date(bootstrap.gmailSync.lastSyncedAt).toLocaleString(locale)}`
+                    ? ` · ${t('最近', '最終')} ${formatTokyoDateTime(locale, bootstrap.gmailSync.lastSyncedAt)}`
                     : ` · ${t('未同步', '未同期')}`}
                 </small>
               </div>
@@ -815,7 +815,7 @@ export function GovernancePanel({
                     </small>
                   </div>
                   <div>
-                    <span>Project Evidence</span>
+                    <span>{t('项目依据', 'プロジェクト根拠')}</span>
                     <strong>
                       {evaluationReport.metrics.projectEvidenceCoverageAt20 === null
                         ? t('无对象', '対象なし')
@@ -847,7 +847,7 @@ export function GovernancePanel({
                   <span>{evaluationReport.modelId}</span>
                 </div>
                 <div className="policy-line">
-                  <span>Hard Filter Policy</span>
+                  <span>{t('硬条件规则', '必須条件ルール')}</span>
                   <span>{evaluationReport.hardFilterPolicyVersion}</span>
                 </div>
               </>
@@ -906,8 +906,8 @@ export function GovernancePanel({
                   <strong>{t('提醒已延期', '通知を延期しました')}</strong>
                   <span>
                     {t(
-                      `将于 ${new Date(reminder.snoozedUntil).toLocaleString(locale)} 再次提醒；如有新变化会提前显示。`,
-                      `${new Date(reminder.snoozedUntil).toLocaleString(locale)} に再通知します。新しい変更があれば早めに再表示します。`
+                      `将于 ${formatTokyoDateTime(locale, reminder.snoozedUntil)} 再次提醒；如有新变化会提前显示。`,
+                      `${formatTokyoDateTime(locale, reminder.snoozedUntil)} に再通知します。新しい変更があれば早めに再表示します。`
                     )}
                   </span>
                 </div>
@@ -915,7 +915,7 @@ export function GovernancePanel({
             ) : null}
             <div className="recovery-status-line">
               <span>{t('最近备份', '最終バックアップ')}</span>
-              <strong>{latestBackupAt ? new Date(latestBackupAt).toLocaleString(locale) : t('暂无', 'まだありません')}</strong>
+              <strong>{latestBackupAt ? formatTokyoDateTime(locale, latestBackupAt) : t('暂无', 'まだありません')}</strong>
             </div>
             {recoveryResult?.fileName ? (
               <p className="recovery-result">
@@ -1014,7 +1014,6 @@ export function GovernancePanel({
           >
             <header>
               <div>
-                <span className="eyebrow">LOCAL RECOVERY</span>
                 <h2 id="recovery-dialog-title">
                   {recoveryDialog === 'backup'
                     ? t('创建加密备份', '暗号化バックアップを作成')
@@ -1105,7 +1104,7 @@ export function GovernancePanel({
                 <dl>
                   <div>
                     <dt>{t('创建时间', '作成日時')}</dt>
-                    <dd>{new Date(recoveryPreview.summary.createdAt).toLocaleString(locale)}</dd>
+                    <dd>{formatTokyoDateTime(locale, recoveryPreview.summary.createdAt)}</dd>
                   </div>
                   <div>
                     <dt>{t('创建环境', '作成環境')}</dt>
@@ -1114,7 +1113,7 @@ export function GovernancePanel({
                     </dd>
                   </div>
                   <div>
-                    <dt>Schema</dt>
+                    <dt>{t('数据版本', 'データ版')}</dt>
                     <dd>v{recoveryPreview.summary.schemaVersion}</dd>
                   </div>
                   <div>

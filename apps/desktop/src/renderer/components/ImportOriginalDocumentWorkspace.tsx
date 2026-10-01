@@ -328,7 +328,7 @@ export function ImportOriginalDocumentWorkspace({
           <section className="original-document-viewer" aria-label={t('原始文件预览', '原始ファイルプレビュー')}>
             <div className="original-document-viewer-heading">
               <div>
-                <span>LOCAL ORIGINAL</span>
+                <span>{t('本机原件', 'ローカル原本')}</span>
                 <strong>{preview.viewMode === 'spreadsheet' ? activeSheet?.name : preview.fileName}</strong>
               </div>
               <small>
@@ -391,7 +391,7 @@ export function ImportOriginalDocumentWorkspace({
             aria-label={t('标准人员档案', '標準人材プロフィール')}
           >
             <header>
-              <span>REVIEW PROFILE</span>
+              <span>{t('核对档案', 'プロフィール照合')}</span>
               <h2>{t('核对原件与人员档案', '原本とプロフィールを照合')}</h2>
               <p>
                 {t(

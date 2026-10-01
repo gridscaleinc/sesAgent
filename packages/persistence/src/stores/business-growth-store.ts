@@ -136,10 +136,13 @@ export class BusinessGrowthStore extends DomainStore {
     return this.database.prepare<[string], { value: string }>('SELECT value FROM growth_checkpoints WHERE key=?').get(key)?.value
   }
   setCheckpoint(key: string, value: string) {
+    // An unchanged value is not a change: no write, so the backup revision does not move.
+    if (this.checkpoint(key) === value) return
     this.database
       .prepare('INSERT INTO growth_checkpoints(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
       .run(key, value)
   }
+  /** The 100 best actionable pairs; with includeDismissed, the removed ones follow them and never take their places. */
   opportunities(includeDismissed = false): MatchingOpportunity[] {
     const people = new Map(this.stores.candidates.listEligibleTalentProfiles().map((p) => [p.sourceDocumentId, p.profileVersion])),
       cases = new Map(this.stores.jobCases.listActiveJobCases().map((c) => [c.sourceReviewId, c.version])),
@@ -150,44 +153,65 @@ export class BusinessGrowthStore extends DomainStore {
         .states.filter((s) => !['available', 'soon'].includes(s.status))
         .map((s) => s.documentId)
     )
-    const followed = new Set(
-      this.stores.personnel
-        .followUps()
-        .filter((f) => f.status !== 'closed')
-        .map((f) => `${f.documentId}:${f.reviewId}`)
-    )
-    return (
-      this.database
-        .prepare<[], { payload: string }>('SELECT payload FROM matching_opportunities')
-        .all()
-        .map((r) => JSON.parse(r.payload) as MatchingOpportunity)
-        // Rows saved before the conclusion was stored carry no status; they are not claimed as 可以提案.
-        .map((o) => (o.status === 'recommended' || o.status === 'needs-confirmation' ? o : { ...o, status: 'needs-confirmation' as const }))
-        .filter(
-          (o) =>
-            !followed.has(`${o.documentId}:${o.reviewId}`) &&
-            !unavailable.has(o.documentId) &&
-            people.get(o.documentId) === o.profileVersion &&
-            cases.get(o.reviewId) === o.jobCaseVersion &&
-            o.rulesRevision === rules &&
-            (includeDismissed || o.state !== 'dismissed')
-        )
-        .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
-        .slice(0, 100)
-    )
+    // Any follow-up of the pair, ended ones included, takes it out of 新匹配机会.
+    const followed = new Set(this.stores.personnel.followUps().map((f) => `${f.documentId}:${f.reviewId}`))
+    const listed = this.database
+      .prepare<[], { payload: string }>('SELECT payload FROM matching_opportunities')
+      .all()
+      .map((r) => JSON.parse(r.payload) as MatchingOpportunity)
+      // Rows saved before the conclusion was stored carry no status; they are not claimed as 可以提案.
+      .map((o) =>
+        o.status === 'recommended' || o.status === 'needs-confirmation' || o.status === 'not-suitable'
+          ? o
+          : { ...o, status: 'needs-confirmation' as const }
+      )
+      .filter(
+        (o) =>
+          !followed.has(`${o.documentId}:${o.reviewId}`) &&
+          !unavailable.has(o.documentId) &&
+          people.get(o.documentId) === o.profileVersion &&
+          cases.get(o.reviewId) === o.jobCaseVersion &&
+          o.rulesRevision === rules &&
+          (includeDismissed || o.state !== 'dismissed')
+      )
+      .sort((a, b) => b.score - a.score || b.updatedAt.localeCompare(a.updatedAt))
+    return [...listed.filter((o) => o.state !== 'dismissed').slice(0, 100), ...listed.filter((o) => o.state === 'dismissed').slice(0, 100)]
+  }
+  /** Every stored row of one case as saved, unfiltered: paused people, followed or dismissed pairs and stale rows included. */
+  opportunityRows(reviewId: string): MatchingOpportunity[] {
+    return this.database
+      .prepare<[string], { payload: string }>('SELECT payload FROM matching_opportunities WHERE review_id=?')
+      .all(reviewId)
+      .map((row) => JSON.parse(row.payload) as MatchingOpportunity)
   }
   saveOpportunities(reviewId: string, items: Omit<MatchingOpportunity, 'id' | 'state' | 'updatedAt'>[]) {
     this.database.transaction(() => {
+      this.pruneDismissed(reviewId)
       const old = this.database
         .prepare<[string], { id: string; payload: string }>('SELECT id,payload FROM matching_opportunities WHERE review_id=?')
         .all(reviewId)
-      for (const row of old)
-        if (!items.some((i) => i.documentId === (JSON.parse(row.payload) as MatchingOpportunity).documentId))
+      for (const row of old) {
+        const stored = JSON.parse(row.payload) as MatchingOpportunity
+        // A pair HR removed is kept as removed even when it drops out of this pass, so it cannot return as new.
+        if (stored.state !== 'dismissed' && !items.some((i) => i.documentId === stored.documentId))
           this.database.prepare('DELETE FROM matching_opportunities WHERE id=?').run(row.id)
+      }
       for (const item of items) {
         const before = old.map((r) => JSON.parse(r.payload) as MatchingOpportunity).find((o) => o.documentId === item.documentId)
         if (before?.fingerprint === item.fingerprint) continue
-        const value: MatchingOpportunity = { ...item, id: before?.id ?? randomUUID(), state: 'new', updatedAt: new Date().toISOString() }
+        // A pair HR removed stays removed while its conclusion is the same; only a changed conclusion brings it back.
+        // …and while neither the profile nor the case has a new version since.
+        const keptDismissed =
+          before?.state === 'dismissed' &&
+          before.status === item.status &&
+          before.profileVersion === item.profileVersion &&
+          before.jobCaseVersion === item.jobCaseVersion
+        const value: MatchingOpportunity = {
+          ...item,
+          id: before?.id ?? randomUUID(),
+          state: keptDismissed ? 'dismissed' : 'new',
+          updatedAt: keptDismissed ? before!.updatedAt : new Date().toISOString()
+        }
         this.database
           .prepare(
             'INSERT INTO matching_opportunities(id,document_id,review_id,payload) VALUES(?,?,?,?) ON CONFLICT(document_id,review_id) DO UPDATE SET payload=excluded.payload'
@@ -196,13 +220,44 @@ export class BusinessGrowthStore extends DomainStore {
       }
     })()
   }
+  /**
+   * A removal only holds while the case and the person stay at the versions it was made for (see keptDismissed): once
+   * either changed, or the case or person is gone, the kept row has no use and is dropped. A case ended for a while keeps
+   * its removals, so they still hold when it is active again. Only this case's rows are looked at, plus any whose case
+   * no longer exists.
+   */
+  private pruneDismissed(reviewId: string) {
+    const rows = this.database
+      .prepare<[string], { id: string; payload: string }>(
+        `SELECT id,payload FROM matching_opportunities
+         WHERE review_id=? OR review_id NOT IN (SELECT review_id FROM job_case_extractions)`
+      )
+      .all(reviewId)
+      .map((row) => ({ id: row.id, value: JSON.parse(row.payload) as MatchingOpportunity }))
+      .filter((row) => row.value.state === 'dismissed')
+    for (const { id, value } of rows) {
+      const job = this.stores.jobCases.getJobCaseReview(value.reviewId)
+      const person = this.stores.candidates.getCandidateReview(value.documentId)
+      const outdated =
+        !job ||
+        job.jobCase?.version !== value.jobCaseVersion ||
+        !person ||
+        person.recordStatus !== 'active' ||
+        (person.profile?.version ?? null) !== value.profileVersion
+      if (outdated) this.database.prepare('DELETE FROM matching_opportunities WHERE id=?').run(id)
+    }
+  }
   opportunityAction(raw: unknown) {
     const input = opportunityActionSchema.parse(raw),
       entry = this.opportunities(true).find((o) => o.id === input.id)
-    if (!entry || entry.fingerprint !== input.fingerprint) throw new Error('推荐已更新，请刷新 / 推薦が更新されました')
+    // Marking a pair read is harmless whatever changed since the list was drawn (opening it from 今天 must not
+    // fail on that); removing or restoring acts on what HR saw, so a newer conclusion is refused.
+    if (!entry || (entry.fingerprint !== input.fingerprint && input.action !== 'seen'))
+      throw new Error('推荐已更新，请刷新 / 推薦が更新されました')
     this.database
       .prepare('UPDATE matching_opportunities SET payload=? WHERE id=?')
-      .run(JSON.stringify({ ...entry, state: input.action }), entry.id)
+      // 'restored' undoes a removal: the pair comes back as already seen.
+      .run(JSON.stringify({ ...entry, state: input.action === 'restored' ? 'seen' : input.action }), entry.id)
     return this.opportunities()
   }
 }

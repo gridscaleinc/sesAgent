@@ -686,6 +686,8 @@ export interface CandidateDeletionPreview {
   localFileName: string
   counts: {
     businessFollowUps?: number
+    activePlacements?: number
+    endedPlacements?: number
     profileVersions: number
     reviewAudits: number
     taskRecords: number
@@ -1063,6 +1065,8 @@ export interface SaveCandidateInterviewScheduleInput {
   meetingDetails?: CandidateInterviewMeetingDetails
   interviewer: string
   contactNote?: string
+  /** Saves even though the time overlaps another interview (「仍然保存」). */
+  allowConflict?: boolean
 }
 
 export interface OpenInterviewMeetingInput {
@@ -1216,6 +1220,8 @@ export interface SetJobCaseLifecycleInput {
   reviewId: string
   state: 'active' | 'archived'
   reason: string
+  /** Ending the case also ends its follow-ups still being arranged. */
+  closeOpenFollowUps?: boolean
 }
 
 export interface SetJobCaseLifecycleResult {
@@ -1273,6 +1279,20 @@ export interface JobCaseDeletionPreview {
   sourceType: JobCaseSourceType
   counts: {
     businessFollowUps?: number
+    /** People currently 已进场 through this case; deleting is refused until they leave or the start is undone. */
+    activePlacements?: number
+    /** Placement records already ended (已退场); deleted with the case. */
+    endedPlacements?: number
+    /** Introduction texts written for people about this case; deleted with it. */
+    introductionDrafts?: number
+    /** Further records deleted with the case (cascade). */
+    caseBroadcastCopies?: number
+    caseIntroductionDrafts?: number
+    recommendationPoints?: number
+    matchingOpportunities?: number
+    requirementDecisions?: number
+    questionDrafts?: number
+    personAssessments?: number
     caseVersions: number
     reviewAudits: number
     taskRecords: number
@@ -1338,6 +1358,8 @@ export interface CreateManualJobCaseDraftInput {
 
 export interface CreateManualJobCaseDraftResult {
   review: JobCaseReviewSnapshot
+  /** 'existing': the same case is already in the list (nothing new was created). */
+  outcome?: 'created' | 'existing'
 }
 
 export interface CreateChatPasteJobCaseDraftInput {
@@ -1359,6 +1381,10 @@ export interface ImportCaseTextBatchResult {
   createdReviewIds?: string[]
   /** Pasted passages the AI recognised as personnel introductions (要員営業), reported and never saved as cases. */
   skippedPersonnel?: number
+  /** Their original text, carried to 人员 import so nothing has to be copied from the mail again. */
+  skippedPersonnelText?: string
+  /** Passages recognised as neither a case nor a person: kept in remainingText for the operator to check. */
+  unrecognized?: number
 }
 
 export interface PrepareWechatVisibleReadResult {
@@ -1376,6 +1402,8 @@ export interface ExecuteWechatVisibleReadInput {
 
 export interface ExecuteWechatVisibleReadResult {
   review: JobCaseReviewSnapshot
+  /** 'existing': the same case is already in the list (nothing new was created). */
+  outcome?: 'created' | 'existing'
   evidence: {
     captureMethod: 'accessibility-tree' | 'screen-capture-kit-vision-ocr'
     visibleTextNodeCount: number
@@ -1610,6 +1638,8 @@ export interface RecordProposalFollowUpInput {
 export interface ProposalMutationResult {
   draft: ProposalDraftSnapshot
   task: WorkTask
+  /** When recording a result could not be carried over to the pair's 跟进, why (shown to HR, not an error). */
+  followUpNote?: string
 }
 
 export interface ExportProposalPackageResult extends ProposalMutationResult {
@@ -1908,6 +1938,8 @@ export interface AgentCandidateMatchCard {
   candidateProfileId: string
   /** Local-only route target. Cloud projections must never serialize it. */
   sourceDocumentId?: string
+  /** The case this shortlist was made for: its follow-up state and 「查看」 refer to it, not to the case selected later. */
+  jobCaseId?: string
   runId: string
   rank: number
   anonymousLabel: string
@@ -2329,6 +2361,8 @@ export interface AgentChatModelOption {
   displayName: string
   /** Descriptive speed/cost hint: fast = quick and cheap, strongest = best but slow and expensive. */
   tier?: 'fast' | 'balanced' | 'strong' | 'strongest'
+  /** Not yet offered by the AI gateway: shown greyed out, never selected. */
+  unavailable?: true
 }
 
 export interface TestAiModelInput {
@@ -2759,6 +2793,8 @@ export interface DraftCaseBroadcastResult {
 
 export interface DraftCaseUpdateNoticeInput {
   reviewId: string
+  /** The template the operator has selected; the first one when absent. */
+  templateId?: string
 }
 
 export interface BroadcastFieldChange {
@@ -2898,8 +2934,27 @@ export interface BootstrapPayload {
 }
 
 /** Result of the one-step resume import entry point. */
+/** A selected file given up because the person is already in the system (该人员已入库). */
+export interface SkippedResumeFile {
+  fileName: string
+  existingName: string
+  /** The existing record had been saved only for a case assessment; this import added it to the talent library. */
+  addedToLibrary?: boolean
+}
 export type BeginResumeImportResult =
-  { cancelled: true; task: null; files: [] } | { cancelled: false; task: WorkTask; files: StagedLocalFile[] }
+  | { cancelled: true; task: null; files: []; skipped?: SkippedResumeFile[] }
+  | { cancelled: false; task: WorkTask; files: StagedLocalFile[]; skipped?: SkippedResumeFile[] }
+
+/** A permanent deletion a restored backup brought back and that could not be applied again automatically. */
+export interface HeldDeletion {
+  id: string
+  entityType: 'candidate' | 'job-case'
+  /** The person's name or the case title, as in the current data. */
+  label: string
+  /** Why it was not deleted again (usually someone in place). */
+  reason: string
+  deletedAt: string
+}
 
 export interface DesktopApi {
   getBusinessFeed(): Promise<BusinessFeedEntry[]>
@@ -2929,8 +2984,10 @@ export interface DesktopApi {
   ): Promise<{ opened: true; recipientPrefilled: boolean }>
   exportBusinessProgressCalendar(input: { followUpId: string; expectedRevision: number }): Promise<{ cancelled: boolean }>
   listBusinessProgressMail(): Promise<import('./business-progress').BusinessProgressMail[]>
-  updateBusinessProgressMail(input: { id: string; followUpId?: string; state?: 'applied' | 'dismissed' }): Promise<void>
+  updateBusinessProgressMail(input: { id: string; followUpId?: string; state?: 'applied' | 'dismissed' | 'pending' }): Promise<void>
   listBusinessFollowUps(): Promise<import('./business-workbench').BusinessFollowUp[]>
+  /** Follow-ups under way whose pair HR judged 不满足, as `documentId:reviewId`. Optional for API test doubles. */
+  listHrRejectedFollowUps?(): Promise<string[]>
   saveBusinessFollowUp(
     input: import('./business-workbench').SaveBusinessFollowUpInput
   ): Promise<import('./business-workbench').BusinessFollowUp>
@@ -2949,7 +3006,7 @@ export interface DesktopApi {
   controlMatchingOpportunity(input: {
     id: string
     fingerprint: string
-    action: 'seen' | 'dismissed'
+    action: 'seen' | 'dismissed' | 'restored'
   }): Promise<import('./business-growth').MatchingOpportunity[]>
   getQuestionBankHistory(id: string): Promise<import('./business-growth').QuestionBankRevision[]>
   restoreQuestionBankVersion(input: {
@@ -2985,7 +3042,13 @@ export interface DesktopApi {
     requestId?: string
     jobCaseId: string
     file: { name: string; bytes: Uint8Array }
-  }): Promise<{ person: CandidateReviewSnapshot; assessment: import('./ai-work-rules').CasePersonAssessment | null; error: string | null }>
+  }): Promise<{
+    person: CandidateReviewSnapshot
+    assessment: import('./ai-work-rules').CasePersonAssessment | null
+    error: string | null
+    /** 该人员已入库: the résumé was not imported again; the existing person was assessed instead. */
+    alreadyImported?: boolean
+  }>
   saveAssessmentFeedback(input: import('./ai-work-rules').AssessmentFeedbackInput): Promise<void>
   generateRuleQuestions(input: import('./ai-work-rules').GenerateRuleQuestionsInput): Promise<import('./ai-work-rules').RuleQuestionsResult>
   findPersonnelForCase(jobCaseId: string): Promise<import('./business-workbench').CasePersonnelMatchResult>
@@ -3027,6 +3090,16 @@ export interface DesktopApi {
   generateRecommendationPoints?(
     input: import('./recommendation-points').RecommendationPointsQuery
   ): Promise<import('./recommendation-points').RecommendationPointsView>
+  /** HR decisions on unclear requirements for one person, across their cases. Optional for API test doubles. */
+  listRequirementConfirmations?(documentId: string): Promise<import('./matching-requirements').RequirementConfirmation[]>
+  /** Records HR's decision on one unclear requirement and returns the stored results it changed. */
+  decideRequirement?(
+    input: import('./requirement-confirmations').DecideRequirementInput
+  ): Promise<import('./requirement-confirmations').RequirementDecisionResult>
+  /** Withdraws one decision; the requirement reads as unclear again. */
+  withdrawRequirementDecision?(
+    input: import('./requirement-confirmations').WithdrawRequirementDecisionInput
+  ): Promise<import('./requirement-confirmations').RequirementDecisionResult>
   /** The stored 推荐要点 for the pair, with stale set when the profile or case version changed since generation. */
   getRecommendationPoints?(
     input: import('./recommendation-points').RecommendationPointsQuery
@@ -3051,9 +3124,17 @@ export interface DesktopApi {
   submitCandidateReview(input: SubmitCandidateReviewInput): Promise<SubmitCandidateReviewResult>
   createCandidateInterviewRound(input: CreateCandidateInterviewRoundInput): Promise<CandidateInterviewSnapshot>
   saveCandidateInterviewSchedule(input: SaveCandidateInterviewScheduleInput): Promise<CandidateInterviewSnapshot>
+  /** Calls off a booked recruiting interview: back to being arranged, no time held. */
+  cancelCandidateInterviewSchedule(input: { interviewId: string; sourceDocumentId: string }): Promise<CandidateInterviewSnapshot>
   saveCandidateInterviewPreparation(input: SaveCandidateInterviewPreparationInput): Promise<CandidateInterviewSnapshot>
   saveCandidateInterviewNotes(input: SaveCandidateInterviewNotesInput): Promise<CandidateInterviewSnapshot>
   recordCandidateInterviewDecision(input: RecordCandidateInterviewDecisionInput): Promise<CandidateInterviewSnapshot>
+  /** 更正结论: replaces a decision recorded by mistake, keeping the earlier one in the reason. */
+  correctCandidateInterviewDecision(
+    input: RecordCandidateInterviewDecisionInput & { correctionReason: string }
+  ): Promise<CandidateInterviewSnapshot>
+  /** Removes a next round created by mistake that was never booked or recorded. */
+  deleteUnbookedCandidateInterviewRound(input: { interviewId: string; sourceDocumentId: string }): Promise<void>
   openZoomMeeting(input: { url: string }): Promise<{ opened: true }>
   openInterviewMeeting(input: OpenInterviewMeetingInput): Promise<{ opened: true }>
   openZoomTestMeeting(): Promise<{ opened: true }>
@@ -3123,10 +3204,16 @@ export interface DesktopApi {
   onOpenNewCaseBoard(listener: () => void): () => void
   /** A place the menu-bar panel asked the main window to open; also delivers one that arrived before subscribing. */
   onTrayNavigate?(listener: (navigation: import('./tray').TrayNavigation) => void): () => void
+  /** The 「今天」 page: the menu-bar summary from local data, with its lists and person names. */
+  getTodaySummary?(): Promise<import('./tray').TodaySummary>
+  onTodaySummaryChanged?(listener: (summary: import('./tray').TodaySummary) => void): () => void
   getRecoveryState(): Promise<RecoveryState>
   createRecoveryPackage(input: CreateRecoveryPackageInput): Promise<CreateRecoveryPackageResult>
   snoozeRecoveryReminder(input: SnoozeRecoveryReminderInput): Promise<RecoveryState>
   previewRecoveryPackage(input: PreviewRecoveryPackageInput): Promise<RecoveryPreviewResult>
+  /** Deletions a restored backup brought back but could not be redone (someone in place): HR deletes or keeps them. */
+  listHeldDeletions?(): Promise<HeldDeletion[]>
+  resolveHeldDeletion?(input: { id: string; action: 'delete' | 'keep' }): Promise<HeldDeletion[]>
   confirmRecovery(input: ConfirmRecoveryInput): Promise<ConfirmRecoveryResult>
   restartApplication(): Promise<{ restarting: true }>
   previewWorkTask(input: WorkTaskInput): Promise<SignedWorkTaskPreview>
@@ -3152,6 +3239,7 @@ export const ipcChannels = {
   listBusinessProgressMail: 'business:progress-mail',
   updateBusinessProgressMail: 'business:update-progress-mail',
   listBusinessFollowUps: 'business:followups',
+  listHrRejectedFollowUps: 'business:followups-hr-rejected',
   saveBusinessFollowUp: 'business:save-followup',
   businessMatchingProgress: 'business:matching-progress',
   cancelBusinessMatching: 'business:cancel-matching',
@@ -3215,6 +3303,9 @@ export const ipcChannels = {
   listPersonnelIntroductionDrafts: 'personnel:introduction-drafts-list',
   generateRecommendationPoints: 'personnel:recommendation-points-generate',
   getRecommendationPoints: 'personnel:recommendation-points-get',
+  listRequirementConfirmations: 'matching:requirement-confirmations-list',
+  decideRequirement: 'matching:requirement-decide',
+  withdrawRequirementDecision: 'matching:requirement-decision-withdraw',
   exportSkillSheet: 'personnel:skill-sheet-export',
   saveBusinessField: 'business:field-save',
   listAiConversations: 'ai-conversations:list',
@@ -3232,9 +3323,12 @@ export const ipcChannels = {
   submitCandidateReview: 'candidate-review:submit',
   createCandidateInterviewRound: 'candidate-interview:create-round',
   saveCandidateInterviewSchedule: 'candidate-interview:save-schedule',
+  cancelCandidateInterviewSchedule: 'candidate-interview:cancel-schedule',
   saveCandidateInterviewPreparation: 'candidate-interview:save-preparation',
   saveCandidateInterviewNotes: 'candidate-interview:save-notes',
   recordCandidateInterviewDecision: 'candidate-interview:record-decision',
+  correctCandidateInterviewDecision: 'candidate-interview:correct-decision',
+  deleteUnbookedCandidateInterviewRound: 'candidate-interview:delete-unbooked-round',
   openZoomMeeting: 'zoom:open-meeting',
   openInterviewMeeting: 'candidate-interview:open-meeting',
   openZoomTestMeeting: 'zoom:open-test-meeting',
@@ -3299,10 +3393,14 @@ export const ipcChannels = {
   openNewCaseBoard: 'job-cases:open-new-board',
   trayNavigate: 'tray:navigate',
   takeTrayNavigation: 'tray:take-navigation',
+  getTodaySummary: 'today:get-summary',
+  todaySummaryChanged: 'today:summary-changed',
   getRecoveryState: 'recovery:get-state',
   createRecoveryPackage: 'recovery:create-package',
   snoozeRecoveryReminder: 'recovery:snooze-reminder',
   previewRecoveryPackage: 'recovery:preview-package',
+  listHeldDeletions: 'recovery:held-deletions',
+  resolveHeldDeletion: 'recovery:resolve-held-deletion',
   confirmRecovery: 'recovery:confirm',
   restartApplication: 'startup:restart',
   previewWorkTask: 'work-task:preview',

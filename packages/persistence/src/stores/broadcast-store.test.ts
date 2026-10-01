@@ -29,6 +29,9 @@ describe.skipIf(!nativeSqliteAvailable)('BroadcastStore via EncryptedApplication
 
     const saved = repository.createBroadcastTemplate(shortTemplate)
     expect(saved.map((template) => template.name).sort()).toEqual(['標準', '短文'].sort())
+    // Written at the same moment as the copy, the built-in stays first: it remains the default.
+    expect(saved[0]?.id).toBe(builtInId)
+    expect(repository.createBroadcastTemplate({ ...shortTemplate, name: '短文2' })[0]?.id).toBe(builtInId)
     const created = saved.find((template) => template.name === '短文')!
     expect(created.revision).toBe(1)
     expect(repository.getBroadcastTemplate(builtInId)?.name).toBe('標準')

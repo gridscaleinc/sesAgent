@@ -1,9 +1,9 @@
 .business-progress-overview {
   margin: 16px 0 22px;
   padding: 16px;
-  border: 1px solid #d3e0d7;
+  border: 1px solid var(--line-gray-89);
   border-radius: 12px;
-  background: #f5f8f7;
+  background: var(--tint-gray-99);
   scroll-margin-top: 16px;
 }
 .business-progress-overview > header {
@@ -18,7 +18,7 @@
 }
 .business-progress-overview > header > span,
 .business-progress-totals {
-  color: #526b60;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 .business-progress-totals {
@@ -27,7 +27,7 @@
 }
 .business-progress-relation {
   padding: 14px 0;
-  border-top: 1px solid #dce6de;
+  border-top: 1px solid var(--border-color);
 }
 .business-progress-relation-heading {
   display: flex;
@@ -37,18 +37,18 @@
 }
 .business-progress-relation-heading strong {
   flex: 1 1 180px;
-  color: #294237;
+  color: var(--tone-green-35);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
 .business-progress-relation-heading > span {
   font-size: 12px;
   font-weight: 600;
-  color: #326951;
+  color: var(--tone-green-48);
   white-space: nowrap;
 }
 .business-progress-relation.is-feedback .business-progress-relation-heading > span {
-  color: #966110;
+  color: var(--tone-amber-54-2);
 }
 .business-progress-relation p {
   margin: 6px 0;
@@ -58,11 +58,11 @@
   white-space: pre-wrap;
 }
 .business-progress-next {
-  color: #385443;
+  color: var(--tone-green-42);
   font-weight: 600;
 }
 .business-progress-fact {
-  color: #61716a;
+  color: var(--tone-green-53-3);
   max-height: 6.6em;
   overflow: auto;
 }
@@ -74,15 +74,15 @@
   margin-top: 8px;
 }
 .business-progress-relation footer small {
-  color: #728075;
+  color: var(--tone-green-58-2);
   font-size: 11px;
 }
 .business-progress-overview button {
   padding: 7px 11px;
-  border: 1px solid #cbdccf;
+  border: 1px solid var(--line-green-88);
   border-radius: 7px;
-  background: white;
-  color: var(--forest);
+  background: var(--surface);
+  color: var(--accent-text);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -100,7 +100,7 @@
 }
 .business-progress-history > summary {
   cursor: pointer;
-  color: #61716a;
+  color: var(--tone-green-53-3);
 }
 .business-progress-pagination {
   display: flex;
@@ -109,25 +109,6 @@
   gap: 8px;
   margin-top: 8px;
   font-size: 12px;
-}
-.hr-object-card .hr-card-business {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: #f0f6f1;
-  color: #43644f;
-  border-radius: 7px;
-  padding: 9px 11px;
-  margin: 10px 0 2px;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.65;
-  cursor: pointer;
-}
-.hr-card-business:disabled {
-  cursor: default;
-  color: #728075;
 }
 .hr-object-context {
   height: 100%;
@@ -183,16 +164,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .hr-existing-progress {
-  color: #326951;
-  background: #eff9f5;
+  color: var(--tone-green-48);
+  background: var(--tint-gray-97);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 12px;
-}
-
-.hr-card-business-next {
-  display: block;
-  margin-top: 4px;
-  color: #43644f;
-  font-size: 11px;
 }

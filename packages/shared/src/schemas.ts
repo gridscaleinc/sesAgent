@@ -588,7 +588,9 @@ export const saveCandidateInterviewScheduleInputSchema = z.object({
   meetingUrl: z.string().optional(),
   meetingDetails: candidateInterviewMeetingDetailsSchema.optional(),
   interviewer: z.string(),
-  contactNote: z.string().optional()
+  contactNote: z.string().optional(),
+  /** Saves even though the time overlaps another interview (「仍然保存」). */
+  allowConflict: z.boolean().optional()
 })
 
 export const createCandidateInterviewRoundInputSchema = z.object({
@@ -1238,6 +1240,7 @@ const agentCandidateMatchCardSchema = z.object({
   reference: typedAiConversationReferenceSchema,
   candidateProfileId: z.string().uuid(),
   sourceDocumentId: z.string().uuid().optional(),
+  jobCaseId: z.string().uuid().optional(),
   runId: z.string().uuid(),
   rank: z.number().int().positive(),
   anonymousLabel: z.string().min(1).max(120),
@@ -1944,6 +1947,10 @@ export const candidateDeletionPreviewSchema = z.object({
   localFileName: z.string().min(1).max(180),
   counts: z.object({
     businessFollowUps: z.number().int().nonnegative().optional(),
+    /** Placements in place now: the person cannot be deleted until they leave or the start is undone. */
+    activePlacements: z.number().int().nonnegative().optional(),
+    /** Placements already ended (已退场); deleted with the person, so the preview names them. */
+    endedPlacements: z.number().int().nonnegative().optional(),
     profileVersions: z.number().int().nonnegative(),
     reviewAudits: z.number().int().nonnegative(),
     taskRecords: z.number().int().nonnegative(),
@@ -2097,7 +2104,9 @@ export const jobCaseReviewIdSchema = z.string().uuid()
 export const setJobCaseLifecycleInputSchema = z.object({
   reviewId: jobCaseReviewIdSchema,
   state: z.enum(['active', 'archived']),
-  reason: z.string().trim().min(3).max(300)
+  reason: z.string().trim().min(3).max(300),
+  /** Ending the case also ends its follow-ups still being arranged (as 结束案件 in the case list offers). */
+  closeOpenFollowUps: z.boolean().optional()
 })
 
 export const reopenJobCaseReviewInputSchema = z.object({
@@ -2162,7 +2171,7 @@ export const prepareCaseIntroductionInputSchema = z.object({
   expectedReviewRevision: z.number().int().positive()
 })
 
-export const draftCaseUpdateNoticeInputSchema = z.object({ reviewId: jobCaseReviewIdSchema })
+export const draftCaseUpdateNoticeInputSchema = z.object({ reviewId: jobCaseReviewIdSchema, templateId: z.string().uuid().optional() })
 
 export const recordCaseBroadcastCopyInputSchema = z.object({
   experienceRunId: z.string().uuid().optional(),
@@ -2199,6 +2208,20 @@ export const jobCaseDeletionPreviewSchema = z.object({
   sourceType: jobCaseSourceTypeSchema,
   counts: z.object({
     businessFollowUps: z.number().int().nonnegative().optional(),
+    /** People currently 已进场 through this case: the case cannot be deleted until they leave or the start is undone. */
+    activePlacements: z.number().int().nonnegative().optional(),
+    /** Placement records already ended (已退场); deleted with the case, so the preview names them. */
+    endedPlacements: z.number().int().nonnegative().optional(),
+    /** Introduction texts written for people about this case; deleted with it. */
+    introductionDrafts: z.number().int().nonnegative().optional(),
+    /** Further records deleted with the case (cascade), named so the preview and the report are complete. */
+    caseBroadcastCopies: z.number().int().nonnegative().optional(),
+    caseIntroductionDrafts: z.number().int().nonnegative().optional(),
+    recommendationPoints: z.number().int().nonnegative().optional(),
+    matchingOpportunities: z.number().int().nonnegative().optional(),
+    requirementDecisions: z.number().int().nonnegative().optional(),
+    questionDrafts: z.number().int().nonnegative().optional(),
+    personAssessments: z.number().int().nonnegative().optional(),
     caseVersions: z.number().int().nonnegative(),
     reviewAudits: z.number().int().nonnegative(),
     taskRecords: z.number().int().nonnegative(),

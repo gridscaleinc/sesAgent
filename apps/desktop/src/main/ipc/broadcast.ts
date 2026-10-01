@@ -28,7 +28,8 @@ import {
   loadBroadcastWorkspace,
   loadCaseBroadcastHistory,
   prepareCaseBroadcastEmail,
-  recordCaseBroadcastCopy
+  recordCaseBroadcastCopy,
+  validateCaseBroadcastCopy
 } from '../broadcast-service'
 import { autoConfirmJobCaseDraft } from '../business-text-intake'
 import { detectDirectIdentifiers } from '@privacy'
@@ -107,7 +108,8 @@ export function registerBroadcastHandlers(dependencies: BroadcastIpcDependencies
   ipcMain.handle(ipcChannels.validateCaseBroadcastMessage, (event, rawInput) => {
     assertTrustedSender(event)
     const input = recordCaseBroadcastCopyInputSchema.parse(rawInput)
-    prepareCaseBroadcastEmail(repository, input)
+    // The copy rules, not the mail ones: no subject, no mailto length limit.
+    validateCaseBroadcastCopy(repository, input)
     if (input.experienceRunId) repository.validateExperienceAdoption(input.experienceRunId, { documentId: null, reviewId: input.reviewId })
     return input
   })
@@ -131,6 +133,8 @@ export function registerBroadcastHandlers(dependencies: BroadcastIpcDependencies
     const prepared = prepareCaseBroadcastEmail(repository, input)
     if (input.experienceRunId) repository.validateExperienceAdoption(input.experienceRunId, { documentId: null, reviewId: input.reviewId })
     await dependencies.openExternal(prepared.mailtoUrl)
+    // Handed to the mail client is as good as copied: it is the baseline 「有更新」 and update notices compare with.
+    recordCaseBroadcastCopy(repository, currentOperator(), input)
     if (input.experienceRunId)
       repository.recordExperienceAdoption(input.experienceRunId, input.text, currentOperator().operatorId, {
         documentId: null,

@@ -316,6 +316,8 @@ export function createDefaultDomainToolRegistry(): DomainToolRegistry {
             .regex(/^[a-f0-9]{64}$/u)
             .optional(),
           kind: z.enum(['recruiting', 'client']),
+          // The case a client interview is booked for (on its 跟进).
+          jobCaseId: z.string().uuid().optional(),
           contactNote: z.string().max(1_500).optional()
         })
         .strict(),

@@ -1,7 +1,9 @@
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AiConversationSnapshot, DesktopApi, ExecuteAgentTurnInput, ExecuteAgentTurnResult, JobCaseReviewSnapshot } from '@shared'
+import type { BusinessFollowUp, CandidateReviewSnapshot } from '@shared'
 import { AgentWorkspace } from './AgentWorkspace'
+import { BusinessProgressContext, progressIndexes, type useBusinessProgressData } from '../business-progress-data'
 
 const conversationId = '11111111-1111-4111-8111-111111111111'
 const jobCaseId = '22222222-2222-4222-8222-222222222222'
@@ -1418,6 +1420,99 @@ describe('AgentWorkspace', () => {
     await waitFor(() => expect(matchButton).toBeEnabled())
   })
 
+  it('marks a shortlisted person already followed on this case with where the follow-up stands', async () => {
+    const jobCaseId = '55555555-5555-4555-8555-555555555555',
+      reviewId = '66666666-6666-4666-8666-666666666666',
+      documentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const card = {
+      reference: {
+        kind: 'match-result' as const,
+        objectId: '99999999-9999-4999-8999-999999999999',
+        objectVersion: null,
+        resultHash: 'a'.repeat(64),
+        ordinal: 1,
+        label: 'CANDIDATE_1',
+        target: 'match-result:99999999-9999-4999-8999-999999999999'
+      },
+      candidateProfileId: '77777777-7777-4777-8777-777777777777',
+      sourceDocumentId: documentId,
+      runId: '88888888-8888-4888-8888-888888888888',
+      rank: 1,
+      anonymousLabel: '候補者 DA67E874',
+      fitScore: 72,
+      matched: ['Java'],
+      missing: [],
+      hardFilterStatus: 'passed' as const,
+      projectEvidence: null,
+      status: 'current' as const
+    }
+    const conversation = {
+      ...snapshot([
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '匹配结果。',
+          mode: 'local',
+          turnId: '33333333-3333-4333-8333-333333333333',
+          createdAt: '2026-08-26T00:00:01.000Z',
+          blocks: [
+            {
+              type: 'candidate-match-cards',
+              runId: card.runId,
+              resultHash: 'a'.repeat(64),
+              cards: [card, { ...card, sourceDocumentId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', rank: 2, anonymousLabel: '候補者 B' }]
+            }
+          ]
+        }
+      ]),
+      salesAgentState: {
+        selectedJobCaseRef: {
+          kind: 'job-case',
+          objectId: jobCaseId,
+          objectVersion: 1,
+          ordinal: 1,
+          label: 'Java',
+          target: `job-case:${jobCaseId}`
+        },
+        lastMatchRunId: card.runId,
+        lastSearchMessageId: null
+      }
+    } as AiConversationSnapshot
+    const row = {
+      id: 'f1',
+      documentId,
+      reviewId,
+      status: 'active',
+      revision: 1,
+      progress: { stage: 'coordinating', rounds: [], entry: {} },
+      events: []
+    } as unknown as BusinessFollowUp
+    const data = {
+      rows: [row],
+      indexes: progressIndexes([row]),
+      now: new Date(),
+      loading: false,
+      failed: false,
+      publish: vi.fn(),
+      refresh: vi.fn(),
+      remove: vi.fn()
+    } as unknown as ReturnType<typeof useBusinessProgressData>
+    const api = { ...originalApi, listAiConversations: vi.fn().mockResolvedValue([conversation]) } as DesktopApi
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
+    render(
+      <BusinessProgressContext.Provider value={data}>
+        <AgentWorkspace
+          onOpenMatching={vi.fn()}
+          jobCaseReviews={[{ reviewId, jobCase: { id: jobCaseId, version: 1 } } as unknown as JobCaseReviewSnapshot]}
+          candidateReviews={[] as CandidateReviewSnapshot[]}
+        />
+      </BusinessProgressContext.Provider>
+    )
+    expect(await screen.findByText(/^対応中 · /u)).toBeInTheDocument()
+    // Only the followed person carries it.
+    expect(screen.getAllByText(/^対応中 · /u)).toHaveLength(1)
+  })
+
   it('shows an unexcluded-but-unmatched candidate as not assessable instead of ranked #1', async () => {
     const conversation = snapshot([
       {
@@ -1734,11 +1829,13 @@ describe('AgentWorkspace', () => {
     ])
     const recordCaseBroadcastCopy = vi.fn().mockResolvedValue({ copy: { id: 'copy-1' } })
     const openCaseBroadcastEmail = vi.fn().mockResolvedValue({ opened: true })
+    const validateCaseBroadcastMessage = vi.fn(async (input: unknown) => input)
     const api = {
       ...originalApi,
       listAiConversations: vi.fn().mockResolvedValue([conversation]),
       recordCaseBroadcastCopy,
-      openCaseBroadcastEmail
+      openCaseBroadcastEmail,
+      validateCaseBroadcastMessage
     } as DesktopApi
     Object.defineProperty(window, 'sesAgent', { configurable: true, value: api })
     const previousClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
@@ -1756,13 +1853,18 @@ describe('AgentWorkspace', () => {
       expect(within(first).getByRole('textbox', { name: '群メッセージ本文' })).toHaveValue('【案件】Java 案件\n必須：Java')
       fireEvent.click(within(first).getByRole('button', { name: 'コピーする' }))
       await waitFor(() => expect(writeText).toHaveBeenCalledWith('【案件】Java 案件\n必須：Java'))
-      expect(recordCaseBroadcastCopy).toHaveBeenCalledWith({
+      // Checked by Main before the clipboard, against the versions the card was drafted from; recorded after.
+      const recorded = {
         reviewId,
         lang: 'ja',
         kind: 'new',
         templateId,
-        text: '【案件】Java 案件\n必須：Java'
-      })
+        text: '【案件】Java 案件\n必須：Java',
+        expectedJobCaseVersion: 2,
+        expectedTemplateRevision: 1
+      }
+      expect(validateCaseBroadcastMessage).toHaveBeenCalledWith(recorded)
+      await waitFor(() => expect(recordCaseBroadcastCopy).toHaveBeenCalledWith(recorded))
       expect(await within(first).findByRole('status')).toHaveTextContent('コピーしました。微信に貼り付けてください。')
 
       fireEvent.click(within(first).getByRole('button', { name: 'メールを開く' }))
@@ -1772,7 +1874,9 @@ describe('AgentWorkspace', () => {
           lang: 'ja',
           kind: 'new',
           templateId,
-          text: '【案件】Java 案件\n必須：Java'
+          text: '【案件】Java 案件\n必須：Java',
+          expectedJobCaseVersion: 2,
+          expectedTemplateRevision: 1
         })
       )
       expect(await within(first).findByRole('status')).toHaveTextContent('宛先と本文を確認して送信してください。')

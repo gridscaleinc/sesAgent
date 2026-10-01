@@ -94,3 +94,23 @@ it('reports personnel introductions pasted as cases without saving them', async 
   expect(result).toMatchObject({ created: 0, duplicates: 0, failed: 0, skippedPersonnel: 1 })
   expect(importChatPastedJobCaseText).not.toHaveBeenCalled()
 })
+
+it('keeps passages the model set aside in the box, so no pasted case is silently lost', async () => {
+  vi.mocked(importChatPastedJobCaseText)
+    .mockReset()
+    .mockResolvedValue({ outcome: 'created', review: { reviewId: 'new' } } as any)
+  const text = '金融向けJava開発を募集、東京で10月開始。\nいつもお世話になっております。\n別の顧客はAWS運用を募集、フルリモート。'
+  const units = caseEvidenceUnits(text)
+  const aside = units.findIndex((unit) => unit.text.startsWith('いつも')) + 1
+  const extract = vi.fn(async () => ({
+    kind: 'records',
+    records: [{ kind: 'job-case', startLine: 1, endLine: aside - 1, fields: {} }],
+    personnel: [],
+    ignored: [{ startLine: aside, endLine: units.length }]
+  }))
+  const result = await createCaseTextBatchImporter(context(extract))({ text })
+  expect(result.created).toBe(1)
+  expect(result.unrecognized).toBe(1)
+  expect(result.remainingText).toContain('AWS運用')
+  expect(result.remainingText).not.toContain('Java開発')
+})

@@ -25,7 +25,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid #dce6de;
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   /* One scroll for the whole detail: the person header scrolls away, the tabs stay, the work gets the height. */
   overflow: auto;
@@ -42,7 +42,7 @@
 .hr-progress-detail > header h3 {
   font-size: 18px;
   margin: 3px 0;
-  color: #254936;
+  color: var(--tone-green-37-2);
 }
 .hr-progress-detail > header p {
   font-size: 14px;
@@ -50,7 +50,7 @@
   overflow-wrap: anywhere;
 }
 .hr-progress-detail > header small {
-  color: #6b7e70;
+  color: var(--tone-green-57);
   font-size: 12px;
 }
 .hr-progress-detail > header > div:last-child {
@@ -69,13 +69,13 @@
   padding: 4px 3px;
   text-align: center;
   font-size: 11px;
-  background: #fafcf9;
-  color: #8b978e;
+  background: var(--tint-gray-99);
+  color: var(--tone-gray-66-2);
   border-radius: 4px;
 }
 .hr-progress-track span.is-reached {
-  color: #3a6349;
-  background: #eff9f5;
+  color: var(--tone-green-46);
+  background: var(--tint-gray-97);
 }
 .hr-progress-tabs {
   position: sticky;
@@ -85,7 +85,7 @@
   gap: 6px;
   padding: 10px 20px;
   background: var(--surface);
-  border-bottom: 1px solid #dce6de;
+  border-bottom: 1px solid var(--border-color);
   flex-wrap: wrap;
 }
 .hr-progress-tabs button {
@@ -93,9 +93,9 @@
 }
 .hr-progress-tabs button[aria-pressed='true'],
 .hr-progress-message button[aria-pressed='true'] {
-  color: var(--forest);
-  background: #eff9f5;
-  border-color: #b6cebd;
+  color: var(--ink);
+  background: var(--surface-selected);
+  border-color: var(--line);
 }
 .hr-progress-content {
   flex: 1 0 auto;
@@ -104,7 +104,7 @@
 .hr-progress h4 {
   font-size: 15px;
   margin: 0 0 14px;
-  color: #345641;
+  color: var(--tone-green-42-2);
 }
 .hr-progress-content h4:not(:first-child),
 .hr-progress-content > form,
@@ -122,7 +122,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  color: #5c7162;
+  color: var(--tone-green-53-4);
   font-size: 12px;
   min-width: 0;
 }
@@ -132,11 +132,11 @@
   width: 100%;
   min-width: 0;
   padding: 10px 11px;
-  color: #294237;
+  color: var(--tone-green-35);
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
-  border: 1px solid #d3e0d7;
+  border: 1px solid var(--line-gray-89);
   border-radius: 7px;
   background: var(--surface);
   box-sizing: border-box;
@@ -147,7 +147,7 @@
 .hr-progress input:disabled,
 .hr-progress select:disabled,
 .hr-progress textarea:disabled {
-  background: #f5f8f7;
+  background: var(--tint-gray-99);
 }
 .hr-progress-form-grid {
   display: grid;
@@ -170,7 +170,7 @@
 }
 .hr-progress summary {
   cursor: pointer;
-  color: #5c7162;
+  color: var(--tone-green-53-4);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -186,7 +186,7 @@
 }
 .hr-progress-next-line time {
   font-size: 11px;
-  color: #77887c;
+  color: var(--tone-green-62);
 }
 .hr-progress .hr-followup-item {
   gap: 10px;
@@ -201,25 +201,25 @@
   gap: 5px;
 }
 .hr-progress .hr-followup-badge.stage-started {
-  background: #e1f1e4;
-  color: #2f6b45;
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
 }
 .hr-progress-analysis {
-  background: #eef4fb;
-  border: 1px solid #dfe8f3;
+  background: var(--surface-selected);
+  border: 1px solid var(--line);
   padding: 14px;
   border-radius: 8px;
   margin: 0 0 20px;
 }
 .hr-progress-analysis strong {
   font-size: 13px;
-  color: #365b7c;
+  color: var(--tone-blue-46);
 }
 .hr-progress-analysis blockquote {
   margin: 10px 0;
   padding-left: 10px;
-  border-left: 2px solid #b7cae1;
-  color: #657a91;
+  border-left: 2px solid var(--line-slate-83-2);
+  color: var(--tone-slate-57-3);
   font-size: 12px;
 }
 .hr-progress-analysis small,
@@ -227,7 +227,7 @@
 .hr-progress-arrival small {
   display: block;
   font-size: 11px;
-  color: #6b7e70;
+  color: var(--tone-green-57);
   line-height: 1.7;
 }
 .hr-progress-checks {
@@ -242,8 +242,8 @@
 }
 .hr-progress-arrival {
   padding: 16px;
-  background: #fafcf9;
-  border: 1px solid #d7e4da;
+  background: var(--tint-gray-99);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
 }
 .hr-progress-arrival label {
@@ -255,7 +255,7 @@
 }
 .hr-progress-round {
   padding: 12px 14px;
-  border: 1px solid #dce6de;
+  border: 1px solid var(--border-color);
   border-radius: 7px;
 }
 .hr-progress-round summary {
@@ -268,17 +268,17 @@
   list-style: none;
   padding: 0 0 0 12px;
   margin: 14px 0 22px;
-  border-left: 2px solid #dce6de;
+  border-left: 2px solid var(--border-color);
 }
 .hr-progress-timeline li {
   padding: 0 0 18px 10px;
 }
 .hr-progress-timeline time {
   font-size: 11px;
-  color: #728075;
+  color: var(--tone-green-58-2);
 }
 .hr-progress-timeline small {
-  color: #728075;
+  color: var(--tone-green-58-2);
 }
 .hr-progress-other {
   display: flex;
@@ -286,7 +286,7 @@
   gap: 10px;
   flex-wrap: wrap;
   padding: 12px 0;
-  border-bottom: 1px solid #e0e9e6;
+  border-bottom: 1px solid var(--line-gray-93);
   font-size: 12px;
 }
 .hr-progress-other > span {
@@ -295,9 +295,9 @@
 }
 .hr-progress-message {
   padding: 16px;
-  border: 1px solid #d7e4da;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: #fafcf9;
+  background: var(--tint-gray-99);
 }
 .hr-progress-message textarea {
   margin-top: 10px;
@@ -323,7 +323,7 @@
   overflow: auto;
   padding: 10px 14px;
   margin-bottom: 14px;
-  border: 1px solid #dce6de;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
 }
 .hr-progress-inbox article {
@@ -334,7 +334,7 @@
   display: block;
 }
 .hr-progress-inbox article > small {
-  color: #77887c;
+  color: var(--tone-green-62);
 }
 .hr-progress-inbox p {
   white-space: pre-wrap;
@@ -392,8 +392,8 @@
   background: transparent;
 }
 .hr-progress-preparation {
-  background: #fafcf9;
-  border: 1px solid #dfe6dd;
+  background: var(--tint-gray-99);
+  border: 1px solid var(--border-color);
   border-radius: 7px;
   padding: 10px 14px;
 }
@@ -424,13 +424,13 @@
 
 .personnel-mail-updates {
   padding: 16px;
-  border: 1px solid #d3e0d7;
+  border: 1px solid var(--line-gray-89);
   border-radius: 10px;
   margin: 12px 0;
-  background: #fafcf9;
+  background: var(--tint-gray-99);
 }
 .personnel-mail-updates article + article {
-  border-top: 1px solid #d3e0d7;
+  border-top: 1px solid var(--line-gray-89);
   padding-top: 12px;
   margin-top: 12px;
 }
@@ -450,16 +450,16 @@
 }
 .hr-progress .hr-menu-list button:not(:disabled):hover,
 .hr-progress .hr-menu-list button:focus-visible {
-  background: #eff9f5;
+  background: var(--tint-gray-97);
   outline: none;
 }
 .hr-progress .hr-menu-list button.is-danger {
-  color: var(--danger);
+  color: var(--status-danger-fg);
 }
 .hr-progress .hr-followup-badge.stage-paused,
 .hr-progress .hr-followup-badge.stage-closed {
-  background: #e2e6eb;
-  color: #5b6470;
+  background: var(--status-muted-bg);
+  color: var(--status-muted-fg);
 }
 .hr-progress-stopped {
   display: flex;
@@ -469,13 +469,13 @@
   margin: 0 20px 12px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: #f1f3f5;
-  color: #4a5360;
+  background: var(--status-muted-bg);
+  color: var(--tone-slate-44);
   font-size: 13px;
 }
 .hr-progress-stopped.is-paused {
-  background: #fbf5e6;
-  color: #6b5520;
+  background: var(--status-muted-bg);
+  color: var(--status-muted-fg);
 }
 .hr-progress-stopped p {
   margin: 0;
@@ -487,7 +487,7 @@
 }
 .hr-progress-hint {
   margin-top: 16px;
-  color: #6b7e70;
+  color: var(--tone-green-57);
   font-size: 12px;
 }
 .hr-progress-dialog-backdrop {
@@ -497,7 +497,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #14203266;
+  background: color-mix(in srgb, var(--fixed-slate-24) 40%, transparent);
 }
 .hr-progress-dialog {
   display: flex;
@@ -510,7 +510,7 @@
   background: var(--surface);
   color: var(--text);
   border-radius: 14px;
-  box-shadow: 0 20px 70px #14203240;
+  box-shadow: 0 20px 70px color-mix(in srgb, var(--shadow-color) 25.1%, transparent);
 }
 .hr-progress-dialog h3 {
   margin: 0;
@@ -522,7 +522,7 @@
   overflow-wrap: anywhere;
 }
 .hr-progress-dialog-pair {
-  color: #6b7e70;
+  color: var(--tone-green-57);
   font-size: 13px;
 }
 .hr-progress-dialog fieldset {
@@ -550,12 +550,12 @@
   border-radius: 999px;
 }
 .hr-progress-dialog-chips button[aria-pressed='true'] {
-  color: var(--forest);
-  background: #eff9f5;
-  border-color: #b6cebd;
+  color: var(--ink);
+  background: var(--surface-selected);
+  border-color: var(--line);
 }
 .hr-progress-dialog [role='alert'] {
-  color: var(--danger);
+  color: var(--status-danger-fg);
 }
 .hr-progress-dialog-actions {
   display: flex;
@@ -563,5 +563,55 @@
   gap: 10px;
 }
 .hr-progress-dialog .is-danger {
-  color: var(--danger);
+  color: var(--status-danger-fg);
+}
+/* The case was ended: nothing more can be arranged here. */
+.hr-progress-case-ended {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--status-attention-border);
+  border-radius: 8px;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.hr-progress-leave {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-faint);
+}
+.hr-progress-leave h4 {
+  margin: 0;
+}
+.hr-progress-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-tertiary);
+  font-size: 12px;
+}
+/* The placement record: 记录退场 first (the step that comes next), then the recorded terms, at the panel's text size. */
+.hr-progress-placement {
+  display: flex;
+  flex-direction: column;
+}
+.hr-progress-placement > h4 {
+  order: -2;
+}
+.hr-progress-placement > .hr-progress-leave {
+  order: -1;
+  margin: 0 0 14px;
+  padding: 0 0 14px;
+  border-top: 0;
+  border-bottom: 1px solid var(--line-faint);
+}
+.hr-progress-placement .hr-progress-entry-record {
+  font-size: 13px;
+}
+.hr-progress-placement .hr-progress-entry-record > div {
+  padding: 8px 0;
+  border-bottom-color: var(--line-faint);
 }

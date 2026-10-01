@@ -23,12 +23,12 @@
 }
 .business-field .business-field-value:hover,
 .business-field .business-field-value:focus-visible {
-  background: var(--blue-soft);
-  border-color: #b7cae1;
+  background: var(--accent-soft);
+  border-color: var(--line-slate-83-2);
 }
 .business-field-pencil {
   margin-left: 6px;
-  color: #577495;
+  color: var(--tone-blue-54);
   opacity: 0;
   font-size: 12px;
 }
@@ -41,22 +41,28 @@
   min-width: min(220px, 100%);
   box-sizing: border-box;
   padding: 8px;
-  border: 1px solid #5e88bc;
+  border: 1px solid var(--line-blue-62-2);
   border-radius: 6px;
   background: var(--surface);
-  color: #26384e;
+  color: var(--tone-blue-34);
   font: inherit;
   line-height: 1.6;
   resize: vertical;
 }
 .business-field > small {
   font-size: 11px;
-  color: #426e56;
+  color: var(--tone-green-50-4);
   font-weight: 400;
 }
 .business-field.is-failed > small {
-  color: #9e372e;
+  color: var(--status-danger-fg);
 }
 .business-field.is-failed > small button {
   margin-left: 8px;
+}
+
+/* A value shown in the UI language; the stored original is in the tooltip. */
+.business-field .is-normalized-value {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }

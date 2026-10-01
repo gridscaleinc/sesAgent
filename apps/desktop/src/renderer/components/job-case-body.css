@@ -1,7 +1,7 @@
 .agent-business-hero.is-case-detail {
   padding: 0 0 16px;
   border: 0;
-  border-bottom: 1px solid #e0e7e2;
+  border-bottom: 1px solid var(--line-gray-93);
   border-radius: 0;
   background: transparent;
 }
@@ -18,7 +18,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #52705e;
+  color: var(--tone-green-52-2);
   font-size: 12px;
   cursor: pointer;
 }
@@ -28,7 +28,7 @@
 .case-body-reader {
   margin: 18px 0;
   padding: 18px;
-  border: 1px solid #e0e7e2;
+  border: 1px solid var(--line-gray-93);
   border-radius: 10px;
   background: var(--surface);
   min-width: 0;
@@ -42,15 +42,15 @@
 }
 .case-body-reader > header h3 {
   margin: 0;
-  color: #294237;
+  color: var(--tone-green-35);
   font-size: 14px;
 }
 .case-body-reader > header small {
-  color: #718373;
+  color: var(--tone-green-59);
   font-size: 11px;
 }
 .case-body-text {
-  color: #36463d;
+  color: var(--tone-green-38-3);
   font-size: 13px;
   line-height: 1.85;
   overflow-wrap: anywhere;
@@ -64,7 +64,7 @@
 }
 .case-body-text h4 {
   margin: 22px 0 10px;
-  color: #294237;
+  color: var(--tone-green-35);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -80,7 +80,7 @@
 .case-body-text hr {
   margin: 20px 0;
   border: 0;
-  border-top: 1px solid #e0e9e6;
+  border-top: 1px solid var(--line-gray-93);
 }
 .case-body-text > :first-child {
   margin-top: 0;
@@ -90,7 +90,7 @@
 }
 .case-body-reader > p,
 .case-body-load-state {
-  color: #6d7e76;
+  color: var(--tone-green-58);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -101,11 +101,11 @@
   gap: 10px;
 }
 .case-body-load-state button {
-  border: 1px solid #cbdccf;
+  border: 1px solid var(--line-green-88);
   border-radius: 6px;
   background: var(--surface);
   padding: 4px 10px;
-  color: #365c43;
+  color: var(--accent-text);
   cursor: pointer;
 }
 .agent-business-hero.is-case-detail .case-edit-actions {
@@ -117,7 +117,7 @@
 /* The full-page case editor, embedded in the right panel: no own scroller or sticky header, one field column. */
 .agent-case-review-editor {
   margin: 12px 0 18px;
-  border: 1px solid #e0e7e2;
+  border: 1px solid var(--line-gray-93);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -158,19 +158,19 @@
   gap: 5px;
   min-height: 32px;
   padding: 6px 12px;
-  border: 1px solid #dce6de;
+  border: 1px solid var(--border-color);
   border-radius: 7px;
   background: var(--surface);
-  color: #3a6349;
+  color: var(--tone-green-46);
   font: inherit;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
 }
 .agent-case-actions .agent-case-primary {
-  border-color: var(--forest);
-  background: var(--forest);
-  color: white;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .agent-case-actions button:disabled {
   opacity: 0.5;

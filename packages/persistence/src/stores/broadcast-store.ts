@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   builtInBroadcastTemplate,
+  builtInBroadcastTemplateId,
   createBroadcastTemplateInputSchema,
   deleteBroadcastTemplateInputSchema,
   updateBroadcastTemplateInputSchema
@@ -100,7 +101,11 @@ export class BroadcastStore extends DomainStore {
    * migration means an untouched device always reads the current default.
    */
   listBroadcastTemplates(): BroadcastTemplate[] {
-    const rows = this.database.prepare<[], BroadcastTemplateRow>('SELECT * FROM broadcast_templates ORDER BY created_at, id').all()
+    // The built-in 標準 template stays first (it is the default), whatever order the rows were written in: copying it
+    // writes it and the copy at the same moment, and the copy must not take its place.
+    const rows = this.database
+      .prepare<[string], BroadcastTemplateRow>('SELECT * FROM broadcast_templates ORDER BY (id = ?) DESC, created_at, id')
+      .all(builtInBroadcastTemplateId)
     return rows.length > 0 ? rows.map(templateFromRow) : [builtInBroadcastTemplate()]
   }
 

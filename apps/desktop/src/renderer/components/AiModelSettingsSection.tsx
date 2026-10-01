@@ -31,8 +31,9 @@ function tierLabel(t: LocaleText, tier: AgentChatModelOption['tier']): string | 
   return null
 }
 
+/** The model a slot really uses: the same fallback as Main, so a model the gateway does not offer yet shows the default. */
 function effectiveChoice(models: AgentChatModelOption[], chosen: string | undefined): string {
-  if (chosen && models.some((model) => model.key === chosen)) return chosen
+  if (chosen && models.some((model) => model.key === chosen && !model.unavailable)) return chosen
   return models.some((model) => model.key === defaultModelKey) ? defaultModelKey : (models[0]?.key ?? defaultModelKey)
 }
 
@@ -60,6 +61,11 @@ export function AiModelSettingsSection({
   const current: ApplicationAiModels = {
     checking: effectiveChoice(models, preferences.aiModels?.checking),
     writing: effectiveChoice(models, preferences.aiModels?.writing)
+  }
+  // A saved choice the gateway does not offer yet is named, so the shown default is not a surprise.
+  const unavailableChoice = (slot: ApplicationAiModelSlot) => {
+    const chosen = preferences.aiModels?.[slot]
+    return chosen ? models.find((model) => model.key === chosen && model.unavailable) : undefined
   }
   const [saving, setSaving] = useState<ApplicationAiModelSlot | null>(null)
   const [saved, setSaved] = useState<ApplicationAiModelSlot | null>(null)
@@ -105,7 +111,6 @@ export function AiModelSettingsSection({
   return (
     <section aria-labelledby="model-settings-title" className="settings-section">
       <div className="settings-section-heading">
-        <span>AI MODELS</span>
         <h3 id="model-settings-title">{t('AI 模型', 'AIモデル')}</h3>
         <p>
           {t(
@@ -120,6 +125,14 @@ export function AiModelSettingsSection({
           return (
             <div className="settings-model-row" key={slot}>
               <label htmlFor={`settings-model-${slot}`}>{slotLabel(t, slot)}</label>
+              {unavailableChoice(slot) ? (
+                <small className="settings-model-fallback" role="status">
+                  {t(
+                    `之前选的 ${unavailableChoice(slot)!.displayName} 暂未开放，现在使用默认模型。`,
+                    `以前選んだ ${unavailableChoice(slot)!.displayName} は未提供のため、既定のモデルを使っています。`
+                  )}
+                </small>
+              ) : null}
               <div className="settings-model-controls">
                 <select
                   disabled={disabled || saving !== null}
@@ -130,8 +143,12 @@ export function AiModelSettingsSection({
                   {models.map((model) => {
                     const hint = tierLabel(t, model.tier)
                     return (
-                      <option key={model.key} value={model.key}>
-                        {hint ? `${model.displayName} · ${hint}` : model.displayName}
+                      <option key={model.key} value={model.key} disabled={model.unavailable}>
+                        {model.unavailable
+                          ? t(`${model.displayName}（暂未开放）`, `${model.displayName}（未提供）`)
+                          : hint
+                            ? `${model.displayName} · ${hint}`
+                            : model.displayName}
                       </option>
                     )
                   })}

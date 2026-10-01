@@ -12,6 +12,9 @@
   font-size: 12px;
   line-height: 1.5;
 }
+.opportunity-banner.is-quiet {
+  background: transparent;
+}
 .opportunity-banner strong {
   color: var(--ink);
   font-weight: 650;
@@ -20,7 +23,7 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--forest);
+  background: var(--accent);
 }
 .opportunity-banner button {
   margin-left: auto;
@@ -28,16 +31,16 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--forest);
+  color: var(--accent-text);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 .opportunity-banner button:hover {
-  background: var(--green-soft);
+  background: var(--surface-selected);
 }
 .opportunity-banner button:focus-visible {
-  outline: 2px solid var(--forest);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -69,7 +72,7 @@
   background: var(--surface);
   color: var(--ink);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(20, 34, 58, 0.08);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-color) 8%, transparent);
 }
 .opportunity-scroll {
   flex: 1;
@@ -80,63 +83,123 @@
   border-top: 1px solid var(--line);
   scrollbar-gutter: stable;
 }
+.opportunity-page .match-page-header {
+  gap: 8px;
+}
 .opportunity-empty {
   padding: 24px 10px;
 }
-.opportunity-section + .opportunity-section {
-  margin-top: 18px;
+.opportunity-section {
+  padding-top: 16px;
 }
 .opportunity-section-head {
-  margin: 0;
-  padding: 14px 10px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 650;
+}
+.opportunity-section-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.opportunity-section-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--status-ok-fg);
+}
+.opportunity-section.is-needs-confirmation .opportunity-section-dot {
+  background: var(--status-attention-fg);
+}
+/* One card per case (or person); two columns when the page is wide enough. */
+.opportunity-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr));
+  align-items: start;
+  gap: 12px;
+}
+.opportunity-group {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
 }
 .opportunity-group-head {
+  border-radius: 12px 12px 0 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--line-faint);
+  background: var(--surface-faint);
+}
+.opportunity-group-head h4 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.opportunity-group-count {
+  align-self: center;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.opportunity-group-meta {
+  grid-column: 1 / -1;
   display: flex;
   align-items: baseline;
-  gap: 6px;
-  margin: 0;
-  padding: 14px 10px 4px;
-  color: var(--ink-tertiary);
+  gap: 12px;
+  min-width: 0;
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
 }
-.opportunity-group-head span {
+.opportunity-group-count time {
+  margin-left: 8px;
   color: var(--muted);
   font-weight: 400;
 }
+.opportunity-facts {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .opportunity-rows {
   display: grid;
-  gap: 2px;
   margin: 0;
-  padding: 0;
+  padding: 4px 0;
   list-style: none;
 }
 .opportunity-row {
-  border: 1px solid transparent;
-  border-radius: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+.opportunity-row + .opportunity-row {
+  border-top: 1px solid var(--line-faint);
 }
 .opportunity-row:hover,
 .opportunity-row:focus-within {
-  border-color: var(--line-faint);
   background: var(--surface-faint);
-}
-.opportunity-row.is-new {
-  box-shadow: inset 3px 0 var(--forest);
-}
-.opportunity-row-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: 8px 10px;
 }
 .opportunity-row-main {
   display: grid;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 .opportunity-row-head {
@@ -146,49 +209,110 @@
   min-width: 0;
 }
 .opportunity-row-head strong {
-  min-width: 0;
+  flex-shrink: 0;
+  max-width: 45%;
   overflow: hidden;
+  color: var(--ink);
   font-size: 13px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.match-page .opportunity-confirm-toggle {
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  line-height: 1.6;
+.opportunity-new-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--blue);
 }
-.opportunity-row-time {
-  color: var(--muted);
+.opportunity-met {
+  flex-shrink: 0;
+  color: var(--status-ok-fg);
   font-size: 12px;
+  white-space: nowrap;
+}
+.opportunity-met.is-partial {
+  color: var(--status-attention-fg);
+}
+.opportunity-row-head .opportunity-facts {
+  margin-left: 4px;
+}
+.opportunity-confirm-line {
+  overflow: hidden;
+  color: var(--status-attention-fg);
+  font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .opportunity-row-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
-.opportunity-confirm {
-  display: grid;
-  gap: 2px;
-  margin: 0 10px 10px;
-  padding: 8px 12px 8px 26px;
-  border: 1px solid var(--amber-soft);
-  border-radius: 8px;
-  background: var(--amber-faint);
-  color: var(--amber);
+.match-page .opportunity-open {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--accent-text);
   font-size: 12px;
-  line-height: 1.6;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
 }
-.opportunity-confirm[hidden] {
-  display: none;
+.match-page .opportunity-open:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.opportunity-section.is-needs-confirmation .opportunity-open {
+  color: var(--status-attention-fg);
+}
+/* 删除 stays quiet until the row is hovered or focused, so a row reads as one line of facts. */
+.match-page .opportunity-remove {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+}
+.opportunity-row:hover .opportunity-remove,
+.opportunity-row:focus-within .opportunity-remove {
+  opacity: 1;
+}
+.match-page .opportunity-remove:hover:not(:disabled),
+.match-page .opportunity-remove:focus-visible {
+  border-color: var(--status-danger-bg);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+@media (hover: none) {
+  .match-page .opportunity-remove {
+    opacity: 1;
+  }
+}
+.opportunity-pagination {
+  padding: 8px 0 10px;
 }
 @container match-page (max-width: 560px) {
-  .opportunity-row-line {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .opportunity-row-time {
+  .opportunity-row-head .opportunity-facts {
     display: none;
   }
+}
+/* HR judged 不满足: kept, in red, last. */
+.opportunity-section.is-not-suitable .opportunity-section-dot {
+  background: var(--status-danger-fg);
+}
+.opportunity-met.is-rejected {
+  color: var(--status-danger-fg);
+}
+.opportunity-row.is-rejected strong {
+  color: var(--ink-tertiary);
+}
+.opportunity-section.is-not-suitable .opportunity-open {
+  color: var(--ink-tertiary);
 }

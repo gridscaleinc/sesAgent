@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { businessMatchingPolicyVersion, type CasePersonAssessment } from '@shared'
 import type { MainIpcContext } from './ipc/context'
-import { evaluateWithWorkRules } from './work-rule-matching'
+import { confirmationsOf, evaluateWithWorkRules } from './work-rule-matching'
 
 /** Upgrade the latest pair result locally when the policy changes. Preserve the
  * historical row and its feedback; never report a new cloud call as completed. */
@@ -17,7 +17,13 @@ export function refreshCaseAssessmentPolicy(
   const library = repository.listWorkRules()
   const reusable =
     previous.profileVersion === profile.profileVersion && previous.jobCaseVersion === job.version && previous.jobCaseId === job.id
-  const evaluated = evaluateWithWorkRules(profile, job, library, reusable ? previous.result.assessment : undefined)
+  const evaluated = evaluateWithWorkRules(
+    profile,
+    job,
+    library,
+    reusable ? previous.result.assessment : undefined,
+    confirmationsOf(repository, previous.documentId)
+  )
   const updated: CasePersonAssessment = {
     id: randomUUID(),
     origin: previous.origin,

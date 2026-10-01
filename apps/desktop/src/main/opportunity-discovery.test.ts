@@ -127,3 +127,21 @@ it('starts a pass only when idle, not busy, and at least 15 minutes after the la
   expect(shouldStartOpportunityPass({ ...base, lastCompletedAt, idleSeconds: 1 })).toBe(false)
   expect(shouldStartOpportunityPass({ ...base, now: now + 60_000, lastCompletedAt })).toBe(true)
 })
+
+it('ranks again on a new day (or after a restart) but writes nothing when the result is the same', async () => {
+  const job = caseWith('job', [field('required_skills', 'Java')])
+  const { repository, save, cache } = fakeRepository([person('available')], [job])
+  let rows: Array<{ documentId: string; fingerprint: string; state: string }> = []
+  save.mockImplementation((_reviewId: string, items: Array<{ documentId: string; fingerprint: string }>) => {
+    rows = items.map((item) => ({ documentId: item.documentId, fingerprint: item.fingerprint, state: 'new' }))
+  })
+  const saveCheckpoint = vi.fn((k: string, v: string) => cache.set(k, v))
+  const withRows = { ...repository, saveGrowthCheckpoint: saveCheckpoint, listMatchingOpportunityRows: () => rows }
+  await createOpportunityDiscovery({ repository: withRows } as never)()
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(saveCheckpoint).toHaveBeenCalledTimes(1)
+  // A fresh process (as after a restart, or on the next day) ranks the case again: same result, no writes.
+  await createOpportunityDiscovery({ repository: withRows } as never)()
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(saveCheckpoint).toHaveBeenCalledTimes(1)
+})

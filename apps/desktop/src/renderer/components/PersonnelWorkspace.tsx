@@ -1,7 +1,9 @@
 import { PersonnelMailUpdates } from './PersonnelMailUpdates'
+import { PersonRequirementDecisions } from './PersonRequirementDecisions'
 import { BusinessField } from './BusinessField'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
+  isInactiveProgressStage,
   isPersonnelAvailable,
   type CandidateReviewSnapshot,
   type PersonnelWorkspace as Workspace,
@@ -10,6 +12,8 @@ import {
 import { localizedIpcError, useLocaleText } from '../i18n'
 import { CandidateProfileSummary } from './CandidateProfileSummary'
 import { usePersonCaseMatchCounts } from '../person-case-match-cache'
+import { useBusinessProgress } from '../business-progress-data'
+import './personnel-workspace.css'
 
 interface Props {
   renderBusinessProgress?(kind: 'person' | 'case', id: string): ReactNode
@@ -150,7 +154,6 @@ export function PersonnelWorkspace({
             <>
               <header className="personnel-detail-header">
                 <div>
-                  <span className="personnel-detail-eyebrow">{t('人员资料', '要員情報')}</span>
                   <h3>
                     <BusinessField
                       kind="person"
@@ -199,6 +202,7 @@ export function PersonnelWorkspace({
                 key={`${selected.documentId}:${selected.reviewRevision}:${selected.profile?.version}:${workspace?.states.find((state) => state.documentId === selected.documentId)?.confirmedAt}`}
                 disabled={!workspace}
                 state={statusOf(selected)}
+                documentId={selected.documentId}
                 onSave={async (status) => {
                   await window.sesAgent.setCandidateBusinessState({
                     documentId: selected.documentId,
@@ -209,8 +213,13 @@ export function PersonnelWorkspace({
                   })
                   await load()
                   await onRefresh()
+                  // 今天, 新匹配机会 and the lists re-read the person's availability.
+                  window.dispatchEvent(
+                    new CustomEvent('ses-business-data-changed', { detail: { kind: 'person', id: selected.documentId } })
+                  )
                 }}
               />
+              <PersonRequirementDecisions documentId={selected.documentId} />
               <div className="hr-person-actions">
                 {/* Kept beside the list card's actions: this panel also opens where the list is hidden (matching results, follow-ups). */}
                 <button
@@ -250,13 +259,20 @@ export function PersonnelWorkspace({
 function PersonnelStatusForm({
   disabled,
   state,
+  documentId,
   onSave
 }: {
   disabled: boolean
   state: CandidateBusinessStatus
+  documentId: string
   onSave(status: CandidateBusinessStatus): Promise<void>
 }) {
   const { locale, zh, t } = useLocaleText()
+  // In place through a recorded start: the status changes with 记录退场, not here.
+  const relations = useBusinessProgress()?.indexes.person.get(documentId) ?? []
+  const placed = relations.some((row) => row.progress?.stage === 'started')
+  // 暂停营业 stops interviews on every follow-up still being arranged: said before saving, as 结束案件 does.
+  const arranging = relations.filter((row) => row.progress && !isInactiveProgressStage(row.progress.stage)).length
   const [status, setStatus] = useState<CandidateBusinessStatus>(state)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -276,17 +292,44 @@ function PersonnelStatusForm({
       }}
     >
       <label>
-        {t('营业状态', '営業状態')}
+        <span>{t('营业状态', '営業状態')}</span>
         <select disabled={disabled || busy} value={status} onChange={(event) => setStatus(event.target.value as CandidateBusinessStatus)}>
-          <option value="available">{t('待营业', '営業待ち')}</option>
-          <option value="soon">{t('待营业（近期可入场）', '営業待ち（近日稼働可能）')}</option>
-          <option value="assigned">{t('已入场', '参画中')}</option>
-          <option value="paused">{t('不可营业', '営業不可')}</option>
+          <option value="available" disabled={placed}>
+            {t('待机中', '待機中')}
+          </option>
+          <option value="soon">{t('近期可入场', '近日稼働可能')}</option>
+          {/* 已进场 comes from 确认已到岗 and ends with 记录退场; while placed it can be chosen back from 近期可入场. */}
+          {state === 'assigned' || placed ? (
+            <option value="assigned" disabled={!placed}>
+              {t('已进场', '参画中')}
+            </option>
+          ) : null}
+          <option value="paused" disabled={placed}>
+            {t('暂停营业', '営業停止中')}
+          </option>
         </select>
       </label>
-      <button disabled={disabled || busy} type="submit">
-        {t('保存状态', '状態を保存')}
-      </button>
+      {placed ? (
+        <small className="personnel-status-hint">
+          {t(
+            '在场中：项目快结束时可以先改为近期可入场开始提案；项目结束请在跟进中记录退场。',
+            '参画中：終了が近ければ先に「近日稼働可能」にして提案を始められます。案件終了時は対応記録で退場を記録してください。'
+          )}
+        </small>
+      ) : null}
+      {status === 'paused' && state !== 'paused' && arranging ? (
+        <small className="personnel-status-hint">
+          {t(
+            `此人员还有 ${arranging} 条跟进在进行；暂停营业后这些跟进不能再约面试，可在跟进中暂停或结束。`,
+            `この要員には進行中の対応が ${arranging} 件あります。営業停止にすると面談を設定できなくなります。対応記録で保留または終了してください。`
+          )}
+        </small>
+      ) : null}
+      {!placed && status === 'assigned' ? null : (
+        <button disabled={disabled || busy || (status === 'assigned' && !placed)} type="submit">
+          {t('保存状态', '状態を保存')}
+        </button>
+      )}
       {error ? <p role="alert">{error}</p> : null}
     </form>
   )
