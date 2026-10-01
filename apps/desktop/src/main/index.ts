@@ -446,7 +446,7 @@ async function initializeServices(): Promise<{
     const rerankerModelPath = join(
       rerankerModelDirectory,
       'onnx',
-      process.platform === 'win32' ? 'model_qint8_avx2.onnx' : 'model_qint8_arm64.onnx'
+      process.arch === 'x64' ? 'model_qint8_avx2.onnx' : 'model_qint8_arm64.onnx'
     )
     const rerankerWorker =
       existsSync(join(rerankerModelDirectory, 'model-manifest.json')) && existsSync(rerankerModelPath)

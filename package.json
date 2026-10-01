@@ -36,6 +36,7 @@
     "build": "npm run build:vision-ocr && npm run build:wechat-accessibility && npm run build:windows-ocr && npm run test:ui-localization && npm run test:docs-status && npm run typecheck && electron-vite build && node scripts/generate-cloud-enforcement-manifest.mjs",
     "pack:mac:dir": "npm run test:privacy-quality-gate && npm run test:google-workspace-contract && npm run build && npm run build:app-icon && electron-builder --mac dir --arm64 --config electron-builder.dev.yml",
     "pack:mac:unsigned": "npm run test:privacy-quality-gate && npm run test:google-workspace-contract && npm run build && npm run build:app-icon && electron-builder --mac dmg --arm64 --config electron-builder.dev.yml",
+    "pack:mac:x64:unsigned": "SES_MAC_ARCH=x64 npm run test:privacy-quality-gate && npm run test:google-workspace-contract && SES_MAC_ARCH=x64 npm run build && npm run build:app-icon && electron-builder --mac dmg --x64 --config electron-builder.mac-x64.dev.yml",
     "pack:mac:smoke": "npm run pack:mac:dir && npm run test:package:mac",
     "pack:win:dir": "node scripts/check-windows-build-host.mjs && npm run test:privacy-quality-gate && npm run test:google-workspace-contract && npm run build && electron-builder --win dir --x64 --config electron-builder.win.dev.yml",
     "pack:win:unsigned": "node scripts/check-windows-build-host.mjs && npm run test:privacy-quality-gate && npm run test:google-workspace-contract && npm run build && electron-builder --win nsis --x64 --config electron-builder.win.dev.yml",

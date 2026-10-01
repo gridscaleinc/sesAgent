@@ -1,0 +1,11 @@
+extends: ./electron-builder.dev.yml
+
+files:
+  - node_modules/onnxruntime-node/bin/napi-v3/darwin/x64/**/*
+  - "!node_modules/onnxruntime-node/bin/napi-v3/darwin/arm64/**/*"
+
+extraResources:
+  - from: models/hotchpotch/japanese-reranker-tiny-v2
+    to: models/hotchpotch/japanese-reranker-tiny-v2
+    filter:
+      - onnx/model_qint8_avx2.onnx

@@ -38,7 +38,7 @@ async function sha256(path: string): Promise<string> {
 
 function platformModelPath(): string {
   if (process.platform === 'darwin' && process.arch === 'arm64') return 'onnx/model_qint8_arm64.onnx'
-  if (process.platform === 'win32' && process.arch === 'x64') return 'onnx/model_qint8_avx2.onnx'
+  if (process.arch === 'x64') return 'onnx/model_qint8_avx2.onnx'
   throw new Error('RERANKER_PLATFORM_UNSUPPORTED')
 }
 

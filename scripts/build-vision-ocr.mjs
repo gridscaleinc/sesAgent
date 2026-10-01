@@ -11,6 +11,7 @@ const source = resolve('native/macos/vision-ocr/main.swift')
 const outputDirectory = resolve('build/native/macos')
 const output = resolve(outputDirectory, 'ses-vision-ocr')
 const deploymentTarget = '13.0'
+const swiftArchitecture = (process.env.SES_MAC_ARCH ?? process.arch) === 'x64' ? 'x86_64' : 'arm64'
 await mkdir(outputDirectory, { recursive: true })
 
 const child = spawn(
@@ -19,7 +20,7 @@ const child = spawn(
     'swiftc',
     '-O',
     '-target',
-    `arm64-apple-macos${deploymentTarget}`,
+    `${swiftArchitecture}-apple-macos${deploymentTarget}`,
     '-framework',
     'Vision',
     '-framework',

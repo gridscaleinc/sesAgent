@@ -1,6 +1,5 @@
 import { chmod, mkdir } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
-import { arch } from 'node:process'
 import { resolve } from 'node:path'
 
 if (process.platform !== 'darwin') {
@@ -8,6 +7,7 @@ if (process.platform !== 'darwin') {
   process.exit(0)
 }
 
+const arch = process.env.SES_MAC_ARCH ?? process.arch
 if (!['arm64', 'x64'].includes(arch)) {
   throw new Error(`Unsupported macOS architecture for WeChat Accessibility helper: ${arch}`)
 }
