@@ -1,12 +1,16 @@
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
+
 import {
   computeCloudEnforcementSha256,
   computePrivacyImplementationSha256,
   mainProcessCoverageFailures,
   privacyExpertReportFailures
 } from './privacy-expert-evidence.mjs'
+
+// An Intel package is verified on Apple silicon under Rosetta, so the quality report and manifest carry its arch.
+const targetArch = process.env.SES_MAC_ARCH ?? process.arch
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -86,7 +90,7 @@ if (qualityReportBytes) {
       quality.datasetSha256 === '83ce7ac64d07337b41bdd303450c97cc894e74fcf36730bcade60cbb2bf9cb4e' &&
       quality.releaseEligible === true &&
       quality.platform === process.platform &&
-      quality.arch === process.arch &&
+      quality.arch === targetArch &&
       quality.syntheticOnly === true &&
       quality.humanLabeledDataset === false &&
       quality.caseCount === 28 &&
@@ -117,7 +121,7 @@ if (expertReportBytes) {
     expertAttestationBound =
       privacyExpertReportFailures(expert, {
         platform: process.platform,
-        arch: process.arch,
+        arch: targetArch,
         privacyImplementationSha256,
         cloudEnforcementSha256: cloudEnforcementSourceSha256
       }).length === 0
@@ -130,7 +134,7 @@ const manifest = {
   version: 'ses-cloud-enforcement-manifest-v2',
   createdAt: new Date().toISOString(),
   platform: process.platform,
-  arch: process.arch,
+  arch: targetArch,
   runtimeBundleFiles: runtimeBundleFiles.map(({ path, sha256: fileSha256 }) => ({ path, sha256: fileSha256 })),
   runtimeBundleSetSha256,
   privacyImplementationSha256,

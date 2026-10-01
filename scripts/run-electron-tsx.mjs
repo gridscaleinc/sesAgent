@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 const script = process.argv[2]
 if (!script) throw new Error('Usage: node scripts/run-electron-tsx.mjs <script.ts> [...args]')
 
-const child = spawn(electronPath, [resolve('node_modules/tsx/dist/cli.mjs'), resolve(script), ...process.argv.slice(3)], {
+const child = spawn(process.env.SES_ELECTRON_PATH ?? electronPath, [resolve('node_modules/tsx/dist/cli.mjs'), resolve(script), ...process.argv.slice(3)], {
   env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   stdio: 'inherit',
   windowsHide: true
