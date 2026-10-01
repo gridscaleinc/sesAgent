@@ -12,6 +12,7 @@ import {
   type LocalRerankerWorkerResponse
 } from '@local-ai'
 import { installParserNetworkDenyGuard } from './network-deny'
+import { exitModelWorker } from './native-exit'
 
 installParserNetworkDenyGuard()
 
@@ -178,7 +179,5 @@ if (process.argv.includes('--stdio')) {
 }
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(signal, () => {
-    void sessionPromise?.then((session) => session.release()).finally(() => process.exit(0))
-  })
+  process.once(signal, exitModelWorker)
 }

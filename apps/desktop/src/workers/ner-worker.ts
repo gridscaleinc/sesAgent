@@ -1,6 +1,7 @@
 import { isLocalNerWorkerRequest, localNerModel, type LocalNerWorkerRequest, type LocalNerWorkerResponse } from '@local-ai'
-import { detectGlinerPersonEntities, releaseGlinerRuntime } from './ner-engine'
+import { detectGlinerPersonEntities } from './ner-engine'
 import { installParserNetworkDenyGuard } from './network-deny'
+import { exitModelWorker } from './native-exit'
 
 installParserNetworkDenyGuard()
 
@@ -66,16 +67,10 @@ if (process.argv.includes('--stdio')) {
     }
   })
   // The loaded model holds ~0.9 GB; never outlive the parent.
-  process.stdin.once('end', () => process.exit(0))
+  process.stdin.once('end', exitModelWorker)
 } else {
   process.on('message', (request: unknown) => queueRequest(request, (response) => process.send?.(response)))
-  process.once('disconnect', () => process.exit(0))
+  process.once('disconnect', exitModelWorker)
 }
 
-for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(signal, () => {
-    void releaseGlinerRuntime()
-      .catch(() => undefined)
-      .finally(() => process.exit(0))
-  })
-}
+for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, exitModelWorker)

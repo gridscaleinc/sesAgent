@@ -12,6 +12,7 @@ import {
   type LocalEmbeddingWorkerSuccess
 } from '@local-ai'
 import { installParserNetworkDenyGuard } from './network-deny'
+import { exitModelWorker } from './native-exit'
 
 installParserNetworkDenyGuard()
 
@@ -184,7 +185,5 @@ if (process.argv.includes('--stdio')) {
 }
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  process.once(signal, () => {
-    void extractorPromise?.then((extractor) => extractor.dispose()).finally(() => process.exit(0))
-  })
+  process.once(signal, exitModelWorker)
 }
