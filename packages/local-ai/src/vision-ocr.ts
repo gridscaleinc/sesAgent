@@ -362,6 +362,9 @@ export class WindowsOfflineOcrWorkerClient implements LocalOcrPort {
           ...this.options.appContainerGrantRoots.flatMap((root) => ['--grant-read', root]),
           '--',
           process.execPath,
+          // The AppContainer cannot lstat every ancestor directory (e.g. a drive root); skip Node's realpath walk.
+          '--preserve-symlinks',
+          '--preserve-symlinks-main',
           this.options.workerPath,
           '--stdio'
         ],
@@ -375,6 +378,8 @@ export class WindowsOfflineOcrWorkerClient implements LocalOcrPort {
             ComSpec: process.env.ComSpec,
             PATHEXT: process.env.PATHEXT,
             PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
+            // The AppContainer launcher cannot create the sandboxed process without it (Win32 error 203).
+            ...(process.platform === 'win32' ? { LOCALAPPDATA: process.env.LOCALAPPDATA } : {}),
             LANG: process.env.LANG ?? 'ja_JP.UTF-8',
             TZ: process.env.TZ ?? 'Asia/Tokyo',
             SES_WINDOWS_OCR_TESSDATA_PATH: this.options.tessdataPath,
