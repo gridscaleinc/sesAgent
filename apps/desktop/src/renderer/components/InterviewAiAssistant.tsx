@@ -630,7 +630,7 @@ export function InterviewAiAssistant({
 
   const applyMessage = (message: AiConversationMessage) => {
     if (message.action === 'questions') {
-      const extracted = extractInterviewQuestions(message.content).slice(0, 5)
+      const extracted = extractInterviewQuestions(message.content).slice(0, 20)
       if (extracted.length > 0) onAddQuestions(extracted)
       else
         setError(

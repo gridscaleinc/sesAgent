@@ -737,7 +737,7 @@ describe('CandidatePipeline recruiting workspace', () => {
     expect(document.querySelectorAll('.recruiting-ai-suggestion-list input[type="checkbox"]')).toHaveLength(5)
     expect(screen.getByText('请说明微服务拆分的原则和通信方式？')).toBeInTheDocument()
     expect(screen.queryByText('请说明你如何决定是否采用React？')).not.toBeInTheDocument()
-    expect(onSendCloudPrompt.mock.calls[0]![0].content).toContain('at most ONE question per dimension')
+    expect(onSendCloudPrompt.mock.calls[0]![0].content).toContain('at least 5 questions in total')
     expect(screen.queryByText('Cloud AI 没有返回可用的面试问题，已保留本机建议。')).not.toBeInTheDocument()
   })
 

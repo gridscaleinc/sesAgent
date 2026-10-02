@@ -171,10 +171,8 @@ export const generateRuleQuestionsInputSchema = z
   .strict()
 export type GenerateRuleQuestionsInput = z.infer<typeof generateRuleQuestionsInputSchema>
 const ruleQuestionSourceIds = {
-  requirementIds: z
-    .array(z.string().regex(/^R[1-9]\d*$/u))
-    .min(1)
-    .max(5),
+  // Empty only for an open-topic question, which rests on neither the case nor the resume.
+  requirementIds: z.array(z.string().regex(/^R[1-9]\d*$/u)).max(5),
   evidenceIds: z.array(z.string().regex(/^E[1-9]\d*$/u)).max(5)
 }
 export const ruleQuestionResponseSchema = z
@@ -194,8 +192,7 @@ export const ruleQuestionResponseSchema = z
           })
           .strict()
       )
-      .min(1)
-      .max(5),
+      .max(6),
     /** STEP 2: one question per classified dimension, naming the concrete example itself. */
     questions: z
       .array(
@@ -212,7 +209,9 @@ export const ruleQuestionResponseSchema = z
           .strict()
       )
       .min(1)
-      .max(5)
+      .max(30),
+    /** "append": only the questions the operator asked to add; "replace" (default): a complete new set. */
+    mode: z.enum(['replace', 'append']).optional()
   })
   .strict()
 export interface RuleQuestionsResult {

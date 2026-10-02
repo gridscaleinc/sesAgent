@@ -178,6 +178,30 @@ export const candidateProfileSchema: z.ZodType<CandidateProfile> = z.object({
  */
 export const preferredSearchTermPrefix = '尚可:'
 
+// Latin words that appear in requirement sentences without being a skill to look up.
+const sentenceGlueLatinWords = new Set(['web'])
+
+/**
+ * A requirement written as a sentence - 「JavaによるWebシステム開発経験3年以上」 - is one
+ * token to the splitter, so neither its skill nor its years could ever match.
+ * Pull the years and the technology names out of it; the Japanese glue
+ * around them (による, システム開発経験) is not something a profile lists.
+ * A phrase with neither stays whole.
+ */
+function decomposeRequirementSentence(token: string): string[] {
+  // Hard-filter terms - 日本語N3可, 勤務地:東京, 週3日リモート - already mean one thing and stay whole.
+  if (token.startsWith(preferredSearchTermPrefix) || isHardFilterTerm(token)) return [token]
+  const years = [...token.matchAll(/(\d+(?:\.\d+)?)年以上/gu)].map((match) => `${match[1]}年以上`)
+  const withoutYears = token.replace(/\d+(?:\.\d+)?年以上/gu, ' ')
+  const hasJapanese = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(withoutYears)
+  if (years.length === 0 && !hasJapanese) return [token]
+  const technologies = (withoutYears.match(/[A-Za-z][A-Za-z0-9#+.]*/gu) ?? []).filter(
+    (word) => !sentenceGlueLatinWords.has(word.toLocaleLowerCase('en-US'))
+  )
+  if (technologies.length === 0 && years.length === 0) return [token]
+  return [...technologies, ...years]
+}
+
 function queryTerms(query: string): string[] {
   const normalized = query
     .normalize('NFKC')
@@ -185,7 +209,14 @@ function queryTerms(query: string): string[] {
     .replace(/[、,／/・]+/gu, ' ')
     .trim()
   const tokens = normalized.match(/"[^"]+"|'[^']+'|[^\s]+/gu) ?? []
-  return [...new Set(tokens.map((term) => term.replace(/^['"]|['"]$/gu, '').trim()).filter((term) => term.length >= 2))]
+  return [
+    ...new Set(
+      tokens
+        .map((term) => term.replace(/^['"]|['"]$/gu, '').trim())
+        .flatMap(decomposeRequirementSentence)
+        .filter((term) => term.length >= 2)
+    )
+  ]
 }
 
 /** The must-have terms: everything except the 尚可 tokens. */
@@ -1936,6 +1967,9 @@ export function enrichCandidateJapaneseEvidence(
   }
 }
 
+const resumeProcessHeadings =
+  /^(?:要件定義|基本設計|詳細設計|製造|単体(?:テスト|試験)|結合(?:テスト|試験)|総合(?:テスト|試験)|システムテスト|保守|運用保守)$/u
+
 function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): CandidateProjectExperienceDraft[] | null {
   const sheetNames = [...new Set(blocks.flatMap((block) => (block.source.sheet ? [block.source.sheet] : [])))]
   const allRows = spreadsheetRows(blocks)
@@ -1977,6 +2011,17 @@ function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): Candidat
       return number ? [{ row: row.row, number }] : []
     })
     if (starts.length === 0) continue
+    // 担当工程 columns - 要件定義, 基本設計, 詳細設計, 製造, 単体テスト, 結合試験, 総合試験, 保守 - marked with ○.
+    // The headings may sit in a sub-header row under the main one and are often written vertically,
+    // one character per line, so every row down to the first project is read and whitespace is ignored.
+    const processColumns = rows
+      .filter((row) => row.row >= header.row && row.row < starts[0]!.row)
+      .flatMap((row) => row.blocks)
+      .flatMap((block) => {
+        const name = block.text.normalize('NFKC').replace(/\s+/gu, '')
+        const range = blockRange(block)
+        return range && resumeProcessHeadings.test(name) ? [{ name, range }] : []
+      })
     const projects: CandidateProjectExperienceDraft[] = []
     for (const [index, start] of starts.entries()) {
       const mergedEnd = blockRange(start.number)?.endRow ?? start.row
@@ -2021,7 +2066,19 @@ function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): Candidat
           return [...(remainder ? [remainder] : []), ...lines.slice(1)]
         })
         .filter((line) => !/^(?:日本|中国|韓国|台湾|米国|国内|海外)$/u.test(line))
-      const summary = [...new Set(systemSummaries)].join('\n').trim() || title
+      const processMarks = projectBlocks.filter(
+        (block) =>
+          /^[○〇◯●◎✓✔]$/u.test(block.text.normalize('NFKC').trim()) &&
+          processColumns.some((column) => withinColumns(block, column.range))
+      )
+      const processNames = processColumns
+        .filter((column) => processMarks.some((block) => withinColumns(block, column.range)))
+        .toSorted((left, right) => left.range.startColumn - right.range.startColumn)
+        .map((column) => column.name)
+      const baseSummary = [...new Set(systemSummaries)].join('\n').trim() || title
+      const summary = processNames.length
+        ? `${baseSummary.slice(0, 1_400)}\n担当工程：${[...new Set(processNames)].join('、')}`
+        : baseSummary
       const periodBlocks = projectBlocks.filter((block) => withinColumns(block, periodRange))
       const dateInMarkerRow = (marker: '自' | '至') => {
         const markerRow = periodBlocks.find((block) => block.text.normalize('NFKC').trim() === marker)
@@ -2078,7 +2135,8 @@ function extractStructuredSpreadsheetProjects(blocks: DocumentBlock[]): Candidat
         ...systemBlocks,
         ...periodBlocks.filter((block) => /^(?:自|至|(?:19|20)\d{2}年)/u.test(block.text.normalize('NFKC').trim())),
         ...projectBlocks.filter((block) => roleValues.includes(block.text.normalize('NFKC').trim().toUpperCase())),
-        ...technologyBlocks
+        ...technologyBlocks,
+        ...processMarks
       ]).slice(0, 100)
       const digest = createHash('sha256').update(`${sheetName}\u0000${start.row}\u0000${title}`).digest('hex')
       projects.push({

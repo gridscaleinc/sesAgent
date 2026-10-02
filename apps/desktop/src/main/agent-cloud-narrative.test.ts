@@ -2000,6 +2000,34 @@ describe('match assessment protocol', () => {
     }
   }
 
+  it('sends the design and test lines of a long project description, not only its single best line', () => {
+    const summary = [
+      '・技術方針の策定およびシステムコア機能の設計・開発を担当',
+      '・開発環境の構築、技術課題の調査・解決を推進',
+      '・チームメンバーへの技術支援、コードレビューを通じた品質向上を実施',
+      '・設計書修正、単体テスト・結合テスト、不具合対応まで一貫して対応',
+      '担当工程：基本設計、詳細設計、製造、単体テスト、結合試験'
+    ].join('\n')
+    const built = buildAgentMatchAssessmentProjection({
+      locale: 'ja-JP',
+      jobCase: {
+        title: null,
+        requirements: [{ key: 'required_skills', label: '必須スキル', value: '基本設計からテストまでの実務経験' }]
+      },
+      candidates: [
+        {
+          label: 'CANDIDATE_1',
+          hardFilters: [],
+          facts: [],
+          projects: [{ title: '財務報告システム', period: '2025年03月〜2026年03月', role: 'SE', technologies: ['Java'], summary }]
+        }
+      ]
+    })
+    const sent = (JSON.parse(built.projection) as { candidates: Array<{ projects: Array<{ summary: string }> }> }).candidates[0]!.projects[0]!.summary
+    expect(sent).toContain('担当工程：基本設計、詳細設計、製造、単体テスト、結合試験')
+    expect(sent).toContain('単体テスト・結合テスト')
+    expect(sent.length).toBeLessThanOrEqual(420)
+  })
   it('projects bounded de-identified facts and keeps the texts verbatim claims are checked against', () => {
     const built = buildAgentMatchAssessmentProjection({ locale: 'zh-CN', jobCase, candidates })
     const projection = JSON.parse(built.projection) as { version: string; locale: string; candidates: Array<{ candidate: string }> }
@@ -2023,7 +2051,31 @@ describe('match assessment protocol', () => {
     expect(matchAssessmentInstructions).toMatch(/never add or waive a mandatory condition/)
   })
 
-  it('selects relevant evidence from the ninth project in both matching directions', () => {
+  it('sends the complete description of a project, so its design and test lines reach the model', () => {
+    const summary = [
+      '・技術方針の策定およびシステムコア機能の設計・開発を担当',
+      '・開発環境の構築、技術課題の調査・解決を推進',
+      '・チームメンバーへの技術支援、コードレビューを通じた品質向上を実施',
+      '・設計書修正、単体テスト・結合テスト、不具合対応まで一貫して対応',
+      '担当工程：基本設計、詳細設計、製造、単体テスト、結合試験'
+    ].join('\n')
+    const built = buildAgentMatchAssessmentProjection({
+      locale: 'ja-JP',
+      jobCase: { title: null, requirements: [{ key: 'required_skills', label: '必須スキル', value: '基本設計からテストまでの実務経験' }] },
+      candidates: [
+        {
+          label: 'CANDIDATE_1',
+          hardFilters: [],
+          facts: [],
+          projects: [{ title: '財務報告システム', period: '2025年03月〜2026年03月', role: 'SE', technologies: ['Java'], summary }]
+        }
+      ]
+    })
+    const sent = JSON.parse(built.projection).candidates[0].projects[0].summary
+    expect(sent).toBe(summary)
+  })
+
+  it('sends every project whole, in resume order, in both matching directions', () => {
     const projects = Array.from({ length: 9 }, (_, index) => ({
       title: `Project ${index + 1}`,
       period: '2020/01〜2023/12',
@@ -2040,7 +2092,10 @@ describe('match assessment protocol', () => {
     const candidate = JSON.parse(forward.projection).candidates[0]
     expect(candidate.projectCount).toBe(9)
     expect(candidate.projects).toHaveLength(9)
-    expect(candidate.projects[0]).toMatchObject({ projectNumber: 9, title: 'Project 9', technologies: ['Scala', 'Spark'] })
+    expect(candidate.projects.map((project: { projectNumber: number }) => project.projectNumber)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(candidate.projects[8]).toMatchObject({ title: 'Project 9', technologies: ['Scala', 'Spark'], summary: 'Scala と Spark でバッチ処理を開発' })
+    expect(candidate.projects[0]).toMatchObject({ summary: 'Java API 開発' })
+    expect(candidate.projectDetailsTruncated).toBe(false)
     expect(forward.candidateTexts[0]!.text).toContain('Scala と Spark でバッチ処理を開発')
     const reverse = buildPersonnelCasesAssessmentProjection({
       locale: 'zh-CN',

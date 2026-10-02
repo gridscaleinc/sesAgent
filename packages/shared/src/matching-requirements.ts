@@ -144,7 +144,7 @@ function termsIn(text: string): string[] {
   const technical = words.filter(
     (word) =>
       !generic.test(word) &&
-      !/^(?:and|or|with|using|experience|years?|required|must|have|development|in|of|the|at|least|business|level|native|fluent)$/iu.test(
+      !/^(?:and|or|with|using|experience|years?|required|must|have|development|in|of|the|at|least|business|level|native|fluent|web)$/iu.test(
         word
       )
   )
@@ -204,6 +204,8 @@ function hasUnparsedQualifier(clause: string, choices: string[][]): boolean {
       /実務経験|実務|経験|实务经验|实务|经验|必須|必须|必需|スキル|技能|使用|または|又は|もしくは|あるいは|かつ|および|及び|以及|并且|或者|\b(?:and|or|experience|required|must|have|using)\b/giu,
       ''
     )
+    // Filler of 「JavaによるWebシステム開発経験」: it names the kind of work, not a further condition to verify.
+    .replace(/による|によって|における|を(?:した|して|する|使った|用いた|利用した)|システム|開発|\bweb\b|ウェブ/giu, '')
     .replace(/[\s()（）/／・、,，&+~〜～:：的のと或か]+/gu, '')
   return rest.length > 0
 }

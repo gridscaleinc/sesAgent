@@ -8,6 +8,7 @@ import {
   candidateProfileEmbeddingText,
   candidateProfileSchema,
   candidateProfileRerankerText,
+  candidateSearchTerms,
   evaluateCandidateRetrieval,
   evaluateSesCandidateBenchmark,
   extractCandidateDraft,
@@ -18,7 +19,7 @@ import {
 } from './index'
 import type { SesCandidateBenchmark, StagedLocalFile } from '@shared'
 
-async function createMergedSesResumeDocument(): Promise<DocumentIR> {
+async function createMergedSesResumeDocument(options: { processColumns?: boolean } = {}): Promise<DocumentIR> {
   const sheet: XLSX.WorkSheet = {}
   const merges: XLSX.Range[] = []
   const set = (address: string, value: string) => {
@@ -85,6 +86,16 @@ async function createMergedSesResumeDocument(): Promise<DocumentIR> {
   merge('AE29:AE34')
   merge('AF29:AM29')
 
+  // 担当工程 columns under 作業範囲: vertical headings (one character per line) and ○ marks per project.
+  const processHeadings = ['要件定義', '基本設計', '詳細設計', '製造', '単体テスト', '結合試験', '総合試験', '保守']
+  const processColumn = (index: number) => ['AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM'][index]!
+  if (options.processColumns) {
+    processHeadings.forEach((heading, index) => {
+      set(`${processColumn(index)}30`, [...heading].join('\n'))
+      merge(`${processColumn(index)}30:${processColumn(index)}34`)
+    })
+  }
+
   for (let projectNumber = 1; projectNumber <= 9; projectNumber += 1) {
     const startRow = 35 + (projectNumber - 1) * 7
     const endRow = startRow + 6
@@ -110,6 +121,11 @@ async function createMergedSesResumeDocument(): Promise<DocumentIR> {
     set(`T${startRow + 4}`, 'FW')
     set(`W${startRow + 4}`, 'SpringBoot')
     merge(`A${startRow}:A${endRow}`)
+    if (options.processColumns) {
+      // Project 1: 基本設計 to 結合試験. Project 2: テスト and 保守 only.
+      const marked = projectNumber === 1 ? [1, 2, 3, 4, 5] : projectNumber === 2 ? [4, 5, 7] : []
+      for (const index of marked) set(`${processColumn(index)}${startRow + 2}`, '○')
+    }
   }
 
   // Validation/helper dictionaries deliberately live outside the printable form.
@@ -160,6 +176,18 @@ describe('extractCandidateDraft', () => {
     })
     expect(draft.projectExperiences[1]?.title).toBe('SWIFT決済システム')
     expect(draft.projectExperiences[8]?.title).toBe('匿名業務システム9')
+  })
+
+  it('reads the 担当工程 columns marked with ○ into each project, so 基本設計 to テスト is on record', async () => {
+    const document = await createMergedSesResumeDocument({ processColumns: true })
+    const draft = extractCandidateDraft(document, new Date('2026-07-21T00:00:00.000Z'))
+    expect(draft.projectExperiences[0]?.summary).toContain('担当工程：基本設計、詳細設計、製造、単体テスト、結合試験')
+    expect(draft.projectExperiences[1]?.summary).toContain('担当工程：単体テスト、結合試験、保守')
+    expect(draft.projectExperiences[1]?.summary).not.toContain('基本設計')
+    // A project with no marks gains no process line, and the sheet without such columns is unchanged.
+    expect(draft.projectExperiences[2]?.summary).not.toContain('担当工程')
+    const plain = extractCandidateDraft(await createMergedSesResumeDocument(), new Date('2026-07-21T00:00:00.000Z'))
+    expect(plain.projectExperiences.every((project) => !project.summary.includes('担当工程'))).toBe(true)
   })
 
   it('extracts only evidenced SES fields and keeps missing values null', () => {
@@ -424,6 +452,22 @@ describe('searchConfirmedCandidateProfiles', () => {
     confirmedBy: '山田 太郎',
     containsDirectIdentifiers: false
   }
+
+  it('reads a requirement written as a sentence as its skill and its years', () => {
+    const sentence = 'JavaによるWebシステム開発経験3年以上'
+    expect(candidateSearchTerms(sentence)).toEqual(['Java', '3年以上'])
+    expect(candidateSearchTerms('VC++3年以上')).toEqual(['VC++', '3年以上'])
+    expect(candidateSearchTerms('デジタルカメラ测试经验者')).toEqual(['デジタルカメラ测试经验者'])
+    const veteran = {
+      ...baseProfile,
+      fields: baseProfile.fields.map((field) => (field.key === 'experience_years' ? { ...field, value: '19年' } : field))
+    }
+    const [result] = searchConfirmedCandidateProfiles([veteran], sentence)
+    expect(result?.retrieval.hardFilters).toEqual([
+      { type: 'minimum-experience-years', requested: '3年以上', actual: '19年', outcome: 'passed' }
+    ])
+    expect(result?.matchedTerms).toContain('Java')
+  })
 
   it('keeps failed and zero-match evidence only for an explicit one-person evaluation', () => {
     expect(searchConfirmedCandidateProfiles([baseProfile], 'Java 8年以上')).toEqual([])

@@ -319,6 +319,10 @@
   background: var(--tint-gray-96-4);
   color: var(--tone-blue-49);
 }
+.interview-question-card.dim-open-topic .interview-dimension {
+  background: var(--tint-gray-96-5);
+  color: var(--ink-secondary);
+}
 .interview-question-card .interview-dimension.is-bank {
   background: var(--surface-faint);
   color: var(--muted);

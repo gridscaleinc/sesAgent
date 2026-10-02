@@ -277,6 +277,24 @@ export function createCasePersonnelMatcher(
           decisions(item.documentId)
         )
         evaluations.set(item.documentId, evaluated)
+        if (process.env.SES_MATCH_DEBUG === '1')
+          console.info(
+            '[match-debug] verdict-applied',
+            JSON.stringify({
+              candidate: verdict.candidate,
+              modelFit: verdict.fit,
+              modelMet: verdict.met,
+              modelRequirements: verdict.requirements ?? null,
+              status: evaluated.qualification.status,
+              requirements: evaluated.qualification.requirements.map((entry) => ({
+                label: entry.requirement.label,
+                semanticReview: entry.requirement.requiresSemanticReview ?? false,
+                outcome: entry.outcome,
+                aiVerified: entry.aiVerified ?? false,
+                evidence: entry.evidence
+              }))
+            })
+          )
         return {
           ...item,
           score: evaluated.score,

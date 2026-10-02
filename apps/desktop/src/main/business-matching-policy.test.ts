@@ -32,6 +32,48 @@ const project = (
   }) as CandidateProfile['projectExperiences'][number]
 const confident = { fit: 'strong' as const, met: [{ requirement: 'SE', evidence: 'SE' }], confirm: [], gaps: [], reason: 'qualified' }
 
+describe('a requirement written as a sentence', () => {
+  const inventory =
+    'Windows (◎), Linux (◎), Java (◎), HTML (◎), JavaScript (◎), MySQL (◎), Oracle (◎), Spring (◎), Spring Boot (◎), Eclipse (◎)'
+  const sentence = 'JavaによるWebシステム開発経験3年以上'
+  it('needs Java and the years, not a literal 「Web」 or the filler words around them', () => {
+    const evaluated = evaluateBusinessMatch(person(inventory, { experience_years: '19年', role: 'Javaエンジニア' }), job(sentence))
+    expect(evaluated.qualification.status).toBe('recommended')
+    expect(evaluated.missing).toEqual([])
+    expect(evaluated.score).toBeGreaterThan(0)
+  })
+  it('reads 「Spring Bootを使用した開発経験」 locally instead of leaving it to the model', () => {
+    const met = evaluateBusinessMatch(person('Java (◎), Spring Boot (◎)'), job('Spring Bootを使用した開発経験'))
+    expect(met.qualification.status).toBe('recommended')
+    expect(met.qualification.requirements[0]).toMatchObject({ outcome: 'met', evidence: 'Java (◎), Spring Boot (◎)'.split(', ')[1] })
+    expect(evaluateBusinessMatch(person('Java (◎)'), job('Spring Bootを使用した開発経験')).qualification.status).toBe('excluded')
+  })
+  it('accepts the model quoting the 担当工程 line for 基本設計からテストまで, and not without it', () => {
+    const requirement = job('基本設計からテストまでの実務経験')
+    const line = '担当工程：基本設計、詳細設計、製造、単体テスト、結合試験'
+    const withProcess = person('Java', { experience_years: '19年' }, [project(['Java'], '2025年03月〜2026年03月', `コア機能の設計・開発を担当
+${line}`)])
+    const settled = applyBusinessVerdict(withProcess, requirement, {
+      ...confident,
+      met: [{ requirement: '基本設計からテストまでの実務経験', evidence: line }]
+    })
+    expect(settled.qualification.status).toBe('recommended')
+    expect(settled.qualification.requirements[0]).toMatchObject({ outcome: 'met', aiVerified: true })
+    // The same claim with nothing in the person's own material behind it stays rejected.
+    const bare = person('Java', { experience_years: '19年' }, [project(['Java'], '2025年03月〜2026年03月', 'コア機能の設計・開発を担当')])
+    const rejected = applyBusinessVerdict(bare, requirement, {
+      ...confident,
+      met: [{ requirement: '基本設計からテストまでの実務経験', evidence: line }]
+    })
+    expect(rejected.qualification.status).toBe('excluded')
+  })
+  it('still excludes someone with no Java, and someone whose whole career is shorter than asked', () => {
+    expect(evaluateBusinessMatch(person('Python, AWS', { experience_years: '19年' }), job(sentence)).qualification.status).toBe('excluded')
+    expect(evaluateBusinessMatch(person(inventory, { experience_years: '2年' }), job(sentence)).qualification.status).toBe('excluded')
+    expect(evaluateBusinessMatch(person('JavaScript', { experience_years: '19年' }), job(sentence)).qualification.status).toBe('excluded')
+  })
+})
+
 describe('mandatory professional evidence', () => {
   it.each(['Java', 'SE', 'Scala', 'Spark', 'PySpark', 'JavaScript、SQL'])('does not recommend %s for Scala AND Spark', (skills) => {
     const evaluated = evaluateBusinessMatch(person(skills, { role: 'SE', japanese_level: 'N1' }), job('英語、Scala、Spark', { role: 'SE' }))

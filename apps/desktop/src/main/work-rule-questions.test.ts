@@ -29,7 +29,7 @@ type Sourced = { dimension: string; requirementIds?: string[]; evidenceIds?: str
 /** STEP 1 as the model would return it for these questions: one entry per dimension holding every id the questions use. */
 function classify(questions: unknown[]) {
   const byDimension = new Map<string, { dimension: string; focus: string; requirementIds: string[]; evidenceIds: string[] }>()
-  for (const q of questions as Sourced[]) {
+  for (const q of (questions as Sourced[]).filter((item) => item.dimension !== 'open-topic')) {
     const entry = byDimension.get(q.dimension) ?? { dimension: q.dimension, focus: 'focus', requirementIds: [], evidenceIds: [] }
     entry.requirementIds = [...new Set([...entry.requirementIds, ...(q.requirementIds ?? [])])]
     entry.evidenceIds = [...new Set([...entry.evidenceIds, ...(q.evidenceIds ?? [])])]
@@ -37,11 +37,17 @@ function classify(questions: unknown[]) {
   }
   return [...byDimension.values()]
 }
-function service(questions: unknown[], capabilities: unknown[] = classify(questions)) {
+function service(questions: unknown[], capabilities: unknown[] = classify(questions), mode?: 'replace' | 'append') {
   const value = Object.create(AgentCloudNarrativeService.prototype)
-  value.invokeCloud = vi.fn(async () => ({ result: { content: JSON.stringify({ capabilities, questions }) }, mappings: [] }))
+  value.invokeCloud = vi.fn(async () => ({
+    result: { content: JSON.stringify({ ...(mode ? { mode } : {}), capabilities, questions }) },
+    mappings: []
+  }))
   return value as AgentCloudNarrativeService
 }
+/** n distinct questions, all in one dimension, each about its own example. */
+const manyQuestions = (n: number) =>
+  Array.from({ length: n }, (_, index) => ({ ...question, text: `请说明第 ${index + 1} 个接口项目里你本人负责的设计与失败处理。` }))
 it('retains case requirement and actual project evidence in targeted questions', async () => {
   const result = await service([question]).generateRuleQuestions(input)
   expect(result[0]).toMatchObject({
@@ -94,7 +100,7 @@ it('rejects model-authored evidence claims instead of accepting a plausible para
 })
 
 it('accepts five distinct capability dimensions and labels their evaluation purpose', async () => {
-  const questions = interviewQuestionDimensions.map((dimension, i) => ({
+  const questions = interviewQuestionDimensions.filter((dimension) => dimension !== 'open-topic').map((dimension, i) => ({
     ...question,
     dimension,
     ask: interviewDimensionAsks[dimension][0],
@@ -116,17 +122,102 @@ it('accepts five distinct capability dimensions and labels their evaluation purp
   expect(JSON.parse(request.projection).caseSupplied).toBe(true)
 })
 
-it('rejects repeated dimensions, duplicate text across dimensions, and more than five questions', async () => {
-  await expect(
-    service([question, { ...question, text: '请换一个 Java 项目说明你的设计经验？' }]).generateRuleQuestions(input)
-  ).rejects.toThrow('重复')
+it('allows several questions per dimension and more than five, but rejects repeated wording and an oversized set', async () => {
+  const several = await service(manyQuestions(8)).generateRuleQuestions(input)
+  expect(several).toHaveLength(8)
+  expect(new Set(several.map((q) => q.text)).size).toBe(8)
   await expect(
     service([
       question,
       { ...question, dimension: 'authenticity', ask: 'role-scope', text: question.text.replace('？', '?') }
     ]).generateRuleQuestions(input)
   ).rejects.toThrow('重复')
-  await expect(service(Array.from({ length: 6 }, () => question)).generateRuleQuestions(input)).rejects.toThrow()
+  await expect(service(manyQuestions(31)).generateRuleQuestions(input)).rejects.toThrow()
+})
+
+it('asks the model for no more output than the request schema allows', async () => {
+  const cloud = service(manyQuestions(5))
+  await cloud.generateRuleQuestions(input)
+  const request = (cloud as any).invokeCloud.mock.calls[0][0]
+  expect(request.maxOutputTokens).toBeGreaterThan(5000)
+  expect(request.maxOutputTokens).toBeLessThanOrEqual(8192)
+})
+
+it('asks for at least five questions once, and keeps a short second set instead of failing', async () => {
+  const short = service(manyQuestions(3))
+  const result = await short.generateRuleQuestions(input)
+  expect(result).toHaveLength(3)
+  const calls = (short as any).invokeCloud.mock.calls
+  expect(calls).toHaveLength(2)
+  expect(calls[1][0].instructions).toContain('a complete set needs at least 5')
+  const enough = service(manyQuestions(5))
+  await enough.generateRuleQuestions(input)
+  expect((enough as any).invokeCloud).toHaveBeenCalledTimes(1)
+})
+
+it('tells the model what to do when the interviewer asks for more questions, and reports the mode it chose', async () => {
+  const modes: string[] = []
+  const cloud = service(manyQuestions(3), undefined, 'append')
+  const added = await cloud.generateRuleQuestions({ ...input, request: '再增加3个问题', onMode: (mode: string) => modes.push(mode) })
+  expect(added).toHaveLength(3)
+  expect(modes).toEqual(['append'])
+  // An append is not held to the five-question floor, so it is asked once.
+  expect((cloud as any).invokeCloud).toHaveBeenCalledTimes(1)
+  const request = (cloud as any).invokeCloud.mock.calls[0][0]
+  expect(request.instructions).toContain('return ONLY the new questions')
+  expect(JSON.parse(request.projection).operatorRequest).toBe('再增加3个问题')
+  const replaceModes: string[] = []
+  await service(manyQuestions(5)).generateRuleQuestions({ ...input, onMode: (mode: string) => replaceModes.push(mode) })
+  expect(replaceModes).toEqual(['replace'])
+})
+
+it('does not demand a case-readiness question from an append', async () => {
+  const cloud = service(manyQuestions(2), undefined, 'append')
+  await expect(cloud.generateRuleQuestions({ ...input, caseSupplied: true, request: 'もう2問追加して' })).resolves.toHaveLength(2)
+})
+
+const openQuestion = (text: string) => ({
+  dimension: 'open-topic',
+  ask: 'open-topic',
+  text,
+  requirementIds: [] as string[],
+  evidenceIds: [] as string[],
+  scoringGuide: '回答の具体性と一貫性を見る'
+})
+
+it('writes the open topics the interviewer asked for - Japanese, plans after joining - without case or resume sources', async () => {
+  const modes: string[] = []
+  const cloud = service([openQuestion('日本語での業務コミュニケーションで、これまで苦労した場面はありますか？'), openQuestion('今後のキャリアについて、どのように考えていますか？')], [], 'append')
+  const result = await cloud.generateRuleQuestions({
+    ...input,
+    caseSupplied: true,
+    request: '再增加三道面试题，关于日语的，还有日后打算的',
+    onMode: (mode: string) => modes.push(mode)
+  })
+  expect(result).toHaveLength(2)
+  expect(result[0]).toMatchObject({ dimension: 'open-topic', requirement: '', evidence: '', requirementItems: [], evidenceItems: [] })
+  expect(result[0]!.sourceLabel).toBe('开放话题（面试官追加）')
+  expect(modes).toEqual(['append'])
+  expect((cloud as any).invokeCloud).toHaveBeenCalledTimes(1)
+})
+
+it('holds open-topic questions to their rules: only on request, no sources, and no sales conditions', async () => {
+  const q = openQuestion('今後のキャリアについて、どのように考えていますか？')
+  // The interviewer asked for nothing, so the model may not add one.
+  await expect(service([question, q], undefined, 'replace').generateRuleQuestions(input)).rejects.toThrow('开放话题')
+  // It cites nothing.
+  await expect(
+    service([{ ...q, requirementIds: ['R1'] }], [], 'append').generateRuleQuestions({ ...input, request: '加一道关于日后打算的' })
+  ).rejects.toThrow('不应引用')
+  // Sales conditions never become questions, open or not.
+  await expect(
+    service([openQuestion('希望単価と稼働開始日はいつですか？')], [], 'append').generateRuleQuestions({ ...input, request: '加一道关于单价的' })
+  ).rejects.toThrow('营业条件')
+})
+
+it('still demands a case requirement of every question that is not open-topic', async () => {
+  const classified = [{ dimension: 'core-capability', focus: 'x', requirementIds: ['R1'], evidenceIds: ['E6'] }]
+  await expect(service([{ ...question, requirementIds: [] }], classified).generateRuleQuestions(input)).rejects.toThrow('案件要求')
 })
 
 it('filters sales conditions and garbage before generation, and rejects them in generated questions', async () => {

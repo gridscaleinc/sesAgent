@@ -282,8 +282,12 @@ export function registerWorkRuleHandlers(context: MainIpcContext) {
       (r) => repository.getInterviewAnswers?.(r.id)?.answers ?? []
     )
     const selectedModel = model()
+    const generated: { mode: 'replace' | 'append' } = { mode: 'replace' }
     const result = await withLearningForeground(() =>
       cloud.generateRuleQuestions({
+        onMode: (value) => {
+          generated.mode = value
+        },
         caseSupplied: !!job,
         bankQuestions,
         profile,
@@ -296,6 +300,10 @@ export function registerWorkRuleHandlers(context: MainIpcContext) {
         locale: effectiveApplicationPreferences(repository).locale,
         model: selectedModel,
         signal: AbortSignal.timeout(60_000)
+      }).catch((error: unknown) => {
+        // Local diagnostics only: the error name and a bounded message, never request or resume content.
+        console.warn('[interview-questions-failed]', (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 300))
+        throw error
       })
     )
     if (
@@ -337,9 +345,15 @@ export function registerWorkRuleHandlers(context: MainIpcContext) {
         ...(input.request ? { operatorRequest: input.request } : {})
       }
     })
-    const questions = result.map((q) => ({
+    // "Add three more questions" returns only the new ones; they join the set already on the round or the draft.
+    const existingQuestions =
+      generated.mode === 'append' ? (interview ? interview.questionPlan : job ? (repository.getCaseQuestionDraft(input.documentId, job.id)?.questions ?? []) : []) : []
+    const sameWording = (text: string) => text.normalize('NFKC').replace(/[\p{P}\p{Z}\s]/gu, '').toLowerCase()
+    const taken = new Set(existingQuestions.map((q) => sameWording(q.text)))
+    const fresh = result.filter((q) => !taken.has(sameWording(q.text)))
+    const questions = [...existingQuestions, ...fresh].slice(0, 40).map((q) => ({
       ...q,
-      experienceRunId,
+      experienceRunId: 'experienceRunId' in q && q.experienceRunId ? q.experienceRunId : experienceRunId,
       ...(job
         ? {
             matchContext: {

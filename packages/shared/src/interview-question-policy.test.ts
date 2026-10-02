@@ -64,7 +64,8 @@ it.each([
 it('gives every dimension at least two ask shapes and every ask shape exactly one owning dimension', () => {
   for (const ask of interviewAskTypes)
     expect(interviewQuestionDimensions.filter((dimension) => interviewDimensionAsks[dimension].includes(ask))).toHaveLength(1)
-  for (const dimension of interviewQuestionDimensions) expect(interviewDimensionAsks[dimension].length).toBeGreaterThanOrEqual(2)
+  for (const dimension of interviewQuestionDimensions.filter((item) => item !== 'open-topic'))
+    expect(interviewDimensionAsks[dimension].length).toBeGreaterThanOrEqual(2)
 })
 
 it.each([
