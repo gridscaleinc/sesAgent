@@ -215,9 +215,9 @@ export function RequirementTable({
     // Unclear items, and conflicts the material may have wrong (「J2EE」 for Java): HR's judgement settles both.
     Boolean(
       pair &&
-        mode === 'evidence' &&
-        isProposalRequirement(item.requirement) &&
-        (item.outcome === 'unknown' || item.outcome === 'conflict' || item.hrDecision)
+      mode === 'evidence' &&
+      isProposalRequirement(item.requirement) &&
+      (item.outcome === 'unknown' || item.outcome === 'conflict' || item.hrDecision)
     )
   const withdraw = async (item: MatchRequirementEvidence) => {
     if (!pair || !item.hrDecision || withdrawing || !window.sesAgent.withdrawRequirementDecision) return
@@ -394,7 +394,16 @@ export function followUpItems(qualification: BusinessMatchQualification | undefi
 }
 
 /** 需沟通: business differences do not lower the technical and language conclusion; they are settled in contact. */
-export function FollowUpTab({ qualification, questions = [] }: { qualification?: BusinessMatchQualification; questions?: string[] }) {
+export function FollowUpTab({
+  qualification,
+  questions = [],
+  hideEmpty = false
+}: {
+  qualification?: BusinessMatchQualification
+  questions?: string[]
+  /** HR's own questions are listed beside this tab: no 「没有需要沟通的事项」 then. */
+  hideEmpty?: boolean
+}) {
   const { t } = useLocaleText()
   const follow = followUpItems(qualification, questions)
   const asking = follow.asking.length ? (
@@ -420,7 +429,7 @@ export function FollowUpTab({ qualification, questions = [] }: { qualification?:
   if (!follow.items.length && !follow.questions.length)
     return asking ? (
       <div className="match-evidence">{asking}</div>
-    ) : (
+    ) : hideEmpty ? null : (
       <p className="match-muted">{t('没有需要沟通的事项。', '相談が必要な事項はありません。')}</p>
     )
   return (

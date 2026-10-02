@@ -3038,11 +3038,7 @@ export interface DesktopApi {
   getCaseQuestionDraft(input: import('./ai-work-rules').CaseQuestionDraftQuery): Promise<import('./ai-work-rules').CaseQuestionDraftView>
   onCaseResumeImportProgress(listener: (progress: import('./ai-work-rules').CaseResumeImportProgress) => void): () => void
   addCandidateToLibrary(input: { documentId: string; profileVersion: number }): Promise<CandidateReviewSnapshot>
-  importResumeForCase(input: {
-    requestId?: string
-    jobCaseId: string
-    file: { name: string; bytes: Uint8Array }
-  }): Promise<{
+  importResumeForCase(input: { requestId?: string; jobCaseId: string; file: { name: string; bytes: Uint8Array } }): Promise<{
     person: CandidateReviewSnapshot
     assessment: import('./ai-work-rules').CasePersonAssessment | null
     error: string | null
@@ -3088,7 +3084,7 @@ export interface DesktopApi {
   listPersonnelIntroductionDrafts(documentId: string): Promise<import('./business-workbench').PersonnelIntroductionDraft[]>
   /** 推荐要点 for one person and case, generated on demand by cloud AI and stored per pair. Optional so test doubles need not stub it. */
   generateRecommendationPoints?(
-    input: import('./recommendation-points').RecommendationPointsQuery
+    input: import('./recommendation-points').GenerateRecommendationPointsInput
   ): Promise<import('./recommendation-points').RecommendationPointsView>
   /** HR decisions on unclear requirements for one person, across their cases. Optional for API test doubles. */
   listRequirementConfirmations?(documentId: string): Promise<import('./matching-requirements').RequirementConfirmation[]>

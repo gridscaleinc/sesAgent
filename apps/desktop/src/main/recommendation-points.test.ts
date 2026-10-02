@@ -115,6 +115,25 @@ describe('推荐要点 cloud validation', () => {
     expect(recommendationPointsInstructions('zh-CN')).toContain('Simplified Chinese')
     expect(recommendationPointsInstructions('ja-JP')).toContain('rate, price, location')
   })
+  it('carries what HR asked for this time, and the instructions bound it to the supplied material', () => {
+    const built = buildRecommendationPointsProjection({
+      locale: 'zh-CN',
+      person: { facts: [{ label: 'スキル', value: 'Java' }], projects: [] },
+      jobCase: { title: '損保案件', fields: [], body: null },
+      operatorRequest: '  突出 金融业务经验 '
+    })
+    expect(JSON.parse(built.projection).operatorRequest).toBe('突出 金融业务经验')
+    expect(
+      JSON.parse(
+        buildRecommendationPointsProjection({
+          locale: 'zh-CN',
+          person: { facts: [], projects: [] },
+          jobCase: { title: null, fields: [], body: null }
+        }).projection
+      )
+    ).not.toHaveProperty('operatorRequest')
+    expect(recommendationPointsInstructions('zh-CN')).toContain('operatorRequest, when present')
+  })
 })
 
 describe('推荐要点 language fix-up', () => {

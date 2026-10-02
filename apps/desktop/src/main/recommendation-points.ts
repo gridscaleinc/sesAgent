@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { businessModel } from './business-model'
 import {
   recommendationPointsQuerySchema,
+  generateRecommendationPointsInputSchema,
+  type GenerateRecommendationPointsInput,
   type RecommendationPointsQuery,
   type RecommendationPointsRecord,
   type RecommendationPointsView
@@ -48,8 +50,8 @@ export function getRecommendationPoints(context: Pick<Context, 'repository'>, ra
  */
 export function createRecommendationPointsGenerator(context: Context) {
   const active = new Map<string, Promise<RecommendationPointsView>>()
-  return (raw: RecommendationPointsQuery): Promise<RecommendationPointsView> => {
-    const query = recommendationPointsQuerySchema.parse(raw)
+  return (raw: GenerateRecommendationPointsInput): Promise<RecommendationPointsView> => {
+    const query = generateRecommendationPointsInputSchema.parse(raw)
     const key = `${query.documentId}:${query.reviewId}`
     const existing = active.get(key)
     if (existing) return existing
@@ -84,7 +86,8 @@ export function createRecommendationPointsGenerator(context: Context) {
             field.value && field.status !== 'missing' ? [{ label: field.label, value: field.value }] : []
           ),
           body: source?.redactedBody ?? null
-        }
+        },
+        ...(query.request ? { operatorRequest: query.request } : {})
       })
       const current = versionsOf(context, query)
       if (current.profileVersion !== profile.profileVersion || current.jobCaseVersion !== jobCaseVersion) throw new Error(staleMessage)

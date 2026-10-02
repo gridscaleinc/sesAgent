@@ -540,8 +540,14 @@
   gap: 6px;
 }
 .match-inline-form input,
-.match-inline-form select {
+.match-inline-form select,
+.match-inline-form textarea {
   flex: 1 1 200px;
+}
+.match-rule-questions li > button {
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 12px;
 }
 .match-tabs {
   display: flex;

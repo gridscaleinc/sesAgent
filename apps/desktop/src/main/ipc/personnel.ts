@@ -28,6 +28,7 @@ import {
   personnelMessageInputSchema,
   progressMessageInputSchema,
   recommendationPointsQuerySchema,
+  generateRecommendationPointsInputSchema,
   regenerateIntroductionInputSchema,
   resolvePersonnelMailUpdateSchema,
   saveBusinessFieldInputSchema,
@@ -188,7 +189,7 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   const generateRecommendationPoints = createRecommendationPointsGenerator(context)
   ipcMain.handle(ipcChannels.generateRecommendationPoints, (event, input) => {
     assertTrustedSender(event)
-    const query = recommendationPointsQuerySchema.parse(input)
+    const query = generateRecommendationPointsInputSchema.parse(input)
     if (rejectedByHr(repository, query.documentId, query.reviewId)) throw new Error(hrRejectedMessage)
     return generateRecommendationPoints(query)
   })

@@ -21,6 +21,11 @@ export type RecommendationPointsEmptyReason = 'no-grounded-points'
 
 export const recommendationPointsQuerySchema = z.object({ documentId: z.string().uuid(), reviewId: z.string().uuid() }).strict()
 export type RecommendationPointsQuery = z.infer<typeof recommendationPointsQuerySchema>
+/** Generating may carry what HR asks for this time, for example 「突出他的金融业务经验」. */
+export const generateRecommendationPointsInputSchema = recommendationPointsQuerySchema
+  .extend({ request: z.string().trim().min(1).max(500).optional() })
+  .strict()
+export type GenerateRecommendationPointsInput = z.infer<typeof generateRecommendationPointsInputSchema>
 
 export interface RecommendationPointsRecord {
   documentId: string

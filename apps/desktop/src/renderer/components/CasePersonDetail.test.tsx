@@ -117,7 +117,7 @@ it('explains a reused archived resume and preserves that notice after reevaluati
   render(<Card initial={assessment} archived />)
   await screen.findByText('复用了已归档简历进行本次评估，原记录仍保持归档。')
   fireEvent.click(menu().getByRole('menuitem', { name: '重新评估（可附要求）' }))
-  fireEvent.click(screen.getByRole('button', { name: '重新评估' }))
+  fireEvent.click(screen.getByRole('button', { name: '重新给出意见' }))
   await waitFor(() => expect(window.sesAgent.assessCasePerson).toHaveBeenCalledWith({ documentId: 'person', jobCaseId: 'case' }))
   expect(screen.getByText('复用了已归档简历进行本次评估，原记录仍保持归档。')).toBeInTheDocument()
 })
@@ -173,10 +173,11 @@ it('reassesses with what HR asked for and shows that request on the resulting de
   render(<Card initial={assessment} />)
   await screen.findByText('不建议向本案提案')
   expect(screen.queryByText(/本次评估按你的要求侧重/)).not.toBeInTheDocument()
-  expect(screen.queryByLabelText('对 AI 评估的要求')).not.toBeInTheDocument()
+  // The menu opens the AI 意见 tab, where the request box and 重新给出意见 live.
   fireEvent.click(menu().getByRole('menuitem', { name: '重新评估（可附要求）' }))
+  expect(screen.getByRole('tab', { name: 'AI 意见' })).toHaveAttribute('aria-selected', 'true')
   fireEvent.change(screen.getByLabelText('对 AI 评估的要求'), { target: { value: ' 重点看日语沟通能力 ' } })
-  fireEvent.click(screen.getByRole('button', { name: '重新评估' }))
+  fireEvent.click(screen.getByRole('button', { name: '重新给出意见' }))
   await waitFor(() =>
     expect(window.sesAgent.assessCasePerson).toHaveBeenCalledWith({
       jobCaseId: 'case',
@@ -185,7 +186,7 @@ it('reassesses with what HR asked for and shows that request on the resulting de
     })
   )
   expect(await screen.findByText('本次评估按你的要求侧重：重点看日语沟通能力')).toBeInTheDocument()
-  expect(screen.queryByLabelText('对 AI 评估的要求')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('对 AI 评估的要求')).toHaveValue('')
 })
 it('records my judgement from the menu on the 记录 tab', async () => {
   ;(window.sesAgent as any).saveAssessmentFeedback = vi.fn(async () => ({}))
@@ -227,4 +228,47 @@ it('says what the cloud AI settled, not only that it finished', async () => {
 it('says plainly when the cloud AI did not change the local result', async () => {
   render(<Card initial={assessment} />)
   expect(await openTab('AI 意见').findByText(/AI 核对了简历原文，没有改变本地核对的结论/)).toBeVisible()
+})
+
+it('lets HR add and remove their own questions under 需沟通, kept for this case only', async () => {
+  const own = {
+    id: 'own',
+    documentId: 'person',
+    scope: 'pair',
+    jobCaseId: 'case',
+    jobCaseVersion: 1,
+    requirementKey: 'business:能否接受每周两天出社？',
+    requirementLabel: '能否接受每周两天出社？',
+    outcome: 'asking',
+    note: null,
+    question: '能否接受每周两天出社？',
+    decidedAt: new Date().toISOString(),
+    decidedBy: null
+  }
+  Object.assign(window.sesAgent, {
+    listRequirementConfirmations: vi.fn(async () => []),
+    decideRequirement: vi.fn(async () => ({ confirmations: [own], assessments: [], personRun: null })),
+    withdrawRequirementDecision: vi.fn(async () => ({ confirmations: [], assessments: [], personRun: null }))
+  })
+  render(<Card initial={assessment} />)
+  fireEvent.click(await screen.findByRole('tab', { name: '需沟通' }))
+  fireEvent.change(screen.getByLabelText('要沟通的问题'), { target: { value: ' 能否接受每周两天出社？ ' } })
+  fireEvent.click(screen.getByRole('button', { name: '添加' }))
+  await waitFor(() =>
+    expect(window.sesAgent.decideRequirement).toHaveBeenCalledWith({
+      documentId: 'person',
+      jobCaseId: 'case',
+      requirement: { key: 'hr_question', label: '能否接受每周两天出社？', category: 'condition' },
+      outcome: 'asking',
+      scope: 'pair',
+      note: null,
+      question: '能否接受每周两天出社？'
+    })
+  )
+  expect(await screen.findByText(/能否接受每周两天出社？/)).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: '需沟通 (1)' })).toBeInTheDocument()
+  expect(screen.getByLabelText('要沟通的问题')).toHaveValue('')
+  fireEvent.click(screen.getByRole('button', { name: '删除' }))
+  await waitFor(() => expect(window.sesAgent.withdrawRequirementDecision).toHaveBeenCalledWith({ id: 'own', documentId: 'person' }))
+  await waitFor(() => expect(screen.getByRole('tab', { name: '需沟通' })).toBeInTheDocument())
 })

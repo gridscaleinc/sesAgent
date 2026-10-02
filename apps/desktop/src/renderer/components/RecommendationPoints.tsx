@@ -47,14 +47,20 @@ export function useRecommendationPoints(documentId: string, reviewId: string | n
     setGenerating(false)
     return read()
   }, [pair])
-  const generate = async () => {
-    if (!reviewId || generating || !window.sesAgent.generateRecommendationPoints) return
+  /** Returns true when the points were written, so a caller can clear what HR asked for. */
+  const generate = async (operatorRequest?: string) => {
+    if (!reviewId || generating || !window.sesAgent.generateRecommendationPoints) return false
     const request = pair
     setGenerating(true)
     setError(null)
     try {
-      const value = await window.sesAgent.generateRecommendationPoints({ documentId, reviewId })
+      const value = await window.sesAgent.generateRecommendationPoints({
+        documentId,
+        reviewId,
+        ...(operatorRequest?.trim() ? { request: operatorRequest.trim() } : {})
+      })
       if (current.current === request) setView(value)
+      return true
     } catch (cause) {
       if (current.current === request)
         setError({
@@ -69,6 +75,7 @@ export function useRecommendationPoints(documentId: string, reviewId: string | n
     } finally {
       if (current.current === request) setGenerating(false)
     }
+    return false
   }
   const record = view?.record ?? null
   return {
@@ -125,18 +132,36 @@ export function RecommendationPointsTab({
   const { zh, t } = useLocaleText()
   const state = useRecommendationPoints(documentId, reviewId)
   const { record } = state
+  const [request, setRequest] = useState('')
+  useEffect(() => setRequest(''), [documentId, reviewId])
   const disabled = state.generating || Boolean(blocked) || !state.available
   const reason = blocked || (!state.available ? t('当前无法使用 AI 生成。', '現在AI生成を利用できません。') : '')
-  const generateButton = (label: string, primary = false) => (
-    <button
-      type="button"
-      className={primary ? 'hr-primary' : undefined}
-      disabled={disabled}
-      title={reason || undefined}
-      onClick={() => void state.generate()}
-    >
-      {label}
-    </button>
+  const generateForm = (label: string, primary = false) => (
+    <div className="match-inline-form">
+      <textarea
+        className="ai-request-input"
+        aria-label={t('对 AI 的要求', 'AIへの要望')}
+        placeholder={t('例：突出他的金融业务经验', '例：金融業務の経験を強調して')}
+        rows={2}
+        maxLength={500}
+        disabled={disabled}
+        value={request}
+        onChange={(event) => setRequest(event.target.value)}
+      />
+      <button
+        type="button"
+        className={primary ? 'hr-primary' : undefined}
+        disabled={disabled}
+        title={reason || undefined}
+        onClick={() =>
+          void state.generate(request).then((written) => {
+            if (written) setRequest('')
+          })
+        }
+      >
+        {label}
+      </button>
+    </div>
   )
   return (
     <div className="recommendation-points" aria-busy={state.generating || state.loading}>
@@ -149,7 +174,7 @@ export function RecommendationPointsTab({
               'この要員の案件経歴と本案件の内容から、お客様へ推薦する際のアピールポイントをAIが3〜5件まとめます。各ポイントには履歴書の原文根拠が付き、紹介文の作成に使えます。'
             )}
           </p>
-          {generateButton(t('生成推荐要点', '推薦ポイントを生成'), true)}
+          {generateForm(t('生成推荐要点', '推薦ポイントを生成'), true)}
           {reason ? <small className="match-blocked">{reason}</small> : null}
         </div>
       ) : null}
@@ -161,8 +186,8 @@ export function RecommendationPointsTab({
               {tokyoDateTime(record.generatedAt, zh)}
               {record.modelName ? ` · ${record.modelName}` : ''}
             </small>
-            {generateButton(t('重新生成', '再生成'))}
           </div>
+          {generateForm(t('重新生成', '再生成'))}
           {state.stale ? (
             <p role="status" className="recommendation-points-stale">
               {t('资料或案件已更新，建议重新生成', '情報または案件が更新されました。再生成をおすすめします')}

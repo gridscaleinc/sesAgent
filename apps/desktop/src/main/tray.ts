@@ -176,7 +176,8 @@ export function createTrayController(options: TrayControllerOptions) {
       }
     })
     window.setAlwaysOnTop(true, 'pop-up-menu')
-    if (mac) window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    // Without skipTransformProcessType, Electron turns the whole app into a UIElement here, which drops its Dock icon.
+    if (mac) window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', (event) => event.preventDefault())
     window.webContents.on('before-input-event', (_event, input) => {

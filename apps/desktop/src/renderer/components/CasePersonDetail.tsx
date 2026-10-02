@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AssessmentFeedbackInput, CandidateReviewSnapshot, CasePersonAssessment } from '@shared'
-import { proposalConclusion } from '@shared'
+import type { AssessmentFeedbackInput, CandidateReviewSnapshot, CasePersonAssessment, RequirementConfirmation } from '@shared'
+import { proposalConclusion, requirementDecisionLimits, requirementIdentity } from '@shared'
 import { useLocaleText } from '../i18n'
 import { useExperienceExposure } from './experience-exposure'
 import { AiOpinion } from './AiOpinion'
@@ -84,20 +84,65 @@ export function CasePersonDetail({
   const draft = useCaseQuestionDraft(value.documentId, jobCaseId)
   const [questionRequest, setQuestionRequest] = useState(''),
     [assessRequest, setAssessRequest] = useState('')
-  const [reassessOpen, setReassessOpen] = useState(false)
+  // What HR wants to raise with this person for this case, beyond what the requirements left open.
+  const [ownQuestions, setOwnQuestions] = useState<RequirementConfirmation[]>([]),
+    [ownQuestion, setOwnQuestion] = useState('')
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [decision, setDecision] = useState<AssessmentFeedbackInput['decision']>('suitable')
   const [reason, setReason] = useState<AssessmentFeedbackInput['reason']>('evidence'),
     [note, setNote] = useState('')
-  const questionInput = useRef<HTMLInputElement>(null)
+  const questionInput = useRef<HTMLTextAreaElement>(null),
+    assessInput = useRef<HTMLTextAreaElement>(null)
   const lock = useRef(false)
   useEffect(() => {
     setComparison(null)
     setError('')
     setNotice('')
-    setReassessOpen(false)
     setFeedbackOpen(false)
   }, [value.id])
+  const requirementKeys = (value.result.qualification?.requirements ?? []).map((item) => requirementIdentity(item.requirement)).join('|')
+  const showOwnQuestions = (confirmations: RequirementConfirmation[]) => {
+    const keys = new Set(requirementKeys.split('|'))
+    setOwnQuestions(
+      confirmations.filter(
+        (item) => item.scope === 'pair' && item.jobCaseId === jobCaseId && item.outcome === 'asking' && !keys.has(item.requirementKey)
+      )
+    )
+  }
+  useEffect(() => {
+    let active = true
+    setOwnQuestion('')
+    Promise.resolve(window.sesAgent.listRequirementConfirmations?.(value.documentId))
+      .then((confirmations) => {
+        if (active && confirmations) showOwnQuestions(confirmations)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [value.documentId, jobCaseId, requirementKeys])
+  const addOwnQuestion = () => {
+    const question = ownQuestion.trim()
+    if (!question || !window.sesAgent.decideRequirement) return
+    void run(async () => {
+      const result = await window.sesAgent.decideRequirement!({
+        documentId: value.documentId,
+        jobCaseId,
+        requirement: { key: 'hr_question', label: question, category: 'condition' },
+        outcome: 'asking',
+        scope: 'pair',
+        note: null,
+        question
+      })
+      showOwnQuestions(result.confirmations)
+      setOwnQuestion('')
+    })
+  }
+  const removeOwnQuestion = (id: string) =>
+    void run(async () => {
+      if (!window.sesAgent.withdrawRequirementDecision) return
+      showOwnQuestions((await window.sesAgent.withdrawRequirementDecision({ id, documentId: value.documentId })).confirmations)
+    })
   const run = async (work: () => Promise<void>) => {
     if (lock.current) return
     lock.current = true
@@ -120,12 +165,10 @@ export function CasePersonDetail({
     if (onReassess) {
       onReassess(request)
       setAssessRequest('')
-      setReassessOpen(false)
     } else
       void run(async () => {
         onRefresh(await window.sesAgent.assessCasePerson({ jobCaseId, documentId: value.documentId, ...(request ? { request } : {}) }))
         setAssessRequest('')
-        setReassessOpen(false)
       })
   }
   const generateQuestions = () =>
@@ -143,12 +186,30 @@ export function CasePersonDetail({
     })
   const confirmQuestions = value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text)
   const followCount = followUpItems(value.result.qualification, confirmQuestions)
-  const followTotal = followCount.items.length + followCount.questions.length + followCount.asking.length
+  const followTotal = followCount.items.length + followCount.questions.length + followCount.asking.length + ownQuestions.length
   const projects = relatedProjects(person, value.result.qualification?.requirements ?? [])
   const actionsBlocked = Boolean(blocked) || Boolean(starting)
   const staleNotice = t(
     '资料或规则已更新，旧结论已停用。请重新评估。',
     '情報またはルールが更新されたため、過去の結論は無効です。再評価してください。'
+  )
+  const assessForm = (
+    <div className="match-inline-form">
+      <textarea
+        ref={assessInput}
+        className="ai-request-input"
+        aria-label={t('对 AI 评估的要求', 'AI評価への要望')}
+        placeholder={t('例：重点看日语沟通能力', '例：日本語での対応力を重点的に')}
+        rows={2}
+        maxLength={500}
+        disabled={busy || reevaluationDisabled}
+        value={assessRequest}
+        onChange={(event) => setAssessRequest(event.target.value)}
+      />
+      <button type="button" disabled={busy || reevaluationDisabled} onClick={reassess}>
+        {stale ? t('重新评估', '再評価') : t('重新给出意见', '意見を出し直す')}
+      </button>
+    </div>
   )
   const tabs = [
     {
@@ -180,7 +241,39 @@ export function CasePersonDetail({
       content: stale ? (
         <p className="match-muted">{staleNotice}</p>
       ) : (
-        <FollowUpTab qualification={value.result.qualification} questions={confirmQuestions} />
+        <>
+          <FollowUpTab qualification={value.result.qualification} questions={confirmQuestions} hideEmpty={ownQuestions.length > 0} />
+          <section className="match-rule-questions is-asking">
+            <h4>{t('我要沟通的问题', '自分で確認したいこと')}</h4>
+            {ownQuestions.length ? (
+              <ul>
+                {ownQuestions.map((item) => (
+                  <li key={item.id}>
+                    {item.question ?? item.requirementLabel}{' '}
+                    <button type="button" disabled={busy} onClick={() => removeOwnQuestion(item.id)}>
+                      {t('删除', '削除')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="match-inline-form">
+              <textarea
+                className="ai-request-input"
+                aria-label={t('要沟通的问题', '確認したいこと')}
+                placeholder={t('例：能否接受每周两天出社？', '例：週2日の出社は可能ですか？')}
+                rows={2}
+                maxLength={requirementDecisionLimits.label}
+                disabled={busy}
+                value={ownQuestion}
+                onChange={(event) => setOwnQuestion(event.target.value)}
+              />
+              <button type="button" disabled={busy || !ownQuestion.trim()} onClick={addOwnQuestion}>
+                {t('添加', '追加')}
+              </button>
+            </div>
+          </section>
+        </>
       )
     },
     {
@@ -194,6 +287,7 @@ export function CasePersonDetail({
             <>
               <AiOpinion opinion={value.result.assessment?.opinion} zh={zh} />
               <AssessmentEvaluationStatus value={value} zh={zh} />
+              {assessForm}
             </>
           )}
           <RankingReason ranking={value.result.ranking} zh={zh} />
@@ -232,11 +326,12 @@ export function CasePersonDetail({
       content: (
         <InterviewQuestionsSection questions={draft.questions} stale={draft.stale} error={draft.error} onCopied={setNotice}>
           <div className="match-inline-form">
-            <input
+            <textarea
               ref={questionInput}
               className="ai-request-input"
               aria-label={t('对 AI 的要求', 'AIへの要望')}
               placeholder={t('例：加上团队管理的问题', '例：チーム管理に関する質問を加えて')}
+              rows={2}
               maxLength={500}
               disabled={busy || stale}
               value={questionRequest}
@@ -360,7 +455,15 @@ export function CasePersonDetail({
             trigger={<span aria-hidden="true">⋯</span>}
             triggerClassName="match-menu-trigger"
           >
-            <button type="button" role="menuitem" disabled={busy || reevaluationDisabled} onClick={() => setReassessOpen(true)}>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy || reevaluationDisabled}
+              onClick={() => {
+                if (!stale) onTab('ai')
+                setTimeout(() => assessInput.current?.focus())
+              }}
+            >
               {t('重新评估（可附要求）', '再評価（要望を添えて）')}
             </button>
             <button
@@ -436,27 +539,7 @@ export function CasePersonDetail({
             </p>
           ) : null}
           {blocked ? <small className="match-blocked">{blocked}</small> : null}
-          {stale || reassessOpen ? (
-            <div className="match-inline-form">
-              <input
-                className="ai-request-input"
-                aria-label={t('对 AI 评估的要求', 'AI評価への要望')}
-                placeholder={t('例：重点看日语沟通能力', '例：日本語での対応力を重点的に')}
-                maxLength={500}
-                disabled={busy || reevaluationDisabled}
-                value={assessRequest}
-                onChange={(event) => setAssessRequest(event.target.value)}
-              />
-              <button type="button" disabled={busy || reevaluationDisabled} onClick={reassess}>
-                {t('重新评估', '再評価')}
-              </button>
-              {reassessOpen && !stale ? (
-                <button type="button" onClick={() => setReassessOpen(false)}>
-                  {t('取消', 'キャンセル')}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
+          {stale ? assessForm : null}
           {busy ? <p role="status">{t('正在处理…', '処理中…')}</p> : null}
           {error ? <p role="alert">{error}</p> : null}
           {notice ? <p role="status">{notice}</p> : null}
