@@ -227,12 +227,21 @@ export function AiCommerceMemberDialog({
 
               <div className="aicommerce-member-actions">
                 {!connected ? (
-                  <button disabled={busy !== null || authorizing} onClick={() => void run('connect', onConnect)} type="button">
-                    <Icon name="lock" size={16} />
-                    {authorizing || busy === 'connect'
-                      ? t('正在浏览器中登录…', 'ブラウザでログイン中…')
-                      : t('登录 Member Center', 'Member Center にサインイン')}
-                  </button>
+                  <>
+                    <button disabled={busy !== null} onClick={() => void run('connect', onConnect)} type="button">
+                      <Icon name="lock" size={16} />
+                      {busy === 'connect'
+                        ? t('正在打开浏览器…', 'ブラウザを開いています…')
+                        : authorizing
+                          ? t('重新打开浏览器登录', 'ブラウザでログインをやり直す')
+                          : t('登录 Member Center', 'Member Center にサインイン')}
+                    </button>
+                    {authorizing ? (
+                      <button disabled={busy !== null} onClick={() => void run('disconnect', onDisconnect)} type="button">
+                        {t('取消登录', 'ログインをキャンセル')}
+                      </button>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     <button disabled={busy !== null} onClick={() => void run('refresh', onRefresh)} type="button">

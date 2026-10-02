@@ -236,9 +236,19 @@ export function ApplicationSettingsDialog({
     try {
       await action()
     } catch (cause) {
-      setError(localizedIpcError(locale, cause, t('无法更新外部系统连接。', '外部システムの接続を更新できませんでした。')))
+      if (!(cause instanceof Error && cause.message.includes('authorization was cancelled'))) {
+        setError(localizedIpcError(locale, cause, t('无法更新外部系统连接。', '外部システムの接続を更新できませんでした。')))
+      }
     } finally {
       setBusy(null)
+    }
+  }
+
+  const cancelGoogleConnect = async () => {
+    try {
+      await onDisconnectGoogleWorkspace()
+    } catch (cause) {
+      setError(localizedIpcError(locale, cause, t('无法取消连接。', '接続をキャンセルできませんでした。')))
     }
   }
 
@@ -606,13 +616,20 @@ export function ApplicationSettingsDialog({
                           </button>
                         </>
                       ) : googleConfigured ? (
-                        <button
-                          disabled={busy !== null}
-                          onClick={() => void runIntegrationAction('google-connect', onConnectGoogleWorkspace)}
-                          type="button"
-                        >
-                          {busy === 'google-connect' ? t('正在连接并同步…', '接続・同期中…') : t('连接 Google 邮箱', 'Google メールを接続')}
-                        </button>
+                        <>
+                          <button
+                            disabled={busy !== null}
+                            onClick={() => void runIntegrationAction('google-connect', onConnectGoogleWorkspace)}
+                            type="button"
+                          >
+                            {busy === 'google-connect' ? t('正在连接并同步…', '接続・同期中…') : t('连接 Google 邮箱', 'Google メールを接続')}
+                          </button>
+                          {busy === 'google-connect' ? (
+                            <button onClick={() => void cancelGoogleConnect()} type="button">
+                              {t('取消登录', 'ログインをキャンセル')}
+                            </button>
+                          ) : null}
+                        </>
                       ) : (
                         <div className="integration-settings-note" role="status">
                           <span>

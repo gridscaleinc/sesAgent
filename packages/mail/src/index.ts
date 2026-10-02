@@ -90,6 +90,8 @@ export interface AuthorizationCodeResult {
 
 export interface AuthorizationCodeProvider {
   requestAuthorization(request: AuthorizationCodeRequest): Promise<AuthorizationCodeResult>
+  /** Abandon an in-flight authorization, e.g. after the user closed the browser tab. */
+  cancelAuthorization?(): void
 }
 
 export interface LoopbackAuthorizationCodeProviderOptions {
@@ -122,13 +124,19 @@ export function buildGoogleAuthorizationUrl(request: AuthorizationCodeRequest, r
 
 export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvider {
   private readonly timeoutMs: number
+  private cancelActive: (() => void) | null = null
 
   constructor(private readonly options: LoopbackAuthorizationCodeProviderOptions) {
     this.timeoutMs = options.timeoutMs ?? 180_000
     if (options.redirectUri) privateGoogleLoopbackRedirectSchema.parse(options.redirectUri)
   }
 
+  cancelAuthorization(): void {
+    this.cancelActive?.()
+  }
+
   requestAuthorization(request: AuthorizationCodeRequest): Promise<AuthorizationCodeResult> {
+    this.cancelActive?.()
     return new Promise((resolve, reject) => {
       let settled = false
       const configuredRedirect = this.options.redirectUri ? new URL(this.options.redirectUri) : null
@@ -202,9 +210,19 @@ export class LoopbackAuthorizationCodeProvider implements AuthorizationCodeProvi
       const timeout = setTimeout(() => {
         if (settled) return
         settled = true
+        this.cancelActive = null
         server.close()
         reject(new Error('Google Workspace authorization timed out.'))
       }, this.timeoutMs)
+      const cancel = (): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        this.cancelActive = null
+        server.close()
+        reject(new Error('Google Workspace authorization was cancelled.'))
+      }
+      this.cancelActive = cancel
       server.once('error', (error) => {
         if (settled) return
         settled = true
@@ -633,6 +651,7 @@ export class GoogleWorkspaceOAuthClient {
   }
 
   async disconnect(): Promise<GoogleWorkspaceState> {
+    this.dependencies.authorizationCodeProvider.cancelAuthorization?.()
     const credential = await this.dependencies.credentialStore.load()
     if (!credential) return this.disconnectedState()
     try {
