@@ -671,10 +671,12 @@ export function CaseResumeAssessmentPanel({
     const stale = Boolean(assessment && staleFor(assessment, person))
     const followLabel =
       follow && progress ? `${t('已有跟进', '対応記録あり')} · ${progressPresentation(follow, progress.now, zh).label}` : undefined
-    if (assessment && !busy && !preliminary)
+    // Reassessing keeps the current result and tab on screen, with the AI at work above it, until the new one arrives.
+    if (assessment && !preliminary)
       return (
         <CasePersonDetail
           key={task.id}
+          working={busy ? t('AI 正在重新评估，结果出来后会直接更新…', 'AIが再評価しています。結果が出るとそのまま更新されます…') : ''}
           name={nameFor(task)}
           value={assessment}
           jobCaseId={job.jobCase?.id ?? assessment.jobCaseId}

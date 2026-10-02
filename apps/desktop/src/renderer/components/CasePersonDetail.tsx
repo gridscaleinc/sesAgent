@@ -14,6 +14,7 @@ import { FollowUpTab, MatchEvidenceTab, followUpItems } from './RequirementTable
 import { AppliedRules, InterviewQuestionsSection, RelatedProjects, relatedProjects, useCaseQuestionDraft } from './MatchDetailSections'
 import { tokyoDateTime } from './use-case-resume-assessments'
 import { RecommendationPointsTab } from './RecommendationPoints'
+import { AiWorking } from './AiWorking'
 import './ai-work-rules.css'
 
 export type MatchDetailTabId = 'evidence' | 'points' | 'follow-up' | 'ai' | 'questions' | 'record'
@@ -44,7 +45,8 @@ export function CasePersonDetail({
   onContinue,
   onOriginal,
   onPerson,
-  library
+  library,
+  working = ''
 }: {
   name: string
   value: CasePersonAssessment
@@ -75,9 +77,12 @@ export function CasePersonDetail({
   onPerson?(documentId: string): void
   /** Offered while the person was added for this case only. */
   library?: { saving: boolean; onAdd(): void } | null
+  /** While the AI reassesses this person: the old result stays shown, read-only, under this progress label. */
+  working?: string
 }) {
   const { zh, t } = useLocaleText()
-  const [busy, setBusy] = useState(false),
+  const [running, setRunning] = useState(false),
+    [workingLabel, setWorkingLabel] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('')
   const [comparison, setComparison] = useState<CasePersonAssessment | null>(null)
@@ -143,10 +148,12 @@ export function CasePersonDetail({
       if (!window.sesAgent.withdrawRequirementDecision) return
       showOwnQuestions((await window.sesAgent.withdrawRequirementDecision({ id, documentId: value.documentId })).confirmations)
     })
-  const run = async (work: () => Promise<void>) => {
+  /** `aiLabel` names a cloud AI call, shown with the working animation; a local save shows none. */
+  const run = async (work: () => Promise<void>, aiLabel = '') => {
     if (lock.current) return
     lock.current = true
-    setBusy(true)
+    setRunning(true)
+    setWorkingLabel(aiLabel)
     setError('')
     setNotice('')
     try {
@@ -155,9 +162,11 @@ export function CasePersonDetail({
       setError(questionErrorMessage(cause, zh, t('操作失败，请重试。', '操作に失敗しました。もう一度お試しください。')))
     } finally {
       lock.current = false
-      setBusy(false)
+      setRunning(false)
     }
   }
+  // A local AI call of this panel, or the reassessment the results page is running for it.
+  const busy = running || Boolean(working)
   const exposureRoot = useRef<HTMLElement>(null)
   useExperienceExposure(exposureRoot, value.result.experienceRunId ?? '')
   const reassess = () => {
@@ -166,24 +175,30 @@ export function CasePersonDetail({
       onReassess(request)
       setAssessRequest('')
     } else
-      void run(async () => {
-        onRefresh(await window.sesAgent.assessCasePerson({ jobCaseId, documentId: value.documentId, ...(request ? { request } : {}) }))
-        setAssessRequest('')
-      })
+      void run(
+        async () => {
+          onRefresh(await window.sesAgent.assessCasePerson({ jobCaseId, documentId: value.documentId, ...(request ? { request } : {}) }))
+          setAssessRequest('')
+        },
+        t('AI 正在重新评估…', 'AIが再評価しています…')
+      )
   }
   const generateQuestions = () =>
-    void run(async () => {
-      draft.setQuestions(
-        (
-          await window.sesAgent.generateRuleQuestions({
-            jobCaseId,
-            documentId: value.documentId,
-            ...(questionRequest.trim() ? { request: questionRequest.trim() } : {})
-          })
-        ).questions
-      )
-      draft.setStale(false)
-    })
+    void run(
+      async () => {
+        draft.setQuestions(
+          (
+            await window.sesAgent.generateRuleQuestions({
+              jobCaseId,
+              documentId: value.documentId,
+              ...(questionRequest.trim() ? { request: questionRequest.trim() } : {})
+            })
+          ).questions
+        )
+        draft.setStale(false)
+      },
+      t('AI 正在生成面试问题…', 'AIが面談質問を作成しています…')
+    )
   const confirmQuestions = value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text)
   const followCount = followUpItems(value.result.qualification, confirmQuestions)
   const followTotal = followCount.items.length + followCount.questions.length + followCount.asking.length + ownQuestions.length
@@ -297,8 +312,10 @@ export function CasePersonDetail({
               type="button"
               disabled={busy || stale}
               onClick={() =>
-                void run(async () =>
-                  setComparison(await window.sesAgent.assessCasePerson({ jobCaseId, documentId: value.documentId, withoutRules: true }))
+                void run(
+                  async () =>
+                    setComparison(await window.sesAgent.assessCasePerson({ jobCaseId, documentId: value.documentId, withoutRules: true })),
+                  t('AI 正在做不加规则的对照评估…', 'AIがルールなしの比較評価をしています…')
                 )
               }
             >
@@ -540,7 +557,7 @@ export function CasePersonDetail({
           ) : null}
           {blocked ? <small className="match-blocked">{blocked}</small> : null}
           {stale ? assessForm : null}
-          {busy ? <p role="status">{t('正在处理…', '処理中…')}</p> : null}
+          {working ? <AiWorking label={working} /> : running && workingLabel ? <AiWorking label={workingLabel} /> : null}
           {error ? <p role="alert">{error}</p> : null}
           {notice ? <p role="status">{notice}</p> : null}
         </>

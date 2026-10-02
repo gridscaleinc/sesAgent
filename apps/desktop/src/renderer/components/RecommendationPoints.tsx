@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { RecommendationPoint, RecommendationPointsView } from '@shared'
 import { aiServiceProblem, localizedIpcError, requestAiSignIn, useLocaleText } from '../i18n'
 import { tokyoDateTime } from './use-case-resume-assessments'
+import { AiWorking } from './AiWorking'
 import './recommendation-points.css'
 
 /**
@@ -215,9 +216,7 @@ export function RecommendationPointsTab({
         </>
       ) : null}
       {state.generating ? (
-        <p role="status" className="recommendation-points-progress">
-          {t('正在结合项目经历与案件内容生成推荐要点…', '案件経歴と案件内容から推薦ポイントを生成しています…')}
-        </p>
+        <AiWorking label={t('AI 正在结合项目经历与案件内容生成推荐要点…', 'AIが案件経歴と案件内容から推薦ポイントを生成しています…')} />
       ) : null}
       <PointsError state={state} />
     </div>

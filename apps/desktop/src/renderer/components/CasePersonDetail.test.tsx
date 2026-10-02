@@ -272,3 +272,27 @@ it('lets HR add and remove their own questions under 需沟通, kept for this ca
   await waitFor(() => expect(window.sesAgent.withdrawRequirementDecision).toHaveBeenCalledWith({ id: 'own', documentId: 'person' }))
   await waitFor(() => expect(screen.getByRole('tab', { name: '需沟通' })).toBeInTheDocument())
 })
+
+it('keeps the current result and tab on screen while the AI reassesses, with the working animation', () => {
+  render(
+    <CasePersonDetail
+      value={assessment}
+      name="resume.pdf"
+      jobCaseId="case"
+      reviewId="review"
+      blocked=""
+      hasFollowUp={false}
+      tab="ai"
+      onTab={() => {}}
+      onBackToList={() => {}}
+      stale={false}
+      onRefresh={() => {}}
+      onReassess={() => {}}
+      working="AI 正在重新评估，结果出来后会直接更新…"
+    />
+  )
+  expect(screen.getByRole('tab', { name: 'AI 意见' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByText('不建议向本案提案')).toBeInTheDocument()
+  expect(screen.getByRole('status', { name: '' })).toHaveTextContent('AI 正在重新评估，结果出来后会直接更新…')
+  expect(screen.getByRole('button', { name: '重新给出意见' })).toBeDisabled()
+})
