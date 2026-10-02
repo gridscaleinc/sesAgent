@@ -174,6 +174,15 @@ export async function importChatPastedJobCaseText(
     if (value) localizedOverrides[key] = applyLocalPiiMappings(value, processed.redaction.mappings)
   }
   const draft = extractJobCaseDraft(processed.source, randomUUID(), now, localizedOverrides, intakeBatchId, aliases)
+  const sameCase = deps.repository.findJobCaseReviewByCaseSignature(draft.fields)
+  if (sameCase) {
+    return {
+      review: sameCase,
+      outcome: sameCase.status === 'completed' ? 'already-imported' : 'existing-review',
+      validity: sameCase.status === 'completed' ? 'valid' : 'unknown',
+      attentionReason: null
+    }
+  }
   if (
     !deps.repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, processed.source, draft)
   ) {

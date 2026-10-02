@@ -2,6 +2,7 @@ import { jobCaseIntakeFingerprint } from '../intake-deduplication'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   agentJobCaseDraftFacts,
+  jobCaseSignature,
   statesNationalityRestriction,
   type ConfirmedJobCase,
   type JobCaseExtractionDraft,
@@ -223,6 +224,33 @@ export class JobCaseStore extends DomainStore {
     return null
   }
 
+  /**
+   * The case a draft repeats: an active case, or a draft still awaiting review, with the same title and required skills.
+   * An ended case does not count, for the same reason as above.
+   */
+  findJobCaseReviewByCaseSignature(fields: ReadonlyArray<{ key: string; value: string | null }>): JobCaseReviewSnapshot | null {
+    const signature = jobCaseSignature(fields)
+    if (!signature) return null
+    const active = this.listActiveJobCases().find((job) => jobCaseSignature(job.fields) === signature)
+    if (active) {
+      const review = this.getJobCaseReview(active.sourceReviewId)
+      if (review && review.lifecycle !== 'archived') return review
+    }
+    const awaiting = this.database
+      .prepare<[], { review_id: string; draft_json: string }>(
+        `SELECT extraction.review_id, extraction.draft_json FROM job_case_extractions extraction
+         JOIN job_case_review_states state ON state.review_id = extraction.review_id
+         LEFT JOIN job_case_lifecycle lifecycle ON lifecycle.source_review_id = extraction.review_id
+         WHERE state.status = 'awaiting-review' AND coalesce(lifecycle.state, 'active') = 'active'`
+      )
+      .all()
+    for (const row of awaiting) {
+      const draft = jobCaseExtractionDraftSchema.parse(JSON.parse(row.draft_json))
+      if (draft.version === 'job-case-extraction-v2' && jobCaseSignature(draft.fields) === signature) return this.getJobCaseReview(row.review_id)
+    }
+    return null
+  }
+
   getEmlJobCaseReview(sourceMessageKey: string): JobCaseReviewSnapshot | null {
     if (!/^eml_[a-f0-9]{64}$/u.test(sourceMessageKey)) throw new Error('EML source message key is invalid.')
     const rows = this.database
@@ -250,9 +278,14 @@ export class JobCaseStore extends DomainStore {
           this.stores.privacy.getLocalPiiMappings(source.redaction_session_id)
         )
       : null
-    if (duplicate) {
-      if (source?.source_type === 'gmail' && duplicate.sourceId !== source.id) {
-        const warnings = [...new Set([...(JSON.parse(source.warning_codes_json) as string[]), 'BUSINESS_DUPLICATE_SKIPPED'])]
+    // The same case in other words - another sender, a forward, a re-send with a new rate - is not imported twice either.
+    const sameCase = duplicate ?? this.findJobCaseReviewByCaseSignature(draft.fields)
+    if (sameCase) {
+      if (source?.source_type === 'gmail' && sameCase.sourceId !== source.id) {
+        // The mail stays on record, pointing at the case it repeats, and is never offered for a draft again.
+        const warnings = [
+          ...new Set([...(JSON.parse(source.warning_codes_json) as string[]), 'BUSINESS_DUPLICATE_SKIPPED', `DUPLICATE_OF_REVIEW:${sameCase.reviewId}`])
+        ]
         this.database.prepare('UPDATE job_case_sources SET warning_codes_json = ? WHERE id = ?').run(JSON.stringify(warnings), source.id)
       }
       return false

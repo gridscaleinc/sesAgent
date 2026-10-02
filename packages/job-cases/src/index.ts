@@ -346,6 +346,39 @@ function normalizedJobCaseWorkAuthorizationRequirement(value: string): string | 
   )
 }
 
+/**
+ * What makes two mails the same case: the same title and the same required skills. Rate, start date and
+ * location are left out on purpose - a client re-sending a case often changes those - and so is who sent it.
+ * Null when either is missing or too thin to tell cases apart, so nothing is merged on a guess.
+ */
+export function jobCaseSignature(fields: ReadonlyArray<{ key: string; value: string | null }>): string | null {
+  const value = (key: string) => fields.find((field) => field.key === key)?.value ?? ''
+  const squash = (text: string) =>
+    text
+      .normalize('NFKC')
+      .toLocaleLowerCase('ja-JP')
+      .replace(/[\s\p{P}\p{S}]+/gu, '')
+  // A subject carries wrappers that are not part of the case: Re:/Fwd:, 【再送】, 【案件】 and the like.
+  const title = squash(
+    value('title')
+      .normalize('NFKC')
+      .replace(/^(?:\s*(?:re|fwd?|fw|転送|返信)\s*[:：]\s*)+/giu, '')
+      .replace(/[【\[][^】\]]{0,30}[】\]]/gu, ' ')
+      .replace(/再送|再掲|再募集|継続募集|急募|至急/gu, ' ')
+  )
+  const skills = [
+    ...new Set(
+      value('required_skills')
+        .normalize('NFKC')
+        .split(/[、,，/／・;；\n]+/u)
+        .map(squash)
+        .filter((skill) => skill.length >= 2)
+    )
+  ].toSorted()
+  if (title.length < 4 || skills.length === 0) return null
+  return `${title}#${skills.join('|')}`
+}
+
 export function candidateBenchmarkQueryFromJobCase(jobCase: ConfirmedJobCase): string {
   const fields = new Map(jobCase.fields.map((field) => [field.key, field.value?.normalize('NFKC').trim() || null]))
   const values = candidateBenchmarkQueryFieldOrder.flatMap((key) => {

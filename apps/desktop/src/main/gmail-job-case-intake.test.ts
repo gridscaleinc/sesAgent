@@ -82,7 +82,7 @@ describe('createJobCaseDraftsForPendingGmailMessages', () => {
   it('confirms a fresh draft with the operator so an imported mail is a case at once', () => {
     const { repository, mocks, savedDrafts } = intakeRepository([gmailMessage()])
     const counts = createJobCaseDraftsForPendingGmailMessages(repository, 'sales@example.co.jp', operator)
-    expect(counts).toEqual({ created: 1, confirmed: 1, needsAttention: 0, failed: 0 })
+    expect(counts).toEqual({ created: 1, confirmed: 1, needsAttention: 0, failed: 0, duplicates: 0 })
     expect(mocks.confirmJobCaseReview).toHaveBeenCalledTimes(1)
     const call = mocks.confirmJobCaseReview.mock.calls[0]!
     expect(call[1]).toBe('op-1')
@@ -102,7 +102,7 @@ describe('createJobCaseDraftsForPendingGmailMessages', () => {
       throw new Error('案件名は必須です。')
     })
     const counts = createJobCaseDraftsForPendingGmailMessages(repository, 'sales@example.co.jp', operator)
-    expect(counts).toEqual({ created: 2, confirmed: 1, needsAttention: 1, failed: 0 })
+    expect(counts).toEqual({ created: 2, confirmed: 1, needsAttention: 1, failed: 0, duplicates: 0 })
   })
 
   it('leaves a message pending for the next sync when its draft cannot be created', () => {
@@ -111,13 +111,23 @@ describe('createJobCaseDraftsForPendingGmailMessages', () => {
       throw new Error('database is locked')
     })
     const counts = createJobCaseDraftsForPendingGmailMessages(repository, 'sales@example.co.jp', operator)
-    expect(counts).toEqual({ created: 1, confirmed: 1, needsAttention: 0, failed: 1 })
+    expect(counts).toEqual({ created: 1, confirmed: 1, needsAttention: 0, failed: 1, duplicates: 0 })
   })
 
   it('does not confirm anything without an operator', () => {
     const { repository, mocks } = intakeRepository([gmailMessage()])
     const counts = createJobCaseDraftsForPendingGmailMessages(repository, 'sales@example.co.jp', null)
-    expect(counts).toEqual({ created: 1, confirmed: 0, needsAttention: 0, failed: 0 })
+    expect(counts).toEqual({ created: 1, confirmed: 0, needsAttention: 0, failed: 0, duplicates: 0 })
     expect(mocks.confirmJobCaseReview).not.toHaveBeenCalled()
+  })
+
+  it('counts a mail whose case is already imported instead of creating it again, and carries on', () => {
+    const { repository, mocks, savedDrafts } = intakeRepository([gmailMessage(), gmailMessage({ gmailMessageId: 'msg-0002' })])
+    // The store refuses a draft only for a case it already has.
+    mocks.saveJobCaseDraft.mockImplementationOnce(() => false)
+    const counts = createJobCaseDraftsForPendingGmailMessages(repository, 'sales@example.co.jp', operator)
+    expect(counts).toEqual({ created: 1, confirmed: 1, needsAttention: 0, failed: 0, duplicates: 1 })
+    expect(savedDrafts).toHaveLength(1)
+    expect(mocks.confirmJobCaseReview).toHaveBeenCalledTimes(1)
   })
 })

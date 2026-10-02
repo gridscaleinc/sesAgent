@@ -1031,6 +1031,10 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.jobCases.findJobCaseReviewByBusinessFingerprint(subject, body, mappings)
   }
 
+  findJobCaseReviewByCaseSignature(fields: ReadonlyArray<{ key: string; value: string | null }>): JobCaseReviewSnapshot | null {
+    return this.stores.jobCases.findJobCaseReviewByCaseSignature(fields)
+  }
+
   getEmlJobCaseReview(sourceMessageKey: string): JobCaseReviewSnapshot | null {
     return this.stores.jobCases.getEmlJobCaseReview(sourceMessageKey)
   }

@@ -33,6 +33,7 @@ const anonymizedCandidateText = [
 function jobCaseRepository(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     findJobCaseReviewByBusinessFingerprint: vi.fn(() => null),
+    findJobCaseReviewByCaseSignature: vi.fn(() => null),
     saveRedactedJobCaseSourceAndDraft: vi.fn(() => true),
     getJobCaseReview: vi.fn(() => ({ reviewId: 'review-1' }) as unknown as JobCaseReviewSnapshot),
     ...overrides
@@ -121,6 +122,16 @@ describe('importChatPastedJobCaseText', () => {
     const result = await importChatPastedJobCaseText({ repository, localNer: null }, anonymizedCaseText)
     expect(result.outcome).toBe('existing-review')
     expect(result.review).toBe(existing)
+    expect(repository.saveRedactedJobCaseSourceAndDraft).not.toHaveBeenCalled()
+  })
+
+  it('returns the existing case when the same title and required skills arrive in different words', async () => {
+    const existing = { reviewId: 'review-1', status: 'completed', lifecycle: 'active' } as unknown as JobCaseReviewSnapshot
+    const repository = jobCaseRepository({ findJobCaseReviewByCaseSignature: vi.fn(() => existing) })
+    const result = await importChatPastedJobCaseText({ repository, localNer: null }, anonymizedCaseText)
+    expect(result).toMatchObject({ outcome: 'already-imported', validity: 'valid' })
+    expect(result.review).toBe(existing)
+    expect(repository.findJobCaseReviewByCaseSignature).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ key: 'title' })]))
     expect(repository.saveRedactedJobCaseSourceAndDraft).not.toHaveBeenCalled()
   })
 

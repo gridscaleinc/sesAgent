@@ -144,6 +144,8 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     if (duplicate) return { review: duplicate, outcome: 'existing' }
     const source = processed.source
     const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
+    const sameCase = repository.findJobCaseReviewByCaseSignature(draft.fields)
+    if (sameCase) return { review: sameCase, outcome: 'existing' }
     if (!repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, source, draft)) {
       throw new Error('手動案件の草稿を作成できませんでした。')
     }
@@ -335,13 +337,14 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
         now
       )
       rawText = ''
-      const duplicate = repository.findJobCaseReviewByBusinessFingerprint(
-        processed.source.redactedSubject,
-        processed.source.redactedBody,
-        processed.redaction.mappings
-      )
       const source = processed.source
       const draft = extractJobCaseDraft(source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
+      const duplicate =
+        repository.findJobCaseReviewByBusinessFingerprint(
+          processed.source.redactedSubject,
+          processed.source.redactedBody,
+          processed.redaction.mappings
+        ) ?? repository.findJobCaseReviewByCaseSignature(draft.fields)
       if (
         !duplicate &&
         !repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, source, draft)
@@ -456,6 +459,11 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
             continue
           }
           const draft = extractJobCaseDraft(processed.source, randomUUID(), now, {}, null, effectiveJobCaseFieldAliases(repository).aliases)
+          const sameCase = repository.findJobCaseReviewByCaseSignature(draft.fields)
+          if (sameCase) {
+            items.push({ fileName, status: 'duplicate', classification: parsed.classification, errorCode: null, review: sameCase })
+            continue
+          }
           try {
             repository.saveRedactedJobCaseSourceAndDraft(processed.redaction.session, processed.redaction.mappings, processed.source, draft)
           } catch (error) {

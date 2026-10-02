@@ -1,5 +1,7 @@
 // @vitest-environment node
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { createRedactedManualJobCaseSource, extractJobCaseDraft } from '@job-cases'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { nativeSqliteAvailable, openTestRepository, type TestRepositoryHandle } from './store-test-repository'
 import { confirmAllJobCaseFields, saveManualJobCaseDraft } from './store-test-fixtures-jobcases'
@@ -190,5 +192,36 @@ describe.skipIf(!nativeSqliteAvailable)('JobCaseStore via EncryptedApplicationRe
     repository.deleteJobCaseDatabaseData({ reviewId, confirmationHash: preview.confirmationHash, confirmationText: '削除' })
     expect(repository.getJobCaseReview(reviewId)).toBeNull()
     expect(repository.listJobCaseReviews()).toHaveLength(0)
+  })
+
+  it('treats the same title and required skills as one case, however the rest of the mail reads', () => {
+    const { repository } = handle
+    const first = saveManualJobCaseDraft(repository, {
+      subject: '【案件】Javaバックエンド',
+      body: '案件名：Javaバックエンド開発\n必須スキル：Java、Spring Boot\n単価：80万円/月'
+    })
+    expect(first.saved).toBe(true)
+    confirmAllJobCaseFields(repository, first.reviewId)
+    const draftFor = (subject: string, body: string) => {
+      const now = new Date('2026-07-18T00:00:00.000Z')
+      const manual = createRedactedManualJobCaseSource({ subject, body }, randomUUID(), [], now)
+      return { manual, draft: extractJobCaseDraft(manual.source, randomUUID(), now) }
+    }
+    // A re-send: another subject, skills in another order, a new rate, a note on top.
+    const resend = draftFor('Fwd: 再送 Javaバックエンド', '再送です。\n案件名：Javaバックエンド開発\n必須スキル：Spring Boot / Java\n単価：85万円/月')
+    expect(repository.findJobCaseReviewByCaseSignature(resend.draft.fields)?.reviewId).toBe(first.reviewId)
+    // The store itself refuses to stack it.
+    expect(() =>
+      repository.saveRedactedJobCaseSourceAndDraft(resend.manual.redaction.session, resend.manual.redaction.mappings, resend.manual.source, resend.draft)
+    ).toThrow()
+    expect(repository.listJobCaseReviews()).toHaveLength(1)
+    // Another title, or other required skills, is another case.
+    const otherTitle = draftFor('別案件', '案件名：Javaフロント開発\n必須スキル：Java、Spring Boot')
+    const otherSkills = draftFor('別スキル', '案件名：Javaバックエンド開発\n必須スキル：Java、Oracle')
+    expect(repository.findJobCaseReviewByCaseSignature(otherTitle.draft.fields)).toBeNull()
+    expect(repository.findJobCaseReviewByCaseSignature(otherSkills.draft.fields)).toBeNull()
+    // Nothing is merged on a guess: no required skills, no match.
+    const noSkills = draftFor('スキル無し', '案件名：Javaバックエンド開発\n単価：80万円/月')
+    expect(repository.findJobCaseReviewByCaseSignature(noSkills.draft.fields)).toBeNull()
   })
 })

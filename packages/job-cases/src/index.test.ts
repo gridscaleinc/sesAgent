@@ -9,6 +9,7 @@ import {
   createRedactedWechatVisibleJobCaseSource,
   extractJobCaseDraft,
   jobCaseExtractionDraftSchema,
+  jobCaseSignature,
   statesAgeLimitRequirement,
   statesNationalityRestriction
 } from './index'
@@ -704,5 +705,29 @@ describe('extractJobCaseDraft', () => {
     )
     expect(draft.fields.find((field) => field.key === 'required_skills')?.sources[0]?.sourceLabel).toBe('WeChat Body')
     expect(processed.redaction.payload).toBeNull()
+  })
+})
+
+describe('jobCaseSignature', () => {
+  const fields = (title: string | null, skills: string | null, extra: Record<string, string> = {}) => [
+    { key: 'title', value: title },
+    { key: 'required_skills', value: skills },
+    ...Object.entries(extra).map(([key, value]) => ({ key, value }))
+  ]
+  it('is the same for a re-send, a forward, reordered skills and a changed rate', () => {
+    const original = jobCaseSignature(fields('【案件】Javaバックエンド開発', 'Java、Spring Boot', { rate: '80万円/月' }))
+    expect(original).not.toBeNull()
+    expect(jobCaseSignature(fields('Fwd: 【再送】Javaバックエンド開発', 'Spring Boot / Java', { rate: '85万円/月', location: '東京' }))).toBe(original)
+    expect(jobCaseSignature(fields('Re: Re: Javaバックエンド開発 ', 'ＪＡＶＡ、spring boot'))).toBe(original)
+  })
+  it('differs when the title or the required skills differ', () => {
+    const original = jobCaseSignature(fields('Javaバックエンド開発', 'Java、Spring Boot'))
+    expect(jobCaseSignature(fields('Javaフロント開発', 'Java、Spring Boot'))).not.toBe(original)
+    expect(jobCaseSignature(fields('Javaバックエンド開発', 'Java、Oracle'))).not.toBe(original)
+  })
+  it('never guesses: a missing or thin title or skills gives no signature', () => {
+    expect(jobCaseSignature(fields(null, 'Java'))).toBeNull()
+    expect(jobCaseSignature(fields('Javaバックエンド開発', null))).toBeNull()
+    expect(jobCaseSignature(fields('【再送】案件', 'Java'))).toBeNull()
   })
 })

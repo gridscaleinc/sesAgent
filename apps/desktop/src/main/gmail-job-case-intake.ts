@@ -10,6 +10,8 @@ export interface GmailJobCaseIntakeCounts {
   confirmed: number
   needsAttention: number
   failed: number
+  /** Mails whose case was already imported (same title and required skills): kept on record, no new case. */
+  duplicates: number
 }
 
 export type GmailJobCaseIntakeRepository = Pick<
@@ -33,7 +35,7 @@ export function createJobCaseDraftsForPendingGmailMessages(
   aliases: JobCaseFieldAliasMap = {},
   now: () => Date = () => new Date()
 ): GmailJobCaseIntakeCounts {
-  const counts: GmailJobCaseIntakeCounts = { created: 0, confirmed: 0, needsAttention: 0, failed: 0 }
+  const counts: GmailJobCaseIntakeCounts = { created: 0, confirmed: 0, needsAttention: 0, failed: 0, duplicates: 0 }
   for (const message of repository.listGmailMessagesPendingJobCaseDrafts(accountEmail)) {
     try {
       const source = repository.ensureGmailJobCaseSource(
@@ -54,7 +56,11 @@ export function createJobCaseDraftsForPendingGmailMessages(
         )
       )
       const draft = extractJobCaseDraft(source, randomUUID(), now(), {}, null, aliases)
-      if (!repository.saveJobCaseDraft(draft)) continue
+      if (!repository.saveJobCaseDraft(draft)) {
+        // The store refuses a draft only for a case it already has; the mail is marked and not offered again.
+        counts.duplicates += 1
+        continue
+      }
       counts.created += 1
       if (!operator) continue
       const review = repository.getJobCaseReview(draft.reviewId)

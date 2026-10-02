@@ -18,7 +18,7 @@ vi.mock('@mail', async (original) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({ created: 1, confirmed: 1, needsAttention: 0, failed: 0 })
+  vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({ created: 1, confirmed: 1, needsAttention: 0, failed: 0, duplicates: 0 })
   vi.mocked(importPendingGmailPersonnel).mockResolvedValue({ personnel: 2, failed: 0 })
 })
 
@@ -76,7 +76,7 @@ it('does not report a failed receive checkpoint as a successful action', async (
 
 it.each(['case', 'personnel'])('marks %s intake failure even when receiving succeeded', async (kind) => {
   if (kind === 'case')
-    vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({ created: 0, confirmed: 0, needsAttention: 0, failed: 1 })
+    vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({ created: 0, confirmed: 0, needsAttention: 0, failed: 1, duplicates: 0 })
   else vi.mocked(importPendingGmailPersonnel).mockResolvedValue({ personnel: 0, failed: 1 })
   const h = setup()
   await h.startGmailSync()
