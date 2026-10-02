@@ -1502,3 +1502,210 @@ body:has(.is-hr-workbench) {
   background: var(--tint-amber-98);
   border-radius: 6px;
 }
+
+/* 准备介绍: the mail is the page; the AI tools sit beside it and the send actions stay in view. */
+.hr-introduction {
+  width: min(1040px, 100%);
+  padding: 0;
+  overflow: hidden;
+}
+.hr-intro-header {
+  align-items: flex-start;
+  padding: 18px 28px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.hr-intro-header h2 {
+  margin: 2px 0 8px;
+}
+.hr-introduction .hr-intro-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.hr-intro-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--tint-gray-96-5);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.hr-intro-chip.is-case {
+  max-width: min(520px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hr-intro-scroll {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px 28px 24px;
+  overflow: auto;
+}
+.hr-intro-alerts {
+  display: grid;
+  gap: 8px;
+}
+.hr-intro-alerts > * {
+  margin: 0;
+  max-height: none;
+}
+.hr-intro-alert.is-error {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  font-size: 13px;
+}
+.hr-intro-pending.is-note {
+  background: var(--tint-gray-96-5);
+  color: var(--ink-secondary);
+}
+.hr-intro-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.hr-intro-mail,
+.hr-intro-generation-card,
+.hr-intro-assist .recommendation-points-picker {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.hr-intro-mail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+}
+.hr-intro-subject {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.hr-intro-subject-row {
+  display: flex;
+  gap: 8px;
+}
+.hr-intro-subject-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.hr-intro-mail .hr-intro-controls {
+  margin: 0;
+}
+.hr-intro-body {
+  flex: none;
+  min-height: 0;
+}
+.hr-intro-mail .hr-intro-body textarea {
+  min-height: 380px;
+  padding: 14px 16px;
+}
+.hr-intro-attachment {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  color: var(--muted);
+}
+.hr-intro-attachment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.hr-intro-attachment-actions strong {
+  margin-right: 4px;
+  color: var(--ink);
+  font-size: 12px;
+}
+.hr-intro-attachment small {
+  flex: none;
+  color: var(--muted);
+}
+.hr-intro-assist {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.hr-intro-generation-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.hr-intro-generation-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+.hr-intro-generation-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.hr-intro-generation {
+  display: grid;
+  gap: 8px;
+}
+.hr-intro-generation textarea {
+  min-height: 84px;
+  padding: 10px 12px;
+}
+.hr-intro-generation button {
+  justify-self: end;
+}
+.hr-intro-assist .recommendation-points-picker {
+  max-height: min(46vh, 420px);
+  margin: 0;
+  padding: 14px 16px;
+}
+.hr-intro-footer {
+  flex-wrap: wrap;
+  margin-top: 0;
+  padding: 12px 28px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.hr-intro-footer-status,
+.hr-intro-footer-send {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.hr-intro-footer-send {
+  margin-left: auto;
+}
+@media (max-width: 900px) {
+  .hr-intro-layout {
+    grid-template-columns: 1fr;
+  }
+  .hr-intro-assist {
+    position: static;
+  }
+  .hr-intro-header,
+  .hr-intro-footer,
+  .hr-intro-scroll {
+    padding-inline: 16px;
+  }
+}

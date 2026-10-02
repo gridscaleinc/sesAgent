@@ -453,186 +453,220 @@ export function IntroductionComposer({
           }
         }}
       >
-        <header>
+        <header className="hr-intro-header">
           <div>
             <small>{job ? t('针对当前案件', 'この案件向け') : t('人员推广', '要員紹介')}</small>
             <h2>{title}</h2>
+            <p className="hr-intro-context">
+              <span className="hr-intro-chip">{person?.localIdentity?.displayName ?? person?.fileName}</span>
+              {job ? (
+                <>
+                  <span aria-hidden="true">→</span>
+                  <span className="hr-intro-chip is-case">{job.fields.find((item) => item.key === 'title')?.value ?? job.redactedSubject}</span>
+                </>
+              ) : null}
+            </p>
           </div>
           <button type="button" aria-label={t('关闭介绍', '紹介画面を閉じる')} disabled={busy} onClick={onClose}>
             ×
           </button>
         </header>
-        <p className="hr-intro-context">
-          {person?.localIdentity?.displayName ?? person?.fileName}
-          {job ? ` → ${job.fields.find((item) => item.key === 'title')?.value ?? job.redactedSubject}` : ''}
-        </p>
-        <label className="hr-intro-subject">
-          {t('邮件主题', 'メール件名')}
-          <input
-            aria-label={t('邮件主题', 'メール件名')}
-            value={subject}
-            maxLength={240}
-            disabled={busy}
-            onChange={(event) => setSubjects((state) => ({ ...state, [key]: event.target.value.replace(/[\r\n]/gu, '') }))}
-          />
-        </label>
-        <button type="button" disabled={working || !valid || !subject.trim()} onClick={() => void submit('subject')}>
-          {t('复制主题', '件名をコピー')}
-        </button>
-        {missingFields.length ? (
-          <aside className="hr-intro-pending">
-            <strong>{t('发送前补充', '送信前に補足')}</strong>
-            <p>{missingFields.join('、')}</p>
-            <small>
-              {t(
-                '正文中的占位符请按实际情况补齐。打开邮件后，请添加收件人称呼。',
-                '本文の未記入欄を実情に合わせて補足してください。メールを開いた後、宛名を記入してください。'
-              )}
-            </small>
-          </aside>
-        ) : null}
-        {target.pendingConditions?.length ? (
-          <aside className="hr-intro-pending" aria-label={t('还需沟通', '相談する内容')}>
-            <small>
-              {t('内部沟通备忘，不写入邮件正文', '社内の相談メモ（メール本文には含めません）')}：{target.pendingConditions.join(' / ')}
-            </small>
-          </aside>
-        ) : null}
-        {!valid ? (
-          <p role="alert">
-            {t(
-              '资料已更新或不可用。草稿已保留，请关闭后重新匹配或打开人员资料。',
-              '情報が更新されたか利用できません。下書きは保持されています。再マッチングするか要員情報を開いてください。'
-            )}
-          </p>
-        ) : null}
-        <IntroductionOptions
-          templates={[...templates]
-            .sort((a, b) => Number(b.id === standardTemplateId) - Number(a.id === standardTemplateId))
-            .map((item) => ({
-              id: item.id,
-              label: item.id === standardTemplateId ? t('标准', '標準') : item.id === briefTemplateId ? t('省略', '簡潔') : item.name
-            }))}
-          templateId={template?.id ?? ''}
-          lang={lang}
-          disabled={busy}
-          panelId={panelId}
-          onTemplateChange={setTemplateId}
-          onLanguageChange={setLang}
-        />
-        {generating ? (
-          <p role="status">
-            {t('正在结合案件要求、项目技术和实际职责生成提案文…', '案件要件・使用技術・担当業務をもとに提案文を生成しています…')}
-          </p>
-        ) : null}
-        <div className="hr-intro-generation">
-          <textarea
-            className="ai-request-input"
-            aria-label={t('对 AI 的要求', 'AIへの要望')}
-            placeholder={t(
-              '例：加上他的团队管理经验，或粘贴一篇参考范文',
-              '例：チーム管理の経験を加えて。参考にする文例を貼り付けることもできます'
-            )}
-            rows={2}
-            maxLength={introductionRequestMaxLength}
-            disabled={working || !valid || !style}
-            value={requests[requestKey] ?? ''}
-            onChange={(event) => setRequests((state) => ({ ...state, [requestKey]: event.target.value }))}
-          />
-          <button type="button" disabled={working || !valid || !style} onClick={() => void regenerate()}>
-            {working ? t('云端 AI 正在生成…', 'Cloud AIで生成中…') : t('AI 重新生成', 'AIで再生成')}
-          </button>
-        </div>
-        {aiSignIn ? (
-          <div className="hr-intro-ai-signin" role="alert">
-            <p>
-              {t(
-                'AI 未登录，无法自动生成介绍。可以登录后重试，或直接在下方手动填写。',
-                'AIにログインしていないため、紹介文を自動生成できません。ログインして再試行するか、下に直接入力してください。'
-              )}
-            </p>
-            <button type="button" onClick={requestAiSignIn}>
-              {t('去登录', 'ログインする')}
-            </button>
-          </div>
-        ) : null}
-        {target.reviewId && valid ? (
-          <RecommendationPointsPicker documentId={target.documentId} reviewId={target.reviewId} disabled={working} onInsert={insertPoint} />
-        ) : null}
-        <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body">
-          <textarea
-            ref={editor}
-            aria-label={t('介绍文案', '紹介文')}
-            value={text}
-            onSelect={(event) => {
-              cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }
-            }}
-            onChange={(event) => {
-              cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }
-              setDrafts((state) => ({ ...state, [key]: event.target.value }))
-            }}
-            disabled={working}
-            placeholder={t('可以直接在这里填写介绍。', 'ここに紹介文を直接入力できます。')}
-          />
-        </div>
-        {error ? <p role="alert">{error}</p> : null}
-        {notice ? <p role="status">{notice}</p> : null}
-        <aside className="hr-intro-attachment">
-          <small>
-            {t(
-              '技能表不会自动附加：导出技能表后请附加到邮件。技能表由已确认的人员资料生成，使用匿名编号，不含姓名、联系方式和简历原件；邮件发出后无法撤回。',
-              'スキルシートは自動で添付されません。書き出したスキルシートをメールに添付してください。確認済みの要員情報から作成し、匿名表記で氏名・連絡先・履歴書の原本は含みません。送信後は取り消せません。'
-            )}
-          </small>
-          <button type="button" disabled={busy || !valid || !window.sesAgent.exportSkillSheet} onClick={() => void exportSheet()}>
-            {t('导出技能表', 'スキルシートを書き出す')}
-          </button>
-          <button type="button" disabled={busy || !valid} onClick={openResume}>
-            {t('打开简历原件', '履歴書の原本を開く')}
-          </button>
-        </aside>
-        <footer>
-          {target.reviewId ? (
-            follow?.progress ? (
-              <>
-                <span className="hr-intro-recommended" role="status">
-                  {recommendedAt
-                    ? `${t('已推荐', '推薦済み')} · ${tokyoTime(recommendedAt)}`
-                    : `${t('跟进中', '対応中')} · ${followState?.label ?? ''}`}
+        <div className="hr-intro-scroll">
+          {!valid || aiSignIn || missingFields.length || target.pendingConditions?.length ? (
+            <div className="hr-intro-alerts">
+              {!valid ? (
+                <p role="alert" className="hr-intro-alert is-error">
+                  {t(
+                    '资料已更新或不可用。草稿已保留，请关闭后重新匹配或打开人员资料。',
+                    '情報が更新されたか利用できません。下書きは保持されています。再マッチングするか要員情報を開いてください。'
+                  )}
+                </p>
+              ) : null}
+              {aiSignIn ? (
+                <div className="hr-intro-ai-signin" role="alert">
+                  <p>
+                    {t(
+                      'AI 未登录，无法自动生成介绍。可以登录后重试，或直接在下方手动填写。',
+                      'AIにログインしていないため、紹介文を自動生成できません。ログインして再試行するか、下に直接入力してください。'
+                    )}
+                  </p>
+                  <button type="button" onClick={requestAiSignIn}>
+                    {t('去登录', 'ログインする')}
+                  </button>
+                </div>
+              ) : null}
+              {missingFields.length ? (
+                <aside className="hr-intro-pending">
+                  <strong>{t('发送前补充', '送信前に補足')}</strong>
+                  <p>{missingFields.join('、')}</p>
+                  <small>
+                    {t(
+                      '正文中的占位符请按实际情况补齐。打开邮件后，请添加收件人称呼。',
+                      '本文の未記入欄を実情に合わせて補足してください。メールを開いた後、宛名を記入してください。'
+                    )}
+                  </small>
+                </aside>
+              ) : null}
+              {target.pendingConditions?.length ? (
+                <aside className="hr-intro-pending is-note" aria-label={t('还需沟通', '相談する内容')}>
+                  <small>
+                    {t('内部沟通备忘，不写入邮件正文', '社内の相談メモ（メール本文には含めません）')}：{target.pendingConditions.join(' / ')}
+                  </small>
+                </aside>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="hr-intro-layout">
+            <section className="hr-intro-mail" aria-label={t('邮件', 'メール')}>
+              <label className="hr-intro-subject">
+                <span>{t('邮件主题', 'メール件名')}</span>
+                <span className="hr-intro-subject-row">
+                  <input
+                    aria-label={t('邮件主题', 'メール件名')}
+                    value={subject}
+                    maxLength={240}
+                    disabled={busy}
+                    onChange={(event) => setSubjects((state) => ({ ...state, [key]: event.target.value.replace(/[\r\n]/gu, '') }))}
+                  />
+                  <button type="button" disabled={working || !valid || !subject.trim()} onClick={() => void submit('subject')}>
+                    {t('复制主题', '件名をコピー')}
+                  </button>
                 </span>
-                {/* Introduced after the follow-up started: the recommendation still counts once recorded. */}
-                {!recommendedAt ? (
+              </label>
+              <IntroductionOptions
+                templates={[...templates]
+                  .sort((a, b) => Number(b.id === standardTemplateId) - Number(a.id === standardTemplateId))
+                  .map((item) => ({
+                    id: item.id,
+                    label: item.id === standardTemplateId ? t('标准', '標準') : item.id === briefTemplateId ? t('省略', '簡潔') : item.name
+                  }))}
+                templateId={template?.id ?? ''}
+                lang={lang}
+                disabled={busy}
+                panelId={panelId}
+                onTemplateChange={setTemplateId}
+                onLanguageChange={setLang}
+              />
+              <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body">
+                <textarea
+                  ref={editor}
+                  aria-label={t('介绍文案', '紹介文')}
+                  value={text}
+                  onSelect={(event) => {
+                    cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }
+                  }}
+                  onChange={(event) => {
+                    cursor.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }
+                    setDrafts((state) => ({ ...state, [key]: event.target.value }))
+                  }}
+                  disabled={working}
+                  placeholder={t('可以直接在这里填写介绍。', 'ここに紹介文を直接入力できます。')}
+                />
+              </div>
+              {error ? <p role="alert">{error}</p> : null}
+              {notice ? <p role="status">{notice}</p> : null}
+              <aside className="hr-intro-attachment">
+                <div className="hr-intro-attachment-actions">
+                  <strong>{t('附件', '添付')}</strong>
+                  <button type="button" disabled={busy || !valid || !window.sesAgent.exportSkillSheet} onClick={() => void exportSheet()}>
+                    {t('导出技能表', 'スキルシートを書き出す')}
+                  </button>
+                  <button type="button" disabled={busy || !valid} onClick={openResume}>
+                    {t('打开简历原件', '履歴書の原本を開く')}
+                  </button>
+                </div>
+                <small>
+                  {t(
+                    '技能表不会自动附加：导出技能表后请附加到邮件。技能表由已确认的人员资料生成，使用匿名编号，不含姓名、联系方式和简历原件；邮件发出后无法撤回。',
+                    'スキルシートは自動で添付されません。書き出したスキルシートをメールに添付してください。確認済みの要員情報から作成し、匿名表記で氏名・連絡先・履歴書の原本は含みません。送信後は取り消せません。'
+                  )}
+                </small>
+              </aside>
+            </section>
+            <aside className="hr-intro-assist" aria-label={t('AI 辅助', 'AIアシスト')}>
+              <section className="hr-intro-generation-card">
+                <h3>{t('让 AI 改写', 'AIで書き直す')}</h3>
+                {generating ? (
+                  <p role="status">
+                    {t('正在结合案件要求、项目技术和实际职责生成提案文…', '案件要件・使用技術・担当業務をもとに提案文を生成しています…')}
+                  </p>
+                ) : null}
+                <div className="hr-intro-generation">
+                  <textarea
+                    className="ai-request-input"
+                    aria-label={t('对 AI 的要求', 'AIへの要望')}
+                    placeholder={t(
+                      '例：加上他的团队管理经验，或粘贴一篇参考范文',
+                      '例：チーム管理の経験を加えて。参考にする文例を貼り付けることもできます'
+                    )}
+                    rows={3}
+                    maxLength={introductionRequestMaxLength}
+                    disabled={working || !valid || !style}
+                    value={requests[requestKey] ?? ''}
+                    onChange={(event) => setRequests((state) => ({ ...state, [requestKey]: event.target.value }))}
+                  />
+                  <button type="button" disabled={working || !valid || !style} onClick={() => void regenerate()}>
+                    {working ? t('云端 AI 正在生成…', 'Cloud AIで生成中…') : t('AI 重新生成', 'AIで再生成')}
+                  </button>
+                </div>
+              </section>
+              {target.reviewId && valid ? (
+                <RecommendationPointsPicker
+                  documentId={target.documentId}
+                  reviewId={target.reviewId}
+                  disabled={working}
+                  onInsert={insertPoint}
+                />
+              ) : null}
+            </aside>
+          </div>
+        </div>
+        <footer className="hr-intro-footer">
+          <div className="hr-intro-footer-status">
+            {target.reviewId ? (
+              follow?.progress ? (
+                <>
+                  <span className="hr-intro-recommended" role="status">
+                    {recommendedAt
+                      ? `${t('已推荐', '推薦済み')} · ${tokyoTime(recommendedAt)}`
+                      : `${t('跟进中', '対応中')} · ${followState?.label ?? ''}`}
+                  </span>
+                  {/* Introduced after the follow-up started: the recommendation still counts once recorded. */}
+                  {!recommendedAt ? (
+                    <button type="button" disabled={working || !valid} onClick={() => void markRecommended()}>
+                      {t('标记已推荐', '推薦済みにする')}
+                    </button>
+                  ) : null}
+                  <button type="button" disabled={working} onClick={openFollow}>
+                    {t('查看跟进', '対応を見る')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" disabled={working || !valid} onClick={openFollow}>
+                    {t('开始跟进', '対応を開始')}
+                  </button>
+                  {askSent ? <small role="status">{t('已经发出了吗？', '送信しましたか？')}</small> : null}
                   <button type="button" disabled={working || !valid} onClick={() => void markRecommended()}>
                     {t('标记已推荐', '推薦済みにする')}
                   </button>
-                ) : null}
-                <button type="button" disabled={working} onClick={openFollow}>
-                  {t('查看跟进', '対応を見る')}
-                </button>
-              </>
-            ) : (
-              <>
-                <button type="button" disabled={working || !valid} onClick={openFollow}>
-                  {t('开始跟进', '対応を開始')}
-                </button>
-                {askSent ? <small role="status">{t('已经发出了吗？', '送信しましたか？')}</small> : null}
-                <button type="button" disabled={working || !valid} onClick={() => void markRecommended()}>
-                  {t('标记已推荐', '推薦済みにする')}
-                </button>
-              </>
-            )
-          ) : null}
-          <button disabled={working || !valid || !template || !text.trim()} type="button" onClick={() => void submit('email')}>
-            {t('打开邮件', 'メールを開く')}
-          </button>
-          <button
-            className="hr-primary"
-            disabled={working || !valid || !template || !text.trim()}
-            type="button"
-            onClick={() => void submit('copy')}
-          >
-            {t('复制介绍', '紹介文をコピー')}
-          </button>
+                </>
+              )
+            ) : null}
+          </div>
+          <div className="hr-intro-footer-send">
+            <button disabled={working || !valid || !template || !text.trim()} type="button" onClick={() => void submit('email')}>
+              {t('打开邮件', 'メールを開く')}
+            </button>
+            <button
+              className="hr-primary"
+              disabled={working || !valid || !template || !text.trim()}
+              type="button"
+              onClick={() => void submit('copy')}
+            >
+              {t('复制介绍', '紹介文をコピー')}
+            </button>
+          </div>
         </footer>
       </div>
     </div>
