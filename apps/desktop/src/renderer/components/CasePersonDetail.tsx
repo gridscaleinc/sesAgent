@@ -201,7 +201,10 @@ export function CasePersonDetail({
     )
   const confirmQuestions = value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text)
   const followCount = followUpItems(value.result.qualification, confirmQuestions)
-  const followTotal = followCount.items.length + followCount.questions.length + followCount.asking.length + ownQuestions.length
+  // What the model itself suggests confirming: unverified, listed apart from the rule-based items.
+  const aiConfirm = stale ? [] : (value.result.assessment?.opinion?.confirm ?? [])
+  const followTotal =
+    followCount.items.length + followCount.questions.length + followCount.asking.length + ownQuestions.length + aiConfirm.length
   const projects = relatedProjects(person, value.result.qualification?.requirements ?? [])
   const actionsBlocked = Boolean(blocked) || Boolean(starting)
   const staleNotice = t(
@@ -257,7 +260,24 @@ export function CasePersonDetail({
         <p className="match-muted">{staleNotice}</p>
       ) : (
         <>
-          <FollowUpTab qualification={value.result.qualification} questions={confirmQuestions} hideEmpty={ownQuestions.length > 0} />
+          <FollowUpTab
+            qualification={value.result.qualification}
+            questions={confirmQuestions}
+            hideEmpty={ownQuestions.length > 0 || aiConfirm.length > 0}
+          />
+          {aiConfirm.length ? (
+            <section className="match-rule-questions">
+              <h4>{t('AI 建议确认', 'AIが挙げた確認事項')}</h4>
+              <ul>
+                {aiConfirm.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <small className="match-muted">
+                {t('AI 自己写的内容，没有和简历原文核对。', 'AIが書いた内容で、履歴書の原文とは照合していません。')}
+              </small>
+            </section>
+          ) : null}
           <section className="match-rule-questions is-asking">
             <h4>{t('我要沟通的问题', '自分で確認したいこと')}</h4>
             {ownQuestions.length ? (

@@ -296,3 +296,22 @@ it('keeps the current result and tab on screen while the AI reassesses, with the
   expect(screen.getByRole('status', { name: '' })).toHaveTextContent('AI 正在重新评估，结果出来后会直接更新…')
   expect(screen.getByRole('button', { name: '重新给出意见' })).toBeDisabled()
 })
+
+it('lists what the AI suggests confirming under 需沟通, apart from the rule-based items', async () => {
+  const withOpinion = {
+    ...assessment,
+    result: {
+      ...assessment.result,
+      assessment: {
+        ...assessment.result.assessment!,
+        opinion: { fit: 'possible', reason: '', gaps: [], confirm: ['直近の Spring Boot 実務年数'] }
+      }
+    }
+  } as CasePersonAssessment
+  render(<Card initial={withOpinion} />)
+  fireEvent.click(await screen.findByRole('tab', { name: '需沟通 (1)' }))
+  const panel = within(screen.getByRole('tabpanel'))
+  expect(panel.getByRole('heading', { name: 'AI 建议确认' })).toBeInTheDocument()
+  expect(panel.getByText('直近の Spring Boot 実務年数')).toBeInTheDocument()
+  expect(panel.queryByText('没有需要沟通的事项。')).not.toBeInTheDocument()
+})
