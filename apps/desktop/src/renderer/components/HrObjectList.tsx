@@ -207,7 +207,7 @@ export function HrObjectList({
   busy?: boolean
   /** Objects whose matching is running; only their cards are locked. Empty means none is running. */
   busyObjectIds?: string[]
-  /** Number of found cases per person (by objectId), shown as 「查看案件 (n)」. */
+  /** Cases currently recommended per person (by objectId), from 找案件 and the case pages, shown as 「可提案案件 (n)」. */
   personMatchCounts?: Record<string, number>
   onOpen(entry: BusinessFeedEntry, action: 'view' | 'match' | 'promote'): void
   onIntake(): void
@@ -1597,7 +1597,7 @@ export function HrObjectList({
                         // In place but ending soon: HR looks for the next case and still records 退场 when it ends.
                         <>
                           <button className="hr-primary" disabled={locked(entry)} onClick={() => open(entry, 'match')} type="button">
-                            {matchCount ? `${t('查看案件', '案件を見る')} (${matchCount})` : t('找案件', '案件を探す')}
+                            {matchCount ? `${t('可提案案件', '提案可能な案件')} (${matchCount})` : t('找案件', '案件を探す')}
                           </button>
                           <button className="hr-secondary" type="button" onClick={openPlacement}>
                             {t('记录退场', '退場を記録')}
@@ -1651,7 +1651,7 @@ export function HrObjectList({
                               {kind === 'case'
                                 ? t('找人', '要員を探す')
                                 : matchCount
-                                  ? `${t('查看案件', '案件を見る')} (${matchCount})`
+                                  ? `${t('可提案案件', '提案可能な案件')} (${matchCount})`
                                   : t('找案件', '案件を探す')}
                             </button>
                           )}

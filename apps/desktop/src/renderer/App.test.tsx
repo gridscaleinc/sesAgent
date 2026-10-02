@@ -2834,7 +2834,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     fireEvent.click(within(screen.getByRole('complementary', { name: 'システムナビゲーション' })).getByRole('button', { name: '要員' }))
     // The card shows the cases found by the first run; reopening shows that stored result without re-running.
     fireEvent.click(
-      within(await screen.findByRole('article', { name: 'Selected Engineer' })).getByRole('button', { name: '案件を見る (1)' })
+      within(await screen.findByRole('article', { name: 'Selected Engineer' })).getByRole('button', { name: '提案可能な案件 (1)' })
     )
     const reverseAgain = await screen.findByRole('region', { name: 'この要員の案件を探す' })
     expect(within(reverseAgain).getByRole('article', { name: 'Java project' })).toBeVisible()

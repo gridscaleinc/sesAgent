@@ -196,12 +196,14 @@ it('hydrates list badge counts from stored summaries on first use', async () => 
         policyVersion: 'technical-language-v5',
         caseSignature: '',
         searchedAt: '2026-09-30T01:00:00.000Z',
-        listedCount: 3
+        listedCount: 3,
+        // 可提案案件 counts the recommended cases only, from 找案件 and the case pages alike.
+        proposableCount: 2
       }
     ])
   })
   await hydratePersonCaseMatches()
-  expect(personCaseMatchCount(documentId)).toBe(3)
+  expect(personCaseMatchCount(documentId)).toBe(2)
   expect(personCaseMatchCount(documentId, 2)).toBeNull()
 })
 

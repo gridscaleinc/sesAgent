@@ -1664,7 +1664,7 @@ it('locks only the cards whose matching runs and shows found case counts on peop
     expect(locked).toHaveAttribute('title', '評価中です。しばらくお待ちください')
     expect(locked).toHaveAccessibleDescription('評価中です。しばらくお待ちください')
   }
-  const free = within(screen.getByRole('article', { name: 'Other Engineer' })).getByRole('button', { name: '案件を見る (3)' })
+  const free = within(screen.getByRole('article', { name: 'Other Engineer' })).getByRole('button', { name: '提案可能な案件 (3)' })
   expect(free).toBeEnabled()
   expect(free).not.toHaveAttribute('aria-describedby')
   fireEvent.click(free)

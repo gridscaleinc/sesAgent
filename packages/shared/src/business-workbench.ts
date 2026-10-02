@@ -245,6 +245,8 @@ export interface PersonnelCaseMatchRunSummary {
   caseSignature: string
   searchedAt: string
   listedCount: number
+  /** Cases currently recommended for this person, from either side (找案件 or the case pages), shown as 「可提案案件 (n)」. */
+  proposableCount?: number
 }
 
 /**

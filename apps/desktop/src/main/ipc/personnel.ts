@@ -2,6 +2,7 @@ import { saveCaseSearchAssessments } from '../case-search-assessments'
 import { beginIntroductionDraft, createIntroductionGenerator } from '../introduction-generation'
 import { createRecommendationPointsGenerator, getRecommendationPoints } from '../recommendation-points'
 import { createCommunicationPointsGenerator, getCommunicationPoints } from '../communication-points'
+import { personCaseMatchSummaries, personCaseMatchView } from '../person-case-overview'
 import { createRequirementDecisions } from '../requirement-decisions'
 import { saveBusinessField } from '../business-field-editing'
 import { businessProgressCalendar, createBusinessProgressAnalyzer, draftBusinessProgressMessage } from '../business-progress'
@@ -268,11 +269,11 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   const cancelBusinessMatchingInputSchema = z.object({ kind: z.enum(['case', 'person']), id: candidateProfileSourceInputSchema }).strict()
   ipcMain.handle(ipcChannels.getPersonnelCaseMatchRun, (event, raw) => {
     assertTrustedSender(event)
-    return repository.getPersonCaseMatchRun(candidateProfileSourceInputSchema.parse(raw))
+    return personCaseMatchView(repository, candidateProfileSourceInputSchema.parse(raw))
   })
   ipcMain.handle(ipcChannels.listPersonnelCaseMatchRunSummaries, (event) => {
     assertTrustedSender(event)
-    return repository.listPersonCaseMatchRunSummaries()
+    return personCaseMatchSummaries(repository)
   })
   ipcMain.handle(ipcChannels.cancelBusinessMatching, (event, input) => {
     assertTrustedSender(event)

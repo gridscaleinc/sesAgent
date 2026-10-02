@@ -59,6 +59,7 @@ if (typeof window !== 'undefined')
       rehydrate = null
       hydration = null
       void hydratePersonCaseMatches()
+      void refreshLoadedPersonCaseMatches()
     }, 500)
   })
 // An HR decision on an unclear requirement updates the person's stored 找案件 run in place.
@@ -102,6 +103,24 @@ export function loadPersonCaseMatch(documentId: string): Promise<PersonCaseMatch
   loading.set(documentId, promise)
   return promise
 }
+/**
+ * Re-reads the results already loaded this session, so an assessment made from a case page shows in the person's
+ * view without reopening the app. A person whose 找案件 is running keeps what the run will deliver.
+ */
+function refreshLoadedPersonCaseMatches(): Promise<void> {
+  if (typeof window === 'undefined' || typeof window.sesAgent?.getPersonnelCaseMatchRun !== 'function') return Promise.resolve()
+  return Promise.all(
+    [...entries.keys()].map((documentId) =>
+      window.sesAgent
+        .getPersonnelCaseMatchRun(documentId)
+        .then((run) => {
+          if (!run || run.result.documentId !== documentId || running.has(documentId) || preparing.has(documentId)) return
+          entries.set(documentId, fromStored(run))
+        })
+        .catch(() => undefined)
+    )
+  ).then(() => emit())
+}
 /** Fetches badge counts for every person once per session, so 「查看案件 (n)」 survives a restart. */
 export function hydratePersonCaseMatches(): Promise<void> {
   if (hydration) return hydration
@@ -117,13 +136,17 @@ export function hydratePersonCaseMatches(): Promise<void> {
     })
   return hydration
 }
-/** Listed cases from the last run, or null when this person has no result (or it is for an older profile version). */
 /** jobCaseId → version of the active cases, kept by the app shell so every badge counts the same cases. */
 let knownActiveCases: ReadonlyMap<string, number> | null = null
 export function setActiveCaseVersions(value: ReadonlyMap<string, number>) {
   knownActiveCases = value
   emit()
 }
+/**
+ * 可提案案件: cases recommended for this person, from 找案件 and the case pages alike, or null when this person has
+ * no result (or it is for an older profile version). A result loaded or run this session is used unless the stored
+ * summary is newer.
+ */
 export function personCaseMatchCount(
   documentId: string,
   profileVersion?: number,
@@ -131,15 +154,18 @@ export function personCaseMatchCount(
   activeCases: ReadonlyMap<string, number> | null = knownActiveCases
 ): number | null {
   const entry = entries.get(documentId)
-  if (entry) {
+  const summary = summaries.get(documentId)
+  if (entry && (!summary || !entry.ranAt || entry.ranAt >= summary.searchedAt)) {
     if (profileVersion !== undefined && entry.result.profileVersion !== profileVersion) return null
     return entry.result.items.filter(
-      (item) => listedPersonCaseMatch(item) && (!activeCases || activeCases.get(item.jobCaseId) === item.jobCaseVersion)
+      (item) =>
+        listedPersonCaseMatch(item) &&
+        item.qualification?.status === 'recommended' &&
+        (!activeCases || activeCases.get(item.jobCaseId) === item.jobCaseVersion)
     ).length
   }
-  const summary = summaries.get(documentId)
   if (!summary || (profileVersion !== undefined && summary.profileVersion !== profileVersion)) return null
-  return summary.policyVersion === businessMatchingPolicyVersion ? summary.listedCount : 0
+  return summary.policyVersion === businessMatchingPolicyVersion ? (summary.proposableCount ?? 0) : 0
 }
 export function setPersonCaseMatchRunning(documentId: string, value: boolean) {
   if (running.has(documentId) === value) return
