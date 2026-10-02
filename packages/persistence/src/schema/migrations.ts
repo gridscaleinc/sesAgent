@@ -1,4 +1,4 @@
-export const currentSchemaVersion = 67
+export const currentSchemaVersion = 68
 
 export const migrationV1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2722,5 +2722,37 @@ BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%
     .join('\n') +
   `
 INSERT INTO schema_migrations(version,applied_at) VALUES(67,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+COMMIT;
+`
+
+// 沟通要点 per person and case review: the latest AI generation only, like 推荐要点. Removed with the person or the
+// case review (foreign keys); version checks happen when read.
+export const migrationV68 =
+  `
+BEGIN IMMEDIATE;
+CREATE TABLE communication_points (
+ document_id TEXT NOT NULL REFERENCES candidate_review_states(document_id) ON DELETE CASCADE,
+ review_id TEXT NOT NULL REFERENCES job_case_review_states(review_id) ON DELETE CASCADE,
+ profile_version INTEGER NOT NULL,
+ job_case_version INTEGER NOT NULL,
+ locale TEXT NOT NULL CHECK (locale IN ('ja-JP','zh-CN')),
+ points TEXT NOT NULL,
+ request TEXT,
+ model_name TEXT,
+ generated_at TEXT NOT NULL,
+ PRIMARY KEY (document_id, review_id)
+);
+CREATE INDEX communication_points_review ON communication_points(review_id);
+` +
+  ['INSERT', 'UPDATE', 'DELETE']
+    .map(
+      (
+        operation
+      ) => `CREATE TRIGGER backup_revision_communication_points_${operation.toLowerCase()} AFTER ${operation} ON communication_points
+BEGIN UPDATE local_data_revision SET revision=revision+1, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE singleton=1; END;`
+    )
+    .join('\n') +
+  `
+INSERT INTO schema_migrations(version,applied_at) VALUES(68,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
 `

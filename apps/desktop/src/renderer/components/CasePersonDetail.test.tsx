@@ -297,21 +297,45 @@ it('keeps the current result and tab on screen while the AI reassesses, with the
   expect(screen.getByRole('button', { name: '重新给出意见' })).toBeDisabled()
 })
 
-it('lists what the AI suggests confirming under 需沟通, apart from the rule-based items', async () => {
-  const withOpinion = {
-    ...assessment,
-    result: {
-      ...assessment.result,
-      assessment: {
-        ...assessment.result.assessment!,
-        opinion: { fit: 'possible', reason: '', gaps: [], confirm: ['直近の Spring Boot 実務年数'] }
-      }
-    }
-  } as CasePersonAssessment
-  render(<Card initial={withOpinion} />)
-  fireEvent.click(await screen.findByRole('tab', { name: '需沟通 (1)' }))
+it("drafts 沟通要点 under 需沟通 with what HR asks for, and keeps one as HR's own question", async () => {
+  const point = { question: '最早什么时候可以入场？', audience: 'person' as const, reason: '案件要求下月开始。', source: null }
+  const record = {
+    documentId: 'person',
+    reviewId: 'review',
+    profileVersion: 1,
+    jobCaseVersion: 1,
+    locale: 'zh-CN' as const,
+    points: [point],
+    request: '重点看入场时间',
+    generatedAt: new Date().toISOString(),
+    modelName: 'test'
+  }
+  Object.assign(window.sesAgent, {
+    getCommunicationPoints: vi.fn(async () => ({ record: null, stale: false })),
+    generateCommunicationPoints: vi.fn(async () => ({ record, stale: false })),
+    listRequirementConfirmations: vi.fn(async () => []),
+    decideRequirement: vi.fn(async () => ({ confirmations: [], assessments: [], personRun: null }))
+  })
+  render(<Card initial={assessment} />)
+  fireEvent.click(await screen.findByRole('tab', { name: '需沟通' }))
   const panel = within(screen.getByRole('tabpanel'))
-  expect(panel.getByRole('heading', { name: 'AI 建议确认' })).toBeInTheDocument()
-  expect(panel.getByText('直近の Spring Boot 実務年数')).toBeInTheDocument()
-  expect(panel.queryByText('没有需要沟通的事项。')).not.toBeInTheDocument()
+  expect(panel.getByRole('heading', { name: 'AI 梳理的沟通要点' })).toBeInTheDocument()
+  fireEvent.change(panel.getByLabelText('对 AI 梳理沟通要点的要求'), { target: { value: ' 重点看入场时间 ' } })
+  fireEvent.click(panel.getByRole('button', { name: '生成沟通要点' }))
+  await waitFor(() =>
+    expect(window.sesAgent.generateCommunicationPoints).toHaveBeenCalledWith({
+      documentId: 'person',
+      reviewId: 'review',
+      request: '重点看入场时间'
+    })
+  )
+  expect(await panel.findByText('最早什么时候可以入场？')).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: '需沟通 (1)' })).toBeInTheDocument()
+  expect(panel.getByLabelText('对 AI 梳理沟通要点的要求')).toHaveValue('')
+  fireEvent.click(panel.getByRole('button', { name: '加入我的问题' }))
+  await waitFor(() =>
+    expect(window.sesAgent.decideRequirement).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'asking', scope: 'pair', question: '最早什么时候可以入场？' })
+    )
+  )
 })

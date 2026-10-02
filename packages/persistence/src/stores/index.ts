@@ -26,6 +26,7 @@ import type { StoreRegistry } from './registry'
 import { WorkTaskStore } from './work-task-store'
 import { PersonCaseMatchStore } from './person-case-match-store'
 import { RecommendationPointsStore } from './recommendation-points-store'
+import { CommunicationPointsStore } from './communication-points-store'
 import { RequirementConfirmationStore } from './requirement-confirmation-store'
 
 export type { StoreContext } from './base'
@@ -69,6 +70,7 @@ export function createStoreRegistry(options: { database: Database.Database; data
     workTasks: new WorkTaskStore(context),
     personCaseMatches: new PersonCaseMatchStore(context),
     recommendationPoints: new RecommendationPointsStore(context),
+    communicationPoints: new CommunicationPointsStore(context),
     requirementConfirmations: new RequirementConfirmationStore(context)
   }
 

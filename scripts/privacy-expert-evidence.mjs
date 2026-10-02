@@ -94,6 +94,7 @@ export const cloudEnforcementPaths = Object.freeze([
   'apps/desktop/src/main/preference-events.ts',
   'apps/desktop/src/main/question-bank.ts',
   'apps/desktop/src/main/recommendation-points.ts',
+  'apps/desktop/src/main/communication-points.ts',
   'apps/desktop/src/main/requirement-decisions.ts',
   'apps/desktop/src/main/skill-sheet-export.ts',
   'apps/desktop/src/main/today-summary.ts',

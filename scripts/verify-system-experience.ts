@@ -207,7 +207,7 @@ async function seed(index: number, text = quote) {
   return { pair, run, interviewRun, event }
 }
 try {
-  assert.equal(currentSchemaVersion, 67)
+  assert.equal(currentSchemaVersion, 68)
   const empty = learner()
   await empty.tick()
   empty.stop()

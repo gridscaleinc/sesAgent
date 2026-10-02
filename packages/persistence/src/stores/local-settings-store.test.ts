@@ -93,8 +93,8 @@ describe.skipIf(!nativeSqliteAvailable)('LocalSettingsStore via EncryptedApplica
       raw.close()
     }
     const upgraded = handle.reopen()
-    expect(currentSchemaVersion).toBe(67)
-    expect(upgraded.getSchemaVersion()).toBe(67)
+    expect(currentSchemaVersion).toBe(68)
+    expect(upgraded.getSchemaVersion()).toBe(68)
     expect(upgraded.getLocalApplicationPreferences()).toMatchObject({ locale: 'zh-CN', revision: 1 })
     expect(upgraded.getLocalApplicationPreferences()).not.toHaveProperty('aiModels')
     expect(
@@ -149,7 +149,7 @@ describe.skipIf(!nativeSqliteAvailable)('LocalSettingsStore via EncryptedApplica
       raw.close()
     }
     const upgraded = handle.reopen()
-    expect(upgraded.getSchemaVersion()).toBe(67)
+    expect(upgraded.getSchemaVersion()).toBe(68)
     expect(upgraded.getLocalApplicationPreferences()).toMatchObject({ locale: 'zh-CN', revision: 1 })
     expect(upgraded.getLocalApplicationPreferences()).not.toHaveProperty('menuBar')
     upgraded.close()

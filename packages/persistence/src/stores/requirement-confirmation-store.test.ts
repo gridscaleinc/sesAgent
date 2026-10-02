@@ -125,7 +125,7 @@ describe.skipIf(!nativeSqliteAvailable)('RequirementConfirmationStore via Encryp
       raw.close()
     }
     const upgraded = handle.reopen()
-    expect(currentSchemaVersion).toBe(67)
+    expect(currentSchemaVersion).toBe(68)
     expect(upgraded.getSchemaVersion()).toBe(currentSchemaVersion)
     const person = seedImportedPerson(upgraded)
     expect(upgraded.saveRequirementConfirmation(decision(person.documentId))).toBe(true)

@@ -859,6 +859,12 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
   getRecommendationPoints(documentId: string, reviewId: string) {
     return this.stores.recommendationPoints.get(documentId, reviewId)
   }
+  saveCommunicationPoints(record: import('@shared').CommunicationPointsRecord) {
+    return this.stores.communicationPoints.save(record)
+  }
+  getCommunicationPoints(documentId: string, reviewId: string) {
+    return this.stores.communicationPoints.get(documentId, reviewId)
+  }
   saveRequirementConfirmation(record: import('@shared').RequirementConfirmation) {
     return this.stores.requirementConfirmations.save(record)
   }

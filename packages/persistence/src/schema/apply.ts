@@ -70,7 +70,8 @@ import {
   migrationV64,
   migrationV65,
   migrationV66,
-  migrationV67
+  migrationV67,
+  migrationV68
 } from './migrations'
 import { candidateExtractionDraftSchema } from '@resume'
 
@@ -440,6 +441,7 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 65').get()) database.exec(migrationV65)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 66').get()) database.exec(migrationV66)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 67').get()) database.exec(migrationV67)
+  if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 68').get()) database.exec(migrationV68)
   // People archived by an earlier version, which no longer has archiving: hidden from 人员 and matching with no way
   // back, they still made an import of the same résumé count as 该人员已入库. They return as ordinary people.
   database.prepare("UPDATE candidate_records SET record_status = 'active' WHERE record_status = 'archived'").run()

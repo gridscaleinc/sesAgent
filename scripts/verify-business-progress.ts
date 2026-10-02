@@ -670,7 +670,7 @@ try {
   assert.throws(() => repository.setCaseWorking({ reviewId: workingCase, working: true }, 'HR'), /无效案件/)
   repository.setJobCaseLifecycle({ reviewId: workingCase, state: 'active', reason: '案件重新开始' }, 'HR')
   assert.equal(feedCase().working, false, 'restoring does not re-add the case')
-  assert.equal(currentSchemaVersion, 67)
+  assert.equal(currentSchemaVersion, 68)
   console.log(
     JSON.stringify({
       status: 'passed',

@@ -1,6 +1,7 @@
 import { saveCaseSearchAssessments } from '../case-search-assessments'
 import { beginIntroductionDraft, createIntroductionGenerator } from '../introduction-generation'
 import { createRecommendationPointsGenerator, getRecommendationPoints } from '../recommendation-points'
+import { createCommunicationPointsGenerator, getCommunicationPoints } from '../communication-points'
 import { createRequirementDecisions } from '../requirement-decisions'
 import { saveBusinessField } from '../business-field-editing'
 import { businessProgressCalendar, createBusinessProgressAnalyzer, draftBusinessProgressMessage } from '../business-progress'
@@ -29,6 +30,8 @@ import {
   progressMessageInputSchema,
   recommendationPointsQuerySchema,
   generateRecommendationPointsInputSchema,
+  generateCommunicationPointsInputSchema,
+  communicationPointsQuerySchema,
   regenerateIntroductionInputSchema,
   resolvePersonnelMailUpdateSchema,
   saveBusinessFieldInputSchema,
@@ -196,6 +199,16 @@ export function registerPersonnelHandlers(context: MainIpcContext) {
   ipcMain.handle(ipcChannels.getRecommendationPoints, (event, input) => {
     assertTrustedSender(event)
     return getRecommendationPoints(context, recommendationPointsQuerySchema.parse(input))
+  })
+  // 沟通要点 for one person and case: what to confirm with the person or the client, generated on demand like 推荐要点.
+  const generateCommunicationPoints = createCommunicationPointsGenerator(context)
+  ipcMain.handle(ipcChannels.generateCommunicationPoints, (event, input) => {
+    assertTrustedSender(event)
+    return generateCommunicationPoints(generateCommunicationPointsInputSchema.parse(input))
+  })
+  ipcMain.handle(ipcChannels.getCommunicationPoints, (event, input) => {
+    assertTrustedSender(event)
+    return getCommunicationPoints(context, communicationPointsQuerySchema.parse(input))
   })
   // HR decisions on requirements the material left unclear: 满足 / 不满足 / 问本人, applied to the stored results at once.
   const decisions = createRequirementDecisions(context)

@@ -15,6 +15,7 @@ import { AppliedRules, InterviewQuestionsSection, RelatedProjects, relatedProjec
 import { tokyoDateTime } from './use-case-resume-assessments'
 import { RecommendationPointsTab } from './RecommendationPoints'
 import { AiWorking } from './AiWorking'
+import { CommunicationPointsSection, useCommunicationPoints } from './CommunicationPoints'
 import './ai-work-rules.css'
 
 export type MatchDetailTabId = 'evidence' | 'points' | 'follow-up' | 'ai' | 'questions' | 'record'
@@ -126,8 +127,8 @@ export function CasePersonDetail({
       active = false
     }
   }, [value.documentId, jobCaseId, requirementKeys])
-  const addOwnQuestion = () => {
-    const question = ownQuestion.trim()
+  const addOwnQuestion = (adopted?: string) => {
+    const question = (adopted ?? ownQuestion).trim().slice(0, requirementDecisionLimits.label)
     if (!question || !window.sesAgent.decideRequirement) return
     void run(async () => {
       const result = await window.sesAgent.decideRequirement!({
@@ -140,7 +141,7 @@ export function CasePersonDetail({
         question
       })
       showOwnQuestions(result.confirmations)
-      setOwnQuestion('')
+      if (adopted === undefined) setOwnQuestion('')
     })
   }
   const removeOwnQuestion = (id: string) =>
@@ -201,10 +202,9 @@ export function CasePersonDetail({
     )
   const confirmQuestions = value.appliedRules.filter((rule) => rule.kind === 'confirm').map((rule) => rule.text)
   const followCount = followUpItems(value.result.qualification, confirmQuestions)
-  // What the model itself suggests confirming: unverified, listed apart from the rule-based items.
-  const aiConfirm = stale ? [] : (value.result.assessment?.opinion?.confirm ?? [])
+  const communication = useCommunicationPoints(value.documentId, reviewId)
   const followTotal =
-    followCount.items.length + followCount.questions.length + followCount.asking.length + ownQuestions.length + aiConfirm.length
+    followCount.items.length + followCount.questions.length + followCount.asking.length + ownQuestions.length + communication.points.length
   const projects = relatedProjects(person, value.result.qualification?.requirements ?? [])
   const actionsBlocked = Boolean(blocked) || Boolean(starting)
   const staleNotice = t(
@@ -260,24 +260,8 @@ export function CasePersonDetail({
         <p className="match-muted">{staleNotice}</p>
       ) : (
         <>
-          <FollowUpTab
-            qualification={value.result.qualification}
-            questions={confirmQuestions}
-            hideEmpty={ownQuestions.length > 0 || aiConfirm.length > 0}
-          />
-          {aiConfirm.length ? (
-            <section className="match-rule-questions">
-              <h4>{t('AI 建议确认', 'AIが挙げた確認事項')}</h4>
-              <ul>
-                {aiConfirm.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-              <small className="match-muted">
-                {t('AI 自己写的内容，没有和简历原文核对。', 'AIが書いた内容で、履歴書の原文とは照合していません。')}
-              </small>
-            </section>
-          ) : null}
+          <FollowUpTab qualification={value.result.qualification} questions={confirmQuestions} hideEmpty />
+          <CommunicationPointsSection state={communication} disabled={busy} onAdopt={(question) => addOwnQuestion(question)} />
           <section className="match-rule-questions is-asking">
             <h4>{t('我要沟通的问题', '自分で確認したいこと')}</h4>
             {ownQuestions.length ? (
@@ -303,7 +287,7 @@ export function CasePersonDetail({
                 value={ownQuestion}
                 onChange={(event) => setOwnQuestion(event.target.value)}
               />
-              <button type="button" disabled={busy || !ownQuestion.trim()} onClick={addOwnQuestion}>
+              <button type="button" disabled={busy || !ownQuestion.trim()} onClick={() => addOwnQuestion()}>
                 {t('添加', '追加')}
               </button>
             </div>

@@ -3086,6 +3086,13 @@ export interface DesktopApi {
   generateRecommendationPoints?(
     input: import('./recommendation-points').GenerateRecommendationPointsInput
   ): Promise<import('./recommendation-points').RecommendationPointsView>
+  /** 沟通要点 for one person and case, generated on demand by cloud AI and stored per pair. Optional for API test doubles. */
+  generateCommunicationPoints?(
+    input: import('./communication-points').GenerateCommunicationPointsInput
+  ): Promise<import('./communication-points').CommunicationPointsView>
+  getCommunicationPoints?(
+    input: import('./communication-points').CommunicationPointsQuery
+  ): Promise<import('./communication-points').CommunicationPointsView>
   /** HR decisions on unclear requirements for one person, across their cases. Optional for API test doubles. */
   listRequirementConfirmations?(documentId: string): Promise<import('./matching-requirements').RequirementConfirmation[]>
   /** Records HR's decision on one unclear requirement and returns the stored results it changed. */
@@ -3298,6 +3305,8 @@ export const ipcChannels = {
   savePersonnelIntroductionDrafts: 'personnel:introduction-drafts-save',
   listPersonnelIntroductionDrafts: 'personnel:introduction-drafts-list',
   generateRecommendationPoints: 'personnel:recommendation-points-generate',
+  generateCommunicationPoints: 'personnel:communication-points-generate',
+  getCommunicationPoints: 'personnel:communication-points-get',
   getRecommendationPoints: 'personnel:recommendation-points-get',
   listRequirementConfirmations: 'matching:requirement-confirmations-list',
   decideRequirement: 'matching:requirement-decide',
