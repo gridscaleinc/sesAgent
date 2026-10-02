@@ -75,12 +75,14 @@ export function summarizeCaseSearches(
     if (!history.length) return []
     const listed = history.filter(
       (row) =>
-        row.origin !== 'search' ||
-        // As in the people panel: someone in a follow-up for this case is always listed.
-        followed.has(`${row.documentId}:${job.sourceReviewId}`) ||
-        (people.get(row.documentId)?.recordStatus === 'active' &&
-          (row.result.qualification?.status !== 'excluded' || excludedByHr(row.result.qualification)) &&
-          !unavailable.has(row.documentId))
+        // A deleted person is never listed or counted, however they came into the case.
+        (people.get(row.documentId)?.recordStatus ?? 'deleted') !== 'deleted' &&
+        (row.origin !== 'search' ||
+          // As in the people panel: someone in a follow-up for this case is always listed.
+          followed.has(`${row.documentId}:${job.sourceReviewId}`) ||
+          (people.get(row.documentId)?.recordStatus === 'active' &&
+            (row.result.qualification?.status !== 'excluded' || excludedByHr(row.result.qualification)) &&
+            !unavailable.has(row.documentId)))
     )
     const kept: string[] = []
     for (const row of listed) {

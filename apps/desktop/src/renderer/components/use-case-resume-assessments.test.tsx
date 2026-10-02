@@ -342,6 +342,9 @@ it('shows and counts one list: placed searched people are hidden and duplicate r
   expect(withFollow.hiddenDuplicates.get('t-lib')?.map((item) => item.id)).toEqual(['t-drag'])
   // A manually added person stays visible even after placement; only searched people are hidden.
   expect(visibleCaseTasks([task('t-p', 'placed', 'specified')], 'review-a', [placed], new Set(['placed'])).tasks).toHaveLength(1)
+  // A deleted person leaves the list however they came in: manually added, or in a follow-up for this case.
+  expect(visibleCaseTasks([task('t-gone', 'gone', 'specified')], 'review-a', [library], new Set()).tasks).toEqual([])
+  expect(visibleCaseTasks([task('t-gone', 'gone', 'search')], 'review-a', [library], new Set(), () => true).tasks).toEqual([])
 })
 
 it('reassesses with the operator request, keeps it across a failed retry and clears it on a plain reassessment', async () => {

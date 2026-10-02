@@ -1,4 +1,5 @@
 // @vitest-environment node
+import Database from 'better-sqlite3-multiple-ciphers'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DuplicateCandidateError } from '../intake-deduplication'
 import { nativeSqliteAvailable, openTestRepository, type TestRepositoryHandle } from './store-test-repository'
@@ -75,5 +76,22 @@ describe.skipIf(!nativeSqliteAvailable)('该人员已入库 via EncryptedApplica
     const sha256 = repository.getStagedFileRecords([existing.documentId])[0]!.sha256
     expect(repository.findCandidateByStagedSha256(sha256)?.documentId).toBe(existing.documentId)
     expect(repository.findCandidateByStagedSha256('0'.repeat(64))).toBeNull()
+  })
+
+  it('returns people archived by an earlier version to 人员 on open, instead of leaving them hidden yet blocking imports', () => {
+    const archived = seedImportedPerson(handle.repository, { privateName: '楊凱' })
+    handle.repository.close()
+    const raw = new Database(handle.path)
+    try {
+      raw.pragma("cipher='sqlcipher'")
+      raw.pragma('legacy=4')
+      raw.key(handle.databaseKey)
+      raw.prepare("UPDATE candidate_records SET record_status = 'archived' WHERE source_document_id = ?").run(archived.documentId)
+    } finally {
+      raw.close()
+    }
+    const repository = handle.reopen()
+    expect(repository.getCandidateReview(archived.documentId)?.recordStatus).toBe('active')
+    expect(repository.getCurrentCandidateProfile(archived.documentId)).not.toBeNull()
   })
 })

@@ -440,6 +440,9 @@ export function applyMigrations(database: Database.Database, mappingKey: Buffer)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 65').get()) database.exec(migrationV65)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 66').get()) database.exec(migrationV66)
   if (!database.prepare('SELECT version FROM schema_migrations WHERE version = 67').get()) database.exec(migrationV67)
+  // People archived by an earlier version, which no longer has archiving: hidden from 人员 and matching with no way
+  // back, they still made an import of the same résumé count as 该人员已入库. They return as ordinary people.
+  database.prepare("UPDATE candidate_records SET record_status = 'active' WHERE record_status = 'archived'").run()
   // Introductions for a case deleted before deletion took them along: the case's text must not outlive it.
   database
     .prepare(

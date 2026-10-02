@@ -93,9 +93,10 @@ export function visibleCaseTasks(
   const personFor = (task: CaseResumeTask) => peopleById.get(task.documentId ?? '') ?? task.person
   const own = all.filter((item) => item.reviewId === reviewId)
   const hiddenReason = (item: CaseResumeTask): ExcludedCaseTask['reason'] | 'deleted' | null => {
-    if (item.origin !== 'search') return null
     const status = personFor(item)?.recordStatus
-    if (status === 'deleted' || !status) return 'deleted'
+    // A deleted person leaves the case's list, however they came into it (找人, 手动添加 or a follow-up).
+    if (status === 'deleted' || (!status && (item.origin === 'search' || item.documentId))) return 'deleted'
+    if (item.origin !== 'search') return null
     // Someone in a follow-up for this case (in place here, say) stays listed with it, whatever else is true now.
     if (hasFollowUp?.(item)) return null
     if (status !== 'active') return 'archived'
