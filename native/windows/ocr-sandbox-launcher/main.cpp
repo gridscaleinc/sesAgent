@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <userenv.h>
 #include <aclapi.h>
+#include <sddl.h>
 
 #include <iostream>
 #include <string>
@@ -131,14 +132,25 @@ int wmain(int argc, wchar_t** argv) {
     printError(L"APPCONTAINER_PROFILE_FAILED", HRESULT_CODE(profileResult));
     return 70;
   }
+  // Electron refuses to start from a directory whose ACL names an AppContainer package
+  // but not ALL APPLICATION PACKAGES, so the grant below must always come as a pair.
+  PSID allApplicationPackagesSid = nullptr;
+  if (!ConvertStringSidToSidW(L"S-1-15-2-1", &allApplicationPackagesSid)) {
+    printError(L"APPCONTAINER_ACL_FAILED", GetLastError());
+    FreeSid(appContainerSid);
+    return 71;
+  }
   for (const auto& root : grantRoots) {
-    const DWORD grantResult = grantReadExecute(root, appContainerSid);
+    DWORD grantResult = grantReadExecute(root, appContainerSid);
+    if (grantResult == ERROR_SUCCESS) grantResult = grantReadExecute(root, allApplicationPackagesSid);
     if (grantResult != ERROR_SUCCESS) {
       printError(L"APPCONTAINER_ACL_FAILED", grantResult);
+      LocalFree(allApplicationPackagesSid);
       FreeSid(appContainerSid);
       return 71;
     }
   }
+  LocalFree(allApplicationPackagesSid);
 
   SIZE_T attributeBytes = 0;
   InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);

@@ -41,7 +41,11 @@ if (process.platform !== 'win32' || process.arch !== 'x64') {
   process.exit(0)
 }
 
-const server = createServer((socket) => socket.end('reachable'))
+const server = createServer((socket) => {
+  // The unsandboxed check destroys its client right away, which can reset this side.
+  socket.on('error', () => undefined)
+  socket.end('reachable')
+})
 await new Promise<void>((resolvePromise, reject) => {
   server.once('error', reject)
   server.listen(0, '127.0.0.1', resolvePromise)
@@ -74,6 +78,8 @@ try {
         dirname(process.execPath),
         '--',
         process.execPath,
+        '--preserve-symlinks',
+        '--preserve-symlinks-main',
         networkProbePath
       ],
       {
@@ -85,6 +91,7 @@ try {
           ComSpec: process.env.ComSpec,
           PATHEXT: process.env.PATHEXT,
           PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
+          LOCALAPPDATA: process.env.LOCALAPPDATA,
           SES_NETWORK_PROBE_PORT: String(port)
         },
         stdio: ['ignore', 'pipe', 'pipe'],

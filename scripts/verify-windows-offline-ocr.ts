@@ -138,7 +138,11 @@ assert.match(stdioResult.pages[0]!.textBlocks.map((block) => block.text).join(' 
 
 let appContainerVerified = false
 if (process.platform === 'win32' && process.arch === 'x64') {
-  const server = createServer((socket) => socket.end('reachable'))
+  const server = createServer((socket) => {
+    // The unsandboxed check destroys its client right away, which can reset this side.
+    socket.on('error', () => undefined)
+    socket.end('reachable')
+  })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(0, '127.0.0.1', resolve)
@@ -166,6 +170,8 @@ if (process.platform === 'win32' && process.arch === 'x64') {
         dirname(process.execPath),
         '--',
         process.execPath,
+        '--preserve-symlinks',
+        '--preserve-symlinks-main',
         `${root}/out/main/windows-network-probe.js`
       ],
       {
@@ -177,6 +183,7 @@ if (process.platform === 'win32' && process.arch === 'x64') {
           ComSpec: process.env.ComSpec,
           PATHEXT: process.env.PATHEXT,
           PROCESSOR_ARCHITECTURE: process.env.PROCESSOR_ARCHITECTURE,
+          LOCALAPPDATA: process.env.LOCALAPPDATA,
           SES_NETWORK_PROBE_PORT: String(port)
         },
         stdio: ['ignore', 'pipe', 'pipe'],
