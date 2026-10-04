@@ -25,10 +25,20 @@ type Repository = Pick<
  * newer current result wins. "Current" means the case version, profile version, rules and matching policy it was
  * made under are still the current ones, so nothing outdated is shown as a fresh result.
  */
-function caseSideMatches(repository: Repository, documentId: string, profileVersion: number, rulesRevision: number) {
+/** Each active case with its latest assessment per person, read once and shared by every person of one request. */
+function caseSideIndex(repository: Repository) {
+  return repository.listActiveJobCases().map((job) => {
+    const latest = new Map<string, CasePersonAssessment>()
+    for (const item of repository.listCaseAssessments(job.id)) if (!latest.has(item.documentId)) latest.set(item.documentId, item)
+    return { job, latest }
+  })
+}
+type CaseSideIndex = ReturnType<typeof caseSideIndex>
+
+function caseSideMatches(index: CaseSideIndex, documentId: string, profileVersion: number, rulesRevision: number) {
   const matches = new Map<string, { item: PersonnelCaseMatch; at: string }>()
-  for (const job of repository.listActiveJobCases()) {
-    const latest: CasePersonAssessment | undefined = repository.listCaseAssessments(job.id).find((item) => item.documentId === documentId)
+  for (const { job, latest: byPerson } of index) {
+    const latest = byPerson.get(documentId)
     if (
       !latest ||
       latest.jobCaseVersion !== job.version ||
@@ -56,12 +66,16 @@ function caseSideMatches(repository: Repository, documentId: string, profileVers
 }
 
 /** The person's stored 找案件 run with the newer case-side results merged in; one made of case-side results alone when there is no run. */
-export function personCaseMatchView(repository: Repository, documentId: string): StoredPersonnelCaseMatchRun | null {
+export function personCaseMatchView(
+  repository: Repository,
+  documentId: string,
+  shared?: { index: CaseSideIndex; rulesRevision: number }
+): StoredPersonnelCaseMatchRun | null {
   const stored = repository.getPersonCaseMatchRun(documentId)
   const profileVersion = repository.getCandidateProfileForAssessment(documentId)?.profileVersion
   if (profileVersion === undefined) return stored
-  const rulesRevision = repository.listWorkRules().revision
-  const caseSide = caseSideMatches(repository, documentId, profileVersion, rulesRevision)
+  const rulesRevision = shared?.rulesRevision ?? repository.listWorkRules().revision
+  const caseSide = caseSideMatches(shared?.index ?? caseSideIndex(repository), documentId, profileVersion, rulesRevision)
   if (!caseSide.size) return stored
   if (!stored) {
     const items = [...caseSide.values()].map((entry) => entry.item)
@@ -100,8 +114,9 @@ export function personCaseMatchView(repository: Repository, documentId: string):
 export function personCaseMatchSummaries(repository: Repository): PersonnelCaseMatchRunSummary[] {
   const stored = new Map(repository.listPersonCaseMatchRunSummaries().map((summary) => [summary.documentId, summary]))
   const people = new Set([...stored.keys(), ...repository.listEligibleTalentProfiles().map((profile) => profile.sourceDocumentId)])
+  const shared = { index: caseSideIndex(repository), rulesRevision: repository.listWorkRules().revision }
   return [...people].flatMap((documentId): PersonnelCaseMatchRunSummary[] => {
-    const view = personCaseMatchView(repository, documentId)
+    const view = personCaseMatchView(repository, documentId, shared)
     if (!view) return []
     return [
       {
