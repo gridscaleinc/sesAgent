@@ -96,6 +96,10 @@ mac:
   binaries:
     - Contents/Resources/native/macos/ses-vision-ocr
     - Contents/Resources/native/macos/ses-wechat-accessibility
+  # Local AI models are read-only data, not code: the app signature seals them as resources (CodeResources hashes),
+  # and signing each file on its own fails on their read-only mode.
+  signIgnore:
+    - Contents/Resources/models/
 
 dmg:
   sign: false

@@ -554,10 +554,9 @@ try {
     !packagedPreloadSource.includes('cancelAgentTurn') ||
     !packagedPreloadSource.includes('onAgentTurnEvent') ||
     !packagedRendererSource.includes('hr-business-nav') ||
-    !packagedRendererSource.includes('发送下一条消息时，Agent 会读取此工作区的最新本机数据') ||
-    !packagedRendererSource.includes('DeepSeek V4 Flash') ||
     !packagedRendererSource.includes('正在理解问题并选择 Tool') ||
-    !packagedRendererSource.includes('matching-page')
+    // The matching workspace redesign replaced the old matching page with the case results page.
+    !packagedRendererSource.includes('case-people-page')
   )
     throw new Error('Packaged ASAR is missing the Agent Main/Preload/Renderer surface or classic matching fallback.')
   if (packagedRendererSource.includes('DeepSeek V4 Flash 正在理解问题并选择 Tool')) {
