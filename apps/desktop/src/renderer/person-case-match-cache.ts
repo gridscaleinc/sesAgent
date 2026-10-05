@@ -196,8 +196,9 @@ export function subscribePersonCaseMatches(listener: () => void): () => void {
   }
 }
 /** Re-renders on any stored result or running change; use `personCaseMatchCount`/`isPersonCaseMatchBusy` inside. */
-export function usePersonCaseMatchCounts() {
-  void hydratePersonCaseMatches()
+/** `hydrate` false leaves the badge fetch to the caller, e.g. until the app is past startup recovery. */
+export function usePersonCaseMatchCounts(hydrate = true) {
+  if (hydrate) void hydratePersonCaseMatches()
   useSyncExternalStore(subscribePersonCaseMatches, () => snapshot)
   return { count: personCaseMatchCount, running: isPersonCaseMatchBusy }
 }

@@ -7,7 +7,7 @@ import {
   useMatchingOpportunities,
   type OpportunityGrouping
 } from './components/MatchingOpportunities'
-import { setActiveCaseVersions, usePersonCaseMatchCounts } from './person-case-match-cache'
+import { hydratePersonCaseMatches, setActiveCaseVersions, usePersonCaseMatchCounts } from './person-case-match-cache'
 import { BusinessProgressContext, progressPairKey, useBusinessProgressData } from './business-progress-data'
 import { BusinessProgressOverview } from './components/BusinessProgressOverview'
 import { CaseIntroductionComposer, type CaseIntroductionTarget } from './components/CaseIntroductionComposer'
@@ -76,8 +76,9 @@ const defaultAgentContextTrail = (): AgentSystemAccessBlock[] => []
 export function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null)
   const businessProgress = useBusinessProgressData(bootstrap)
-  const caseResumes = useCaseResumeAssessments(bootstrap?.preferences.locale ?? 'ja-JP')
-  const personCaseMatches = usePersonCaseMatchCounts()
+  const caseResumes = useCaseResumeAssessments(bootstrap?.preferences.locale ?? 'ja-JP', bootstrap !== null)
+  // Badge counts are fetched once the normal session is up: startup recovery registers no personnel handlers.
+  const personCaseMatches = usePersonCaseMatchCounts(false)
   const [assessmentReviewId, setAssessmentReviewId] = useState<string | null>(null)
   // 找人 results replace the case list in the main area; the list stays mounted underneath to keep its place.
   const [casePeopleOpen, setCasePeopleOpen] = useState(false)
@@ -260,6 +261,9 @@ export function App() {
   const selectedTaskId = selectedTask?.id ?? null
   const commandPaletteAvailable = bootstrap !== null && startupRecovery === null && loadError === null
   const normalSessionReady = bootstrap !== null && startupRecovery === null
+  useEffect(() => {
+    if (normalSessionReady) void hydratePersonCaseMatches()
+  }, [normalSessionReady])
   const locale = bootstrap?.preferences.locale ?? 'ja-JP'
   // The Agent chat and the 批量 intake start on the 批量核对 model; the saved setting applies without a reload.
   const checkingModelChoice = bootstrap?.preferences.aiModels?.checking

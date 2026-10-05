@@ -158,7 +158,8 @@ export function tokyoDateTime(value: string, zh: boolean): string {
 }
 
 /** App-owned tasks survive panel navigation. Files stay in memory only while needed. */
-export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
+/** `ready` false (startup recovery, before bootstrap) holds the saved-data reads until the normal session is up. */
+export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP', ready = true) {
   const localeRef = useRef(locale)
   localeRef.current = locale
   const [tasks, setTasks] = useState<CaseResumeTask[]>([])
@@ -215,10 +216,11 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
       })
   }, [])
   useEffect(() => {
+    if (!ready) return undefined
     refreshAvailability()
     window.addEventListener('ses-business-data-changed', refreshAvailability)
     return () => window.removeEventListener('ses-business-data-changed', refreshAvailability)
-  }, [refreshAvailability])
+  }, [refreshAvailability, ready])
   const visible = useCallback(
     (reviewId: string, people: CandidateReviewSnapshot[], hasFollowUp?: (task: CaseResumeTask) => boolean) =>
       visibleCaseTasks(tasks, reviewId, people, unavailable, hasFollowUp),
@@ -227,6 +229,7 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
   // Saved counts for the case list, read once so 「查看人员 (n)」 survives a restart before any panel is opened.
   const [savedSearches, setSavedSearches] = useState<Record<string, CaseSearchSummary>>({})
   useEffect(() => {
+    if (!ready) return undefined
     let active = true
     Promise.resolve(window.sesAgent.listCaseSearchSummaries?.())
       .then((values) => {
@@ -238,7 +241,7 @@ export function useCaseResumeAssessments(locale: ApplicationLocale = 'ja-JP') {
     return () => {
       active = false
     }
-  }, [])
+  }, [ready])
   /** What each case card shows: the panel's own list once this session has data for the case, else the saved count. */
   const cardStates = useCallback(
     (people: CandidateReviewSnapshot[], hasFollowUp?: (task: CaseResumeTask) => boolean) => {

@@ -365,6 +365,8 @@ function parseAgentSmoke(output) {
 async function launchSmoke(agentSmokeConversationId = null) {
   return new Promise((resolveResult, reject) => {
     const env = { ...process.env, SES_RELEASE_SMOKE: '1' }
+    // Logs are matched as plain text: a terminal's FORCE_COLOR would wrap them in colour codes.
+    delete env.FORCE_COLOR
     if (agentSmokeConversationId) env.SES_AGENT_SMOKE_CONVERSATION_ID = agentSmokeConversationId
     else delete env.SES_AGENT_SMOKE_CONVERSATION_ID
     const child = spawn(executablePath, [`--user-data-dir=${userDataPath}`], {
@@ -562,11 +564,12 @@ try {
   if (packagedRendererSource.includes('DeepSeek V4 Flash 正在理解问题并选择 Tool')) {
     throw new Error('Packaged Agent progress text exposes a concrete model name.')
   }
+  // The product's Desktop OAuth client secret is built in on purpose: Google's token endpoint requires it for Desktop
+  // clients, and Google treats it as not confidential for installed apps. Sending mail and drafts stay forbidden.
   for (const forbiddenGmailCapability of [
     '/gmail/v1/users/me/drafts',
     '/gmail/v1/users/me/messages/send',
-    '/gmail/v1/users/me/drafts/send',
-    'client_secret'
+    '/gmail/v1/users/me/drafts/send'
   ]) {
     if (packagedMainSource.includes(forbiddenGmailCapability)) {
       throw new Error(`Packaged application contains forbidden Gmail capability ${forbiddenGmailCapability}.`)
