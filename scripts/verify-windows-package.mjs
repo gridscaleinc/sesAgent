@@ -548,7 +548,7 @@ try {
         macHelperExcluded: true,
         localOcrStatus: offlineOcr.evidence.verified ? 'available-after-kernel-verification' : 'bundled-disabled-fail-closed',
         keyProtection: 'windows-dpapi',
-        schemaVersion: 37,
+        schemaVersion: expectedSchemaVersion,
         encryptedDatabase: true,
         rendererReady: launch.output.includes('[renderer-ready]'),
         packagedParserCompleted: workerSmoke.result.parserCompleted,
