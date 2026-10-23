@@ -27,7 +27,7 @@ function commands(overrides: Partial<BusinessCommand>[] = []): BusinessCommand[]
       id: 'governance',
       group: '統制',
       label: { zh: '打开数据与审批', ja: 'データと承認を開く' },
-      description: { zh: '脱敏与备份', ja: '脱敏とバックアップ' },
+      description: { zh: '脱敏与备份', ja: 'マスキングとバックアップ' },
       keywords: ['privacy'],
       icon: 'shield',
       run: vi.fn()

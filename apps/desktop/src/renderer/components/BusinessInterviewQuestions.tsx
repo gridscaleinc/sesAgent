@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BusinessFollowUp, CandidateInterviewQuestion, CandidateInterviewSnapshot } from '@shared'
 import { interviewDimensionLabels, interviewQuestionDimensions } from '@shared'
-import { aiServiceProblem, localizedAiServiceProblem, useLocaleText, localeText } from '../i18n'
+import { aiServiceProblem, localizedAiServiceProblem, useLocaleText, localeText, type AiServiceProblem } from '../i18n'
+import { AiServiceProblemActions } from './AiServiceProblemActions'
 import { useBusinessProgress } from '../business-progress-data'
 import './ai-work-rules.css'
 
@@ -190,6 +191,7 @@ export function BusinessInterviewQuestions({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('')
+  const [errorProblem, setErrorProblem] = useState<AiServiceProblem | null>(null)
   const lock = useRef(false)
   const [draftNotice, setDraftNotice] = useState(''),
     [draftStale, setDraftStale] = useState(false),
@@ -238,11 +240,13 @@ export function BusinessInterviewQuestions({
     lock.current = true
     setBusy(true)
     setError('')
+    setErrorProblem(null)
     setNotice('')
     try {
       await work()
     } catch (cause) {
       setError(failed(cause))
+      setErrorProblem(aiServiceProblem(cause))
     } finally {
       lock.current = false
       setBusy(false)
@@ -322,7 +326,12 @@ export function BusinessInterviewQuestions({
           {draftNotice}
         </p>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? (
+        <p role="alert">
+          {error}
+          <AiServiceProblemActions problem={errorProblem} />
+        </p>
+      ) : null}
       {notice ? <p role="status">{notice}</p> : null}
       {shown.length ? (
         <div className="interview-question-list">

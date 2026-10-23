@@ -123,13 +123,14 @@ export function GoogleWorkspaceSettingsDialog({ configuration, connected, onClos
             </p>
           </div>
           <button
+            className="close-button"
             aria-label={t('关闭 Google Workspace 管理员设置', 'Google Workspace 管理者設定を閉じる')}
             data-initial-focus={managed ? 'true' : undefined}
             disabled={busy || restarting}
             onClick={onClose}
             type="button"
           >
-            ×
+            <Icon name="x" size={18} />
           </button>
         </header>
 

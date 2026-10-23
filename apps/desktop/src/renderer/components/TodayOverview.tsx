@@ -13,6 +13,7 @@ import type {
 import { Icon } from './Icon'
 import { useLocaleText } from '../i18n'
 import './today-overview.css'
+import { VendorCredit } from './VendorCredit'
 
 type Text = (zh: string, ja: string) => string
 
@@ -533,7 +534,7 @@ export function TodayOverview({
               <dd>{summary.week.casesCreated}</dd>
             </div>
             <div>
-              <dt>{t('推荐人员', '推薦')}</dt>
+              <dt>{t('推荐人员', '提案')}</dt>
               <dd>{summary.week.recommended}</dd>
             </div>
             <div>
@@ -542,6 +543,7 @@ export function TodayOverview({
             </div>
           </dl>
         </section>
+        <VendorCredit className="today-vendor-credit" />
       </div>
     </section>
   )

@@ -299,7 +299,7 @@ export function businessProgressStep(
     stage = 'feedback'
   const roundNumber = nextBusinessRound(progress)
   const labels: Record<BusinessProgressStage, [string, string, string, string]> = {
-    recommended: ['已推荐', '推薦済み', '安排面试', '面談を調整'],
+    recommended: ['已推荐', '提案済み', '安排面试', '面談を調整'],
     coordinating: ['待约面', '日程調整中', '安排面试', '面談を予約'],
     scheduled: [`${latest?.roundNumber ?? 1} 面已预约`, `${latest?.roundNumber ?? 1} 次面談を予約済み`, '查看面试安排', '面談予定を見る'],
     feedback: ['待面试反馈', '面談結果待ち', '记录面试结果', '面談結果を記録'],

@@ -638,6 +638,13 @@ function registerIpcHandlers(dependencies: MainIpcDependencies): () => void {
   context.attachDispatcher(safeLocalDispatcher)
   safeLocalDispatcher.start()
 
+  // Cases the background AI completion filled: the open window reloads them, like a finished sync.
+  context.jobCaseAiFiller.onFilled((reviewIds) => {
+    sendToMainWindow(ipcChannels.jobCasesAiFilled, { reviewIds })
+    trayController?.refresh()
+    todaySummary?.refresh()
+  })
+
   // Scheduled Gmail sync: the same guarded sync as the manual button, on a
   // fixed cadence while the app runs. Catch up five seconds after launch; an
   // in-flight sync is never doubled, and failures back off exponentially.

@@ -509,6 +509,11 @@ describe('App workbench', { timeout: 20_000 }, () => {
       openZoomMeeting: vi.fn().mockResolvedValue({ opened: true }),
       openInterviewMeeting: vi.fn().mockResolvedValue({ opened: true }),
       openZoomTestMeeting: vi.fn().mockResolvedValue({ opened: true }),
+      openVendorSite: vi.fn().mockResolvedValue({ opened: true }),
+      fillJobCaseFieldsWithAi: vi.fn(),
+      onJobCasesAiFilled: vi.fn(() => () => undefined),
+      suggestJobCaseFieldCorrections: vi.fn(),
+      applyJobCaseFieldCorrections: vi.fn(),
       createManualJobCaseDraft: vi.fn(),
       createChatPasteJobCaseDraft: vi.fn(),
       importCaseTextBatch: vi.fn(),
@@ -872,13 +877,13 @@ describe('App workbench', { timeout: 20_000 }, () => {
     await waitForHrShell()
     fireEvent.click(hrRail().getByRole('button', { name: '設定' }))
     const settings = await screen.findByRole('dialog', { name: '設定' })
-    expect(within(settings).getByText('表示名と担当ロールを設定します。')).toBeInTheDocument()
-    fireEvent.click(within(settings).getByRole('button', { name: /本機ユーザープロフィール/ }))
-    const dialog = await screen.findByRole('dialog', { name: '操作員プロフィール' })
-    expect(within(dialog).getByText('プロフィールは送信対象外')).toBeInTheDocument()
+    expect(within(settings).getByText('名前と役割を設定します。')).toBeInTheDocument()
+    fireEvent.click(within(settings).getByRole('button', { name: /^プロフィール/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'プロフィール' })
+    expect(within(dialog).getByText('クラウドのAIには送信しません。')).toBeInTheDocument()
     fireEvent.change(within(dialog).getByLabelText('表示名'), { target: { value: '佐藤 美咲' } })
     fireEvent.change(within(dialog).getByLabelText('役割'), { target: { value: 'SES営業担当' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: '暗号化して保存' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
 
     await waitFor(() =>
       expect(window.sesAgent.saveLocalOperatorProfile).toHaveBeenCalledWith({
@@ -887,9 +892,9 @@ describe('App workbench', { timeout: 20_000 }, () => {
         expectedRevision: null
       })
     )
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '操作員プロフィール' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'プロフィール' })).not.toBeInTheDocument())
     fireEvent.click(hrRail().getByRole('button', { name: '設定' }))
-    expect(await screen.findByRole('button', { name: /本機ユーザープロフィール.*佐藤 美咲 · SES営業担当/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^プロフィール.*佐藤 美咲 · SES営業担当/ })).toBeInTheDocument()
     expect(screen.queryByText('山田 太郎')).not.toBeInTheDocument()
   })
 
@@ -918,7 +923,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     expect(await screen.findByRole('heading', { name: '案件をインポート' })).toBeInTheDocument()
     const dialog = await screen.findByRole('dialog', { name: '案件情報を手動で追加' })
     expect(dialog).toBeInTheDocument()
-    expect(screen.getByText('入力はまず端末内で脱敏されます')).toBeInTheDocument()
+    expect(screen.getByText('入力はまず端末内でマスキングされます')).toBeInTheDocument()
 
     expect(hrRail().getByRole('button', { name: '案件' })).toHaveAttribute('aria-current', 'page')
     fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }))
@@ -1077,7 +1082,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     expect(screen.queryByRole('textbox', { name: 'SES Agent への指示' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '新規タスク' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '情報整理・紹介ワークスペース' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '案件を追加' }))
+    fireEvent.click(screen.getByRole('button', { name: '案件登録' }))
     const paste = screen.getByRole('textbox', { name: '案件内容' })
     fireEvent.change(paste, { target: { value: '案件名：Java 基盤\n必須：Java' } })
     fireEvent.click(screen.getByRole('button', { name: '業務パネルを閉じる' }))
@@ -1085,7 +1090,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByRole('button', { name: '採用面談' }))
     expect(await screen.findByRole('heading', { name: '採用面談' })).toBeVisible()
     fireEvent.click(within(screen.getByRole('complementary', { name: 'システムナビゲーション' })).getByRole('button', { name: '案件' }))
-    fireEvent.click(screen.getByRole('button', { name: '案件を追加' }))
+    fireEvent.click(screen.getByRole('button', { name: '案件登録' }))
     expect(screen.getByRole('textbox', { name: '案件内容' })).toHaveValue('案件名：Java 基盤\n必須：Java')
   })
 
@@ -1189,7 +1194,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     expect(rail.queryByLabelText('確認が必要な操作あり')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /確認が必要な操作を開く|レビューセンターを開く/u })).not.toBeInTheDocument()
     expect(screen.queryByText(bootstrap.tasks[1]!.title)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '案件を追加' }))
+    fireEvent.click(screen.getByRole('button', { name: '案件登録' }))
     expect(await screen.findByRole('complementary', { name: '業務ワークスペース' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '案件内容' })).toBeVisible()
     expect(screen.queryByRole('complementary', { name: 'SES Agent' })).not.toBeInTheDocument()
@@ -1274,15 +1279,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     await waitForHrShell()
     await pressCommandShortcut()
     const options = (await screen.findAllByRole('option')).map((option) => option.textContent ?? '')
-    for (const label of [
-      '要員を探す',
-      '案件を探す',
-      '案件一覧を開く',
-      '要員一覧を開く',
-      '対応記録を開く',
-      '案件を追加',
-      '要員を取り込む'
-    ]) {
+    for (const label of ['要員を探す', '案件を探す', '案件一覧を開く', '要員一覧を開く', '対応記録を開く', '案件登録', '要員を取り込む']) {
       expect(options.some((text) => text.startsWith(label))).toBe(true)
     }
     expect(options.some((text) => /案件レビューを開く|候補者プールを開く/.test(text))).toBe(false)
@@ -1291,7 +1288,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     expect(hrRail().getByRole('button', { name: '対応記録' })).toHaveAttribute('aria-current', 'page')
 
     await pressCommandShortcut()
-    await chooseCommand(/^案件を追加/)
+    await chooseCommand(/^案件登録/)
     expect(await screen.findByRole('textbox', { name: '案件内容' })).toBeVisible()
     expect(hrRail().getByRole('button', { name: '案件' })).toHaveAttribute('aria-current', 'page')
 
@@ -2573,7 +2570,7 @@ describe('App workbench', { timeout: 20_000 }, () => {
     const caseList = screen.getByRole('region', { name: '案件一覧' })
     expect(screen.getAllByRole('button', { name: 'Agentに質問' })).toHaveLength(1)
     expect(caseList.querySelector('.hr-list-toolbar')).toContainElement(screen.getByRole('button', { name: 'Agentに質問' }))
-    expect(within(caseList).getByText('脱敏済みのみ送信')).toBeVisible()
+    expect(within(caseList).getByText('マスキング済みデータのみ送信')).toBeVisible()
     fireEvent.click(card)
     await screen.findByRole('complementary', { name: '業務ワークスペース' })
     // Broadcasting is used often, so it is a visible button in the card footer, not hidden in 「…」.

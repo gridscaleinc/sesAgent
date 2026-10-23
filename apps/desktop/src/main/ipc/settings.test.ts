@@ -4,8 +4,12 @@ import { ipcChannels } from '@shared'
 import { registerSettingsHandlers } from './settings'
 import { assertTrustedSender } from './context'
 import { onApplicationPreferencesSaved } from '../preference-events'
-const mock = vi.hoisted(() => ({ handlers: new Map<string, (event: unknown, raw: unknown) => unknown>() }))
-vi.mock('electron', () => ({ clipboard: {}, ipcMain: { handle: (key: string, handler: any) => mock.handlers.set(key, handler) } }))
+const mock = vi.hoisted(() => ({ handlers: new Map<string, (event: unknown, raw: unknown) => unknown>(), openExternal: vi.fn() }))
+vi.mock('electron', () => ({
+  clipboard: {},
+  shell: { openExternal: mock.openExternal },
+  ipcMain: { handle: (key: string, handler: any) => mock.handlers.set(key, handler) }
+}))
 vi.mock('./context', () => ({ assertTrustedSender: vi.fn() }))
 vi.mock('./resume-import', () => ({ hydrateConversationResumeFacts: vi.fn() }))
 const id = '11111111-1111-4111-8111-111111111111'
@@ -116,4 +120,14 @@ it('saves the menu-bar choice and tells the menu-bar icon to follow it; an inval
   } finally {
     stop()
   }
+})
+
+it('opens only the vendor pages it knows, never a URL the renderer sends', async () => {
+  setup()
+  const open = (site: unknown) => mock.handlers.get(ipcChannels.openVendorSite)!({}, site)
+  await expect(open('gridscale')).resolves.toEqual({ opened: true })
+  await expect(open('appshelf')).resolves.toEqual({ opened: true })
+  expect(mock.openExternal.mock.calls).toEqual([['https://www.gridscale.com'], ['https://appshelf.gridscale.com']])
+  await expect(open('https://example.com')).rejects.toThrow()
+  expect(mock.openExternal).toHaveBeenCalledTimes(2)
 })

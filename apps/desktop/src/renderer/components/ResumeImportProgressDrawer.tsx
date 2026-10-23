@@ -67,8 +67,14 @@ export function ResumeImportProgressDrawer({
             )}
           </p>
         </div>
-        <button aria-label={t('关闭导入进度', '取込進捗を閉じる')} disabled={parsing} onClick={onClose} type="button">
-          ×
+        <button
+          className="close-button"
+          aria-label={t('关闭导入进度', '取込進捗を閉じる')}
+          disabled={parsing}
+          onClick={onClose}
+          type="button"
+        >
+          <Icon name="x" size={18} />
         </button>
       </header>
       <div className="resume-import-progress-summary">

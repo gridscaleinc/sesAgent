@@ -48,7 +48,7 @@ import { rejectedByHr } from '../work-rule-matching'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 const hrRejectedMessage =
-  '这个人员已被判定不满足该案件的要求，不能介绍、推荐或安排面试；如判断有变，请先在匹配中撤回「不满足」。 / この要員は案件の条件を満たさないと判断済みのため、紹介・推薦・面談の設定はできません。判断が変わった場合は、マッチング画面で「満たさない」を取り消してください。'
+  '这个人员已被判定不满足该案件的要求，不能介绍、推荐或安排面试；如判断有变，请先在匹配中撤回「不满足」。 / この要員は案件の条件を満たさないと判断済みのため、紹介・提案・面談の設定はできません。判断が変わった場合は、マッチング画面で「満たさない」を取り消してください。'
 
 export function registerPersonnelHandlers(context: MainIpcContext) {
   const { repository, currentOperator } = context

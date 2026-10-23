@@ -55,7 +55,8 @@ import {
   jobCaseFieldKeys,
   type CandidateMatchAssessmentFit,
   type MatchAiOpinion,
-  type JobCaseFieldAliasMap
+  type JobCaseFieldAliasMap,
+  type JobCaseFieldKey
 } from '@shared/contracts'
 import { jobCaseFieldAliasInstructionLine } from '@shared'
 import { recommendationPointLimits, type RecommendationPoint, type RecommendationPointsEmptyReason } from '@shared'
@@ -155,6 +156,20 @@ export interface AgentBusinessTextExtractionInput {
   aliases?: JobCaseFieldAliasMap
   /** Whole case paste: semantic segmentation, complete coverage, no local single-record fallback. */
   caseBatch?: boolean
+  model: AgentChatModelDefinition
+  signal: AbortSignal
+  onClientRequestId(clientRequestId: string): void
+  onRemoteSettled(): void
+}
+
+export interface AgentJobCaseFieldCompletionInput {
+  conversationId: string
+  requestId: string
+  /** The stored redacted subject (L1) and body of one imported case: the text cloud callers may read. */
+  text: string
+  /** The case's empty fields; the model is asked for these only. */
+  keys: readonly JobCaseFieldKey[]
+  aliases?: JobCaseFieldAliasMap
   model: AgentChatModelDefinition
   signal: AbortSignal
   onClientRequestId(clientRequestId: string): void
@@ -859,6 +874,16 @@ export const businessTextExtractionInstructions = [
   'Never output prose, markdown, or anything beyond the single JSON object.'
 ].join(' ')
 
+/** The field-rich protocol narrowed to completing one imported case: one record, the empty fields only. */
+export function jobCaseFieldCompletionInstructions(keys: readonly JobCaseFieldKey[], aliases: JobCaseFieldAliasMap): string {
+  return [
+    businessTextExtractionInstructionsFor(aliases),
+    'This request completes ONE job case already imported from an email or file; L1 is its subject and the rest its body.',
+    'Return at most one job-case record: the case the subject names, or the first case when the text lists several. Never return a candidate record.',
+    `Its fields may use only these keys: ${keys.join(', ')}. Omit every other key and every key the text does not state.`
+  ].join(' ')
+}
+
 const businessTextExtractionSchema = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('unusable') }).strict(),
   z.object({
@@ -903,13 +928,23 @@ function collapseSpaces(value: string): string {
  * 、-joined list verbatim. Anything else - a paraphrase, a translation, a
  * value from a neighbouring record, an invention - is dropped.
  */
+/**
+ * The spellings a model rewrites while copying - ～ for 〜 (2026年11月～), full-width for half-width digits and
+ * letters - compare as the same text. Nothing absent from the record becomes verbatim this way.
+ */
+function comparableText(text: string): string {
+  return text.normalize('NFKC').replace(/[~〜]/gu, '〜')
+}
+
 function verbatimFieldValue(value: string, recordText: string): string | null {
   const trimmed = collapseSpaces(value)
   if (!trimmed) return null
   if (recordText.includes(trimmed)) return trimmed
+  const source = comparableText(recordText)
+  if (source.includes(comparableText(trimmed))) return trimmed
   const fragments = trimmed.split(fieldFragmentSeparator).filter((fragment) => fragment.length > 0)
   if (fragments.length === 0) return null
-  return fragments.every((fragment) => recordText.includes(fragment)) ? trimmed : null
+  return fragments.every((fragment) => source.includes(comparableText(fragment))) ? trimmed : null
 }
 
 /**
@@ -2010,6 +2045,46 @@ export class AgentCloudNarrativeService implements AgentNarrativeStreamer {
         input.onRemoteSettled()
       }
     }
+  }
+
+  /**
+   * Reads the empty fields of one imported case from its stored redacted
+   * source. Same protocol and checks as the paste intake: every value must be
+   * copied verbatim from the record's own lines, so nothing beyond the stored
+   * redacted text can reach the case.
+   */
+  async completeJobCaseFields(input: AgentJobCaseFieldCompletionInput): Promise<Partial<Record<JobCaseFieldKey, string>>> {
+    if (!input.keys.length) return {}
+    const { projection, lines } = buildAgentBusinessTextExtractionProjection(input.text)
+    let content: string
+    let mappings: LocalPiiMapping[]
+    try {
+      const invoked = await this.invokeCloud({
+        conversationId: input.conversationId,
+        requestId: `${input.requestId}-case-complete`,
+        projection,
+        projectionKind: 'business-extraction',
+        instructions: jobCaseFieldCompletionInstructions(input.keys, input.aliases ?? {}),
+        model: input.model,
+        maxOutputTokens: planningOutputTokenBudget,
+        signal: input.signal,
+        onClientRequestId: input.onClientRequestId,
+        onDelta: () => undefined
+      })
+      content = invoked.result.content
+      mappings = invoked.mappings
+    } finally {
+      input.onRemoteSettled()
+    }
+    const redactedLines = lines.map((line) => applyLocalPiiMappings(line, mappings))
+    const extraction = parseAgentBusinessTextExtractionResponse(content, redactedLines, mappings)
+    const record = extraction.kind === 'records' ? extraction.records.find((item) => item.kind === 'job-case') : undefined
+    const values: Partial<Record<JobCaseFieldKey, string>> = {}
+    for (const key of input.keys) {
+      const value = record?.fields[key]
+      if (value) values[key] = value
+    }
+    return values
   }
 
   async assessMatchCandidates(input: AgentMatchAssessmentInput): Promise<AgentMatchAssessmentResult> {

@@ -9,7 +9,7 @@ import {
 } from '@shared'
 import { unconfiguredAiCommerceState } from '../app-defaults'
 import { validateCloudAiResponseForDisplay } from '../cloud-ai-privacy'
-import { recordAiCommerceWallet } from '../tray-data'
+import { recordAiCommerceWallet, resetObservedAiCommerceWallet } from '../tray-data'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
 /** Managed AICommerce membership plus the two-phase cloud prompt review flow. */
@@ -33,6 +33,8 @@ export function registerAiCommerceHandlers(context: MainIpcContext) {
 
   ipcMain.handle(ipcChannels.disconnectAiCommerce, async (event): Promise<AiCommerceMembershipState> => {
     assertTrustedSender(event)
+    // The next member who signs in must not see this member's balance.
+    resetObservedAiCommerceWallet()
     return aiCommerce ? aiCommerce.disconnect() : unconfiguredAiCommerceState()
   })
 

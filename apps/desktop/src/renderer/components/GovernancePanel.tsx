@@ -157,7 +157,7 @@ export function GovernancePanel({
           ),
           MESSAGE_PROCESSING_FAILED: t(
             '部分邮件本地脱敏失败，同步检查点未推进。',
-            '一部メールのローカル脱敏に失敗しました。チェックポイントは進めていません。'
+            '一部メールのローカルマスキングに失敗しました。チェックポイントは進めていません。'
           ),
           GMAIL_HTTP_401: t(
             'Gmail API 拒绝了授权，请重新连接 Google 邮箱账号。',
@@ -473,12 +473,12 @@ export function GovernancePanel({
             </button>
             <button
               aria-label={t('关闭数据与审批面板', 'データと承認パネルを閉じる')}
-              className="governance-responsive-close"
+              className="governance-responsive-close close-button"
               onClick={onClose}
               ref={responsiveCloseRef}
               type="button"
             >
-              ×
+              <Icon name="x" size={18} />
             </button>
           </div>
         </div>
@@ -489,7 +489,7 @@ export function GovernancePanel({
           </div>
           <div>
             <div className="card-title-row">
-              <h3>{t('云端发送前脱敏', 'クラウド送信前の脱敏')}</h3>
+              <h3>{t('云端发送前脱敏', 'クラウド送信前のマスキング')}</h3>
               <span className="status-chip success">{t('强制', '強制')}</span>
             </div>
             <p>
@@ -785,7 +785,7 @@ export function GovernancePanel({
             <p>
               {t(
                 '在设备内运行已脱敏的 SES 专家标签，验证混合检索的 Recall@20、NDCG@20 与项目证据。',
-                '脱敏済みの SES 専門家ラベルを端末内で実行し、Hybrid Retrieval の Recall@20・NDCG@20・Project Evidence を検証します。'
+                'マスキング済みの SES 専門家ラベルを端末内で実行し、Hybrid Retrieval の Recall@20・NDCG@20・Project Evidence を検証します。'
               )}
             </p>
             {evaluation.dataset && evaluationReport ? (
@@ -855,7 +855,7 @@ export function GovernancePanel({
               <div className="evaluation-empty">
                 {t(
                   '请选择包含 30–50 个已脱敏案件和匿名人员正确标签的 Benchmark v1。',
-                  '30–50 件の脱敏済み案件と匿名候補者正解ラベルを含む Benchmark v1 を選択してください。'
+                  '30–50 件のマスキング済み案件と匿名候補者正解ラベルを含む Benchmark v1 を選択してください。'
                 )}
               </div>
             )}
@@ -1030,12 +1030,13 @@ export function GovernancePanel({
                 </p>
               </div>
               <button
+                className="close-button"
                 aria-label={t('关闭恢复对话框', '復元ダイアログを閉じる')}
                 disabled={recoveryBusy || restartScheduled}
                 onClick={closeRecoveryDialog}
                 type="button"
               >
-                ×
+                <Icon name="x" size={18} />
               </button>
             </header>
 

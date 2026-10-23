@@ -66,7 +66,7 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
       })
       onClose()
     } catch (cause) {
-      setError(localizedIpcError(locale, cause, t('无法保存操作员档案。', '操作員プロフィールを保存できませんでした。')))
+      setError(localizedIpcError(locale, cause, t('无法保存个人资料。', 'プロフィールを保存できませんでした。')))
       setBusy(false)
     }
   }
@@ -90,17 +90,18 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
       >
         <header>
           <div>
-            <span>{t('本机操作员', 'この端末の操作員')}</span>
-            <h2 id="operator-profile-title">{t('操作员档案', '操作員プロフィール')}</h2>
-            <p>
-              {t(
-                '这是用于审核、审批、删除和提案审计记录的本机显示信息。',
-                'レビュー・承認・削除・提案の監査記録に使う本機内の表示情報です。'
-              )}
-            </p>
+            <span>{t('账户', 'アカウント')}</span>
+            <h2 id="operator-profile-title">{t('个人资料', 'プロフィール')}</h2>
+            <p>{t('你的名字会显示在跟进、提案等操作记录中。', '名前は対応記録や提案などの操作履歴に表示されます。')}</p>
           </div>
-          <button aria-label={t('关闭操作员档案', '操作員プロフィールを閉じる')} disabled={busy} onClick={onClose} type="button">
-            ×
+          <button
+            className="close-button"
+            aria-label={t('关闭个人资料', 'プロフィールを閉じる')}
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+          >
+            <Icon name="x" size={18} />
           </button>
         </header>
 
@@ -109,8 +110,8 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
             <div className="operator-profile-callout">
               <Icon name="alert" size={17} />
               <span>
-                <strong>{t('档案未设置', 'プロフィール未設定')}</strong>
-                {t('当前新操作将以中性名称“本机用户”记录。', '現在の新規操作は中立名「本機ユーザー」で記録されます。')}
+                <strong>{t('还没有设置名字', '名前が未設定です')}</strong>
+                {t('设置之前，操作记录中会显示为“本机用户”。', '設定するまで、操作履歴には「本機ユーザー」と表示されます。')}
               </span>
             </div>
           ) : null}
@@ -140,34 +141,16 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
           <div className="operator-profile-policy">
             <div>
               <Icon name="lock" size={15} />
-              <span>
-                <strong>{t('保存位置', '保存先')}</strong> {t('SQLCipher 加密本地数据库', 'SQLCipher 暗号化ローカルDB')}
-              </span>
+              <span>{t('只加密保存在这台电脑里。', 'この端末の中だけに暗号化して保存します。')}</span>
             </div>
             <div>
               <Icon name="shield" size={15} />
-              <span>
-                <strong>{t('云端', 'クラウド')}</strong> {t('档案不属于发送对象', 'プロフィールは送信対象外')}
-              </span>
-            </div>
-            <div>
-              <Icon name="check" size={15} />
-              <span>
-                <strong>{t('用途', '用途')}</strong> {t('新建审计记录中的操作员显示信息', '新しく作成する監査記録の操作員表示')}
-              </span>
+              <span>{t('不会发送给云端 AI。', 'クラウドのAIには送信しません。')}</span>
             </div>
           </div>
           <p className="operator-profile-history-note">
-            {t(
-              '不会修改现有审计记录；即使更改显示名称，历史审批人名称仍按当时记录保留。',
-              '既存の監査記録は改変しません。表示名を変更しても、過去の承認者名は当時の記録として保持されます。'
-            )}
+            {t('修改名字后，之前的记录仍显示当时的名字。', '名前を変えても、これまでの記録は当時の名前のまま残ります。')}
           </p>
-          {profile.configured ? (
-            <p className="operator-profile-id">
-              Operator ID <code>{profile.operatorId}</code> · Revision {profile.revision}
-            </p>
-          ) : null}
           {error ? (
             <p className="operator-profile-error" role="alert">
               <Icon name="alert" size={15} />
@@ -181,7 +164,7 @@ export function LocalOperatorProfileDialog({ profile, onClose, onSave }: LocalOp
             {t('取消', 'キャンセル')}
           </button>
           <button disabled={!canSave} onClick={() => void save()} type="button">
-            {busy ? t('正在保存…', '保存中…') : t('加密保存', '暗号化して保存')}
+            {busy ? t('正在保存…', '保存中…') : t('保存', '保存')}
           </button>
         </footer>
       </section>

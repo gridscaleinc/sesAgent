@@ -6,7 +6,8 @@ import {
   createTraySummarySource,
   recordAiCommerceWallet,
   resetObservedAiCommerceWallet,
-  trayWalletRefreshMs
+  trayWalletRefreshMs,
+  withObservedAiCommerceDashboard
 } from './tray-data'
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -61,6 +62,42 @@ function setup(options: { connection?: string; revision?: () => number } = {}) {
 }
 
 afterEach(() => resetObservedAiCommerceWallet())
+
+describe('withObservedAiCommerceDashboard', () => {
+  const member = (accountId: string | null, connection: 'connected' | 'not-connected' = 'connected') => ({
+    configuration: 'ready' as const,
+    connection,
+    productCode: 'ses',
+    billingMode: 'automatic' as const,
+    memberDisplayName: 'gridscale',
+    accountId,
+    accountAiTokenExpiresAt: null,
+    wallet: null,
+    capabilities: [],
+    refreshedAt: null
+  })
+  const capability = { alias: 'chat', displayName: 'Chat', modality: 'text' }
+
+  it("gives every bootstrap the signed-in member's last fetched balance and capabilities", () => {
+    const at = new Date('2026-10-23T09:00:00Z').getTime()
+    recordAiCommerceWallet({ wallet: { balanceCredits: 500, reservedCredits: 20 }, accountId: 'acct-1', capabilities: [capability] }, at)
+    // A cloud reply names no account and no capabilities: the balance updates, the rest is kept.
+    recordAiCommerceWallet({ wallet: { balanceCredits: 480, reservedCredits: 0 } }, at + 1000)
+    expect(withObservedAiCommerceDashboard(member('acct-1'))).toMatchObject({
+      wallet: { balanceCredits: 480, reservedCredits: 0 },
+      capabilities: [capability],
+      refreshedAt: new Date(at + 1000).toISOString()
+    })
+  })
+
+  it("never shows another member's balance, or one while signed out or after signing out", () => {
+    recordAiCommerceWallet({ wallet: { balanceCredits: 500, reservedCredits: 0 }, accountId: 'acct-1', capabilities: [] })
+    expect(withObservedAiCommerceDashboard(member('acct-2')).wallet).toBeNull()
+    expect(withObservedAiCommerceDashboard(member('acct-1', 'not-connected')).wallet).toBeNull()
+    resetObservedAiCommerceWallet()
+    expect(withObservedAiCommerceDashboard(member('acct-1')).wallet).toBeNull()
+  })
+})
 
 describe('createTraySummarySource', () => {
   it('reads the wallet only when the panel opens, at most every ten minutes', async () => {

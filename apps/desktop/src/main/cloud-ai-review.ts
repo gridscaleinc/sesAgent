@@ -146,7 +146,7 @@ export class CloudAiReviewService<TProviderResponse> {
 
   async prepare(content: string, actorId: string): Promise<PrepareAiCommerceCloudPromptResult> {
     this.expire()
-    if (this.preparing) throw new Error('別の Cloud AI 脱敏プレビューを準備中です。完了後にもう一度実行してください。')
+    if (this.preparing) throw new Error('別の Cloud AI マスキング後のプレビューを準備中です。完了後にもう一度実行してください。')
     this.preparing = true
     try {
       for (const pending of this.pendingReviews.values()) {
@@ -177,7 +177,7 @@ export class CloudAiReviewService<TProviderResponse> {
         nonReviewFailures.length > 0 ||
         !redaction.redactedContent.trim()
       ) {
-        throw new Error('入力を安全に脱敏できませんでした。直接識別子と入力範囲を確認してください。')
+        throw new Error('入力を安全にマスキングできませんでした。直接識別子と入力範囲を確認してください。')
       }
       const expiresAt = new Date(preparedAt.getTime() + 10 * 60_000)
       const rawContentBytes = Buffer.from(content, 'utf8')
@@ -240,7 +240,7 @@ export class CloudAiReviewService<TProviderResponse> {
     const { localNer, binding } = current
     if (!sameGateBinding(review.gateBinding, binding)) {
       this.discard(review)
-      throw new Error('プライバシー評価が更新されました。脱敏プレビューを作り直してください。')
+      throw new Error('プライバシー評価が更新されました。マスキング後のプレビューを作り直してください。')
     }
     review.status = 'executing'
     try {
@@ -274,19 +274,19 @@ export class CloudAiReviewService<TProviderResponse> {
       })
       if (!redaction.payload || redaction.session.status !== 'passed') {
         this.options.repository.saveRedactionSession(redaction.session, redaction.mappings)
-        throw new Error('確認後の脱敏内容が安全条件を満たしません。')
+        throw new Error('確認後のマスキング内容が安全条件を満たしません。')
       }
       if (detectionSummaryHash(nameDetection.entities, redaction.mappings) !== review.detectionSummaryHash) {
-        throw new Error('ローカル識別子検出結果が変更されました。脱敏プレビューを作り直してください。')
+        throw new Error('ローカル識別子検出結果が変更されました。マスキング後のプレビューを作り直してください。')
       }
       if (hash(redaction.redactedContent) !== review.previewHash) {
-        throw new Error('脱敏プレビューが変更されました。もう一度確認してください。')
+        throw new Error('マスキング後のプレビューが変更されました。もう一度確認してください。')
       }
       this.options.repository.saveRedactionSession(redaction.session, redaction.mappings)
 
       const finalGates = await this.requireCurrentGates()
       if (!sameGateBinding(review.gateBinding, finalGates.binding)) {
-        throw new Error('プライバシー評価が更新されました。脱敏プレビューを作り直してください。')
+        throw new Error('プライバシー評価が更新されました。マスキング後のプレビューを作り直してください。')
       }
       if (review.expiresAt.getTime() <= this.now().getTime()) {
         throw new Error('Cloud AI の確認チケットの有効期限が切れました。')

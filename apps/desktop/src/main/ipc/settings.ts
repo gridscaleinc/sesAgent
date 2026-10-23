@@ -1,4 +1,4 @@
-import { clipboard, ipcMain } from 'electron'
+import { clipboard, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import {
   type AiConversationContext,
@@ -18,7 +18,8 @@ import {
   saveJobCaseFieldAliasesInputSchema,
   saveLocalApplicationPreferencesInputSchema,
   saveLocalOperatorProfileInputSchema,
-  testAiModelInputSchema
+  testAiModelInputSchema,
+  vendorSiteUrls
 } from '@shared'
 import { effectiveApplicationPreferences } from '../app-defaults'
 import { applicationPreferencesSaved } from '../preference-events'
@@ -32,6 +33,13 @@ export function registerSettingsHandlers(context: MainIpcContext) {
     // Main-side clipboard: the renderer runs sandboxed behind a deny-all
     // permission handler, so navigator.clipboard is not available there.
     clipboard.writeText(z.string().min(1).max(20_000).parse(rawText))
+  })
+
+  ipcMain.handle(ipcChannels.openVendorSite, async (event, rawSite): Promise<{ opened: true }> => {
+    assertTrustedSender(event)
+    const site = z.enum(['gridscale', 'appshelf']).parse(rawSite)
+    await shell.openExternal(vendorSiteUrls[site])
+    return { opened: true }
   })
 
   const { repository, agentChatModelCatalog } = context

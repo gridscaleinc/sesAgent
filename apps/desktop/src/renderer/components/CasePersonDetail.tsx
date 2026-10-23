@@ -244,7 +244,7 @@ export function CasePersonDetail({
     },
     {
       id: 'points',
-      label: t('推荐要点', '推薦ポイント'),
+      label: t('推荐要点', 'アピールポイント'),
       content: (
         <RecommendationPointsTab
           documentId={value.documentId}

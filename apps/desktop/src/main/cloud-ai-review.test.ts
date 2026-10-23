@@ -147,7 +147,7 @@ describe('CloudAiReviewService.prepare', () => {
 
   it('fails closed on a residual identifier it cannot replace (bare postal code)', async () => {
     const h = harness()
-    await expect(h.service.prepare(`${content}\n勤務地 150-0001 付近`, actor)).rejects.toThrow(/安全に脱敏できませんでした/)
+    await expect(h.service.prepare(`${content}\n勤務地 150-0001 付近`, actor)).rejects.toThrow(/安全にマスキングできませんでした/)
     expect(h.saved[0]?.session.contentHash).toBeNull()
     expect(h.invoke).not.toHaveBeenCalled()
   })

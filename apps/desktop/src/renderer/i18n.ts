@@ -72,6 +72,8 @@ export const aiSignInRequestEvent = 'ses-open-ai-sign-in'
 export function requestAiSignIn() {
   window.dispatchEvent(new Event(aiSignInRequestEvent))
 }
+/** The same AI member dialog, opened to check the balance. */
+export const requestAiBalance = requestAiSignIn
 
 export function localizedIpcError(locale: ApplicationLocale, cause: unknown, fallback: string): string {
   const fallbackText = localizedMainText(locale, fallback)

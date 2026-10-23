@@ -244,11 +244,11 @@ export function AgentInterviewSchedulePanel({
         </div>
         <button
           aria-label={t('关闭右侧工作区', '右ワークスペースを閉じる')}
-          className="agent-context-panel-close"
+          className="agent-context-panel-close close-button"
           onClick={onClose}
           type="button"
         >
-          ×
+          <Icon name="x" size={18} />
         </button>
       </header>
       <div className="agent-business-context-note">

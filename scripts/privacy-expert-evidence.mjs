@@ -78,6 +78,7 @@ export const cloudEnforcementPaths = Object.freeze([
   'apps/desktop/src/main/case-search-assessments.ts',
   'apps/desktop/src/main/case-text-import.fixture.ts',
   'apps/desktop/src/main/case-text-import.ts',
+  'apps/desktop/src/main/job-case-ai-fill.ts',
   'apps/desktop/src/main/cloud-record-aliases.ts',
   'apps/desktop/src/main/deletion-journal.ts',
   'apps/desktop/src/main/eml-reimport.ts',

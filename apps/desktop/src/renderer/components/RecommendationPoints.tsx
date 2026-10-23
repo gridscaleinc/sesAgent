@@ -4,6 +4,7 @@ import { aiServiceProblem, localizedIpcError, requestAiSignIn, useLocaleText } f
 import { tokyoDateTime } from './use-case-resume-assessments'
 import { AiWorking } from './AiWorking'
 import './recommendation-points.css'
+import { AiServiceProblemActions } from './AiServiceProblemActions'
 
 /**
  * 推荐要点 of one person and case: the stored view, re-read whenever the pair changes, and on-demand generation.
@@ -14,7 +15,7 @@ export function useRecommendationPoints(documentId: string, reviewId: string | n
   const [view, setView] = useState<RecommendationPointsView | null>(null)
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState<{ message: string; action: 'read' | 'generate'; signIn: boolean } | null>(null)
+  const [error, setError] = useState<{ message: string; action: 'read' | 'generate'; signIn: boolean; quota?: boolean } | null>(null)
   const pair = `${documentId}:${reviewId ?? ''}`
   const current = useRef(pair)
   current.current = pair
@@ -31,7 +32,7 @@ export function useRecommendationPoints(documentId: string, reviewId: string | n
       .catch((cause) => {
         if (active && current.current === request)
           setError({
-            message: localizedIpcError(locale, cause, t('无法读取推荐要点。', '推薦ポイントを読み込めませんでした。')),
+            message: localizedIpcError(locale, cause, t('无法读取推荐要点。', 'アピールポイントを読み込めませんでした。')),
             action: 'read',
             signIn: false
           })
@@ -68,10 +69,11 @@ export function useRecommendationPoints(documentId: string, reviewId: string | n
           message: localizedIpcError(
             locale,
             cause,
-            t('推荐要点生成失败，请重试。', '推薦ポイントを生成できませんでした。もう一度お試しください。')
+            t('推荐要点生成失败，请重试。', 'アピールポイントを生成できませんでした。もう一度お試しください。')
           ),
           action: 'generate',
-          signIn: aiServiceProblem(cause) === 'sign-in'
+          signIn: aiServiceProblem(cause) === 'sign-in',
+          quota: aiServiceProblem(cause) === 'quota'
         })
     } finally {
       if (current.current === request) setGenerating(false)
@@ -107,6 +109,7 @@ function PointsError({ state }: { state: ReturnType<typeof useRecommendationPoin
   return (
     <div className="recommendation-points-error" role="alert">
       <p>{state.error.message}</p>
+      {state.error.quota ? <AiServiceProblemActions problem="quota" /> : null}
       {state.error.signIn ? (
         <button type="button" onClick={requestAiSignIn}>
           {t('去登录', 'ログインする')}
@@ -166,23 +169,23 @@ export function RecommendationPointsTab({
   )
   return (
     <div className="recommendation-points" aria-busy={state.generating || state.loading}>
-      {state.loading && !record ? <p className="match-muted">{t('正在读取推荐要点…', '推薦ポイントを読み込んでいます…')}</p> : null}
+      {state.loading && !record ? <p className="match-muted">{t('正在读取推荐要点…', 'アピールポイントを読み込んでいます…')}</p> : null}
       {!state.loading && !record ? (
         <div className="recommendation-points-empty">
           <p>
             {t(
               '根据此人的项目经历和本案件内容，由 AI 提炼 3–5 条向客户推荐时的卖点，每条都附简历原文依据，可在写介绍时使用。',
-              'この要員の案件経歴と本案件の内容から、お客様へ推薦する際のアピールポイントをAIが3〜5件まとめます。各ポイントには履歴書の原文根拠が付き、紹介文の作成に使えます。'
+              'この要員の案件経歴と本案件の内容から、お客様へ提案する際のアピールポイントをAIが3〜5件まとめます。各ポイントには履歴書の原文根拠が付き、紹介文の作成に使えます。'
             )}
           </p>
-          {generateForm(t('生成推荐要点', '推薦ポイントを生成'), true)}
+          {generateForm(t('生成推荐要点', 'アピールポイントを生成'), true)}
           {reason ? <small className="match-blocked">{reason}</small> : null}
         </div>
       ) : null}
       {record ? (
         <>
           <div className="recommendation-points-header">
-            <span className="recommendation-points-label">{t('AI 生成，推荐前请核对', 'AI生成・推薦前に確認してください')}</span>
+            <span className="recommendation-points-label">{t('AI 生成，推荐前请核对', 'AI生成・提案前に確認してください')}</span>
             <small className="match-muted">
               {tokyoDateTime(record.generatedAt, zh)}
               {record.modelName ? ` · ${record.modelName}` : ''}
@@ -209,14 +212,14 @@ export function RecommendationPointsTab({
             <p className="match-muted">
               {t(
                 'AI 未能找到有简历原文依据的推荐要点，可重新生成，或先补充人员的项目经历。',
-                '履歴書の原文で裏付けられる推薦ポイントが見つかりませんでした。再生成するか、要員の案件経歴を補足してください。'
+                '履歴書の原文で裏付けられるアピールポイントが見つかりませんでした。再生成するか、要員の案件経歴を補足してください。'
               )}
             </p>
           )}
         </>
       ) : null}
       {state.generating ? (
-        <AiWorking label={t('AI 正在结合项目经历与案件内容生成推荐要点…', 'AIが案件経歴と案件内容から推薦ポイントを生成しています…')} />
+        <AiWorking label={t('AI 正在结合项目经历与案件内容生成推荐要点…', 'AIが案件経歴と案件内容からアピールポイントを生成しています…')} />
       ) : null}
       <PointsError state={state} />
     </div>
@@ -239,8 +242,8 @@ export function RecommendationPointsPicker({
   const state = useRecommendationPoints(documentId, reviewId)
   if (!state.available) return null
   return (
-    <aside className="recommendation-points-picker" aria-label={t('推荐要点', '推薦ポイント')}>
-      <strong>{t('推荐要点', '推薦ポイント')}</strong>
+    <aside className="recommendation-points-picker" aria-label={t('推荐要点', 'アピールポイント')}>
+      <strong>{t('推荐要点', 'アピールポイント')}</strong>
       {state.points.length ? (
         <ol>
           {state.points.map((point, index) => (
@@ -266,11 +269,11 @@ export function RecommendationPointsPicker({
           disabled={disabled || state.generating}
           onClick={() => void state.generate()}
         >
-          {state.generating ? t('正在生成推荐要点…', '推薦ポイントを生成中…') : t('先生成推荐要点', '先に推薦ポイントを生成')}
+          {state.generating ? t('正在生成推荐要点…', 'アピールポイントを生成中…') : t('先生成推荐要点', '先にアピールポイントを生成')}
         </button>
       )}
       {state.record && !state.stale && !state.points.length && !state.generating ? (
-        <small className="match-muted">{t('未找到有依据的推荐要点。', '根拠のある推薦ポイントが見つかりませんでした。')}</small>
+        <small className="match-muted">{t('未找到有依据的推荐要点。', '根拠のあるアピールポイントが見つかりませんでした。')}</small>
       ) : null}
       <PointsError state={state} />
     </aside>

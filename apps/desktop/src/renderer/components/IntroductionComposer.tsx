@@ -24,6 +24,8 @@ import type { IntroductionTarget } from './HrMatchingWorkspace'
 import type { FollowUpTarget } from './follow-up-target'
 import { IntroductionOptions } from './IntroductionOptions'
 import { RecommendationPointsPicker } from './RecommendationPoints'
+import { AiServiceProblemActions } from './AiServiceProblemActions'
+import { Icon } from './Icon'
 
 const briefTemplateId = 'e72e12d0-0000-4000-8000-000000000001'
 const standardTemplateId = 'e72e12d0-0000-4000-8000-000000000002'
@@ -56,6 +58,7 @@ export function IntroductionComposer({
   const [error, setError] = useState('')
   // AI is not signed in: one explanation with a way to sign in, instead of the same error once per language.
   const [aiSignIn, setAiSignIn] = useState(false)
+  const [aiQuota, setAiQuota] = useState(false)
   // Set after copy or open-mail succeeds: the app cannot see the send, so it asks HR to confirm it.
   const [askSent, setAskSent] = useState(false)
   // The follow-up saved from this dialog, for when no shared progress list is mounted.
@@ -74,6 +77,7 @@ export function IntroductionComposer({
     setNotice('')
     setError('')
     setAiSignIn(false)
+    setAiQuota(false)
     setAskSent(false)
     setSavedFollow(null)
     // The request to AI is a one-off instruction: every opening of the dialog starts with an empty box.
@@ -221,6 +225,7 @@ export function IntroductionComposer({
       })
     )
     if (problems.has('sign-in')) setAiSignIn(true)
+    if (problems.has('quota')) setAiQuota(true)
     const messages = [
       ...failed,
       ...[...problems].filter((problem) => problem !== 'sign-in').map((problem) => localizedAiServiceProblem(locale, problem))
@@ -279,6 +284,7 @@ export function IntroductionComposer({
     setBusy(true)
     setError('')
     setAiSignIn(false)
+    setAiQuota(false)
     setNotice('')
     try {
       if (await generate(['ja', 'zh'], style, request || null, true))
@@ -357,7 +363,7 @@ export function IntroductionComposer({
       setAskSent(false)
       setNotice('')
     } catch (cause) {
-      setError(localizedIpcError(locale, cause, t('无法标记已推荐，请重试。', '推薦済みにできませんでした。もう一度お試しください。')))
+      setError(localizedIpcError(locale, cause, t('无法标记已推荐，请重试。', '提案済みにできませんでした。もう一度お試しください。')))
     } finally {
       lock.current = false
       setBusy(false)
@@ -467,8 +473,8 @@ export function IntroductionComposer({
               ) : null}
             </p>
           </div>
-          <button type="button" aria-label={t('关闭介绍', '紹介画面を閉じる')} disabled={busy} onClick={onClose}>
-            ×
+          <button className="close-button" type="button" aria-label={t('关闭介绍', '紹介画面を閉じる')} disabled={busy} onClick={onClose}>
+            <Icon name="x" size={18} />
           </button>
         </header>
         <div className="hr-intro-scroll">
@@ -563,7 +569,12 @@ export function IntroductionComposer({
                   placeholder={t('可以直接在这里填写介绍。', 'ここに紹介文を直接入力できます。')}
                 />
               </div>
-              {error ? <p role="alert">{error}</p> : null}
+              {error ? (
+                <p role="alert">
+                  {error}
+                  {aiQuota ? <AiServiceProblemActions problem="quota" /> : null}
+                </p>
+              ) : null}
               {notice ? <p role="status">{notice}</p> : null}
               <aside className="hr-intro-attachment">
                 <div className="hr-intro-attachment-actions">
@@ -628,13 +639,13 @@ export function IntroductionComposer({
                 <>
                   <span className="hr-intro-recommended" role="status">
                     {recommendedAt
-                      ? `${t('已推荐', '推薦済み')} · ${tokyoTime(recommendedAt)}`
+                      ? `${t('已推荐', '提案済み')} · ${tokyoTime(recommendedAt)}`
                       : `${t('跟进中', '対応中')} · ${followState?.label ?? ''}`}
                   </span>
                   {/* Introduced after the follow-up started: the recommendation still counts once recorded. */}
                   {!recommendedAt ? (
                     <button type="button" disabled={working || !valid} onClick={() => void markRecommended()}>
-                      {t('标记已推荐', '推薦済みにする')}
+                      {t('标记已推荐', '提案済みにする')}
                     </button>
                   ) : null}
                   <button type="button" disabled={working} onClick={openFollow}>
@@ -648,7 +659,7 @@ export function IntroductionComposer({
                   </button>
                   {askSent ? <small role="status">{t('已经发出了吗？', '送信しましたか？')}</small> : null}
                   <button type="button" disabled={working || !valid} onClick={() => void markRecommended()}>
-                    {t('标记已推荐', '推薦済みにする')}
+                    {t('标记已推荐', '提案済みにする')}
                   </button>
                 </>
               )

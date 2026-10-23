@@ -10,7 +10,7 @@ export const experienceMethods = {
   ranking: {
     tasks: ['matching'],
     zh: '有依据的推荐偏好',
-    ja: '根拠のある推薦の優先傾向',
+    ja: '根拠のある推奨順の傾向',
     procedure: 'A bounded ranking preference among equally qualified options. It never changes eligibility, facts or hard requirements.'
   },
   custom: {

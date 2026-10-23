@@ -126,16 +126,16 @@ function warningLabel(code: string, t: LocaleText): string {
   if (code === 'REQUIRED_SKILLS_MISSING') return t('未提取必备技能', '必須スキル未抽出')
   if (code === 'AGE_LIMIT_REQUIRES_REVIEW') return t('年龄条件需确认', '年齢条件は要確認')
   if (code === 'DETERMINISTIC_EXTRACTION_REQUIRES_REVIEW') return t('必须人工确认', '人の確認必須')
-  if (code === 'MANUAL_SOURCE_LOCAL_REDACTION') return t('手工输入 · 本地脱敏', '手動入力・ローカル脱敏')
+  if (code === 'MANUAL_SOURCE_LOCAL_REDACTION') return t('手工输入 · 本地脱敏', '手動入力・ローカルマスキング')
   if (code === 'EML_SOURCE_LOCAL_PARSE') return t('EML · 已隔离解析', 'EML・隔離解析済み')
-  if (code === 'EML_SOURCE_LOCAL_REDACTION') return t('EML · 本地脱敏', 'EML・ローカル脱敏')
+  if (code === 'EML_SOURCE_LOCAL_REDACTION') return t('EML · 本地脱敏', 'EML・ローカルマスキング')
   if (code === 'EML_ATTACHMENTS_IGNORED') return t('未保存附件', '添付は未保存')
   if (code === 'EML_HTML_CONVERTED_TO_TEXT') return t('HTML 已转为纯文本', 'HTMLをテキストに変換')
   if (code === 'EML_BODY_TRUNCATED_OR_QUOTED_HISTORY_REMOVED') return t('已排除引用历史', '引用履歴を除外')
   if (code === 'EML_DATE_MISSING_OR_INVALID') return t('已用导入时间补全日期', '日時を取込時刻で補完')
-  if (code === 'CHAT_PASTE_ONE_TIME_LOCAL_REDACTION') return t('不保存粘贴原文，仅在本机脱敏', '貼付原文は保存せずローカル脱敏')
+  if (code === 'CHAT_PASTE_ONE_TIME_LOCAL_REDACTION') return t('不保存粘贴原文，仅在本机脱敏', '貼付原文は保存せずローカルマスキング')
   if (code === 'WECHAT_VISIBLE_ONE_TIME_LOCAL_REDACTION')
-    return t('单次读取微信可见内容 · 本机脱敏', '微信の表示範囲を1回だけ読取・端末内で脱敏')
+    return t('单次读取微信可见内容 · 本机脱敏', '微信の表示範囲を1回だけ読取・端末内でマスキング')
   if (code === 'WECHAT_CAPTURE_ACCESSIBILITY_TREE') return t('通过 macOS 辅助功能读取', 'macOS のアクセシビリティ機能で取得')
   if (code === 'WECHAT_CAPTURE_SCREEN_CAPTURE_KIT_VISION_OCR') return t('从窗口截图识别文字', 'ウィンドウ画像から文字認識')
   if (code === 'WECHAT_VISIBLE_TEXT_TRUNCATED') return t('达到可见文字上限后停止', '可視文字上限で打切り')
@@ -166,7 +166,7 @@ const sourceTypeLabel = jobCaseSourceTypeLabel
 function sourceOrigin(review: JobCaseReviewSnapshot, t: LocaleText): string {
   if (review.sourceType === 'gmail') return `Gmail · ${review.fromDomain ?? t('发件人已隐藏', '送信元非表示')}`
   if (review.sourceType === 'eml') return `EML · ${review.fromDomain ?? t('发件人已隐藏', '送信元非表示')}`
-  if (review.sourceType === 'chat-paste') return t('聊天粘贴 · 不保存原文，本机脱敏', 'チャット貼付 · 原文を保存せず端末内で脱敏')
+  if (review.sourceType === 'chat-paste') return t('聊天粘贴 · 不保存原文，本机脱敏', 'チャット貼付 · 原文を保存せず端末内でマスキング')
   if (review.sourceType === 'wechat-visible') return t('Mac 微信 · 单次读取当前可见内容', 'Mac 微信 · 表示中の画面を1回読取')
   return t('手工输入 · 本地创建', '手動入力 · ローカル作成')
 }
@@ -180,7 +180,7 @@ function emlErrorLabel(code: NonNullable<ImportEmlJobCaseDraftsResult['items'][n
     PARSE_FAILED: t('无法安全解析', '安全に解析できませんでした'),
     BODY_EMPTY: t('没有可用正文', '利用可能な本文がありません'),
     LIMIT_EXCEEDED: t('邮件结构过于复杂，无法解析', 'メールの構造が複雑すぎるため解析できません'),
-    PERSISTENCE_FAILED: t('无法保存已脱敏草稿', '脱敏済み草稿を保存できませんでした')
+    PERSISTENCE_FAILED: t('无法保存已脱敏草稿', 'マスキング済み草稿を保存できませんでした')
   }
   return labels[code]
 }
@@ -324,7 +324,7 @@ export function JobCaseReviewEditor({
       <div className="job-case-privacy-banner">
         <Icon name="lock" size={17} />
         <div>
-          <strong>{t('已在本地脱敏的来源', 'ローカル脱敏済みソース')}</strong>
+          <strong>{t('已在本地脱敏的来源', 'ローカルマスキング済みソース')}</strong>
           <p>
             {t(
               '姓名、电话、个人邮箱等已替换为占位符；若字段值包含直接标识符，主进程会拒绝保存。',
@@ -337,8 +337,8 @@ export function JobCaseReviewEditor({
       <details className="job-case-source-preview">
         <summary>
           {review.sourceType === 'manual'
-            ? t('确认脱敏后的输入正文', '脱敏済み入力本文を確認')
-            : t('确认脱敏后的邮件正文', '脱敏済みメール本文を確認')}
+            ? t('确认脱敏后的输入正文', 'マスキング済み入力本文を確認')
+            : t('确认脱敏后的邮件正文', 'マスキング済みメール本文を確認')}
         </summary>
         <pre>{review.redactedPreview}</pre>
       </details>
@@ -404,7 +404,10 @@ export function JobCaseReviewEditor({
       <footer className="job-case-review-footer">
         <label>
           <input checked={privacyReviewed} onChange={(event) => setPrivacyReviewed(event.target.checked)} type="checkbox" />
-          {t('已检查脱敏后的原文，并确认案件字段中不含直接标识符', '脱敏済み原文を確認し、案件項目に直接識別子がないことを確認しました')}
+          {t(
+            '已检查脱敏后的原文，并确认案件字段中不含直接标识符',
+            'マスキング済み原文を確認し、案件項目に直接識別子がないことを確認しました'
+          )}
         </label>
         {error ? <p role="alert">{error}</p> : null}
         <div>
@@ -571,8 +574,8 @@ export function JobCaseManagement({
               {sourceTypeLabel(review.sourceType, t)} · Review {review.reviewId.slice(0, 8)} · {t('不含直接标识符', '直接識別子なし')}
             </p>
           </div>
-          <button aria-label={t('关闭案件管理', '案件管理を閉じる')} onClick={onClose} type="button">
-            ×
+          <button className="close-button" aria-label={t('关闭案件管理', '案件管理を閉じる')} onClick={onClose} type="button">
+            <Icon name="x" size={18} />
           </button>
         </header>
 
@@ -678,7 +681,7 @@ export function JobCaseManagement({
           <p>
             {t(
               '将删除案件的全部版本、脱敏后的来源、审计记录、个人信息替换表以及直接关联的任务。Gmail 来源只保留一条删除记录，用于防止被再次导入。',
-              '案件の全バージョン、脱敏済みソース、監査記録、個人情報の置換表と直接関連するタスクを削除します。Gmailソースは再取込を防ぐための削除記録だけを残します。'
+              '案件の全バージョン、マスキング済みソース、監査記録、個人情報の置換表と直接関連するタスクを削除します。Gmailソースは再取込を防ぐための削除記録だけを残します。'
             )}
           </p>
           {!deletionPreview ? (
@@ -705,7 +708,10 @@ export function JobCaseManagement({
                   {t(`个人信息替换表 ${deletionPreview.counts.piiMappings} 项`, `個人情報の置換表 ${deletionPreview.counts.piiMappings}件`)}
                 </li>
                 <li>
-                  {t(`已脱敏来源 ${deletionPreview.counts.sourceRecords} 项`, `脱敏済みソース ${deletionPreview.counts.sourceRecords}件`)}
+                  {t(
+                    `已脱敏来源 ${deletionPreview.counts.sourceRecords} 项`,
+                    `マスキング済みソース ${deletionPreview.counts.sourceRecords}件`
+                  )}
                 </li>
                 <li>
                   {t(
@@ -899,7 +905,7 @@ function BulkJobCaseDeletion({
           <p>
             {t(
               '将按同一删除流程逐个删除各案件的全部版本、脱敏后的来源、审计记录、个人信息替换表以及直接关联的任务。Gmail 来源只保留一条删除记录，用于防止被再次导入。此操作无法撤销。',
-              '各案件の全バージョン、脱敏済みソース、監査記録、個人情報の置換表と直接関連するタスクを、1件ずつ同じ削除手順で削除します。Gmailソースは再取込を防ぐための削除記録だけを残します。この操作は取り消せません。'
+              '各案件の全バージョン、マスキング済みソース、監査記録、個人情報の置換表と直接関連するタスクを、1件ずつ同じ削除手順で削除します。Gmailソースは再取込を防ぐための削除記録だけを残します。この操作は取り消せません。'
             )}
           </p>
           {!previews ? (
@@ -931,7 +937,7 @@ function BulkJobCaseDeletion({
                   <li>{t(`提案草稿 ${totals.proposalDrafts} 项`, `提案草稿 ${totals.proposalDrafts}件`)}</li>
                   <li>{t(`质量评估草稿 ${totals.evaluationDraftCases} 项`, `品質評価草稿 ${totals.evaluationDraftCases}件`)}</li>
                   <li>{t(`个人信息替换表 ${totals.piiMappings} 项`, `個人情報の置換表 ${totals.piiMappings}件`)}</li>
-                  <li>{t(`已脱敏来源 ${totals.sourceRecords} 项`, `脱敏済みソース ${totals.sourceRecords}件`)}</li>
+                  <li>{t(`已脱敏来源 ${totals.sourceRecords} 项`, `マスキング済みソース ${totals.sourceRecords}件`)}</li>
                   <li>{t(`Gmail 本地副本 ${totals.gmailMessages} 项`, `Gmailローカルコピー ${totals.gmailMessages}件`)}</li>
                   <li>
                     {t(
@@ -1007,14 +1013,14 @@ function ManualJobCaseComposer({
               )}
             </p>
           </div>
-          <button aria-label={t('关闭', '閉じる')} disabled={busy} onClick={onCancel} type="button">
-            ×
+          <button className="close-button" aria-label={t('关闭', '閉じる')} disabled={busy} onClick={onCancel} type="button">
+            <Icon name="x" size={18} />
           </button>
         </header>
         <div className="job-case-composer-privacy">
           <Icon name="shield" size={18} />
           <div>
-            <strong>{t('输入内容会先在本机脱敏', '入力はまず端末内で脱敏されます')}</strong>
+            <strong>{t('输入内容会先在本机脱敏', '入力はまず端末内でマスキングされます')}</strong>
             <p>
               {t(
                 '在本机检测姓名、电话、邮箱和地址等信息并替换为占位符；原文不会保存到案件数据库或云端。',
@@ -1061,7 +1067,7 @@ function ManualJobCaseComposer({
           </button>
           <button disabled={!canCreate} type="submit">
             <Icon name="lock" size={14} />
-            {busy ? t('正在本地处理…', 'ローカル処理中…') : t('脱敏并创建草稿', '脱敏して草稿を作成')}
+            {busy ? t('正在本地处理…', 'ローカル処理中…') : t('脱敏并创建草稿', 'マスキングして草稿を作成')}
           </button>
         </footer>
       </form>
@@ -1107,8 +1113,8 @@ function ChatPasteComposer({
             <span className="eyebrow">{t('聊天粘贴', 'チャット貼り付け')}</span>
             <h2>{t('从聊天正文创建案件草稿', 'チャット本文から案件草稿を作成')}</h2>
           </div>
-          <button aria-label={t('关闭', '閉じる')} disabled={busy} onClick={onCancel} type="button">
-            ×
+          <button className="close-button" aria-label={t('关闭', '閉じる')} disabled={busy} onClick={onCancel} type="button">
+            <Icon name="x" size={18} />
           </button>
         </header>
         <div className="job-case-composer-privacy">
@@ -1118,7 +1124,7 @@ function ChatPasteComposer({
             <p>
               {t(
                 '提交时立即清空输入框，只把经本机 NER 与脱敏后的内容保存到现有案件审核中；不会执行正文里的任何指令。',
-                '送信時に入力欄を直ちに消去し、端末内 NER・脱敏後の内容だけを既存 JobCase Review に保存します。本文中の命令は実行しません。'
+                '送信時に入力欄を直ちに消去し、端末内 NER・マスキング後の内容だけを既存 JobCase Review に保存します。本文中の命令は実行しません。'
               )}
             </p>
           </div>
@@ -1152,7 +1158,7 @@ function ChatPasteComposer({
           </button>
           <button disabled={!canCreate} type="submit">
             <Icon name="lock" size={14} />
-            {busy ? t('正在本地处理…', 'ローカル処理中…') : t('脱敏并创建草稿', '脱敏して下書きを作成')}
+            {busy ? t('正在本地处理…', 'ローカル処理中…') : t('脱敏并创建草稿', 'マスキングして下書きを作成')}
           </button>
         </footer>
       </form>
@@ -1406,7 +1412,7 @@ export function JobCaseInbox({
               {gmailSyncModeLabel(gmailImportNotice.mode, t)} ·{' '}
               {t(
                 `保存 ${gmailImportNotice.storedMessages} 项。正文已在本机脱敏，未发送到云端大模型。`,
-                `保存 ${gmailImportNotice.storedMessages}件。本文は端末内で脱敏し、Cloud LLMには送信していません。`
+                `保存 ${gmailImportNotice.storedMessages}件。本文は端末内でマスキングし、Cloud LLMには送信していません。`
               )}
             </p>
           </div>
@@ -1493,7 +1499,7 @@ export function JobCaseInbox({
             <Icon name="shield" size={17} />
           </span>
           <div>
-            <strong>{t('所有来源在保存前都执行本地脱敏和字段确认', 'どの経路でも、保存前にローカル脱敏と項目確認を実施')}</strong>
+            <strong>{t('所有来源在保存前都执行本地脱敏和字段确认', 'どの経路でも、保存前にローカルマスキングと項目確認を実施')}</strong>
             <p>
               {t(
                 '姓名、电话、邮箱、住址等直接标识符会在本机替换，原文不会发送至云端大模型。',
@@ -1657,7 +1663,7 @@ export function JobCaseInbox({
               <p>
                 {t(
                   '提交时清空输入框，不保存原文，只创建经本机脱敏的草稿。',
-                  '入力欄を送信時に消去し、原文を保存せずローカル脱敏した草稿だけを作成します。'
+                  '入力欄を送信時に消去し、原文を保存せずローカルでマスキングした草稿だけを作成します。'
                 )}
               </p>
             </div>
@@ -1702,7 +1708,7 @@ export function JobCaseInbox({
               <p>
                 {t(
                   '确认后只读取前台微信窗口中可见的会话内容；截图和原文不保存，在本机脱敏后才生成草稿。',
-                  '今回の確認後、前面にある微信の単一ウィンドウの可視会話領域だけを読み取ります。スクリーンショットと原文は保存せず、端末内で脱敏してから下書きを作成します。'
+                  '今回の確認後、前面にある微信の単一ウィンドウの可視会話領域だけを読み取ります。スクリーンショットと原文は保存せず、端末内でマスキングしてから下書きを作成します。'
                 )}
               </p>
             </div>

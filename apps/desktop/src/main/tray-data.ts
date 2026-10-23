@@ -2,7 +2,14 @@ import type { AiCommerceNativeClient } from '@aicommerce'
 import type { EncryptedApplicationRepository } from '@persistence'
 import { followUpBlock, isInactiveProgressStage } from '@shared'
 import { rejectedByHr } from './work-rule-matching'
-import type { AiCommerceMembershipState, AiCommerceWalletSnapshot, GmailSyncState, TodaySummary, TraySummary } from '@shared'
+import type {
+  AiCommerceCapabilitySnapshot,
+  AiCommerceMembershipState,
+  AiCommerceWalletSnapshot,
+  GmailSyncState,
+  TodaySummary,
+  TraySummary
+} from '@shared'
 import { currentAiGatewayRejection } from './ai-gateway-signal'
 import { buildTodaySummary, buildTraySummary, defaultMenuBarPreferences, trayAiQuota, type TraySummaryInput } from './tray-summary'
 
@@ -10,15 +17,52 @@ import { buildTodaySummary, buildTraySummary, defaultMenuBarPreferences, trayAiQ
 export const trayWalletRefreshMs = 10 * 60_000
 const privacyGateRefreshMs = 10 * 60_000
 
-let observedWallet: { wallet: AiCommerceWalletSnapshot; at: number } | null = null
+let observedWallet: {
+  wallet: AiCommerceWalletSnapshot
+  at: number
+  /** The member it belongs to; null when only a cloud reply (which names no account) reported it. */
+  accountId: string | null
+  capabilities: AiCommerceCapabilitySnapshot[]
+  refreshedAt: string
+} | null = null
 
-/** Remembers a wallet another screen already fetched (AI member dialog, a cloud reply), so the panel reuses it. */
-export function recordAiCommerceWallet(state: Pick<AiCommerceMembershipState, 'wallet'> | null, now = Date.now()): void {
-  if (state?.wallet) observedWallet = { wallet: state.wallet, at: now }
+/**
+ * Remembers a wallet another screen already fetched (AI member dialog, a cloud reply, the panel itself), so the
+ * panel and every later bootstrap reuse it instead of showing it as not loaded.
+ */
+export function recordAiCommerceWallet(
+  state: (Pick<AiCommerceMembershipState, 'wallet'> & Partial<Pick<AiCommerceMembershipState, 'accountId' | 'capabilities'>>) | null,
+  now = Date.now()
+): void {
+  if (!state?.wallet) return
+  const accountId = state.accountId === undefined ? (observedWallet?.accountId ?? null) : state.accountId
+  const sameAccount = observedWallet !== null && (observedWallet.accountId === null || observedWallet.accountId === accountId)
+  observedWallet = {
+    wallet: state.wallet,
+    at: now,
+    accountId,
+    capabilities: state.capabilities?.length ? state.capabilities : sameAccount ? observedWallet!.capabilities : [],
+    refreshedAt: new Date(now).toISOString()
+  }
 }
 
 export function resetObservedAiCommerceWallet(): void {
   observedWallet = null
+}
+
+/**
+ * The signed-in member's state with the wallet and capabilities last fetched for that same member. The local
+ * state (credentials only) never carries them, so without this every bootstrap showed the balance as not loaded.
+ */
+export function withObservedAiCommerceDashboard(state: AiCommerceMembershipState): AiCommerceMembershipState {
+  if (state.connection !== 'connected' || state.wallet || !observedWallet) return state
+  if (observedWallet.accountId && state.accountId && observedWallet.accountId !== state.accountId) return state
+  return {
+    ...state,
+    wallet: observedWallet.wallet,
+    capabilities: state.capabilities.length ? state.capabilities : observedWallet.capabilities,
+    refreshedAt: state.refreshedAt ?? observedWallet.refreshedAt
+  }
 }
 
 export interface TraySummarySourceDependencies {

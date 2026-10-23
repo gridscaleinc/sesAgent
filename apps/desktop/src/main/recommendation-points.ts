@@ -18,7 +18,8 @@ type Context = Pick<MainIpcContext, 'repository' | 'agentChatModelCatalog'> & {
     { generateRecommendationPoints?(input: RecommendationPointsInput): Promise<RecommendationPointsResult> } | null | undefined
 }
 
-const staleMessage = '人员或案件资料已更新，请重新生成推荐要点。 / 要員または案件の情報が更新されました。推薦ポイントを再生成してください。'
+const staleMessage =
+  '人员或案件资料已更新，请重新生成推荐要点。 / 要員または案件の情報が更新されました。アピールポイントを再生成してください。'
 
 /** The person's current profile and the active, confirmed case of one pair; throws when either is not usable. */
 function load(context: Context, query: RecommendationPointsQuery) {

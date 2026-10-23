@@ -58,7 +58,7 @@ describe('AiCommerceMemberDialog', () => {
     const onSendPrompt = vi.fn().mockResolvedValue({
       requestId: 'sesai-12345678',
       aiRequestId: 'air-1',
-      content: '脱敏済みの回答です。',
+      content: 'マスキング済みの回答です。',
       usageCredits: 12,
       wallet: { balanceCredits: 1188, reservedCredits: 0 },
       removedIdentifierTypes: ['person_name'],
@@ -80,7 +80,7 @@ describe('AiCommerceMemberDialog', () => {
     )
 
     expect(screen.getByText('1,000 クレジット')).toBeInTheDocument()
-    const submit = screen.getByRole('button', { name: '脱敏プレビューを確認' })
+    const submit = screen.getByRole('button', { name: 'マスキング後のプレビューを確認' })
     expect(submit).toBeDisabled()
     fireEvent.change(screen.getByLabelText('依頼内容'), { target: { value: '候補者の経験を短く要約してください。' } })
     expect(submit).toBeEnabled()
@@ -91,7 +91,28 @@ describe('AiCommerceMemberDialog', () => {
         content: '候補者の経験を短く要約してください。'
       })
     )
-    expect(await screen.findByText('脱敏済みの回答です。')).toBeInTheDocument()
+    expect(await screen.findByText('マスキング済みの回答です。')).toBeInTheDocument()
+  })
+
+  it('fetches the current balance when opened signed in without a fresh one, and shows it', async () => {
+    const onRefresh = vi.fn().mockResolvedValue({ ...connectedState, wallet: { balanceCredits: 900, reservedCredits: 0 } })
+    render(
+      <AiCommerceMemberDialog
+        callbackError={null}
+        onClose={vi.fn()}
+        onConnect={vi.fn()}
+        onDisconnect={vi.fn()}
+        onOpenMemberCenter={vi.fn().mockResolvedValue({ opened: true })}
+        onRefresh={onRefresh}
+        onResetToken={vi.fn()}
+        onSendPrompt={vi.fn()}
+        privacy={readyPrivacy}
+        state={{ ...connectedState, wallet: null, refreshedAt: null }}
+      />
+    )
+    expect(screen.getByText('読み込み中…')).toBeInTheDocument()
+    expect(await screen.findByText('900 クレジット')).toBeInTheDocument()
+    expect(onRefresh).toHaveBeenCalledOnce()
   })
 
   it('removes Electron IPC details and localizes a blocking synthetic quality error', async () => {
@@ -154,6 +175,6 @@ describe('AiCommerceMemberDialog', () => {
     fireEvent.change(screen.getByLabelText('依頼内容'), { target: { value: '匿名プロフィールを要約してください。' } })
     expect(screen.getByText('Cloud AI プライバシー門は有効です')).toBeInTheDocument()
     expect(screen.getByText(/日本語専門家評価は未完了ですが/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '脱敏プレビューを確認' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'マスキング後のプレビューを確認' })).toBeEnabled()
   })
 })

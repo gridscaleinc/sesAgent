@@ -23,6 +23,7 @@ import type { AgentCandidateDraftFacts, DomainToolName, GoogleWorkspaceAdminConf
 import { cloudPrivacyGateLoadOptions, effectiveOperatorProfile } from '../app-defaults'
 import { AgentCloudNarrativeService } from '../agent-cloud-narrative'
 import { CloudAiReviewService } from '../cloud-ai-review'
+import { createJobCaseAiFiller } from '../job-case-ai-fill'
 import { loadCloudPrivacyGates } from '../privacy-gates'
 import { MacWechatVisibleReader, WechatVisibleScopeTokenStore, resolveWechatAccessibilityHelperPath } from '../wechat-visible-reader'
 
@@ -122,7 +123,7 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
           const confirmation = await dialog.showMessageBox({
             type: 'warning',
             title: 'Cloud AI 送信前確認',
-            message: '以下の脱敏済み内容だけを AICommerce に送信します。',
+            message: '以下のマスキング済み内容だけを AICommerce に送信します。',
             detail: `${review.redactedPreview}\n\n置換した識別子: ${removed}\nPreview SHA-256: ${review.previewHash}`,
             buttons: ['確認して送信', 'キャンセル'],
             defaultId: 1,
@@ -165,6 +166,15 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
         allowLoopbackHttp: !app.isPackaged && aiCommerce.allowsLoopbackHttp
       })
     : null
+
+  // Imported cases missing a key field are completed by AI in the background while the AI member is signed in.
+  const jobCaseAiFiller = createJobCaseAiFiller({
+    repository,
+    agentNarrativeStreamer,
+    agentChatModelCatalog,
+    currentOperator,
+    isAiSignedIn: async () => (await aiCommerce?.getState())?.connection === 'connected'
+  })
 
   const actionOrchestrator = new ActionOrchestrator(createDefaultDomainToolRegistry(), repository)
 
@@ -278,6 +288,7 @@ export function createMainIpcContext(dependencies: MainIpcDependencies) {
     currentMatchRuntimeIdentity,
     cloudAiReview,
     agentNarrativeStreamer,
+    jobCaseAiFiller,
     actionOrchestrator,
     preflightAction,
     withTaskOperation,

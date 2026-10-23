@@ -97,15 +97,15 @@ it('asks whether the introduction was sent after copying and records the recomme
   await waitFor(() => expect(screen.getByRole('textbox', { name: '紹介文' })).toHaveValue('Saved intro'))
   fireEvent.click(screen.getByRole('button', { name: '紹介文をコピー' }))
   expect(await screen.findByText('送信しましたか？')).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: '推薦済みにする' }))
+  fireEvent.click(screen.getByRole('button', { name: '提案済みにする' }))
   await waitFor(() =>
     expect(window.sesAgent.advanceBusinessProgress).toHaveBeenCalledWith(
       expect.objectContaining({ documentId, reviewId, expectedRevision: 0, action: 'recommend' })
     )
   )
   // 01:05 UTC is 10:05 in Tokyo.
-  expect(await screen.findByText(/推薦済み · .*10:05/u)).toBeVisible()
-  expect(screen.queryByRole('button', { name: '推薦済みにする' })).not.toBeInTheDocument()
+  expect(await screen.findByText(/提案済み · .*10:05/u)).toBeVisible()
+  expect(screen.queryByRole('button', { name: '提案済みにする' })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '対応を見る' }))
   expect(onFollowUp).toHaveBeenCalledWith({ documentId, reviewId })
 })
@@ -113,7 +113,7 @@ it('asks whether the introduction was sent after copying and records the recomme
 it('uses a distinct title for personnel promotion without a case and offers no recommendation', async () => {
   renderComposer(false)
   expect(screen.getByRole('dialog', { name: '要員を紹介' })).toBeVisible()
-  expect(screen.queryByRole('button', { name: '推薦済みにする' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '提案済みにする' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '対応を開始' })).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '履歴書の原本を開く' }))
   expect(window.sesAgent.openOriginalDocument).toHaveBeenCalledWith(documentId)
@@ -169,7 +169,7 @@ it('inserts a stored 推荐要点 at the end, then at the cursor HR placed', asy
   renderComposer()
   const body = screen.getByRole('textbox', { name: '紹介文' }) as HTMLTextAreaElement
   await waitFor(() => expect(body).toHaveValue('Saved intro'))
-  const picker = await screen.findByRole('complementary', { name: '推薦ポイント' })
+  const picker = await screen.findByRole('complementary', { name: 'アピールポイント' })
   await waitFor(() => expect(picker).toHaveTextContent('損保の基本設計経験'))
   fireEvent.click(screen.getByRole('button', { name: '挿入：損保の基本設計経験' }))
   expect(body).toHaveValue('Saved intro\n・損保の基本設計経験：契約管理システム刷新でPLとして基本設計を担当。')
@@ -186,7 +186,7 @@ it('offers to generate 推荐要点 in place when none are current', async () =>
     generateRecommendationPoints: vi.fn(async () => ({ record: pointsRecord, stale: false }))
   })
   renderComposer()
-  fireEvent.click(await screen.findByRole('button', { name: '先に推薦ポイントを生成' }))
+  fireEvent.click(await screen.findByRole('button', { name: '先にアピールポイントを生成' }))
   expect(window.sesAgent.generateRecommendationPoints).toHaveBeenCalledWith({ documentId, reviewId })
   expect(await screen.findByRole('button', { name: '挿入：Java 8年' })).toBeVisible()
 })
@@ -195,6 +195,6 @@ it('shows no 推荐要点 section for a general introduction without a case', as
   Object.assign(window.sesAgent, { getRecommendationPoints: vi.fn(), generateRecommendationPoints: vi.fn() })
   renderComposer(false)
   await waitFor(() => expect(window.sesAgent.listPersonnelIntroductionDrafts).toHaveBeenCalled())
-  expect(screen.queryByRole('complementary', { name: '推薦ポイント' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('complementary', { name: 'アピールポイント' })).not.toBeInTheDocument()
   expect(window.sesAgent.getRecommendationPoints).not.toHaveBeenCalled()
 })

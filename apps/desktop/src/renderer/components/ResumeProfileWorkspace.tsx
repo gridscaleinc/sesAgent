@@ -1336,7 +1336,7 @@ function CandidateProfileEditor({
                           '仅用规则查询已确认的结构化数据，不使用模型或网络',
                           '確認済み構造化データを規則で検索・モデルもネットワークも不使用'
                         )
-                      : t('只发送已确认、已脱敏的最小必要数据', '確認済み・脱敏済みの最小データだけを送信')}
+                      : t('只发送已确认、已脱敏的最小必要数据', '確認済み・マスキング済みの最小データだけを送信')}
                   </span>
                 </div>
                 {assistantMode === 'cloud' ? (
@@ -1368,7 +1368,7 @@ function CandidateProfileEditor({
                       <label>
                         <input checked={cloudConsent} onChange={(event) => setCloudConsent(event.target.checked)} type="checkbox" />
                         <span>
-                          <strong>{t('确认发送脱敏后的匿名档案', '脱敏後の匿名プロフィール送信を確認')}</strong>
+                          <strong>{t('确认发送脱敏后的匿名档案', 'マスキング後の匿名プロフィール送信を確認')}</strong>
                           <small>
                             {t(
                               '不会发送姓名、电话、邮箱、详细住址或原文；回答也会在本机再次检查。',
@@ -1413,7 +1413,7 @@ function CandidateProfileEditor({
                             )
                           : t(
                               '云端 AI 分析仅使用已确认的脱敏数据，深入分析总结、适合度和建议。',
-                              'Cloud AI分析は脱敏済みの確認データだけで、要約・適性・提案を深く分析します。'
+                              'Cloud AI分析はマスキング済みの確認データだけで、要約・適性・提案を深く分析します。'
                             )}
                       </p>
                     </div>
@@ -1423,7 +1423,7 @@ function CandidateProfileEditor({
                         {message.role === 'assistant' && message.mode ? (
                           <span className={`candidate-ai-answer-mode is-${message.mode}`}>
                             {message.mode === 'cloud'
-                              ? t('云端 AI · 已脱敏', 'Cloud AI・脱敏済み')
+                              ? t('云端 AI · 已脱敏', 'Cloud AI・マスキング済み')
                               : message.mode === 'local-fallback'
                                 ? t('云端不可用 · 已回退到本地查询', 'Cloud不可・ローカル照会へフォールバック')
                                 : t('本地数据查询', 'ローカルデータ照会')}
@@ -1475,7 +1475,7 @@ function CandidateProfileEditor({
                   {cloudBusy ? (
                     <div className="candidate-ai-loading">
                       <i />
-                      <span>{t('云端 AI 正在分析脱敏档案…', 'Cloud AIが脱敏済みプロフィールを分析中…')}</span>
+                      <span>{t('云端 AI 正在分析脱敏档案…', 'Cloud AIがマスキング済みプロフィールを分析中…')}</span>
                     </div>
                   ) : null}
                 </div>

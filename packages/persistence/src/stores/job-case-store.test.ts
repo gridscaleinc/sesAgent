@@ -45,6 +45,45 @@ describe.skipIf(!nativeSqliteAvailable)('JobCaseStore via EncryptedApplicationRe
     expect(reopened.getJobCaseHistory(reviewId)).toHaveLength(1)
   })
 
+  it('fills only the empty fields of a valid case as one new version, never one that has a value', () => {
+    const { repository } = handle
+    const { reviewId } = saveManualJobCaseDraft(repository, { subject: 'Kotlin案件', body: '必須スキル：Kotlin / AWS\n単価：80万円/月' })
+    confirmAllJobCaseFields(repository, reviewId)
+    const before = repository.getJobCaseReview(reviewId)!
+    expect(before.fields.find((field) => field.key === 'location')?.value).toBeNull()
+    const result = repository.fillEmptyJobCaseFields(
+      reviewId,
+      { location: '渋谷駅', start_date: '2026年11月〜', rate: '100万円/月' },
+      'AIで未入力項目を補完',
+      'op-1',
+      '高橋 遥'
+    )
+    expect(result.filled.sort()).toEqual(['location', 'start_date'])
+    const value = (key: string) => result.review.fields.find((field) => field.key === key)?.value
+    expect(value('location')).toBe('渋谷駅')
+    expect(value('start_date')).toBe('2026年11月〜')
+    expect(value('rate')).toBe('80万円/月')
+    expect(result.review).toMatchObject({ status: 'completed', jobCase: { version: 2 } })
+    // Nothing left to fill: no new version.
+    expect(repository.fillEmptyJobCaseFields(reviewId, { location: '品川' }, 'AIで未入力項目を補完', 'op-1', '高橋 遥').filled).toEqual([])
+    expect(repository.getJobCaseReview(reviewId)?.jobCase?.version).toBe(2)
+  })
+
+  it('replaces the accepted corrections as one new version, and refuses a case changed since they were read', () => {
+    const { repository } = handle
+    const { reviewId } = saveManualJobCaseDraft(repository, { subject: 'Scala案件', body: '必須スキル：Scala / AWS\n単価：80万円/月\n勤務地：品川' })
+    const confirmed = confirmAllJobCaseFields(repository, reviewId)
+    const revision = repository.getJobCaseReview(reviewId)!.reviewRevision
+    const result = repository.reviseJobCaseFields(reviewId, revision, { location: '渋谷駅', rate: '80万円/月' }, 'AIの再確認で修正', 'op-1', '高橋 遥')
+    // rate is unchanged, so only location is written.
+    expect(result.changed).toEqual(['location'])
+    expect(result.review.fields.find((field) => field.key === 'location')?.value).toBe('渋谷駅')
+    expect(result.review.jobCase?.version).toBe((confirmed.jobCase?.version ?? 0) + 1)
+    expect(() =>
+      repository.reviseJobCaseFields(reviewId, revision, { location: '新宿' }, 'AIの再確認で修正', 'op-1', '高橋 遥')
+    ).toThrow(/案件が更新されました/)
+  })
+
   it('does not keep the raw contact name or phone in the encrypted database file', () => {
     const { repository } = handle
     saveManualJobCaseDraft(repository, { subject: `${contactName}様 Python案件`, body, knownPersonNames: [contactName] })

@@ -138,7 +138,7 @@ export class BusinessProgressStore extends DomainStore {
         this.pairRejected?.(input.documentId, input.reviewId)
       )
         fail(
-          '这个人员已被判定不满足该案件的要求，不能推荐或安排面试；如判断有变，请先在匹配中撤回「不满足」。 / この要員は案件の条件を満たさないと判断済みのため、推薦や面談の設定はできません。判断が変わった場合は「満たさない」を取り消してください。'
+          '这个人员已被判定不满足该案件的要求，不能推荐或安排面试；如判断有变，请先在匹配中撤回「不满足」。 / この要員は案件の条件を満たさないと判断済みのため、提案や面談の設定はできません。判断が変わった場合は「満たさない」を取り消してください。'
         )
       const personStatus = this.stores.personnel.workspace().states.find((row) => row.documentId === input.documentId)?.status
       if (
@@ -149,7 +149,7 @@ export class BusinessProgressStore extends DomainStore {
       // In place (已进场) the person is not proposed again (as introductions refuse too); 近期可入场 opens that up.
       if (personStatus === 'assigned' && input.action === 'recommend' && !current?.progress?.recommendedAt)
         fail(
-          '这个人员已进场，不能再记录推荐；项目快结束时请先把营业状态改为近期可入场。 / この要員は参画中のため推薦を記録できません。終了が近い場合は営業状態を「近日稼働可能」に変更してください。'
+          '这个人员已进场，不能再记录推荐；项目快结束时请先把营业状态改为近期可入场。 / この要員は参画中のため提案を記録できません。終了が近い場合は営業状態を「近日稼働可能」に変更してください。'
         )
       // In place (已进场), no new client interview is booked; once HR marks 近期可入场 ahead of the end, it can be.
       if (personStatus === 'assigned' && (input.action === 'schedule' || input.action === 'rebook') && input.schedule.scheduledAt)

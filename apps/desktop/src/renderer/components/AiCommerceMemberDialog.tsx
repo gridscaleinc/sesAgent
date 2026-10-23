@@ -16,6 +16,13 @@ interface AiCommerceMemberDialogProps {
   onSendPrompt(input: PrepareAiCommerceCloudPromptInput): Promise<AiCommerceCloudPromptResult>
 }
 
+/** A signed-in member whose balance is unknown or older than a minute. */
+export function walletNeedsRefresh(state: AiCommerceMembershipState, now = Date.now()): boolean {
+  if (state.connection !== 'connected') return false
+  if (!state.wallet || !state.refreshedAt) return true
+  return now - Date.parse(state.refreshedAt) >= 60_000
+}
+
 function formatCredits(credits: number): string {
   return new Intl.NumberFormat('ja-JP').format(credits)
 }
@@ -42,6 +49,25 @@ export function AiCommerceMemberDialog({
   const [result, setResult] = useState<AiCommerceCloudPromptResult | null>(null)
 
   useEffect(() => setState(initialState), [initialState])
+
+  // Opened while signed in: what is shown is the balance Main saw last; fetch the current one once, quietly.
+  const [walletRefreshing, setWalletRefreshing] = useState(false)
+  useEffect(() => {
+    if (!walletNeedsRefresh(initialState)) return
+    let active = true
+    setWalletRefreshing(true)
+    Promise.resolve(onRefresh())
+      .then((next) => {
+        if (active && next && 'configuration' in next) setState(next)
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setWalletRefreshing(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     if (callbackError) setError(callbackError)
@@ -149,14 +175,14 @@ export function AiCommerceMemberDialog({
               )}
             </p>
           </div>
-          <button
+          <button className="close-button"
             aria-label={t('关闭会员与云端 AI', '会員と Cloud AI を閉じる')}
             data-initial-focus="true"
             disabled={busy !== null}
             onClick={onClose}
             type="button"
           >
-            ×
+            <Icon name="x" size={18} />
           </button>
         </header>
 
@@ -212,7 +238,9 @@ export function AiCommerceMemberDialog({
                   <strong>
                     {state.wallet
                       ? t(`${formatCredits(Math.max(0, state.wallet.balanceCredits - state.wallet.reservedCredits))} 点`, `${formatCredits(Math.max(0, state.wallet.balanceCredits - state.wallet.reservedCredits))} クレジット`)
-                      : t('未查询', '未照会')}
+                      : walletRefreshing
+                        ? t('正在读取…', '読み込み中…')
+                        : t('未查询', '未照会')}
                   </strong>
                   <small>
                     {state.wallet
@@ -272,7 +300,7 @@ export function AiCommerceMemberDialog({
                   <div className="aicommerce-prompt-heading">
                     <Icon name="sparkles" size={17} />
                     <div>
-                      <strong>{t('使用已脱敏文本运行云端 AI', '脱敏済みテキストで Cloud AI を実行')}</strong>
+                      <strong>{t('使用已脱敏文本运行云端 AI', 'マスキング済みテキストで Cloud AI を実行')}</strong>
                       <span>
                         {t(
                           '自动选择 AICommerce 返回的可用 chat/text 能力；重试同一操作时保持相同 request_id。遇到 401 时安全刷新令牌，遇到 202 时最多轮询 60 秒。',
@@ -337,7 +365,7 @@ export function AiCommerceMemberDialog({
                       <small>
                         {t(
                           '执行本地 NER、规则脱敏和独立 DLP；仅当用户在系统原生确认窗口批准脱敏预览后才会发送。',
-                          'ローカル NER・規則脱敏・独立 DLP を実行し、脱敏済みプレビューを原生確認画面で承認した場合だけ送信します。'
+                          'ローカル NER・ルールによるマスキング・独立 DLP を実行し、マスキング済みプレビューを原生確認画面で承認した場合だけ送信します。'
                         )}
                       </small>
                     </span>
@@ -354,7 +382,7 @@ export function AiCommerceMemberDialog({
                       onClick={() => void run('prompt', () => onSendPrompt({ content: content.trim() }))}
                       type="button"
                     >
-                      {busy === 'prompt' ? t('正在准备确认…', '確認を準備中…') : t('确认脱敏预览', '脱敏プレビューを確認')}
+                      {busy === 'prompt' ? t('正在准备确认…', '確認を準備中…') : t('确认脱敏预览', 'マスキング後のプレビューを確認')}
                     </button>
                   </div>
                   {result ? (

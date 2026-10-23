@@ -295,12 +295,12 @@ export function TrayPanel({ api }: { api: TrayDesktopApi }) {
       <p className="tray-week">
         {t(
           `本周：新增 ${summary.week.casesCreated} 案件，推荐 ${summary.week.recommended} 人，进场 ${summary.week.started} 人`,
-          `今週：新規案件 ${summary.week.casesCreated} 件・推薦 ${summary.week.recommended} 名・参画 ${summary.week.started} 名`
+          `今週：新規案件 ${summary.week.casesCreated} 件・提案 ${summary.week.recommended} 名・参画 ${summary.week.started} 名`
         )}
       </p>
       <footer className="tray-actions">
         <button onClick={() => open('cases:new')} type="button">
-          {t('新增案件', '案件を追加')}
+          {t('新增案件', '案件登録')}
         </button>
         <button onClick={() => open('people:import')} type="button">
           {t('导入简历', '履歴書を取り込む')}

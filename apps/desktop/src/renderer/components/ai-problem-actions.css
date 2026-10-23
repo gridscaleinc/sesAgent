@@ -1,0 +1,36 @@
+/* 残高を確認 / クレジットを追加 / ログイン beside an AI service problem message. */
+.ai-problem-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.ai-problem-actions .ai-problem-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ai-problem-actions .ai-problem-action.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.ai-problem-actions .ai-problem-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ai-problem-actions .ai-problem-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

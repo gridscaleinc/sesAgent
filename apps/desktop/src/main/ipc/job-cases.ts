@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { lstat, open } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { z } from 'zod'
 import {
   createRedactedEmlJobCaseSource,
   createRedactedManualJobCaseSource,
@@ -21,6 +22,9 @@ import {
   type EmlImportErrorCode,
   type ExecuteWechatVisibleReadResult,
   type ImportEmlJobCaseDraftsResult,
+  type FillJobCaseFieldsWithAiResult,
+  type JobCaseFieldCorrectionSuggestions,
+  jobCaseFieldKeys,
   type JobCaseSourceText,
   type MarkJobCaseSeenResult,
   type NewJobCaseDigest,
@@ -41,6 +45,7 @@ import {
 } from '@shared'
 import { MacWechatVisibleReader, WechatVisibleReadError } from '../wechat-visible-reader'
 import { emlReimport } from '../eml-reimport'
+import { applyJobCaseFieldCorrections, fillJobCaseFieldsWithAi, suggestJobCaseFieldCorrections } from '../job-case-ai-fill'
 import { deviceDeletionJournal } from '../deletion-journal'
 import { assertTrustedSender, type MainIpcContext } from './context'
 
@@ -472,7 +477,7 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
               items.push({ fileName, status: 'duplicate', classification: parsed.classification, errorCode: null, review: duplicate })
               continue
             }
-            throw new EmlFileImportError('PERSISTENCE_FAILED', 'EML の脱敏済み案件草稿を保存できませんでした。')
+            throw new EmlFileImportError('PERSISTENCE_FAILED', 'EML のマスキング済み案件草稿を保存できませんでした。')
           }
           const saved = repository.getJobCaseReview(draft.reviewId)
           if (!saved) throw new EmlFileImportError('PERSISTENCE_FAILED', '取り込んだ案件草稿を再読み込みできませんでした。')
@@ -492,6 +497,8 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
           bytes?.fill(0)
         }
       }
+      // Rules first; what they left empty the AI completes in the background.
+      context.jobCaseAiFiller.enqueue(items.flatMap((item) => (item.status === 'imported' && item.review ? [item.review.reviewId] : [])))
       return {
         cancelled: false,
         importedCount: items.filter((item) => item.status === 'imported').length,
@@ -503,6 +510,30 @@ export function registerJobCaseHandlers(context: MainIpcContext) {
     } finally {
       emlImportBusy = false
     }
+  })
+
+  ipcMain.handle(ipcChannels.fillJobCaseFieldsWithAi, async (event, rawReviewId): Promise<FillJobCaseFieldsWithAiResult> => {
+    assertTrustedSender(event)
+    const reviewId = jobCaseReviewIdSchema.parse(rawReviewId)
+    return fillJobCaseFieldsWithAi(context, reviewId)
+  })
+
+  ipcMain.handle(ipcChannels.suggestJobCaseFieldCorrections, async (event, rawReviewId): Promise<JobCaseFieldCorrectionSuggestions> => {
+    assertTrustedSender(event)
+    return suggestJobCaseFieldCorrections(context, jobCaseReviewIdSchema.parse(rawReviewId))
+  })
+
+  ipcMain.handle(ipcChannels.applyJobCaseFieldCorrections, (event, rawInput): FillJobCaseFieldsWithAiResult => {
+    assertTrustedSender(event)
+    const input = z
+      .object({
+        reviewId: jobCaseReviewIdSchema,
+        reviewRevision: z.number().int().positive(),
+        keys: z.array(z.enum(jobCaseFieldKeys)).max(jobCaseFieldKeys.length)
+      })
+      .strict()
+      .parse(rawInput)
+    return applyJobCaseFieldCorrections(context, input)
   })
 
   ipcMain.handle(ipcChannels.getJobCaseHistory, (event, rawReviewId) => {

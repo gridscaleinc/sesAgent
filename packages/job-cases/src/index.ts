@@ -426,14 +426,22 @@ const fieldDefinitions: ReadonlyArray<{
   },
   { key: 'rate', label: '単価', labels: /(?:単価|月額|金額)/iu },
   { key: 'settlement', label: '精算', labels: /(?:精算(?:幅|条件)?)/iu },
-  { key: 'location', label: '勤務地', labels: /(?:勤務地|場所|現場|最寄(?:駅)?)/iu },
+  {
+    key: 'location',
+    label: '勤務地',
+    labels: /(?:勤務地|(?:勤務|作業|就業|常駐)(?:場所|先)|場所|現場|ロケーション|勤務エリア|最寄(?:り)?(?:駅)?)/iu
+  },
   { key: 'remote', label: 'リモート', labels: /(?:リモート|テレワーク|在宅|出社(?:頻度)?|勤務形態)/iu },
-  { key: 'start_date', label: '開始時期', labels: /(?:開始(?:時期|日)?|参画(?:時期)?|稼働開始|作業期間|稼働期間|参画期間)/iu },
+  {
+    key: 'start_date',
+    label: '開始時期',
+    labels: /(?:開始(?:時期|日)?|参画(?:時期)?|稼働開始|入場(?:時期|日)?|(?:作業|稼働|参画|契約|就業|案件|予定)?期間|(?:稼働|参画)?時期)/iu
+  },
   { key: 'working_hours', label: '勤務時間', labels: /(?:勤務時間|就業時間|工数|稼働時間)/iu },
   { key: 'japanese_level', label: '日本語', labels: /(?:日本語(?:レベル)?|語学)/iu },
   { key: 'interview', label: '面談', labels: /(?:面談(?:回数)?|面接)/iu },
   { key: 'headcount', label: '募集人数', labels: /(?:募集人数|採用人数|必要人数|人数|要員数)/iu },
-  { key: 'contract_chain', label: '契約・商流', labels: /(?:商流|契約(?:形態)?|所属制限)/iu },
+  { key: 'contract_chain', label: '契約・商流', labels: /(?:商流|契約(?!期間)(?:形態)?|所属制限)/iu },
   { key: 'payment_terms', label: '支払条件', labels: /(?:支払(?:サイト|条件)?|支払い)/iu },
   { key: 'work_authorization', label: '就労資格', labels: /(?:就労資格|就労可否|就労制限|ビザサポート)/iu },
   { key: 'notes', label: '備考', labels: /(?:備考|特記(?:事項)?|その他(?:条件)?|注意事項|補足|留意(?:点|事項)?)/iu }
@@ -475,7 +483,7 @@ const skillVocabulary = [
 ] as const
 
 const nextLabelPattern =
-  /\s+(?=(?:募集(?:職種|枠|ロール)?|ポジション|役割|ロール|業界|業種|必須(?:スキル|要件|経験)?|必要(?:スキル|要件|経験)|技術要件|スキル|尚可(?:スキル|要件|条件)?|歓迎(?:スキル|要件|条件)?|単価|月額|金額|精算(?:幅|条件)?|勤務地|場所|現場|最寄(?:駅)?|リモート|テレワーク|在宅|出社(?:頻度)?|勤務形態|開始(?:時期|日)?|参画(?:時期)?|稼働開始|作業期間|勤務時間|就業時間|工数|稼働時間|日本語(?:レベル)?|語学|面談(?:回数)?|面接|募集人数|人数|商流|契約(?:形態)?|所属制限|支払(?:サイト|条件)?|支払い|就労資格|就労可否|就労制限|ビザサポート|備考|特記(?:事項)?|その他(?:条件)?|注意事項|補足)\s*[:：])/iu
+  /\s+(?=(?:募集(?:職種|枠|ロール)?|ポジション|役割|ロール|業界|業種|必須(?:スキル|要件|経験)?|必要(?:スキル|要件|経験)|技術要件|スキル|尚可(?:スキル|要件|条件)?|歓迎(?:スキル|要件|条件)?|単価|月額|金額|精算(?:幅|条件)?|勤務地|(?:勤務|作業|就業|常駐)(?:場所|先)|場所|現場|ロケーション|勤務エリア|最寄(?:り)?(?:駅)?|リモート|テレワーク|在宅|出社(?:頻度)?|勤務形態|開始(?:時期|日)?|参画(?:時期)?|稼働開始|入場(?:時期|日)?|(?:作業|稼働|参画|契約|就業|案件|予定)?期間|(?:稼働|参画)?時期|勤務時間|就業時間|工数|稼働時間|日本語(?:レベル)?|語学|面談(?:回数)?|面接|募集人数|人数|商流|契約(?!期間)(?:形態)?|所属制限|支払(?:サイト|条件)?|支払い|就労資格|就労可否|就労制限|ビザサポート|備考|特記(?:事項)?|その他(?:条件)?|注意事項|補足)\s*[:：])/iu
 const piiPlaceholderPresencePattern =
   /<(?:PERSON_NAME|PHONE|PRIVATE_EMAIL|POSTAL_ADDRESS|BIRTH_DATE|FACE_OR_PHOTO|SIGNATURE|GOVERNMENT_ID|PERSONAL_ACCOUNT_OR_URL|IDENTIFYING_QR_CODE)_\d{3}>/u
 const sourceInstructionPattern =
@@ -512,7 +520,7 @@ function bodyLines(body: string): string[] {
     .slice(0, 2_000)
 }
 
-const lineLeadDecorationPattern = /^[\s■●▼▲★◆◇□○◎・*+=~〜|｜>＞\-–—【\[（(]*/u
+const lineLeadDecorationPattern = /^[\s■●▼▲★◆◇□○◎・*+=~〜|｜>＞\-–—【\[［＜《（(]*/u
 
 /**
  * The words a heading may add to its own label before the colon -
@@ -536,7 +544,7 @@ function labelValueMatch(line: string, labels: RegExp): { index: number; length:
     const index = match.index ?? 0
     // A heading written as 【必要スキル】 or [尚可] ends at its closing bracket.
     const rest = line.slice(index + match[0].length)
-    const after = rest.replace(/^[\s】\]）)]+/u, '')
+    const after = rest.replace(/^[\s】\]］＞》）)]+/u, '')
     const hasColon = /^\s*[:：]/u.test(after)
     if (index === leadOffset) {
       if (hasColon || after.trim().length === 0) return { index, length: match[0].length }
@@ -544,6 +552,11 @@ function labelValueMatch(line: string, labels: RegExp): { index: number; length:
       // ■必須スキル・人物像： - and still opens that field's section.
       const suffix = labelHeadingSuffixPattern.exec(after)?.[0]
       if (suffix) return { index, length: match[0].length + (rest.length - after.length) + suffix.length }
+      // 【期間】即日～, ［勤務地］渋谷, 期間<TAB>即日～ and HTML table cells (期間 2026年11月～): a closing bracket
+      // or a space right after a leading label ends it like a colon - unless a particle shows it is prose (現場の…).
+      if (/^[\s】\]］＞》）)]/u.test(rest) && !/^[のはがをにもでとへやより]/u.test(after)) {
+        return { index, length: match[0].length + (rest.length - after.length) }
+      }
     }
     if (index > 0 && hasColon && /[\s（(、／/・｜|]/u.test(line[index - 1] ?? '')) {
       return { index, length: match[0].length }
@@ -573,14 +586,14 @@ const sectionStopLeadPattern =
  * lines, stopping at the next heading. Bounded on purpose: nothing is guessed
  * past the section's own lines.
  */
-function labeledSection(lines: string[], labels: RegExp): { value: string; line: string } | null {
+function labeledSection(lines: string[], labels: RegExp, maxItems = 6): { value: string; line: string } | null {
   for (const [index, line] of lines.entries()) {
     const match = labelValueMatch(line, labels)
     if (!match) continue
     const inline = cleanBusinessValue(line.slice(match.index + match.length).replace(/^\s*[:：]?\s*/u, ''))
     if (inline) return { value: inline, line }
     const items: string[] = []
-    for (let cursor = index + 1; cursor < lines.length && items.length < 6; cursor += 1) {
+    for (let cursor = index + 1; cursor < lines.length && items.length < maxItems; cursor += 1) {
       const candidate = lines[cursor]!
       const stripped = candidate.replace(lineLeadDecorationPattern, '').trim()
       if (!stripped) break
@@ -679,6 +692,20 @@ function bulletPeriodAndPlace(lines: string[]): { startDate: string; location: s
     if (match?.[1] && match[2]) return { startDate: match[1], location: match[2], line }
   }
   return null
+}
+
+/**
+ * A subject that states the period and the place the way a bullet does -
+ * 【案件】Java開発／即日〜長期／渋谷 - read only when the body labels neither.
+ * A work style after the slash (／フルリモート) is not a place.
+ */
+const subjectPeriodPlacePattern =
+  /(?:^|[／/】\s\u3000])((?:[0-9０-９]{1,2}月|即日|来月|今月|翌月|ASAP)[^\s\u3000／/、，,【】]{0,10})[\s\u3000]*[／/][\s\u3000]*([^\s\u3000／/、，,。【】]{1,20})/u
+
+function subjectPeriodAndPlace(subject: string): { startDate: string; location: string } | null {
+  const match = subjectPeriodPlacePattern.exec(subject)
+  if (!match?.[1] || !match[2] || /(?:リモート|リモ|在宅|テレワーク)/u.test(match[2])) return null
+  return { startDate: match[1], location: match[2] }
 }
 
 /**
@@ -859,6 +886,7 @@ export function extractJobCaseDraft(
     ? (recordLines[0] ?? source.redactedSubject)
     : source.redactedSubject
   const bullet = bulletPeriodAndPlace(lines)
+  const subjectPair = subjectPeriodAndPlace(source.redactedSubject)
   const shorthandValue = (key: JobCaseFieldKey): string | null =>
     shorthand && key !== 'title' && key in shorthand.fields ? (shorthand.fields[key as ShorthandTokenKey] ?? null) : null
   const fields = fieldDefinitions.map((definition) => {
@@ -949,10 +977,20 @@ export function extractJobCaseDraft(
         normalized && extracted ? [{ sourceLabel: bodyLabel, excerpt: excerpt(extracted.line) }] : []
       )
     }
-    const extracted = definition.labels ? valueAfterLabel(lines, definition.labels) : null
-    if (!extracted && bullet && (definition.key === 'start_date' || definition.key === 'location')) {
+    // 期間 and 勤務地 are often a heading with the value on the next line (■期間 / 2026年11月～).
+    const periodOrPlace = definition.key === 'start_date' || definition.key === 'location'
+    const extracted = definition.labels
+      ? periodOrPlace
+        ? labeledSection(lines, definition.labels, 1)
+        : valueAfterLabel(lines, definition.labels)
+      : null
+    if (!extracted && bullet && periodOrPlace) {
       const value = definition.key === 'start_date' ? bullet.startDate : bullet.location
       return makeField(definition, value, 0.8, [{ sourceLabel: bodyLabel, excerpt: excerpt(bullet.line) }])
+    }
+    if (!extracted && subjectPair && periodOrPlace && !shorthandValue(definition.key)) {
+      const value = definition.key === 'start_date' ? subjectPair.startDate : subjectPair.location
+      return makeField(definition, value, 0.7, [{ sourceLabel: subjectLabel, excerpt: excerpt(source.redactedSubject) }])
     }
     if (!extracted && shorthandValue(definition.key)) {
       return makeField(definition, shorthandValue(definition.key), shorthandFieldConfidence, shorthandSource())

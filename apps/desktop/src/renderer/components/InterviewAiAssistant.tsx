@@ -677,8 +677,8 @@ export function InterviewAiAssistant({
             <Icon name="clock" size={14} />
             {t('历史', '履歴')}
           </button>
-          <button aria-label={t('关闭 AI 面试助手', 'AI面談アシスタントを閉じる')} onClick={onClose} type="button">
-            ×
+          <button className="close-button" aria-label={t('关闭 AI 面试助手', 'AI面談アシスタントを閉じる')} onClick={onClose} type="button">
+            <Icon name="x" size={18} />
           </button>
         </div>
       </header>
@@ -733,7 +733,7 @@ export function InterviewAiAssistant({
             <Icon name={mode === 'cloud' ? 'shield' : 'database'} size={14} />
             <span>
               {mode === 'cloud'
-                ? t('仅发送脱敏后的最小面试上下文', '脱敏済みの最小面談コンテキストだけを送信')
+                ? t('仅发送脱敏后的最小面试上下文', 'マスキング済みの最小面談コンテキストだけを送信')
                 : t('读取本机档案和面试记录，不连接云端', '端末内プロフィールと面談記録だけを参照')}
             </span>
           </div>
@@ -830,7 +830,7 @@ export function InterviewAiAssistant({
                   {message.role === 'assistant' && message.mode ? (
                     <span className={`interview-ai-answer-mode is-${message.mode}`}>
                       {message.mode === 'cloud'
-                        ? t('Cloud AI · 已脱敏', 'Cloud AI・脱敏済み')
+                        ? t('Cloud AI · 已脱敏', 'Cloud AI・マスキング済み')
                         : message.mode === 'local-fallback'
                           ? t('云端不可用 · 本机回答', 'Cloud利用不可・端末内回答')
                           : t('本机结构化辅助', '端末内構造化支援')}
@@ -873,7 +873,7 @@ export function InterviewAiAssistant({
             {busy ? (
               <div className="interview-ai-loading">
                 <i />
-                <span>{t('Cloud AI 正在分析脱敏后的面试上下文…', 'Cloud AIが脱敏済み面談コンテキストを分析中…')}</span>
+                <span>{t('Cloud AI 正在分析脱敏后的面试上下文…', 'Cloud AIがマスキング済み面談コンテキストを分析中…')}</span>
               </div>
             ) : null}
           </div>
@@ -908,7 +908,7 @@ export function InterviewAiAssistant({
             <Icon name="shield" size={13} />
             <span>
               {mode === 'cloud'
-                ? t('个人信息在本机脱敏，输出需人工确认', '本人情報は端末内脱敏・出力は人が確認')
+                ? t('个人信息在本机脱敏，输出需人工确认', '本人情報は端末内マスキング・出力は人が確認')
                 : t('完全本机处理，不发送云端', '完全端末内処理・Cloud送信なし')}
             </span>
           </footer>

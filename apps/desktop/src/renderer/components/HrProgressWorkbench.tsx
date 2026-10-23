@@ -29,6 +29,7 @@ import { ActionMenu } from './HrObjectList'
 import './hr-followups.css'
 import './hr-progress.css'
 import { notifyBusinessDataChanged } from '../business-data-events'
+import { Icon } from './Icon'
 
 type Panel = 'schedule' | 'questions' | 'feedback' | 'entry' | 'history'
 type ScheduleConflict = { command: ProgressCommand; rowKey: string; draft: Draft | undefined }
@@ -657,12 +658,18 @@ export function HrProgressWorkbench({
           <button disabled={busy} type="button" onClick={onBack}>
             ← {t('返回营业情况', '営業状況に戻る')}
           </button>
-          <button disabled={busy} type="button" onClick={onBack} aria-label={t('关闭跟进操作', '対応操作を閉じる')}>
-            ×
+          <button
+            className="close-button"
+            disabled={busy}
+            type="button"
+            onClick={onBack}
+            aria-label={t('关闭跟进操作', '対応操作を閉じる')}
+          >
+            <Icon name="x" size={18} />
           </button>
         </header>
       ) : (
-        <h2 className="sr-only">{t('从推荐到进场', '推薦から参画まで')}</h2>
+        <h2 className="sr-only">{t('从推荐到进场', '提案から参画まで')}</h2>
       )}
       {!embedded ? (
         <nav className="hr-followup-filters" aria-label={t('跟进阶段', '対応段階')}>
@@ -1042,7 +1049,7 @@ export function HrProgressWorkbench({
               <p className="hr-progress-case-ended" role="status">
                 {t(
                   'HR 已判定这个人员不满足该案件的要求：不能再推荐或约面试。如判断有变，请在匹配中撤回「不满足」；否则可以结束这条跟进。',
-                  'この要員は案件の条件を満たさないと判断済みです。推薦や面談の設定はできません。判断が変わった場合はマッチングで「満たさない」を取り消し、そうでなければこの対応を終了してください。'
+                  'この要員は案件の条件を満たさないと判断済みです。提案や面談の設定はできません。判断が変わった場合はマッチングで「満たさない」を取り消し、そうでなければこの対応を終了してください。'
                 )}
               </p>
             ) : null}
@@ -1064,7 +1071,7 @@ export function HrProgressWorkbench({
             ) : null}
             <div className="hr-progress-track" aria-label={t('业务流程', '業務の流れ')}>
               {[
-                t('推荐', '推薦'),
+                t('推荐', '提案'),
                 t('约面', '日程調整'),
                 t('面试与反馈', '面談と結果'),
                 t('入场准备', '参画準備'),

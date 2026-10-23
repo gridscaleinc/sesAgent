@@ -442,7 +442,7 @@
     recipientCc: [],
     candidateDisplayName: '候補者A',
     subject: '【人材ご提案】決済基盤刷新 / 候補者A',
-    body: 'いつもお世話になっております。\n\n決済基盤刷新のご要件に関連し、候補者Aをご提案いたします。\n\n詳細は脱敏済み添付資料をご確認ください。',
+    body: 'いつもお世話になっております。\n\n決済基盤刷新のご要件に関連し、候補者Aをご提案いたします。\n\n詳細はマスキング済み添付資料をご確認ください。',
     attachment: {
       fileName: 'candidate-38dca6f6-profile.pdf',
       mimeType: 'application/pdf',
@@ -530,7 +530,12 @@
         detail: '最近の同期は現在の Label・期間・件数上限と一致します。'
       },
       { id: 'successful-sync', status: 'passed', label: 'Gmail の有界同期', detail: '最終同期: 取得候補 8件、保存 6件、失敗 0件。' },
-      { id: 'local-redaction', status: 'warning', label: 'ローカル脱敏証跡', detail: '5件通過、1件は要確認として端末内に留めています。' },
+      {
+        id: 'local-redaction',
+        status: 'warning',
+        label: 'ローカルマスキング証跡',
+        detail: '5件通過、1件は要確認として端末内に留めています。'
+      },
       { id: 'no-cloud-model', status: 'passed', label: 'クラウド大模型未使用', detail: 'Google API と端末内処理だけで実行されました。' },
       { id: 'no-send-path', status: 'passed', label: '送信経路なし', detail: 'Gmail 草稿・送信 Scope と送信 API は実装されていません。' }
     ],

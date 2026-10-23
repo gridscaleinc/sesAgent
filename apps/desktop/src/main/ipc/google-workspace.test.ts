@@ -18,7 +18,13 @@ vi.mock('@mail', async (original) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({ created: 1, confirmed: 1, needsAttention: 0, failed: 0, duplicates: 0 })
+  vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({
+    created: 1,
+    confirmed: 1,
+    needsAttention: 0,
+    failed: 0,
+    duplicates: 0
+  })
   vi.mocked(importPendingGmailPersonnel).mockResolvedValue({ personnel: 2, failed: 0 })
 })
 
@@ -52,7 +58,8 @@ function setup(status = 'idle', lastError: string | null = null) {
       maxMessagesPerRun: 200
     },
     currentOperator: () => ({ operatorId: 'op', displayName: 'HR' }),
-    preflightAction: vi.fn((..._args: unknown[]) => 'action1')
+    preflightAction: vi.fn((..._args: unknown[]) => 'action1'),
+    jobCaseAiFiller: { enqueue: vi.fn() }
   }
   return { ...registerGoogleWorkspaceHandlers(context as any), repository, context }
 }
@@ -68,6 +75,17 @@ it('persists separate business intake counts and completes a successful action',
   expect(h.context.preflightAction.mock.calls[0]?.[0]).toBe('gmail.sync.read')
 })
 
+it('hands the cases a sync made valid to the background AI completion without waiting for it', async () => {
+  vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockImplementation((...args) => {
+    args[5]?.('review-1')
+    args[5]?.('review-2')
+    return { created: 2, confirmed: 2, needsAttention: 0, failed: 0, duplicates: 0 }
+  })
+  const h = setup()
+  await h.startGmailSync()
+  expect(h.context.jobCaseAiFiller.enqueue).toHaveBeenCalledExactlyOnceWith(['review-1', 'review-2'])
+})
+
 it('does not report a failed receive checkpoint as a successful action', async () => {
   const h = setup('error', 'MESSAGE_PROCESSING_FAILED')
   await h.startGmailSync()
@@ -76,7 +94,13 @@ it('does not report a failed receive checkpoint as a successful action', async (
 
 it.each(['case', 'personnel'])('marks %s intake failure even when receiving succeeded', async (kind) => {
   if (kind === 'case')
-    vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({ created: 0, confirmed: 0, needsAttention: 0, failed: 1, duplicates: 0 })
+    vi.mocked(createJobCaseDraftsForPendingGmailMessages).mockReturnValue({
+      created: 0,
+      confirmed: 0,
+      needsAttention: 0,
+      failed: 1,
+      duplicates: 0
+    })
   else vi.mocked(importPendingGmailPersonnel).mockResolvedValue({ personnel: 0, failed: 1 })
   const h = setup()
   await h.startGmailSync()

@@ -253,7 +253,7 @@ export class BusinessGrowthStore extends DomainStore {
     // Marking a pair read is harmless whatever changed since the list was drawn (opening it from 今天 must not
     // fail on that); removing or restoring acts on what HR saw, so a newer conclusion is refused.
     if (!entry || (entry.fingerprint !== input.fingerprint && input.action !== 'seen'))
-      throw new Error('推荐已更新，请刷新 / 推薦が更新されました')
+      throw new Error('推荐已更新，请刷新 / マッチング候補が更新されました')
     this.database
       .prepare('UPDATE matching_opportunities SET payload=? WHERE id=?')
       // 'restored' undoes a removal: the pair comes back as already seen.

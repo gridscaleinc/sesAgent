@@ -1256,6 +1256,27 @@ export class EncryptedApplicationRepository implements RedactionEvidenceStore {
     return this.stores.jobCases.saveBusinessCaseField(input, reviewerId, reviewerName)
   }
 
+  fillEmptyJobCaseFields(
+    reviewId: string,
+    values: Partial<Record<string, string>>,
+    changeReason: string,
+    reviewerId: string,
+    reviewerName: string
+  ) {
+    return this.stores.jobCases.fillEmptyJobCaseFields(reviewId, values, changeReason, reviewerId, reviewerName)
+  }
+
+  reviseJobCaseFields(
+    reviewId: string,
+    expectedRevision: number,
+    values: Partial<Record<string, string>>,
+    changeReason: string,
+    reviewerId: string,
+    reviewerName: string
+  ) {
+    return this.stores.jobCases.reviseJobCaseFields(reviewId, expectedRevision, values, changeReason, reviewerId, reviewerName)
+  }
+
   confirmJobCaseReview(
     input: SubmitJobCaseReviewInput,
     reviewerId: string,

@@ -3,13 +3,14 @@ import type { CommunicationPointsView } from '@shared'
 import { aiServiceProblem, localizedIpcError, requestAiSignIn, useLocaleText } from '../i18n'
 import { AiWorking } from './AiWorking'
 import { tokyoDateTime } from './use-case-resume-assessments'
+import { AiServiceProblemActions } from './AiServiceProblemActions'
 
 /** 沟通要点 of one person and case: the stored view, re-read when the pair changes, and generation on demand. */
 export function useCommunicationPoints(documentId: string, reviewId: string) {
   const { locale, t } = useLocaleText()
   const [view, setView] = useState<CommunicationPointsView | null>(null)
   const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState<{ message: string; signIn: boolean } | null>(null)
+  const [error, setError] = useState<{ message: string; signIn: boolean; quota?: boolean } | null>(null)
   const pair = `${documentId}:${reviewId}`
   const current = useRef(pair)
   current.current = pair
@@ -49,7 +50,8 @@ export function useCommunicationPoints(documentId: string, reviewId: string) {
             cause,
             t('沟通要点生成失败，请重试。', '確認事項を生成できませんでした。もう一度お試しください。')
           ),
-          signIn: aiServiceProblem(cause) === 'sign-in'
+          signIn: aiServiceProblem(cause) === 'sign-in',
+          quota: aiServiceProblem(cause) === 'quota'
         })
       return false
     } finally {
@@ -153,6 +155,7 @@ export function CommunicationPointsSection({
       {state.error ? (
         <div role="alert">
           <p>{state.error.message}</p>
+          {state.error.quota ? <AiServiceProblemActions problem="quota" /> : null}
           {state.error.signIn ? (
             <button type="button" onClick={requestAiSignIn}>
               {t('去登录', 'ログインする')}

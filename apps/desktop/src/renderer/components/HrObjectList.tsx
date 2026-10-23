@@ -942,105 +942,118 @@ export function HrObjectList({
       }}
       aria-label={kind === 'case' ? t('案件业务列表', '案件一覧') : t('人员业务列表', '要員一覧')}
     >
+      {/* The actions on their own row; the filters (絞り込み) head the list they narrow. */}
       <div className="hr-list-toolbar">
-        <label className="hr-search">
-          <Icon name="search" size={15} />
-          <input
-            ref={search}
-            aria-label={t('搜索案件或人员', '案件・要員を検索')}
-            aria-keyshortcuts="/"
-            placeholder={
-              kind === 'case'
-                ? t('搜索案件、技能、地点（/）', '案件名・スキル・勤務地（/）')
-                : t('搜索姓名、技能、角色（/）', '氏名・スキル・役割（/）')
-            }
-            value={queries[kind]}
-            onChange={(event) => {
-              setQueries((current) => ({ ...current, [kind]: event.target.value }))
-              changePage(1)
-            }}
-          />
-        </label>
-        {kind === 'case' ? (
-          <button className="hr-primary" onClick={onIntake} type="button">
-            <Icon name="upload" size={14} />
-            {t('新增案件', '案件を追加')}
-          </button>
-        ) : (
-          <ActionMenu
-            label={t('导入人员', '要員を取り込む')}
-            triggerClassName="hr-primary"
-            trigger={
-              <>
-                <Icon name="upload" size={14} />
-                {t('导入人员', '要員を取り込む')}
-              </>
-            }
-          >
-            <button role="menuitem" onClick={onIntake} type="button">
-              {t('粘贴人员介绍', '要員紹介を貼り付け')}
+        <div
+          className="hr-list-actions"
+          role="group"
+          aria-label={kind === 'case' ? t('案件操作', '案件の操作') : t('人员操作', '要員の操作')}
+        >
+          {kind === 'case' ? (
+            <button className="hr-primary" onClick={onIntake} type="button">
+              <Icon name="upload" size={14} />
+              {t('新增案件', '案件登録')}
             </button>
-            <button role="menuitem" onClick={onImportResume} type="button">
-              {t('导入简历文件', '履歴書ファイルを取り込む')}
+          ) : (
+            <ActionMenu
+              label={t('导入人员', '要員を取り込む')}
+              triggerClassName="hr-primary"
+              trigger={
+                <>
+                  <Icon name="upload" size={14} />
+                  {t('导入人员', '要員を取り込む')}
+                </>
+              }
+            >
+              <button role="menuitem" onClick={onIntake} type="button">
+                {t('粘贴人员介绍', '要員紹介を貼り付け')}
+              </button>
+              <button role="menuitem" onClick={onImportResume} type="button">
+                {t('导入简历文件', '履歴書ファイルを取り込む')}
+              </button>
+            </ActionMenu>
+          )}
+          {onImportHistory ? (
+            <button onClick={onImportHistory} type="button">
+              {kind === 'case' ? t('批量导入', '一括取込') : t('导入记录', '取込履歴')}
             </button>
-          </ActionMenu>
-        )}
-        {onImportHistory ? (
-          <button onClick={onImportHistory} type="button">
-            {kind === 'case' ? t('批量导入', '一括取込') : t('导入记录', '取込履歴')}
-          </button>
-        ) : null}
-        {extraActions
-          .filter((action) => !action.overflow)
-          .map((action) => (
-            <button key={action.id} onClick={action.onSelect} type="button">
-              {action.label}
+          ) : null}
+          {extraActions
+            .filter((action) => !action.overflow)
+            .map((action) => (
+              <button key={action.id} onClick={action.onSelect} type="button">
+                {action.label}
+              </button>
+            ))}
+          {onOpenLibrary ? (
+            <button className="hr-quiet" onClick={onOpenLibrary} type="button">
+              <Icon name="file" size={14} />
+              {kind === 'person' ? t('完整人员资料', '要員の全資料') : t('完整案件资料', '案件の全資料')}
             </button>
-          ))}
-        {onOpenLibrary ? (
-          <button className="hr-quiet" onClick={onOpenLibrary} type="button">
-            <Icon name="file" size={14} />
-            {kind === 'person' ? t('完整人员资料', '要員の全資料') : t('完整案件资料', '案件の全資料')}
-          </button>
-        ) : null}
-        {extraActions.some((action) => action.overflow) ? (
-          <ActionMenu label={t('更多', 'その他')} trigger={t('更多', 'その他')} triggerClassName="hr-quiet">
-            {extraActions
-              .filter((action) => action.overflow)
-              .map((action) => (
-                <button key={action.id} role="menuitem" onClick={action.onSelect} type="button">
-                  {action.label}
-                </button>
-              ))}
-          </ActionMenu>
-        ) : null}
+          ) : null}
+          {extraActions.some((action) => action.overflow) ? (
+            <ActionMenu label={t('更多', 'その他')} trigger={t('更多', 'その他')} triggerClassName="hr-quiet">
+              {extraActions
+                .filter((action) => action.overflow)
+                .map((action) => (
+                  <button key={action.id} role="menuitem" onClick={action.onSelect} type="button">
+                    {action.label}
+                  </button>
+                ))}
+            </ActionMenu>
+          ) : null}
+        </div>
         {headerActions ? <div className="hr-list-toolbar-end">{headerActions}</div> : null}
       </div>
       <div className="hr-list-column" hidden={listHidden}>
-        <div className="hr-list-filters">
-          {hrListFilters[kind].map((value) => (
-            <button
-              type="button"
-              key={value}
-              aria-pressed={filters[kind] === value}
-              onClick={() => {
-                setFilters((current) => ({ ...current, [kind]: value }))
-                setKeptInUnread(new Set())
-                if (kind === 'person') saveHrPosition(kind, { filter: value })
+        <div className="hr-list-filters" role="search" aria-label={t('筛选', '絞り込み')}>
+          <span className="hr-list-filter-label" aria-hidden="true">
+            <Icon name="filter" size={13} />
+            {t('筛选', '絞り込み')}
+          </span>
+          <label className="hr-search">
+            <Icon name="search" size={15} />
+            <input
+              ref={search}
+              aria-label={t('搜索案件或人员', '案件・要員を検索')}
+              aria-keyshortcuts="/"
+              placeholder={
+                kind === 'case'
+                  ? t('搜索案件、技能、地点（/）', '案件名・スキル・勤務地（/）')
+                  : t('搜索姓名、技能、角色（/）', '氏名・スキル・役割（/）')
+              }
+              value={queries[kind]}
+              onChange={(event) => {
+                setQueries((current) => ({ ...current, [kind]: event.target.value }))
                 changePage(1)
               }}
-            >
-              {
+            />
+          </label>
+          <span className="hr-list-filter-chips" role="group" aria-label={t('列表范围', '一覧の範囲')}>
+            {hrListFilters[kind].map((value) => (
+              <button
+                type="button"
+                key={value}
+                aria-pressed={filters[kind] === value}
+                onClick={() => {
+                  setFilters((current) => ({ ...current, [kind]: value }))
+                  setKeptInUnread(new Set())
+                  if (kind === 'person') saveHrPosition(kind, { filter: value })
+                  changePage(1)
+                }}
+              >
                 {
-                  working: t('负责中', '担当中'),
-                  all: kind === 'case' ? t('案件池', '案件プール') : t('全部', 'すべて'),
-                  unseen: t('未读', '未読'),
-                  later: t('稍后处理', 'あとで対応')
-                }[value]
-              }
-              {kind === 'case' && value !== 'all' ? ` ${chipCount(value)}` : ''}
-            </button>
-          ))}
+                  {
+                    working: t('负责中', '担当中'),
+                    all: kind === 'case' ? t('案件池', '案件プール') : t('全部', 'すべて'),
+                    unseen: t('未读', '未読'),
+                    later: t('稍后处理', 'あとで対応')
+                  }[value]
+                }
+                {kind === 'case' && value !== 'all' ? ` ${chipCount(value)}` : ''}
+              </button>
+            ))}
+          </span>
           {kind === 'case' && filters.case === 'all' ? (
             <select
               aria-label={t('案件状态', '案件の状態')}
@@ -1102,7 +1115,7 @@ export function HrObjectList({
               <option value="unset">{t('未设置', '未設定')}</option>
             </select>
           ) : null}
-          <span>
+          <span className="hr-list-count">
             {visible.length} {t('条', '件')}
           </span>
           <button

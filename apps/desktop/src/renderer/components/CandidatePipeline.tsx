@@ -2654,7 +2654,7 @@ export function CandidatePipeline({
           </span>
           <span>
             <Icon name="shield" size={13} />
-            {t('调用云端 AI 前自动脱敏', 'Cloud AI送信前に自動脱敏')}
+            {t('调用云端 AI 前自动脱敏', 'Cloud AI送信前に自動マスキング')}
           </span>
           {selectedAnalysis ? <span>{t(`已解析：${selectedAnalysis.fileName}`, `解析済み：${selectedAnalysis.fileName}`)}</span> : null}
         </footer>

@@ -248,7 +248,7 @@ export function CandidateReviewPanel({ analysis, review, onSubmit }: CandidateRe
       <p className="candidate-review-policy">
         {t(
           '包含个人信息的简历数据会加密保存在本机；仅在使用云端 AI 时，才会在发送前于本机脱敏。',
-          '本人情報を含む履歴書データは暗号化して端末内へ保存します。Cloud AIを利用する場合だけ、送信前にローカルで脱敏します。'
+          '本人情報を含む履歴書データは暗号化して端末内へ保存します。Cloud AIを利用する場合だけ、送信前にローカルでマスキングします。'
         )}
       </p>
 
@@ -466,7 +466,7 @@ export function CandidateReviewPanel({ analysis, review, onSubmit }: CandidateRe
           <Icon name="search" size={14} />
           <strong>
             {selectedField?.label ?? t('来源', '出典')}
-            {t('的已脱敏来源', 'の脱敏済み出典')}
+            {t('的已脱敏来源', 'のマスキング済み出典')}
           </strong>
         </div>
         {selectedField?.sourceLabels.length ? <span>{summarizeSourceLabels(selectedField.sourceLabels, locale)}</span> : null}

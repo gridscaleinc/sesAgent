@@ -217,8 +217,8 @@ export function CandidateEvaluationAuthoringDialog({
               )}
             </p>
           </div>
-          <button aria-label={t('关闭专家标签集', '専門家ラベルセットを閉じる')} disabled={busy} onClick={onClose} type="button">
-            ×
+          <button className="close-button" aria-label={t('关闭专家标签集', '専門家ラベルセットを閉じる')} disabled={busy} onClick={onClose} type="button">
+            <Icon name="x" size={18} />
           </button>
         </header>
 

@@ -1723,10 +1723,16 @@ it('offers one primary import per list and keeps full data as a quiet secondary 
   fireEvent.click(toolbar.getByRole('button', { name: '要員の全資料' }))
   expect(onOpenLibrary).toHaveBeenCalledOnce()
   view.rerender(<HrObjectList kind="case" {...props} />)
-  expect(toolbar.getByRole('button', { name: '案件を追加' })).toHaveClass('hr-primary')
+  expect(toolbar.getByRole('button', { name: '案件登録' })).toHaveClass('hr-primary')
   fireEvent.click(toolbar.getByRole('button', { name: '一括取込' }))
   expect(onImportHistory).toHaveBeenCalledOnce()
   expect(toolbar.queryByRole('button', { name: '取込履歴' })).not.toBeInTheDocument()
+  // The filters sit apart from these actions, under their own 絞り込み label.
+  expect(toolbar.queryByRole('textbox')).not.toBeInTheDocument()
+  const filters = screen.getByRole('search', { name: '絞り込み' })
+  expect(filters).toHaveTextContent(/^絞り込み/u)
+  expect(within(filters).getByRole('textbox', { name: '案件・要員を検索' })).toBeInTheDocument()
+  expect(within(filters).getByRole('button', { name: /^担当中/u })).toBeInTheDocument()
 })
 
 it('shows imported cases in my cases when the import added them there', async () => {
@@ -1984,8 +1990,9 @@ it('shows the list or the detail in a narrow surface, with a way back to the lis
   const list = screen.getByRole('region', { name: '案件一覧' })
   expect(list).toHaveClass('is-narrow')
   expect(screen.queryByRole('article', { name: 'Case a' })).not.toBeInTheDocument()
-  // The toolbar row stays; search is still one key away.
-  expect(screen.getByRole('textbox', { name: '案件・要員を検索' })).toBeVisible()
+  // The actions row stays; the filters (絞り込み) go with the list they narrow.
+  expect(screen.getByRole('button', { name: '案件登録' })).toBeVisible()
+  expect(screen.getByRole('textbox', { name: '案件・要員を検索', hidden: true })).not.toBeVisible()
   fireEvent.click(within(pane).getByRole('button', { name: '一覧に戻る' }))
   expect(onCloseDetail).toHaveBeenCalledOnce()
   view.rerender(<HrObjectList {...props} detailOpen={false} />)
@@ -2043,8 +2050,8 @@ it('carries the shell actions at the end of its toolbar row and steps the detail
   await waitFor(() => expect(caseTitles()).toEqual(['Case a']))
   const toolbar = view.container.querySelector('.hr-list-toolbar') as HTMLElement
   expect(within(toolbar).getByRole('button', { name: 'Agentに質問' })).toBeVisible()
-  // Search, the primary and the secondary come first in the same row.
-  expect(within(toolbar).getAllByRole('button')[0]).toHaveTextContent('案件を追加')
+  // The primary and the secondary come first in the actions row.
+  expect(within(toolbar).getAllByRole('button')[0]).toHaveTextContent('案件登録')
   expect(screen.getByRole('complementary', { name: '業務ワークスペース' })).toBeVisible()
   view.rerender(shell(true))
   expect(screen.queryByRole('complementary', { name: '業務ワークスペース' })).not.toBeInTheDocument()

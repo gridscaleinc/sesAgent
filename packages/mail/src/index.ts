@@ -1440,12 +1440,12 @@ export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
     {
       id: 'local-redaction',
       status: redactionStatus,
-      label: 'ローカル脱敏証跡',
+      label: 'ローカルマスキング証跡',
       detail:
         options.redaction.storedMessages === 0
-          ? '脱敏済み Gmail レコードがまだありません。対象 Label に検証用メールを用意してください。'
+          ? 'マスキング済み Gmail レコードがまだありません。対象 Label に検証用メールを用意してください。'
           : options.redaction.blocked > 0 || !redactionCountReconciled
-            ? '脱敏証跡が欠損または無効です。対象レコードをクラウド処理へ渡せません。'
+            ? 'マスキング証跡が欠損または無効です。対象レコードをクラウド処理へ渡せません。'
             : options.redaction.uncertain > 0
               ? `${options.redaction.passed}件通過、${options.redaction.uncertain}件は要確認として端末内に留めています。`
               : `${options.redaction.passed}件すべてに通過済みのローカル脱敏証跡があります。`
@@ -1454,7 +1454,7 @@ export function createGoogleWorkspaceOnlineAcceptanceReport(options: {
       id: 'no-cloud-model',
       status: 'passed',
       label: 'クラウド大模型未使用',
-      detail: '接続確認・同期・脱敏は Google API と端末内処理だけで実行されました。'
+      detail: '接続確認・同期・マスキングは Google API と端末内処理だけで実行されました。'
     },
     {
       id: 'no-send-path',

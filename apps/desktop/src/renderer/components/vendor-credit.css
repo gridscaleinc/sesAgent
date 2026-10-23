@@ -1,0 +1,46 @@
+.vendor-credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.vendor-credit button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vendor-credit button:hover {
+  text-decoration: underline;
+}
+.vendor-credit button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.today-vendor-credit {
+  justify-content: center;
+  padding: 18px 0 4px;
+}
+/* Beside the version in the settings footer, whose own button rule would turn the links into buttons. */
+.application-settings-dialog > footer .settings-vendor-credit {
+  margin: 0 auto 0 14px;
+  font-size: 11px;
+}
+.application-settings-dialog > footer .settings-vendor-credit button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font-weight: 600;
+}

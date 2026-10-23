@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import type { ImportCaseTextBatchResult, JobCaseReviewSnapshot } from '@shared'
-import { aiServiceProblem, localizedAiServiceProblem, useUiLocale, localeText } from '../i18n'
+import { aiServiceProblem, localizedAiServiceProblem, useUiLocale, localeText, type AiServiceProblem } from '../i18n'
+import { AiServiceProblemActions } from './AiServiceProblemActions'
 import { joinCreatedCases, revealCreatedCases } from '../case-adoption'
 
 const shownCreated = 3
@@ -41,6 +42,7 @@ export function CaseTextImport({
   const [skippedPersonnel, setSkippedPersonnel] = useState(0)
   const [personnelText, setPersonnelText] = useState('')
   const [error, setError] = useState('')
+  const [errorProblem, setErrorProblem] = useState<AiServiceProblem | null>(null)
   const busy = useRef(false)
   const seed = useRef<number | null>(null)
   useEffect(() => {
@@ -64,6 +66,7 @@ export function CaseTextImport({
     busy.current = true
     setRunning(true)
     setError('')
+    setErrorProblem(null)
     setNotice('')
     setCreated([])
     setSkippedPersonnel(0)
@@ -125,11 +128,12 @@ export function CaseTextImport({
       }
     } catch (cause) {
       const aiProblem = aiServiceProblem(cause)
+      setErrorProblem(aiProblem)
       setError(
         aiProblem
           ? `${localizedAiServiceProblem(zh ? 'zh-CN' : 'ja-JP', aiProblem)} ${t('输入已保留。', '入力は保持しています。')}`
           : String(cause).includes('CASE_AI_UNAVAILABLE')
-            ? t('请先连接 AI，再新增案件。输入已保留。', 'AIに接続してから案件を追加してください。入力は保持しています。')
+            ? t('请先连接 AI，再新增案件。输入已保留。', 'AIに接続してから案件を登録してください。入力は保持しています。')
             : t(
                 'AI 未能完成案件识别，本次没有保存，输入已保留，请重试。',
                 'AIが案件の識別を完了できませんでした。保存せず入力を保持しています。再試行してください。'
@@ -142,7 +146,7 @@ export function CaseTextImport({
   }
 
   return (
-    <form className="business-intake business-paste-box" onSubmit={(event) => void save(event)} aria-label={t('新增案件', '案件を追加')}>
+    <form className="business-intake business-paste-box" onSubmit={(event) => void save(event)} aria-label={t('新增案件', '案件登録')}>
       <label htmlFor={id}>{t('案件内容', '案件内容')}</label>
       <textarea
         id={id}
@@ -154,7 +158,7 @@ export function CaseTextImport({
       />
       <div className="business-inline-actions">
         <button className="is-primary" type="submit" disabled={running || !text.trim()}>
-          {running ? t('AI 正在识别并保存…', 'AIが識別・保存中…') : t('新增案件', '案件を追加')}
+          {running ? t('AI 正在识别并保存…', 'AIが識別・保存中…') : t('新增案件', '案件登録')}
         </button>
       </div>
       {notice ? (
@@ -213,7 +217,12 @@ export function CaseTextImport({
           </button>
         </div>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? (
+        <p role="alert">
+          {error}
+          <AiServiceProblemActions problem={errorProblem} />
+        </p>
+      ) : null}
     </form>
   )
 }

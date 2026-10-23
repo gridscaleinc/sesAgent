@@ -271,10 +271,10 @@ describe('JobCaseInbox', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '案件情報を入力' }))
     expect(screen.getByRole('dialog', { name: '案件情報を手動で追加' })).toBeInTheDocument()
-    expect(screen.getByText('入力はまず端末内で脱敏されます')).toBeInTheDocument()
+    expect(screen.getByText('入力はまず端末内でマスキングされます')).toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: '件名・案件名' }), { target: { value: 'Java 基盤案件' } })
     fireEvent.change(screen.getByRole('textbox', { name: '案件本文' }), { target: { value: '必須スキル：Java / AWS\n単価：90万円/月' } })
-    fireEvent.click(screen.getByRole('button', { name: '脱敏して草稿を作成' }))
+    fireEvent.click(screen.getByRole('button', { name: 'マスキングして草稿を作成' }))
 
     expect(onCreateManual).toHaveBeenCalledWith({
       subject: 'Java 基盤案件',
@@ -298,7 +298,7 @@ describe('JobCaseInbox', () => {
     fireEvent.click(screen.getByRole('button', { name: '案件情報を入力' }))
     fireEvent.change(screen.getByRole('textbox', { name: '件名・案件名' }), { target: { value: 'Java 基盤案件' } })
     fireEvent.change(screen.getByRole('textbox', { name: '案件本文' }), { target: { value: '必須スキル：Java' } })
-    fireEvent.click(screen.getByRole('button', { name: '脱敏して草稿を作成' }))
+    fireEvent.click(screen.getByRole('button', { name: 'マスキングして草稿を作成' }))
     await waitFor(() => expect(onOpenLibrary).toHaveBeenCalledWith(manualReview.reviewId))
     fireEvent.click(screen.getByRole('button', { name: /案件一覧を開く/u }))
     expect(onOpenLibrary).toHaveBeenLastCalledWith()
@@ -308,7 +308,7 @@ describe('JobCaseInbox', () => {
     const onSubmit = vi.fn().mockResolvedValue({ review: { ...review, status: 'completed' } })
     render(<JobCaseReviewEditor onManage={vi.fn()} onSubmit={onSubmit} review={review} />)
 
-    expect(screen.getByText('ローカル脱敏済みソース')).toBeInTheDocument()
+    expect(screen.getByText('ローカルマスキング済みソース')).toBeInTheDocument()
     const submit = screen.getByRole('button', { name: '案件を確定' })
     expect(submit).toBeDisabled()
 

@@ -1914,7 +1914,7 @@ export function registerAgentIpcHandlers(deps: AgentIpcDependencies): () => void
           emit(state, { type: 'cancelled', cancelStatus, message: remoteCancelMessage(state, cancelStatus) })
           return cancelled
         }
-        const privacyBlocked = error instanceof Error && /privacy|プライバシー|DLP|脱敏/u.test(error.message)
+        const privacyBlocked = error instanceof Error && /privacy|プライバシー|DLP|脱敏|マスキング/u.test(error.message)
         state.abortController.abort()
         const cleanupCancelStatus = state.remoteRequestInFlight ? await requestRemoteCancel(state) : null
         const fallback = localFallbackResult(result, model, 'failed-local-fallback', 'failed')

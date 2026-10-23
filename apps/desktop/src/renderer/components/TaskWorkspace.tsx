@@ -280,7 +280,7 @@ function TaskEvidenceView({
           <header>
             <div>
               <span>LOCAL DOCUMENT {index + 1}</span>
-              <strong>{t('解析与脱敏证据', '解析・脱敏証跡')}</strong>
+              <strong>{t('解析与脱敏证据', '解析・マスキング証跡')}</strong>
             </div>
             <em>{analysis.localProcessing.networkAccess ? 'Network' : 'No Network'}</em>
           </header>
@@ -349,7 +349,7 @@ function TaskEvidenceView({
             </span>
             <em>
               {audit.externalSideEffect} ·{' '}
-              {audit.cloudPayload === 'none' ? t('不使用云端', 'Cloudなし') : t('仅限已脱敏内容', '脱敏済みのみ')}
+              {audit.cloudPayload === 'none' ? t('不使用云端', 'Cloudなし') : t('仅限已脱敏内容', 'マスキング済みのみ')}
             </em>
           </article>
         ))}
@@ -390,7 +390,9 @@ function TaskGovernanceView({ processingJob, task }: { processingJob: Processing
           </div>
           <div>
             <dt>{t('云端执行', 'Cloud実行')}</dt>
-            <dd>{cloudAuditCount === 0 ? t('未执行', '実行なし') : t(`已脱敏 ${cloudAuditCount} 项`, `脱敏済み ${cloudAuditCount}件`)}</dd>
+            <dd>
+              {cloudAuditCount === 0 ? t('未执行', '実行なし') : t(`已脱敏 ${cloudAuditCount} 项`, `マスキング済み ${cloudAuditCount}件`)}
+            </dd>
           </div>
           <div>
             <dt>{t('自动发送', '自動送信')}</dt>
@@ -1094,7 +1096,7 @@ function TaskMessageTimeline({ task }: { task: WorkTask }) {
                       <Icon name="shield" size={17} />
                       <span>
                         {t('隐私', 'プライバシー')}
-                        <strong>{t('强制脱敏门', '脱敏ゲート強制')}</strong>
+                        <strong>{t('强制脱敏门', 'マスキングゲート強制')}</strong>
                       </span>
                     </div>
                     <div>
@@ -1186,7 +1188,7 @@ function TaskRecordSummary({ task, processingJob }: { task: WorkTask; processing
             <strong>{latestAudit.action}</strong>
             {localizedMainText(locale, latestAudit.reason)}
           </span>
-          <em>{latestAudit.cloudPayload === 'none' ? t('不发送到云端', 'Cloud送信なし') : t('仅限已脱敏内容', '脱敏済みのみ')}</em>
+          <em>{latestAudit.cloudPayload === 'none' ? t('不发送到云端', 'Cloud送信なし') : t('仅限已脱敏内容', 'マスキング済みのみ')}</em>
         </p>
       ) : null}
     </section>
@@ -1354,7 +1356,7 @@ export function TaskWorkspace({
                   : task.type === 'GENERATE_PROPOSAL'
                     ? t(
                         '收件人、正文和脱敏 PDF 绑定到同一内容哈希；批准后也不会自动发送，仅导出本地提案包。',
-                        '宛先・本文・脱敏PDFを同じ内容ハッシュに束ねます。承認後も自動送信せず、ローカルパッケージの書き出しだけを行います。'
+                        '宛先・本文・マスキング済みPDFを同じ内容ハッシュに束ねます。承認後も自動送信せず、ローカルパッケージの書き出しだけを行います。'
                       )
                     : t(
                         '此开发版本目前实现了已确认任务的创建与状态展示。',

@@ -121,3 +121,25 @@ it('sends personnel introductions to the personnel import', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '要員として取り込む' }))
   expect(onOpenPersonImport).toHaveBeenCalledOnce()
 })
+it('offers checking the balance and adding credits where it reports that AI credits ran out', async () => {
+  const original = window.sesAgent
+  const openAiCommerceMemberCenter = vi.fn().mockResolvedValue({ opened: true })
+  Object.defineProperty(window, 'sesAgent', { configurable: true, value: { ...original, openAiCommerceMemberCenter } })
+  const opened = vi.fn()
+  window.addEventListener('ses-open-ai-sign-in', opened)
+  try {
+    const onImport = vi.fn().mockRejectedValue(new Error('AiCommerceRequestError: INSUFFICIENT_CREDITS'))
+    render(<CaseTextImport cases={[]} onImport={onImport} onRefresh={async () => {}} />)
+    submit('Javaの案件')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('AIの利用可能クレジットが不足しています')
+    expect(screen.getByRole('textbox')).toHaveValue('Javaの案件')
+    fireEvent.click(within(alert).getByRole('button', { name: '残高を確認' }))
+    expect(opened).toHaveBeenCalledOnce()
+    fireEvent.click(within(alert).getByRole('button', { name: 'クレジットを追加' }))
+    await waitFor(() => expect(openAiCommerceMemberCenter).toHaveBeenCalledOnce())
+  } finally {
+    window.removeEventListener('ses-open-ai-sign-in', opened)
+    Object.defineProperty(window, 'sesAgent', { configurable: true, value: original })
+  }
+})

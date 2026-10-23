@@ -58,6 +58,7 @@ import { AppliedRules, InterviewQuestionsSection, RelatedProjects, relatedProjec
 import { tokyoDateTime } from './use-case-resume-assessments'
 import { RecommendationPointsTab } from './RecommendationPoints'
 import './hr-matching.css'
+import { AiServiceProblemActions } from './AiServiceProblemActions'
 
 /** One 「找案件」 click for a person; a new requestId is a new click. */
 export interface HrMatchSource {
@@ -631,6 +632,15 @@ export function HrMatchingWorkspace({
                   'AI 评估未完成，先显示按条件核对的结果。可点击「重新找案件」重试。',
                   'AI評価は未完了のため、条件照合の結果を表示しています。「案件を再検索」で再試行できます。'
                 )}
+          <AiServiceProblemActions
+            problem={
+              saved.result.cloud.reason === 'insufficient-credits'
+                ? 'quota'
+                : saved.result.cloud.reason === 'sign-in-required'
+                  ? 'sign-in'
+                  : null
+            }
+          />
         </p>
       ) : null}
     </>
@@ -819,7 +829,7 @@ function CaseMatchDetail({
     },
     {
       id: 'points',
-      label: t('推荐要点', '推薦ポイント'),
+      label: t('推荐要点', 'アピールポイント'),
       content: <RecommendationPointsTab documentId={documentId} reviewId={row.job!.reviewId} blocked={pointsBlocked} />
     },
     {

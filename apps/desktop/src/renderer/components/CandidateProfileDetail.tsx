@@ -539,7 +539,7 @@ export function CandidateProfileDetail({
           </span>
           <span className="local-parse-status">
             <Icon name="check" size={13} />
-            {t('具备推荐资格', '推薦資格あり')}
+            {t('具备推荐资格', '提案可能')}
           </span>
         </div>
         <div className="resume-profile-actions">
@@ -1476,7 +1476,7 @@ export function CandidateProfileDetail({
               <span>
                 {assistantMode === 'local'
                   ? t('仅在本机查询已入库档案', '登録済みプロフィールを端末内だけで照会')
-                  : t('仅向云端发送已脱敏的最少数据', '脱敏済みの最小データだけをCloudへ送信')}
+                  : t('仅向云端发送已脱敏的最少数据', 'マスキング済みの最小データだけをCloudへ送信')}
               </span>
             </div>
             {assistantMode === 'cloud' ? (
@@ -1501,7 +1501,7 @@ export function CandidateProfileDetail({
                   <label>
                     <input checked={cloudConsent} onChange={(event) => setCloudConsent(event.target.checked)} type="checkbox" />
                     <span>
-                      <strong>{t('确认发送脱敏后的匿名档案', '脱敏後の匿名プロフィール送信を確認')}</strong>
+                      <strong>{t('确认发送脱敏后的匿名档案', 'マスキング後の匿名プロフィール送信を確認')}</strong>
                       <small>
                         {t(
                           '不会发送姓名、电话、邮箱、详细住址或原文；回答也会在本机再次检查。',
@@ -1537,7 +1537,7 @@ export function CandidateProfileDetail({
                   <p>
                     {assistantMode === 'local'
                       ? t('仅在本机查询技能、项目经历和商务条件。', '技能、プロジェクト、商務条件を端末内だけで検索します。')
-                      : t('云端 AI 会在发送前于本机脱敏个人信息。', 'Cloud AIは送信前に個人情報をローカルで脱敏します。')}
+                      : t('云端 AI 会在发送前于本机脱敏个人信息。', 'Cloud AIは送信前に個人情報をローカルでマスキングします。')}
                   </p>
                 </div>
               ) : (
@@ -1546,7 +1546,7 @@ export function CandidateProfileDetail({
                     {message.role === 'assistant' && message.mode ? (
                       <span className={`candidate-ai-answer-mode is-${message.mode}`}>
                         {message.mode === 'cloud'
-                          ? t('云端 AI · 已脱敏', 'Cloud AI・脱敏済み')
+                          ? t('云端 AI · 已脱敏', 'Cloud AI・マスキング済み')
                           : message.mode === 'local-fallback'
                             ? t('云端不可用 · 已回退到本地查询', 'Cloud不可・ローカル照会へフォールバック')
                             : t('本地数据查询', 'ローカルデータ照会')}
@@ -1578,7 +1578,7 @@ export function CandidateProfileDetail({
               {cloudBusy ? (
                 <div className="candidate-ai-loading">
                   <i />
-                  <span>{t('云端 AI 正在分析脱敏档案…', 'Cloud AIが脱敏済みプロフィールを分析中…')}</span>
+                  <span>{t('云端 AI 正在分析脱敏档案…', 'Cloud AIがマスキング済みプロフィールを分析中…')}</span>
                 </div>
               ) : null}
             </div>
@@ -1612,7 +1612,7 @@ export function CandidateProfileDetail({
               <Icon name="shield" size={14} />
               {assistantMode === 'local'
                 ? t('本机查询 · 不发送云端', '端末内照会・Cloud送信なし')
-                : t('个人信息在发送前于本机脱敏', '個人情報は送信前にローカル脱敏')}
+                : t('个人信息在发送前于本机脱敏', '個人情報は送信前にローカルマスキング')}
             </footer>
           </aside>
         ) : null}

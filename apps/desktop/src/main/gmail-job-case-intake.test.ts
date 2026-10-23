@@ -101,8 +101,13 @@ describe('createJobCaseDraftsForPendingGmailMessages', () => {
     mocks.confirmJobCaseReview.mockImplementationOnce(() => {
       throw new Error('案件名は必須です。')
     })
-    const counts = createJobCaseDraftsForPendingGmailMessages(repository, 'sales@example.co.jp', operator)
+    const confirmed: string[] = []
+    const counts = createJobCaseDraftsForPendingGmailMessages(repository, 'sales@example.co.jp', operator, {}, undefined, (id) =>
+      confirmed.push(id)
+    )
     expect(counts).toEqual({ created: 2, confirmed: 1, needsAttention: 1, failed: 0, duplicates: 0 })
+    // Only the case that took effect is offered for AI completion.
+    expect(confirmed).toHaveLength(1)
   })
 
   it('leaves a message pending for the next sync when its draft cannot be created', () => {

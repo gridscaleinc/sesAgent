@@ -1,3 +1,4 @@
+import { BrandMark } from './BrandMark'
 import { Icon } from './Icon'
 import { localeText, useUiLocale } from '../i18n'
 
@@ -47,8 +48,9 @@ export function AgentSystemRail({
 
   return (
     <aside aria-label={t('系统导航', 'システムナビゲーション')} className="agent-system-rail">
-      <strong aria-label="SES" className="agent-system-rail-brand">
-        SES
+      <strong aria-label="SES Agent" className="agent-system-rail-brand">
+        <BrandMark size={34} />
+        <span aria-hidden="true">SES Agent</span>
       </strong>
       <nav className="hr-business-nav">
         {onToday ? (

@@ -1216,6 +1216,34 @@ export interface JobCaseSourceText {
   localDisplay?: { subject: string; body: string }
 }
 
+/** What AI completion of a case's empty fields did: the keys it filled (none when the source states none of them). */
+export interface FillJobCaseFieldsWithAiResult {
+  review: JobCaseReviewSnapshot
+  filled: JobCaseFieldKey[]
+}
+
+/** One field where the AI's re-reading of the source differs from the case: the case's value and the source's. */
+export interface JobCaseFieldCorrection {
+  key: JobCaseFieldKey
+  current: string | null
+  suggested: string
+}
+
+/** AI re-check of a case against its source: the differing fields, for the revision they were read against. */
+export interface JobCaseFieldCorrectionSuggestions {
+  reviewId: string
+  reviewRevision: number
+  corrections: JobCaseFieldCorrection[]
+}
+
+export interface ApplyJobCaseFieldCorrectionsInput {
+  reviewId: string
+  /** The revision the suggestions were made for; a case changed since then is not overwritten. */
+  reviewRevision: number
+  /** The suggested fields the operator accepted. */
+  keys: JobCaseFieldKey[]
+}
+
 export interface SetJobCaseLifecycleInput {
   reviewId: string
   state: 'active' | 'archived'
@@ -3141,6 +3169,16 @@ export interface DesktopApi {
   openZoomMeeting(input: { url: string }): Promise<{ opened: true }>
   openInterviewMeeting(input: OpenInterviewMeetingInput): Promise<{ opened: true }>
   openZoomTestMeeting(): Promise<{ opened: true }>
+  /** Opens one of the vendor's own pages (グリッドスケール, AppShelf) in the system browser. */
+  openVendorSite(site: VendorSite): Promise<{ opened: true }>
+  /** Fills a valid case's empty fields from its stored redacted source with the cloud AI; never overwrites a value. */
+  fillJobCaseFieldsWithAi(reviewId: string): Promise<FillJobCaseFieldsWithAiResult>
+  /** Has the AI re-read a valid case's source and lists the fields whose stated value differs; changes nothing. */
+  suggestJobCaseFieldCorrections(reviewId: string): Promise<JobCaseFieldCorrectionSuggestions>
+  /** Applies the accepted suggestions of the last re-check as one new version of the case. */
+  applyJobCaseFieldCorrections(input: ApplyJobCaseFieldCorrectionsInput): Promise<FillJobCaseFieldsWithAiResult>
+  /** Cases the background AI completion filled after an import. */
+  onJobCasesAiFilled(listener: (event: { reviewIds: string[] }) => void): () => void
   createManualJobCaseDraft(input: CreateManualJobCaseDraftInput): Promise<CreateManualJobCaseDraftResult>
   createChatPasteJobCaseDraft(input: CreateChatPasteJobCaseDraftInput): Promise<CreateChatPasteJobCaseDraftResult>
   importCaseTextBatch(input: CreateChatPasteJobCaseDraftInput): Promise<ImportCaseTextBatchResult>
@@ -3223,6 +3261,13 @@ export interface DesktopApi {
   createWorkTask(input: CreateWorkTaskInput): Promise<WorkTask>
   setWorkTaskLifecycle(input: SetWorkTaskLifecycleInput): Promise<WorkTask>
 }
+
+/** The vendor's pages the app links to: fixed addresses, so the renderer can never ask Main to open another URL. */
+export const vendorSiteUrls = {
+  gridscale: 'https://www.gridscale.com',
+  appshelf: 'https://appshelf.gridscale.com'
+} as const
+export type VendorSite = keyof typeof vendorSiteUrls
 
 export const ipcChannels = {
   getBusinessFeed: 'business-feed:list',
@@ -3337,6 +3382,11 @@ export const ipcChannels = {
   openZoomMeeting: 'zoom:open-meeting',
   openInterviewMeeting: 'candidate-interview:open-meeting',
   openZoomTestMeeting: 'zoom:open-test-meeting',
+  openVendorSite: 'app:open-vendor-site',
+  fillJobCaseFieldsWithAi: 'job-case:fill-fields-with-ai',
+  jobCasesAiFilled: 'job-case:ai-filled',
+  suggestJobCaseFieldCorrections: 'job-case:suggest-field-corrections',
+  applyJobCaseFieldCorrections: 'job-case:apply-field-corrections',
   createManualJobCaseDraft: 'job-case-draft:create-manual',
   createChatPasteJobCaseDraft: 'job-case-draft:create-chat-paste',
   importCaseTextBatch: 'job-case:import-text-batch',

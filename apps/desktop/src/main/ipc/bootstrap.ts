@@ -14,6 +14,7 @@ import {
 import { loadCloudPrivacyGates } from '../privacy-gates'
 import { businessModelKey } from '../business-model'
 import { assertTrustedSender, type MainIpcContext } from './context'
+import { withObservedAiCommerceDashboard } from '../tray-data'
 
 /** Startup status, relaunch, the renderer bootstrap payload and action approvals. */
 export function registerBootstrapHandlers(context: MainIpcContext) {
@@ -49,7 +50,7 @@ export function registerBootstrapHandlers(context: MainIpcContext) {
     assertTrustedSender(event)
     const [gmail, aiCommerceState, privacyGates, wechatVisibleMessage] = await Promise.all([
       googleWorkspace ? googleWorkspace.getState() : Promise.resolve(unconfiguredGoogleWorkspaceState(googleWorkspaceDomain)),
-      aiCommerce ? aiCommerce.getState() : Promise.resolve(unconfiguredAiCommerceState()),
+      aiCommerce ? aiCommerce.getState().then(withObservedAiCommerceDashboard) : Promise.resolve(unconfiguredAiCommerceState()),
       loadCloudPrivacyGates(cloudPrivacyGateLoadOptions()),
       wechatVisibleReader.feasibility()
     ])

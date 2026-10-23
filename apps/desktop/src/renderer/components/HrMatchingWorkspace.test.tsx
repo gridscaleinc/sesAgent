@@ -244,7 +244,7 @@ it('lists one compact row per case beside the selected case, and hides the quest
     within(card)
       .getAllByRole('tab')
       .map((tab) => tab.textContent)
-  ).toEqual(['マッチングの根拠', '推薦ポイント', '要相談', 'AIの意見', '記録'])
+  ).toEqual(['マッチングの根拠', 'アピールポイント', '要相談', 'AIの意見', '記録'])
   expect(within(card).getByRole('table', { name: 'マッチングの根拠' })).toBeVisible()
   expect(screen.getByRole('button', { name: /^概要/ })).toHaveAttribute('aria-haspopup', 'dialog')
 })

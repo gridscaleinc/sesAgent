@@ -184,7 +184,7 @@ function callbacks() {
         { id: 'credential-protection', status: 'passed', label: 'OAuth Token の端末保護', detail: 'Keychain で保護されています。' },
         { id: 'bounded-sync', status: 'passed', label: '管理者指定の同期範囲', detail: '現在の設定と一致します。' },
         { id: 'successful-sync', status: 'passed', label: 'Gmail の有界同期', detail: '保存 2件、失敗 0件。' },
-        { id: 'local-redaction', status: 'passed', label: 'ローカル脱敏証跡', detail: '2件すべて通過しました。' },
+        { id: 'local-redaction', status: 'passed', label: 'ローカルマスキング証跡', detail: '2件すべて通過しました。' },
         { id: 'no-cloud-model', status: 'passed', label: 'クラウド大模型未使用', detail: '端末内処理です。' },
         { id: 'no-send-path', status: 'passed', label: '送信経路なし', detail: '送信 API はありません。' }
       ],

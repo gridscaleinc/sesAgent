@@ -33,7 +33,9 @@ export function createJobCaseDraftsForPendingGmailMessages(
   accountEmail: string,
   operator: { operatorId: string; displayName: string } | null,
   aliases: JobCaseFieldAliasMap = {},
-  now: () => Date = () => new Date()
+  now: () => Date = () => new Date(),
+  /** Each case that took effect, e.g. for AI completion of the fields the rules left empty. */
+  onCaseConfirmed: (reviewId: string) => void = () => undefined
 ): GmailJobCaseIntakeCounts {
   const counts: GmailJobCaseIntakeCounts = { created: 0, confirmed: 0, needsAttention: 0, failed: 0, duplicates: 0 }
   for (const message of repository.listGmailMessagesPendingJobCaseDrafts(accountEmail)) {
@@ -66,8 +68,10 @@ export function createJobCaseDraftsForPendingGmailMessages(
       const review = repository.getJobCaseReview(draft.reviewId)
       if (!review || review.status !== 'awaiting-review') continue
       // Refusals stay drafts; the reason lives in the review the operator opens.
-      if (autoConfirmJobCaseDraft(repository, review, operator, now()).review) counts.confirmed += 1
-      else counts.needsAttention += 1
+      if (autoConfirmJobCaseDraft(repository, review, operator, now()).review) {
+        counts.confirmed += 1
+        onCaseConfirmed(draft.reviewId)
+      } else counts.needsAttention += 1
     } catch {
       // The redacted Gmail record remains pending and will be retried on the next local synchronization.
       counts.failed += 1

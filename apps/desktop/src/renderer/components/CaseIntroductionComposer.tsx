@@ -11,6 +11,7 @@ import { localizedIpcError, useLocaleText } from '../i18n'
 import { copyTextToClipboard } from '../copy-text'
 import { IntroductionOptions } from './IntroductionOptions'
 import { notifyBusinessDataChanged } from '../business-data-events'
+import { Icon } from './Icon'
 
 // AI-regenerated introductions are saved in the encrypted database (latest per case, language and style) and loaded
 // when the dialog opens. Unsaved hand edits outlive the dialog for this app session only: business text is never
@@ -311,7 +312,7 @@ export function CaseIntroductionComposer({
   return (
     <div className="hr-modal-backdrop">
       <div
-        className="hr-introduction"
+        className="hr-introduction is-case-broadcast"
         role="dialog"
         aria-modal="true"
         aria-label={t('群发案件', '案件を配信')}
@@ -333,91 +334,97 @@ export function CaseIntroductionComposer({
           }
         }}
       >
-        <header>
+        <header className="hr-intro-header">
           <div>
             <small>{t('案件介绍', '案件紹介')}</small>
             <h2>{t('群发案件', '案件を配信')}</h2>
+            <p className="hr-intro-context">
+              <span className="hr-intro-chip is-case">
+                {job?.fields.find((field) => field.key === 'title')?.value ?? job?.redactedSubject}
+              </span>
+            </p>
           </div>
-          <button type="button" disabled={busy} aria-label={t('关闭介绍', '紹介画面を閉じる')} onClick={onClose}>
-            ×
+          <button className="close-button" type="button" disabled={busy} aria-label={t('关闭介绍', '紹介画面を閉じる')} onClick={onClose}>
+            <Icon name="x" size={18} />
           </button>
         </header>
-        <p className="hr-intro-context">{job?.fields.find((field) => field.key === 'title')?.value ?? job?.redactedSubject}</p>
-        {!valid && !needsPreparation ? (
-          <p role="alert">
-            {t(
-              '资料已更新，请重新打开介绍。草稿仍保留。',
-              '情報が更新されました。紹介画面を開き直してください。下書きは保持されています。'
-            )}
-          </p>
-        ) : null}
-        <IntroductionOptions
-          templates={
-            templates.length
-              ? [
-                  { id: templates[0]!.id, label: t('标准', '標準') },
-                  { id: 'brief', label: t('省略', '簡潔') },
-                  ...templates.slice(1).map((item) => ({ id: item.id, label: item.name }))
-                ]
-              : []
-          }
-          templateId={brief ? 'brief' : (template?.id ?? '')}
-          lang={lang}
-          disabled={busy}
-          panelId={panelId}
-          onTemplateChange={setTemplateId}
-          onLanguageChange={setLang}
-        />
-        <div className="hr-intro-generation">
-          <textarea
-            className="ai-request-input"
-            aria-label={t('对 AI 的要求', 'AIへの要望')}
-            placeholder={t(
-              '例：突出远程和长期稳定，或粘贴一篇参考范文',
-              '例：リモート可と長期案件である点を強調して。参考にする文例を貼り付けることもできます'
-            )}
-            rows={2}
-            maxLength={introductionRequestMaxLength}
-            disabled={busy || !valid}
-            value={requests[styleKey] ?? ''}
-            onChange={(event) => setRequestState((state) => ({ ...state, [styleKey]: event.target.value }))}
+        <div className="hr-intro-scroll">
+          {!valid && !needsPreparation ? (
+            <p role="alert" className="hr-intro-alert is-error">
+              {t(
+                '资料已更新，请重新打开介绍。草稿仍保留。',
+                '情報が更新されました。紹介画面を開き直してください。下書きは保持されています。'
+              )}
+            </p>
+          ) : null}
+          <IntroductionOptions
+            templates={
+              templates.length
+                ? [
+                    { id: templates[0]!.id, label: t('标准', '標準') },
+                    { id: 'brief', label: t('省略', '簡潔') },
+                    ...templates.slice(1).map((item) => ({ id: item.id, label: item.name }))
+                  ]
+                : []
+            }
+            templateId={brief ? 'brief' : (template?.id ?? '')}
+            lang={lang}
+            disabled={busy}
+            panelId={panelId}
+            onTemplateChange={setTemplateId}
+            onLanguageChange={setLang}
           />
-          <button type="button" disabled={busy || !valid} onClick={() => void regenerate()}>
-            {busy ? t('处理中', '処理中') : t('AI 重新生成', 'AIで再生成')}
-          </button>
-        </div>
-        {queueItem?.hasUpdateSinceLastCopy && valid ? (
-          <p className="hr-intro-update" role="status">
-            {updateNotice
-              ? t('当前是更新通知，只列出上次复制后改动的条件。', '更新通知です。前回コピー以降に変わった条件だけを記載しています。')
-              : t(
-                  '上次复制后案件有更新：可以重发完整介绍，或只发更新通知。',
-                  '前回コピー後に案件が更新されています。紹介文を再送するか、更新通知だけを送れます。'
-                )}
-            <button type="button" disabled={busy} onClick={() => (updateNotice ? setUpdateNotice(null) : void loadUpdateNotice())}>
-              {updateNotice ? t('改回完整介绍', '紹介文に戻す') : t('生成更新通知', '更新通知を作る')}
+          <div className="hr-intro-generation">
+            <textarea
+              className="ai-request-input"
+              aria-label={t('对 AI 的要求', 'AIへの要望')}
+              placeholder={t(
+                '例：突出远程和长期稳定，或粘贴一篇参考范文',
+                '例：リモート可と長期案件である点を強調して。参考にする文例を貼り付けることもできます'
+              )}
+              rows={2}
+              maxLength={introductionRequestMaxLength}
+              disabled={busy || !valid}
+              value={requests[styleKey] ?? ''}
+              onChange={(event) => setRequestState((state) => ({ ...state, [styleKey]: event.target.value }))}
+            />
+            <button type="button" disabled={busy || !valid} onClick={() => void regenerate()}>
+              {busy ? t('处理中', '処理中') : t('AI 重新生成', 'AIで再生成')}
             </button>
-          </p>
-        ) : null}
-        <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body">
-          <textarea
-            aria-label={t('介绍文案', '紹介文')}
-            disabled={busy || loading || !valid}
-            value={text}
-            onChange={(event) => {
-              if (updateNotice) {
-                setUpdateNotice({ ...updateNotice, [lang]: event.target.value })
-                return
-              }
-              experience.markEdited()
-              setDrafts({ [textKey]: event.target.value })
-            }}
-          />
+          </div>
+          {queueItem?.hasUpdateSinceLastCopy && valid ? (
+            <p className="hr-intro-update" role="status">
+              {updateNotice
+                ? t('当前是更新通知，只列出上次复制后改动的条件。', '更新通知です。前回コピー以降に変わった条件だけを記載しています。')
+                : t(
+                    '上次复制后案件有更新：可以重发完整介绍，或只发更新通知。',
+                    '前回コピー後に案件が更新されています。紹介文を再送するか、更新通知だけを送れます。'
+                  )}
+              <button type="button" disabled={busy} onClick={() => (updateNotice ? setUpdateNotice(null) : void loadUpdateNotice())}>
+                {updateNotice ? t('改回完整介绍', '紹介文に戻す') : t('生成更新通知', '更新通知を作る')}
+              </button>
+            </p>
+          ) : null}
+          <div role="tabpanel" id={panelId} aria-label={t('介绍文案', '紹介文')} className="hr-intro-body">
+            <textarea
+              aria-label={t('介绍文案', '紹介文')}
+              disabled={busy || loading || !valid}
+              value={text}
+              onChange={(event) => {
+                if (updateNotice) {
+                  setUpdateNotice({ ...updateNotice, [lang]: event.target.value })
+                  return
+                }
+                experience.markEdited()
+                setDrafts({ [textKey]: event.target.value })
+              }}
+            />
+          </div>
+          {loading || preparing ? <p role="status">{t('正在准备…', '準備中…')}</p> : null}
+          {error ? <p role="alert">{error}</p> : null}
+          {notice ? <p role="status">{notice}</p> : null}
         </div>
-        {loading || preparing ? <p role="status">{t('正在准备…', '準備中…')}</p> : null}
-        {error ? <p role="alert">{error}</p> : null}
-        {notice ? <p role="status">{notice}</p> : null}
-        <footer>
+        <footer className="hr-intro-footer">
           <small>{t('复制和打开邮件不会记为已发送。', 'コピーやメールを開く操作は送信済みになりません。')}</small>
           <button type="button" disabled={busy || loading || !valid || !text.trim()} onClick={() => void submit('email')}>
             {t('打开邮件', 'メールを開く')}

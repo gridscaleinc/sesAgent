@@ -169,7 +169,7 @@ export function evaluateActionPolicy(
       spec,
       input: input.data,
       inputHash,
-      decision: { outcome: 'deny', code: 'CLOUD_PII_DENIED', reason: '未脱敏のデータをCloudへ送信できません。' }
+      decision: { outcome: 'deny', code: 'CLOUD_PII_DENIED', reason: '未マスキングのデータをCloudへ送信できません。' }
     }
   }
   if (spec.approval === 'inbox' || (spec.name === 'proposal.export' && context.origin === 'system')) {

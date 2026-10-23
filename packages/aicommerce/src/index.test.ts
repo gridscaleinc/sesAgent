@@ -528,7 +528,7 @@ describe('AICommerce Native client', () => {
           request_id: requestBodies.at(-1)?.request_id,
           ai_request_id: 'air-1',
           status: 'succeeded',
-          output: { message: { content: '脱敏済みの応答です。' } },
+          output: { message: { content: 'マスキング済みの応答です。' } },
           usage: { amount_credits: 12 },
           wallet: { balance_credits: 1188, reserved_credits: 0 }
         })
@@ -554,7 +554,7 @@ describe('AICommerce Native client', () => {
     expect(result).toEqual({
       requestId: 'sesai-operation-12345678-standard',
       aiRequestId: 'air-1',
-      content: '脱敏済みの応答です。',
+      content: 'マスキング済みの応答です。',
       usageCredits: 12,
       wallet: { balanceCredits: 1188, reservedCredits: 0 },
       billingModeUsed: 'standard'
@@ -614,7 +614,7 @@ describe('AICommerce Native client', () => {
     })
 
     expect(AiCommerceNativeClient.billingAttempts('automatic')).toEqual(['subscription', 'standard'])
-    await expect(client.requestText('脱敏済み', 'sesai-operation-87654321')).rejects.toMatchObject({
+    await expect(client.requestText('マスキング済み', 'sesai-operation-87654321')).rejects.toMatchObject({
       code: 'TOKEN_REVOKED',
       status: 401
     })

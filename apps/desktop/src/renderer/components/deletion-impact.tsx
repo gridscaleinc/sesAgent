@@ -22,7 +22,7 @@ export function useDeletionBusinessCounts(counts: Counts | null | undefined): Ar
       ['introductionDrafts', t('人员介绍草稿', '要員紹介の下書き')],
       ['caseBroadcastCopies', t('群发记录', '配信記録')],
       ['caseIntroductionDrafts', t('案件介绍草稿', '案件紹介の下書き')],
-      ['recommendationPoints', t('推荐要点', '推薦ポイント')],
+      ['recommendationPoints', t('推荐要点', 'アピールポイント')],
       ['matchingOpportunities', t('匹配机会', 'マッチング機会')],
       ['requirementDecisions', t('要求判定', '要件の判断')],
       ['questionDrafts', t('面试问题草稿', '面談質問の下書き')],

@@ -266,6 +266,58 @@ describe('extractJobCaseDraft', () => {
     expect(byKey.get('required_skills')).toContain('Snowflake')
   })
 
+  it('reads 期間 and 勤務地 however a partner mail labels them', () => {
+    const at = new Date('2026-10-23T00:00:00.000Z')
+    const read = (subject: string, body: string) => {
+      const source = createRedactedManualJobCaseSource({ subject, body }, '11111111-1111-4111-8111-111111111111', [], at)
+      const draft = extractJobCaseDraft(source.source, '22222222-2222-4222-8222-222222222222', at)
+      const byKey = new Map(draft.fields.map((field) => [field.key, field.value]))
+      return { period: byKey.get('start_date'), place: byKey.get('location'), chain: byKey.get('contract_chain') }
+    }
+    const mail = [
+      'お世話になっております。下記案件のご紹介です。',
+      '■案件名：ECサイト基盤リプレイス',
+      '■スキル：Java 3年以上、Spring Boot',
+      '■期間：2026年11月〜長期',
+      '■場所：渋谷駅（リモート併用 週2出社）',
+      '■単価：65万円（スキル見合い）'
+    ].join('\n')
+    expect(read('Java開発案件', mail)).toMatchObject({ period: '2026年11月〜長期', place: '渋谷駅（リモート併用 週2出社）' })
+    for (const [line, period] of [
+      ['【期間】即日～', '即日～'],
+      ['■【期間】即日～長期', '即日～長期'],
+      ['期間\t即日～長期', '即日～長期'],
+      ['［期間］12月～', '12月～'],
+      ['＜期間＞12月～', '12月～'],
+      ['■期間\n2026年11月〜長期\n■単価：60万', '2026年11月〜長期'],
+      ['稼働時期：12月～', '12月～'],
+      ['入場：2026/11～', '2026/11～'],
+      ['・就業期間：12月～', '12月～']
+    ]) {
+      expect(read('Java案件', `■スキル：Java\n${line}`).period).toBe(period)
+    }
+    // 契約期間 is the period; it does not leak into 契約・商流.
+    expect(read('Java案件', '■スキル：Java\n契約期間：12月～')).toMatchObject({ period: '12月～', chain: null })
+    for (const [line, place] of [
+      ['作業場所：大手町', '大手町'],
+      ['就業場所：大手町', '大手町'],
+      ['勤務場所：大手町', '大手町'],
+      ['勤務先：大手町', '大手町'],
+      ['常駐先：大手町', '大手町'],
+      ['ロケーション：大手町', '大手町'],
+      ['最寄り駅：大手町', '大手町'],
+      ['【場所】大手町', '大手町'],
+      ['勤務地\n東京都港区（田町駅）', '東京都港区（田町駅）']
+    ]) {
+      expect(read('Java案件', `■スキル：Java\n${line}`).place).toBe(place)
+    }
+    // A label word opening prose is not a label.
+    expect(read('Java案件', '■スキル：Java\n現場の雰囲気は良いです').place).toBeNull()
+    // The subject states them the way a bullet does when the body does not.
+    expect(read('【案件】Java開発／即日〜長期／渋谷', '■スキル：Java')).toMatchObject({ period: '即日〜長期', place: '渋谷' })
+    expect(read('【案件】Java開発／12月～／フルリモート', '■スキル：Java').place).toBeNull()
+  })
+
   it('keeps an English requirement out of the Japanese level and drops a 【必須】 token prefix', () => {
     const at = new Date('2026-08-26T00:00:00.000Z')
     const source = createRedactedChatPasteJobCaseSource(

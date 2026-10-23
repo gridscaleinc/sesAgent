@@ -19,6 +19,7 @@ import { Icon, type IconName } from './Icon'
 import { GmailSyncFeedback } from './GmailSyncFeedback'
 import { localizedIpcError, useLocaleText, localizedJobCaseFieldLabel } from '../i18n'
 import { readThemePreference, saveThemePreference, type ThemePreference } from '../theme'
+import { VendorCredit } from './VendorCredit'
 
 export type ApplicationSettingsSection = 'experience' | 'general' | 'models' | 'fields' | 'broadcast' | 'integrations' | 'privacy'
 
@@ -113,7 +114,7 @@ function settingsSections(t: LocaleText): Array<{ id: ApplicationSettingsSection
     {
       id: 'privacy',
       label: t('数据与隐私', 'データとプライバシー'),
-      detail: t('脱敏、本地 AI 与加密', '脱敏・Local AI・暗号化'),
+      detail: t('脱敏、本地 AI 与加密', 'マスキング・Local AI・暗号化'),
       icon: 'shield'
     }
   ]
@@ -276,8 +277,8 @@ export function ApplicationSettingsDialog({
             <h2 id="application-settings-title">{t('设置', '設定')}</h2>
             <p>{t('在一个位置管理显示、外部系统和数据保护。', '表示、外部システム、データ保護を一つの場所で管理します。')}</p>
           </div>
-          <button aria-label={t('关闭设置', '設定を閉じる')} disabled={busy !== null} onClick={onClose} type="button">
-            ×
+          <button className="close-button" aria-label={t('关闭设置', '設定を閉じる')} disabled={busy !== null} onClick={onClose} type="button">
+            <Icon name="x" size={18} />
           </button>
         </header>
 
@@ -413,11 +414,11 @@ export function ApplicationSettingsDialog({
                     <Icon name="users" size={18} />
                   </span>
                   <span>
-                    <strong>{t('本机用户档案', '本機ユーザープロフィール')}</strong>
+                    <strong>{t('个人资料', 'プロフィール')}</strong>
                     <small>
                       {bootstrap.operatorProfile.configured
                         ? `${bootstrap.operatorProfile.displayName} · ${bootstrap.operatorProfile.roleLabel}`
-                        : t('设置显示名称和负责角色。', '表示名と担当ロールを設定します。')}
+                        : t('设置你的名字和职位。', '名前と役割を設定します。')}
                     </small>
                   </span>
                   <Icon name="chevron-right" size={16} />
@@ -699,7 +700,7 @@ export function ApplicationSettingsDialog({
                     <div className="integration-settings-title">
                       <div>
                         <h4>AICommerce Cloud AI</h4>
-                        <p>{t('仅将已脱敏数据发送至获准的云端功能。', '脱敏済みデータだけを、許可されたクラウド機能へ送信します。')}</p>
+                        <p>{t('仅将已脱敏数据发送至获准的云端功能。', 'マスキング済みデータだけを、許可されたクラウド機能へ送信します。')}</p>
                       </div>
                       <span className={aiCommerceConnected ? 'integration-status is-connected' : 'integration-status'}>
                         {aiCommerceConnected ? t('已连接', '接続済み') : t('未连接', '未接続')}
@@ -749,7 +750,7 @@ export function ApplicationSettingsDialog({
                 <div className="settings-section-heading">
                   <h3 id="privacy-settings-title">{t('数据与隐私', 'データとプライバシー')}</h3>
                   <p>
-                    {t('查看个人信息脱敏、本地 AI 和加密存储的当前状态。', '個人情報の脱敏、Local AI、暗号化保存の現在状態を確認します。')}
+                    {t('查看个人信息脱敏、本地 AI 和加密存储的当前状态。', '個人情報のマスキング、Local AI、暗号化保存の現在状態を確認します。')}
                   </p>
                 </div>
                 <div className="privacy-settings-grid">
@@ -757,7 +758,7 @@ export function ApplicationSettingsDialog({
                     <span>
                       <Icon name="shield" size={18} />
                     </span>
-                    <strong>{t('云端发送前脱敏', 'クラウド送信前脱敏')}</strong>
+                    <strong>{t('云端发送前脱敏', 'クラウド送信前マスキング')}</strong>
                     <small>
                       {bootstrap.privacy.cloudGateway === 'enforced' ? t('强制且不可绕过', '強制・バイパス不可') : t('需要确认', '要確認')}
                     </small>
@@ -808,6 +809,7 @@ export function ApplicationSettingsDialog({
 
         <footer>
           <span>SES Agent Desktop v{bootstrap.appVersion}</span>
+          <VendorCredit className="settings-vendor-credit" />
           <button disabled={busy !== null} onClick={onClose} type="button">
             {t('关闭', '閉じる')}
           </button>

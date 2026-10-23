@@ -371,7 +371,7 @@ export function registerProposalHandlers(context: MainIpcContext) {
         return undefined
       }
       if (rejectedByHr(repository, documentId, reviewId))
-        return '此人员已被判定不满足该案件，跟进未记为已推荐。 / 案件の条件を満たさないと判断済みのため、推薦済みにしていません。'
+        return '此人员已被判定不满足该案件，跟进未记为已推荐。 / 案件の条件を満たさないと判断済みのため、提案済みにしていません。'
       repository.advanceBusinessProgress(
         { documentId, reviewId, expectedRevision: existing?.revision ?? 0, mutationId: randomUUID(), action: 'recommend' },
         actor

@@ -8616,7 +8616,6 @@ a:focus-visible,
 }
 
 .operator-profile-history-note,
-.operator-profile-id,
 .operator-profile-error {
   margin: 0;
   font-size: 11px;
@@ -8625,15 +8624,6 @@ a:focus-visible,
 
 .operator-profile-history-note {
   color: var(--tone-slate-54);
-}
-
-.operator-profile-id {
-  color: var(--tone-slate-55);
-}
-
-.operator-profile-id code {
-  color: var(--tone-blue-40);
-  overflow-wrap: anywhere;
 }
 
 .operator-profile-error {
@@ -18025,12 +18015,14 @@ body,
 .agent-system-rail-brand {
   display: grid;
   place-items: center;
+  gap: 3px;
   min-height: 42px;
-  margin-bottom: 17px;
+  margin-bottom: 14px;
   color: var(--on-accent);
-  font-size: 18px;
-  font-weight: 780;
-  letter-spacing: -0.04em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 .agent-system-rail nav {
   display: grid;
@@ -20388,4 +20380,38 @@ body,
 }
 .held-deletions li small {
   flex-basis: 100%;
+}
+
+/* The × that closes a dialog, drawer or panel: one quiet icon button everywhere. :root lifts it above the
+   dialogs' own header button rules, which were each styling the × differently. */
+:root .close-button {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-tertiary);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+:root .close-button:hover:not(:disabled) {
+  background: var(--surface-selected);
+  color: var(--ink);
+}
+:root .close-button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--surface-selected) 70%, var(--line));
+}
+:root .close-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+:root .close-button svg {
+  stroke-width: 2;
 }

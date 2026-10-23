@@ -277,6 +277,18 @@ const api: DesktopApi = {
   openZoomMeeting: (input) => ipcRenderer.invoke(ipcChannels.openZoomMeeting, input),
   openInterviewMeeting: (input) => ipcRenderer.invoke(ipcChannels.openInterviewMeeting, input),
   openZoomTestMeeting: () => ipcRenderer.invoke(ipcChannels.openZoomTestMeeting),
+  openVendorSite: (site) => ipcRenderer.invoke(ipcChannels.openVendorSite, site),
+  fillJobCaseFieldsWithAi: (reviewId) => ipcRenderer.invoke(ipcChannels.fillJobCaseFieldsWithAi, reviewId),
+  suggestJobCaseFieldCorrections: (reviewId) => ipcRenderer.invoke(ipcChannels.suggestJobCaseFieldCorrections, reviewId),
+  applyJobCaseFieldCorrections: (input) => ipcRenderer.invoke(ipcChannels.applyJobCaseFieldCorrections, input),
+  onJobCasesAiFilled: (listener) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => {
+      const reviewIds = (payload as { reviewIds?: unknown } | null)?.reviewIds
+      if (Array.isArray(reviewIds) && reviewIds.every((id) => typeof id === 'string')) listener({ reviewIds: reviewIds as string[] })
+    }
+    ipcRenderer.on(ipcChannels.jobCasesAiFilled, handler)
+    return () => ipcRenderer.removeListener(ipcChannels.jobCasesAiFilled, handler)
+  },
   createManualJobCaseDraft: (input) => ipcRenderer.invoke(ipcChannels.createManualJobCaseDraft, input),
   createChatPasteJobCaseDraft: (input) => ipcRenderer.invoke(ipcChannels.createChatPasteJobCaseDraft, input),
   importCaseTextBatch: (input) => ipcRenderer.invoke(ipcChannels.importCaseTextBatch, input),

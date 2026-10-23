@@ -118,6 +118,12 @@ body:has(.is-hr-workbench) {
   padding: 12px 20px 10px;
   border-bottom: 1px solid var(--line-faint);
 }
+.hr-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 .hr-list-toolbar-end {
   display: flex;
   margin-left: auto;
@@ -199,11 +205,34 @@ body:has(.is-hr-workbench) {
 .hr-list-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px 8px;
   align-items: center;
-  padding: 8px 20px 8px 0;
+  margin: 10px 14px 8px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line-faint);
+  border-radius: 10px;
+  background: var(--surface-sunken);
   font-size: 12px;
   color: var(--muted);
+}
+.hr-list-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-tertiary);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.hr-list-filters .hr-search {
+  flex: 1 1 180px;
+  min-width: 150px;
+  max-width: 340px;
+  padding: 5px 9px;
+}
+.hr-list-filter-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 .hr-object-list .hr-list-filters button {
   border: 0;
@@ -212,11 +241,12 @@ body:has(.is-hr-workbench) {
   color: var(--ink-tertiary);
 }
 .hr-object-list .hr-list-filters button[aria-pressed='true'] {
-  background: var(--surface-selected);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
   color: var(--ink);
   font-weight: 650;
 }
-.hr-list-filters > span {
+.hr-list-filters > .hr-list-count {
   margin-left: auto;
 }
 .hr-object-list .hr-list-filters .hr-list-refresh {
@@ -503,6 +533,28 @@ body:has(.is-hr-workbench) {
 }
 .hr-detail-pane[hidden] {
   display: none;
+}
+/* The open detail reads as a panel laid over the list, not as more of the list: a raised edge toward the
+   list, a tinted body, and a header band in the accent tint. */
+.hr-object-list.has-detail:not(.is-narrow) .hr-detail-pane {
+  position: relative;
+  z-index: 1;
+  box-shadow: -10px 0 24px -18px color-mix(in srgb, var(--shadow-color) 55%, transparent);
+}
+.hr-detail-pane .agent-business-context-panel {
+  background: var(--surface-sunken);
+}
+.hr-detail-pane .agent-context-panel-header {
+  min-height: 64px;
+  padding: 12px 18px;
+  border-bottom: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+.hr-detail-pane .agent-context-panel-header > div:first-child {
+  color: var(--accent-text);
+}
+.hr-detail-pane .agent-context-panel-header strong {
+  font-size: 18px;
 }
 .hr-detail-body {
   flex: 1;
@@ -1000,12 +1052,14 @@ body:has(.is-hr-workbench) {
 .hr-return-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 24px;
   border-bottom: 1px solid var(--border-color);
   background: var(--surface);
   flex-shrink: 0;
 }
-.hr-return-bar button {
+.hr-return-bar > button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1052,7 +1106,7 @@ body:has(.is-hr-workbench) {
 .hr-intake-issues button span {
   flex-shrink: 0;
 }
-.hr-return-bar button:focus-visible {
+.hr-return-bar > button:focus-visible {
   outline: 2px solid var(--line-green-64);
   outline-offset: 2px;
 }
@@ -1685,6 +1739,17 @@ body:has(.is-hr-workbench) {
   padding: 12px 28px;
   border-top: 1px solid var(--line);
   background: var(--surface);
+}
+/* 案件を配信 has no mail beside AI tools: one column, narrower. */
+.hr-introduction.is-case-broadcast {
+  width: min(760px, 100%);
+}
+.hr-introduction.is-case-broadcast .hr-intro-scroll {
+  align-content: stretch;
+  grid-auto-rows: max-content;
+}
+.hr-introduction.is-case-broadcast .hr-intro-body textarea {
+  min-height: 320px;
 }
 .hr-intro-footer-status,
 .hr-intro-footer-send {

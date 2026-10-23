@@ -25,6 +25,13 @@ export type IconName =
   | 'copy'
   | 'phone'
   | 'external-link'
+  | 'filter'
+  | 'user'
+  | 'log-in'
+  | 'log-out'
+  | 'wallet'
+  | 'chevron-down'
+  | 'x'
 
 const paths: Record<IconName, string[]> = {
   home: ['M3 11.5 12 4l9 7.5', 'M5.5 10v10h13V10', 'M9.5 20v-6h5v6'],
@@ -63,7 +70,14 @@ const paths: Record<IconName, string[]> = {
   edit: ['M4 20h4l11-11-4-4L4 16z', 'm13.5 2.5 4 4'],
   copy: ['M9 9h11v11H9z', 'M5 15H4V4h11v1'],
   phone: ['M6.6 3h3l1.5 4-2 1.6a16 16 0 0 0 6.3 6.3l1.6-2 4 1.5v3c0 1.1-.9 2-2 2C10.2 19.4 3.6 12.8 3.6 5a2 2 0 0 1 2-2Z'],
-  'external-link': ['M14 3h7v7', 'M10 14 21 3', 'M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5']
+  'external-link': ['M14 3h7v7', 'M10 14 21 3', 'M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5'],
+  filter: ['M3 5h18l-7 8.5V19l-4 2v-7.5Z'],
+  user: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1'],
+  'log-in': ['M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4', 'm10 17 5-5-5-5', 'M15 12H3'],
+  'log-out': ['M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4', 'm16 17 5-5-5-5', 'M21 12H9'],
+  wallet: ['M3 7a2 2 0 0 1 2-2h14v4', 'M3 7v11a2 2 0 0 0 2 2h16V9H5a2 2 0 0 1-2-2Z', 'M17 14.5h.01'],
+  'chevron-down': ['m6 9 6 6 6-6'],
+  x: ['M6 6l12 12', 'M18 6 6 18']
 }
 
 interface IconProps extends SVGProps<SVGSVGElement> {

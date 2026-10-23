@@ -131,7 +131,7 @@ export function registerCandidateEvaluationHandlers(context: MainIpcContext) {
     candidateEvaluationBusy = true
     try {
       const selection = await dialog.showOpenDialog({
-        title: '脱敏済み SES 候補者評価セットを選択',
+        title: 'マスキング済み SES 候補者評価セットを選択',
         filters: [{ name: 'SES Candidate Benchmark', extensions: ['json'] }],
         properties: ['openFile', 'dontAddToRecent']
       })
@@ -153,7 +153,7 @@ export function registerCandidateEvaluationHandlers(context: MainIpcContext) {
       const privacyText = [benchmark.name, ...benchmark.cases.map((testCase) => testCase.query)].join('\n')
       const identifiers = detectDirectIdentifiers(privacyText)
       if (identifiers.length > 0 || /<(?:PERSON_NAME|PHONE|EMAIL|ADDRESS|PRIVATE_EMAIL)_\d+>/iu.test(privacyText)) {
-        throw new Error('評価セットに個人識別情報または PII 占位符が含まれています。脱敏済み条件だけを使用してください。')
+        throw new Error('評価セットに個人識別情報または PII 占位符が含まれています。マスキング済み条件だけを使用してください。')
       }
       const report = await evaluateCandidateBenchmark(benchmark)
       return {

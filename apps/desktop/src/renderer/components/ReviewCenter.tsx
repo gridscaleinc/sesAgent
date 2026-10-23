@@ -278,7 +278,7 @@ export function ReviewCenter({ items, onOpenCandidate, onOpenCase, onOpenTask, o
           <p>
             {t(
               '人员仅显示匿名文档 ID，案件仅显示在本机脱敏后的主题；打开详情也不会自动发送到云端。',
-              '候補者は匿名Document ID、案件は端末内で脱敏した件名だけを表示。詳細を開いてもCloudへ自動送信しません。'
+              '候補者は匿名Document ID、案件は端末内でマスキングした件名だけを表示。詳細を開いてもCloudへ自動送信しません。'
             )}
           </p>
         </div>

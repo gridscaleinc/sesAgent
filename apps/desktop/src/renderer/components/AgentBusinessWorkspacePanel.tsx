@@ -31,6 +31,8 @@ import { Icon, type IconName } from './Icon'
 import { JobCaseBody } from './JobCaseBody'
 import { interviewStageLabel } from './CandidatePipeline'
 import type { ReviewQueueItem } from './ReviewCenter'
+import { CaseAiFill } from './CaseAiFill'
+import { CaseAiRecheck } from './CaseAiRecheck'
 
 /** 找人 (matching) never opens here: App routes it to the case's resume panel beside the list. */
 type BusinessAccess = Exclude<AgentSystemAccessBlock, { destination: 'interview-schedule' | 'matching' }>
@@ -410,9 +412,11 @@ function CaseReviewView({
             </div>
           ))}
       </dl>
+      <CaseAiFill key={`ai-fill:${review.reviewId}`} review={review} scope="key" />
+      <CaseAiRecheck key={`ai-recheck:${review.reviewId}`} review={review} />
       <JobCaseBody key={`body:${review.reviewId}`} review={review} onLoad={onLoadSourceText} zh={zh} />
       <details className="agent-case-edit-details">
-        <summary>{t('查看全部字段', '全項目を表示')}</summary>
+        <summary>{t('详情与编辑', '詳細・編集')}</summary>
         <ContextSection title={t('案件字段', '案件項目')}>
           <dl className="agent-business-facts">
             {review.fields.map((field) => (
@@ -422,6 +426,7 @@ function CaseReviewView({
               </div>
             ))}
           </dl>
+          <CaseAiFill key={`ai-fill-all:${review.reviewId}`} review={review} scope="all" />
         </ContextSection>
       </details>
     </>
@@ -964,7 +969,7 @@ function CaseImportView({
         <p>
           {t(
             '内容先在本机脱敏并抽取字段，保存后即为有效案件，之后可随时在这里修改。',
-            '内容は端末内で脱敏して項目を抽出し、保存すると有効な案件になります。あとからここで編集できます。'
+            '内容は端末内でマスキングして項目を抽出し、保存すると有効な案件になります。あとからここで編集できます。'
           )}
         </p>
       </div>
@@ -1039,7 +1044,7 @@ function OriginalDocumentView({
         <p>
           {t(
             '原始文件只在本机解密显示；对话只读取对应的脱敏结构化字段。',
-            '原始ファイルは端末内だけで復号表示し、会話には対応する脱敏済み構造化項目だけを渡します。'
+            '原始ファイルは端末内だけで復号表示し、会話には対応するマスキング済み構造化項目だけを渡します。'
           )}
         </p>
       </div>
@@ -1221,11 +1226,11 @@ export function AgentBusinessWorkspacePanel({
         ) : null}
         <button
           aria-label={t('关闭右侧工作区', '右ワークスペースを閉じる')}
-          className="agent-context-panel-close"
+          className="agent-context-panel-close close-button"
           onClick={onClose}
           type="button"
         >
-          ×
+          <Icon name="x" size={18} />
         </button>
       </header>
       <div className="agent-business-context-note">

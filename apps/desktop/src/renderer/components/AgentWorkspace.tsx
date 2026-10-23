@@ -111,6 +111,8 @@ interface AgentWorkspaceProps {
   onOpenSettings?(): void
   onOpenOperatorProfile?(): void
   operatorLabel?: string
+  /** The account area (who is operating, AI member sign-in, credits) at the right end of the page header. */
+  accountMenu?: ReactNode
   /**
    * Called after a tool writes to the local database, so the app can refresh its
    * bootstrap snapshot. Without it imports or interview schedules land in
@@ -1487,7 +1489,7 @@ function systemAccessContent(
       title: t('原始简历', '原始履歴書'),
       description: t(
         '在右侧本机解密显示原始文件，对话只读取脱敏结构化投影。',
-        '右側で原始ファイルを端末内復号表示し、会話は脱敏済み構造化投影だけを参照します。'
+        '右側で原始ファイルを端末内復号表示し、会話はマスキング済み構造化投影だけを参照します。'
       ),
       action: t('查看原始简历', '原始履歴書を見る')
     }
@@ -2009,6 +2011,7 @@ export function AgentWorkspace({
   onOpenSettings,
   onOpenOperatorProfile,
   operatorLabel = 'SES',
+  accountMenu,
   onLocalDataChanged,
   candidateReviews = [],
   jobCaseReviews = [],
@@ -2877,7 +2880,7 @@ export function AgentWorkspace({
         )}
         {onOpenOperatorProfile ? (
           <button
-            aria-label={t('打开操作员档案', '担当者プロフィールを開く')}
+            aria-label={t('打开个人资料', 'プロフィールを開く')}
             className="agent-operator-button"
             onClick={onOpenOperatorProfile}
             title={operatorLabel}
@@ -3353,11 +3356,11 @@ export function AgentWorkspace({
       className="agent-privacy-badge"
       title={t(
         'AI 理解自然语言 + 受控本地 Tool + SSE 回答；仅发送已脱敏的最小上下文，不自动改变业务状态',
-        'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。脱敏済みの最小コンテキストのみを送信し、業務状態は変更しません'
+        'AI が自然言語を理解 + 制御済みローカル Tool + SSE 回答。マスキング済みの最小コンテキストのみを送信し、業務状態は変更しません'
       )}
     >
       <Icon name="shield" size={13} />
-      {t('仅发送脱敏内容', '脱敏済みのみ送信')}
+      {t('仅发送脱敏内容', 'マスキング済みデータのみ送信')}
     </span>
   )
   const businessHeaderActions = businessTitle ? (
@@ -3378,12 +3381,13 @@ export function AgentWorkspace({
           {t('问 Agent', 'Agentに質問')}
         </button>
       )}
+      {accountMenu}
     </div>
   ) : null
 
   const businessHeaderContext = useMemo(
     () => (businessTitle && businessHeaderInline ? { actions: businessHeaderActions, chatOpen: surface === 'conversation' } : null),
-    [businessTitle, businessHeaderInline, surface, locale, hideAskAgent]
+    [businessTitle, businessHeaderInline, surface, locale, hideAskAgent, accountMenu]
   )
   const workspaceClassName = [
     'agent-workspace',
@@ -3470,6 +3474,7 @@ export function AgentWorkspace({
                     {newCaseUnseenCount > 0 ? <b>{newCaseUnseenCount}</b> : null}
                   </button>
                 ) : null}
+                {accountMenu}
               </header>
             )}
             {latestContent && !businessTitle ? (

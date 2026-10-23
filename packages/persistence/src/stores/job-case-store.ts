@@ -836,6 +836,90 @@ export class JobCaseStore extends DomainStore {
     })()
   }
 
+  /**
+   * Fills a valid case's empty fields - and only those - as one new version. A field someone filled meanwhile
+   * keeps its value; nothing is written when no value is left to fill. Returns the keys it filled.
+   */
+  fillEmptyJobCaseFields(
+    reviewId: string,
+    values: Partial<Record<string, string>>,
+    changeReason: string,
+    reviewerId: string,
+    reviewerName: string
+  ): { review: JobCaseReviewSnapshot; filled: string[] } {
+    return this.database.transaction(() => {
+      const review = this.activeCompletedJobCaseReview(reviewId)
+      const fill = new Map(
+        review.fields.flatMap((field) => {
+          const value = values[field.key]?.trim()
+          return field.value === null && value ? [[field.key, value] as const] : []
+        })
+      )
+      const saved = this.writeJobCaseFieldValues(review, fill, changeReason, reviewerId, reviewerName)
+      return { review: saved, filled: [...fill.keys()] }
+    })()
+  }
+
+  /**
+   * Replaces the given fields of a valid case as one new version - the operator's accepted corrections. The case
+   * must still be at `expectedRevision`: a case someone changed since the corrections were read is not overwritten.
+   */
+  reviseJobCaseFields(
+    reviewId: string,
+    expectedRevision: number,
+    values: Partial<Record<string, string>>,
+    changeReason: string,
+    reviewerId: string,
+    reviewerName: string
+  ): { review: JobCaseReviewSnapshot; changed: string[] } {
+    return this.database.transaction(() => {
+      const review = this.activeCompletedJobCaseReview(reviewId)
+      if (review.reviewRevision !== expectedRevision)
+        throw new Error('案件已更新，请重新确认。 / 案件が更新されました。もう一度確認してください。')
+      const change = new Map(
+        review.fields.flatMap((field) => {
+          const value = values[field.key]?.trim()
+          return value && value !== field.value ? [[field.key, value] as const] : []
+        })
+      )
+      const saved = this.writeJobCaseFieldValues(review, change, changeReason, reviewerId, reviewerName)
+      return { review: saved, changed: [...change.keys()] }
+    })()
+  }
+
+  private activeCompletedJobCaseReview(reviewId: string): JobCaseReviewSnapshot {
+    const review = this.getJobCaseReview(reviewId)
+    if (!review || review.lifecycle !== 'active' || review.status !== 'completed') throw new Error('案件不存在、已结束或尚未生效。')
+    return review
+  }
+
+  /** Reopens and confirms the case with `values` replacing those fields; unchanged when there is nothing to write. */
+  private writeJobCaseFieldValues(
+    review: JobCaseReviewSnapshot,
+    values: ReadonlyMap<string, string>,
+    changeReason: string,
+    reviewerId: string,
+    reviewerName: string
+  ): JobCaseReviewSnapshot {
+    if (!values.size) return review
+    const reopened = this.reopenJobCaseReview({ reviewId: review.reviewId, reason: changeReason }, reviewerName)
+    return this.confirmJobCaseReview(
+      {
+        reviewId: review.reviewId,
+        reviewRevision: reopened.reviewRevision,
+        privacyReviewed: true,
+        fields: review.fields.map((field) => ({
+          key: field.key,
+          value: values.get(field.key) ?? field.value,
+          confirmed: true,
+          ...(values.has(field.key) ? { changeReason } : {})
+        }))
+      },
+      reviewerId,
+      reviewerName
+    )
+  }
+
   confirmJobCaseReview(
     input: SubmitJobCaseReviewInput,
     reviewerId: string,

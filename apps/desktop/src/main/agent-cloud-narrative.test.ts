@@ -1169,6 +1169,60 @@ describe('Agent Cloud narrative boundary', () => {
     expect(onRemoteSettled).toHaveBeenCalledTimes(2)
   })
 
+  it('completes one imported case: asks only for its empty fields and keeps only values copied from its redacted source', async () => {
+    const sessions = new Map<string, RedactionSessionEvidence>()
+    const repository = {
+      saveRedactionSession: vi.fn((session: RedactionSessionEvidence, _mappings: LocalPiiMapping[]) => sessions.set(session.id, session)),
+      getRedactionSession: vi.fn((id: string) => sessions.get(id) ?? null),
+      appendCloudCallAudit: vi.fn()
+    }
+    const streamResponses = vi.fn(async (input: Parameters<AiCommerceNativeClient['streamResponses']>[0]) => {
+      input.onClientRequestId?.('client-complete')
+      return {
+        clientRequestId: 'client-complete',
+        responseId: 'response',
+        billingModeUsed: 'subscription' as const,
+        // rate was not asked for; the station is invented; both are dropped.
+        content:
+          '{"decision":"records","records":[{"kind":"job-case","startLine":1,"endLine":4,"fields":{"start_date":"2026年11月〜長期","location":"渋谷駅","remote":"フルリモート","rate":"65万円"}}]}'
+      }
+    })
+    const service = new AgentCloudNarrativeService({
+      repository,
+      localNer: {
+        engine: 'apple-natural-language',
+        detectNames: vi.fn().mockResolvedValue({ engine: 'apple-natural-language', networkAccess: false, entities: [] })
+      },
+      aiCommerce: {
+        responsesEndpoint: 'https://aicommerce.gridscale.com/v1/ai/native/openai/v1/responses',
+        streamResponses,
+        cancelClientRequest: vi.fn()
+      } as unknown as AiCommerceNativeClient,
+      policyVersion: 'cloud-redaction-v2',
+      loadGates: vi.fn().mockResolvedValue(passedGates()),
+      allowLoopbackHttp: false
+    })
+    const onRemoteSettled = vi.fn()
+
+    const values = await service.completeJobCaseFields({
+      conversationId,
+      requestId,
+      text: '【案件】Java開発\nお世話になっております。\n期間について：2026年11月～長期\n作業は渋谷駅近辺、週2出社',
+      keys: ['start_date', 'location', 'remote'],
+      model,
+      signal: new AbortController().signal,
+      onClientRequestId: vi.fn(),
+      onRemoteSettled
+    })
+
+    expect(values).toEqual({ start_date: '2026年11月〜長期', location: '渋谷駅' })
+    const call = streamResponses.mock.calls[0]![0]
+    expect(call.operationId).toBe(`${requestId}-case-complete`)
+    expect(call.instructions).toContain('only these keys: start_date, location, remote')
+    expect(call.instructions).toContain('at most one job-case record')
+    expect(onRemoteSettled).toHaveBeenCalledOnce()
+  })
+
   it('passes the projection through local NER, DLP, the synthetic quality gate, and CloudRedactionGateway before streaming', async () => {
     const sessions = new Map<string, RedactionSessionEvidence>()
     const audits: CloudCallAuditRecord[] = []
@@ -1592,6 +1646,27 @@ describe('business-text extraction protocol', () => {
           endLine: 3,
           fields: { required_skills: 'VC++3年以上', japanese_level: 'N3', interview: '面談1回、5名', start_date: '8月～長期' }
         }
+      ]
+    })
+  })
+
+  it('keeps a 期間 or 勤務地 the model copied with another wave dash or full-width digits, but nothing invented', () => {
+    const lines = ['■期間：2026年11月～長期', '■場所：渋谷駅（週2出社）']
+    const payload = JSON.stringify({
+      decision: 'records',
+      records: [
+        {
+          kind: 'job-case',
+          startLine: 1,
+          endLine: 2,
+          fields: { start_date: '2026年11月〜長期', location: '渋谷駅（週２出社）', remote: 'フルリモート' }
+        }
+      ]
+    })
+    expect(parseAgentBusinessTextExtractionResponse(payload, lines)).toEqual({
+      kind: 'records',
+      records: [
+        { kind: 'job-case', startLine: 1, endLine: 2, fields: { start_date: '2026年11月〜長期', location: '渋谷駅（週２出社）' } }
       ]
     })
   })

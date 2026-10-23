@@ -75,12 +75,17 @@ async function runGmailSync(
   // the operator's field aliases steer extraction, each fresh draft is
   // confirmed with its extracted values, and what the store refuses stays
   // awaiting review in the workspace.
+  const confirmedCases: string[] = []
   const cases = createJobCaseDraftsForPendingGmailMessages(
     repository,
     accountEmail,
     operator,
-    effectiveJobCaseFieldAliases(repository).aliases
+    effectiveJobCaseFieldAliases(repository).aliases,
+    undefined,
+    (reviewId) => confirmedCases.push(reviewId)
   )
+  // Rules first; what they left empty the AI completes in the background, the sync does not wait for it.
+  context.jobCaseAiFiller.enqueue(confirmedCases)
   const intake = await importPendingGmailPersonnel(context, gmail, accountEmail)
   repository.saveGmailIntakeResult(accountEmail, {
     casesCreated: cases.created,

@@ -676,7 +676,7 @@ function ProposalDraftEditor({
                 <Icon name="file" size={17} />
                 <span>
                   <strong>{draft.attachment.fileName}</strong>
-                  <small>{t('PDF · 已脱敏 · 不含原始简历', 'PDF · 脱敏済み · 原本履歴書を含まない')}</small>
+                  <small>{t('PDF · 已脱敏 · 不含原始简历', 'PDF · マスキング済み · 原本履歴書を含まない')}</small>
                 </span>
               </div>
               <span>
@@ -765,7 +765,7 @@ function ProposalDraftEditor({
               <p>
                 {t(
                   '将 message.txt、脱敏档案 PDF 和验证 Manifest 导出为 ZIP。',
-                  'message.txt、脱敏プロフィールPDF、検証用ManifestをZIPで書き出します。'
+                  'message.txt、マスキング済みプロフィールPDF、検証用ManifestをZIPで書き出します。'
                 )}
               </p>
             </div>

@@ -188,11 +188,11 @@ describe('AgentBusinessWorkspacePanel', () => {
       { jobCaseReviews: [jobCase, other], onLoadJobCaseSourceText: vi.fn() }
     )
     for (const reviewId of [other.reviewId, jobCase.reviewId, other.reviewId, jobCase.reviewId]) {
-      const editor = screen.getByText('查看全部字段').closest('details')!
+      const editor = screen.getByText('详情与编辑').closest('details')!
       editor.open = true
       props.rerenderPanel({ access: { type: 'system-access', destination: 'case-review', reviewId } })
-      expect(screen.getAllByText('查看全部字段')).toHaveLength(1)
-      expect(screen.getByText('查看全部字段').closest('details')).not.toHaveAttribute('open')
+      expect(screen.getAllByText('详情与编辑')).toHaveLength(1)
+      expect(screen.getByText('详情与编辑').closest('details')).not.toHaveAttribute('open')
     }
   })
   it('shows all resume skills together in the field that can be edited', () => {

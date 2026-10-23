@@ -20,7 +20,7 @@ const slots: ApplicationAiModelSlot[] = ['checking', 'writing']
 function slotLabel(t: LocaleText, slot: ApplicationAiModelSlot): string {
   return slot === 'checking'
     ? t('批量核对（找人评估、案件识别、邮件处理）', '一括確認（要員評価・案件識別・メール処理）')
-    : t('文案与分析（推荐要点、介绍文、面试问题）', '文章と分析（推薦ポイント・紹介文・面談質問）')
+    : t('文案与分析（推荐要点、介绍文、面试问题）', '文章と分析（アピールポイント・紹介文・面談質問）')
 }
 
 function tierLabel(t: LocaleText, tier: AgentChatModelOption['tier']): string | null {
@@ -198,7 +198,7 @@ export function AiModelSettingsSection({
           <strong>{t('测试不含业务数据', 'テストに業務データは含まれません')}</strong>
           {t(
             '「测试模型」只发送一句固定的连通性确认，与业务调用经过同一个脱敏网关，会消耗少量 AI 额度。',
-            '「モデルをテスト」は固定の接続確認文だけを、業務の呼び出しと同じ脱敏ゲートウェイ経由で送信します。少量のAIクレジットを使用します。'
+            '「モデルをテスト」は固定の接続確認文だけを、業務の呼び出しと同じマスキングゲートウェイ経由で送信します。少量のAIクレジットを使用します。'
           )}
         </span>
       </div>

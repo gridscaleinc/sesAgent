@@ -50,6 +50,7 @@ import { CommandPalette, type BusinessCommand, type CommandText } from './compon
 import { JobCaseInbox, type GmailImportNotice } from './components/JobCaseInbox'
 import { Icon } from './components/Icon'
 import { ApplicationSettingsDialog, type ApplicationSettingsSection } from './components/ApplicationSettingsDialog'
+import { AccountMenu } from './components/AccountMenu'
 import { AiCommerceMemberDialog } from './components/AiCommerceMemberDialog'
 import { LocalOperatorProfileDialog } from './components/LocalOperatorProfileDialog'
 import { buildReviewQueue, ReviewCenter } from './components/ReviewCenter'
@@ -411,6 +412,9 @@ export function App() {
       }),
     []
   )
+
+  // Cases the background AI completion filled after an import reload like any other business change.
+  useEffect(() => window.sesAgent.onJobCasesAiFilled?.(() => window.dispatchEvent(new Event('ses-business-data-changed'))), [])
 
   useEffect(
     () =>
@@ -1758,7 +1762,7 @@ export function App() {
     {
       id: 'hr-new-case',
       group: '業務',
-      label: { zh: '新增案件', ja: '案件を追加' },
+      label: { zh: '新增案件', ja: '案件登録' },
       description: { zh: '粘贴案件信息，整理后加入案件列表。', ja: '案件情報を貼り付けて整理し、案件一覧に追加します。' },
       // i18n-ignore: search keywords match either language
       keywords: ['新增', '追加', '案件', 'paste', 'case'],
@@ -1800,7 +1804,7 @@ export function App() {
       icon: 'edit',
       description: {
         zh: '在设备内对粘贴的主题和正文脱敏，并生成审核草稿。',
-        ja: '貼り付けた件名・本文を端末内で脱敏してレビュー草稿にします。'
+        ja: '貼り付けた件名・本文を端末内でマスキングしてレビュー草稿にします。'
       },
       // i18n-ignore: search keywords match either language
       keywords: ['案件', 'メール', '手動', 'paste', 'job'],
@@ -1863,9 +1867,9 @@ export function App() {
       group: '統制',
       label: { zh: '打开数据与审批', ja: 'データと承認を開く' },
       icon: 'database',
-      description: { zh: '查看脱敏、本地 AI、质量门和备份。', ja: '脱敏、Local AI、品質門とバックアップを確認します。' },
+      description: { zh: '查看脱敏、本地 AI、质量门和备份。', ja: 'マスキング、Local AI、品質門とバックアップを確認します。' },
       // i18n-ignore: search keywords match either language
-      keywords: ['privacy', 'pii', '脱敏', 'バックアップ', '設定', 'security'],
+      keywords: ['privacy', 'pii', '脱敏', 'マスキング', 'バックアップ', '設定', 'security'],
       run: () => {
         setSelectedTask(null)
         setGovernanceOpen(true)
@@ -2304,12 +2308,12 @@ export function App() {
             <strong>
               {agentSideMode === 'intake'
                 ? hrKind === 'case'
-                  ? t('新增案件', '案件を追加')
+                  ? t('新增案件', '案件登録')
                   : t('信息整理', '情報整理')
                 : t('人员资料', '要員情報')}
             </strong>
-            <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
-              ×
+            <button className="close-button" aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
+              <Icon name="x" size={18} />
             </button>
           </header>
           <div className="business-workbench agent-tool-content">
@@ -2388,8 +2392,8 @@ export function App() {
               </button>
             ) : null}
             <strong>{t('完整人员档案', '要員プロフィール')}</strong>
-            <button aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
-              ×
+            <button className="close-button" aria-label={t('关闭业务面板', '業務パネルを閉じる')} onClick={closeAgentPanel} type="button">
+              <Icon name="x" size={18} />
             </button>
           </header>
           <div className="agent-tool-content">
@@ -2481,6 +2485,21 @@ export function App() {
         </div>
       </div>
     </>
+  )
+
+  const accountMenu = (
+    <AccountMenu
+      operator={bootstrap.operatorProfile}
+      aiMember={bootstrap.aiCommerce}
+      onEditProfile={() => setOperatorProfileOpen(true)}
+      onOpenSettings={() => openApplicationSettings('general')}
+      onOpenAiMember={() => setAiCommerceOpen(true)}
+      onRefreshAiMember={refreshAiCommerce}
+      onAddCredits={() => window.sesAgent.openAiCommerceMemberCenter()}
+      onSignIn={connectAiCommerce}
+      onSignOut={disconnectAiCommerce}
+      onOpenVendorSite={(site) => window.sesAgent.openVendorSite(site)}
+    />
   )
 
   return (
@@ -2576,6 +2595,7 @@ export function App() {
                         ? t('返回案件', '案件に戻る')
                         : t('返回人员', '要員に戻る')}
                 </button>
+                {accountMenu}
               </nav>
             ) : null}
             <div className="agent-route" hidden={!agentPrimary}>
@@ -2973,6 +2993,7 @@ export function App() {
                   openAgentSystemAccess({ type: 'system-access', destination: 'original-document', sourceDocumentId })
                 }
                 onOpenOperatorProfile={() => setOperatorProfileOpen(true)}
+                accountMenu={accountMenu}
                 onLocalDataChanged={async () => {
                   const refreshed = await window.sesAgent.getBootstrap()
                   setBootstrap(refreshed)

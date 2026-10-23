@@ -10,10 +10,16 @@ import sharp from 'sharp'
 const outputDirectory = resolve('assets/tray')
 await mkdir(outputDirectory, { recursive: true })
 
-// The app mark's two interlocking strokes, drawn on an 18-unit grid.
-const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
-  <path fill="#000" d="M13.6 2.6C10.2 1.2 5.6 2 4 4.7c-1.3 2.2.1 4.2 2.4 5.2l2.7 1.2c.2-1.1-.5-2-1.6-2.6L6.4 7.8c-.9-.5-1.2-1.4-.7-2.2 1-1.7 4.3-2.6 7.9-3z"/>
-  <path fill="#000" d="M4.4 15.4c3.4 1.4 8 .6 9.6-2.1 1.3-2.2-.1-4.2-2.4-5.2L8.9 6.9c-.2 1.1.5 2 1.6 2.6l1.1.7c.9.5 1.2 1.4.7 2.2-1 1.7-4.3 2.6-7.9 3z"/>
+// The app mark's owl (assets/ses-agent-logo.svg) on its 64-unit grid: the head is solid, the eyes are cut out
+// (the overlap between them stays solid, as it is white in the colour mark) and the pupils stay solid.
+const glyph = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path fill="#000" d="M12.7 20.3C10.2 18.2 9.4 14.5 10.5 10.8C13.6 13.4 17 14.6 20.6 15.2Z"/>
+  <path fill="#000" d="M51.3 20.3C53.8 18.2 54.6 14.5 53.5 10.8C50.4 13.4 47 14.6 43.4 15.2Z"/>
+  <path fill="#000" fill-rule="evenodd" d="M7.9 32.8a24.1 20.8 0 1 0 48.2 0a24.1 20.8 0 1 0-48.2 0Z
+    M11.15 32.6a11.8 11.8 0 1 0 23.6 0a11.8 11.8 0 1 0-23.6 0Z
+    M29.25 32.6a11.8 11.8 0 1 0 23.6 0a11.8 11.8 0 1 0-23.6 0Z
+    M17.1 32.8a4.8 4.8 0 1 0 9.6 0a4.8 4.8 0 1 0-9.6 0Z
+    M37.3 32.8a4.8 4.8 0 1 0 9.6 0a4.8 4.8 0 1 0-9.6 0Z"/>
 </svg>`
 
 for (const [name, size] of [
@@ -29,9 +35,10 @@ for (const [name, size] of [
 // The app icon's tile sits inside transparent padding; crop to it so the tray shows the mark, not the margin.
 const source = resolve('assets/sesai-app-icon.png')
 const metadata = await sharp(source).metadata()
-const inset = Math.round((metadata.width ?? 1254) * 0.135)
+// The tile follows the macOS grid: 824 of 1024.
+const inset = Math.round((metadata.width ?? 1024) * (100 / 1024))
 const tile = await sharp(source)
-  .extract({ left: inset, top: inset, width: (metadata.width ?? 1254) - inset * 2, height: (metadata.height ?? 1254) - inset * 2 })
+  .extract({ left: inset, top: inset, width: (metadata.width ?? 1024) - inset * 2, height: (metadata.height ?? 1024) - inset * 2 })
   .png()
   .toBuffer()
 const sizes = [16, 20, 24, 32, 48]

@@ -1,5 +1,6 @@
 import { localeText } from '../i18n'
 import type { CasePersonAssessment } from '@shared'
+import { AiServiceProblemActions } from './AiServiceProblemActions'
 
 export function AssessmentEvaluationStatus({ value, zh }: { value: CasePersonAssessment; zh: boolean }) {
   const t = localeText(zh)
@@ -58,6 +59,7 @@ export function AssessmentEvaluationStatus({ value, zh }: { value: CasePersonAss
           'AI 额度不足，本次未完成云端评估，当前显示本地核对结果。请在 AI 会员中心充值后重新评估。',
           'AIクレジットが不足しているため、Cloud評価を実行できませんでした。ローカル照合結果を表示しています。AI会員センターでチャージしてから再評価してください。'
         )}
+        <AiServiceProblemActions problem="quota" />
       </p>
     )
   if (cloud.reason === 'sign-in-required')
@@ -67,6 +69,7 @@ export function AssessmentEvaluationStatus({ value, zh }: { value: CasePersonAss
           'AI 未登录，本次未完成云端评估，当前显示本地核对结果。登录 AI 会员后可重新评估。',
           'AIにログインしていないため、Cloud評価を実行できませんでした。ローカル照合結果を表示しています。AI会員にログインしてから再評価してください。'
         )}
+        <AiServiceProblemActions problem="sign-in" />
       </p>
     )
   if (cloud.status === 'failed')
