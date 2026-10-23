@@ -323,14 +323,15 @@ async function verifyCloudEnforcementManifest(privacyExpert) {
   const expertBound = expertFailures.length === 0
   if (
     manifest.expertAttestationBound !== expertBound ||
-    manifest.releaseEligible !== expertBound ||
+    // The Japanese expert evaluation is optional quality evidence, as on macOS: it never decides eligibility.
+    manifest.releaseEligible !== true ||
     (privacyExpert &&
       (privacyExpert.privacyImplementationSha256 !== manifest.privacyImplementationSha256 ||
         privacyExpert.cloudEnforcementSha256 !== manifest.cloudEnforcementSourceSha256))
   )
     throw new Error('Packaged Windows expert evidence is not bound to the Cloud enforcement manifest.')
-  if (requireExpertReport && !manifest.releaseEligible) {
-    throw new Error(`Packaged Windows Cloud enforcement manifest is not release eligible: ${expertFailures.join(',')}`)
+  if (requireExpertReport && !expertBound) {
+    throw new Error(`Packaged Windows optional expert evidence was explicitly required but is not valid: ${expertFailures.join(',')}`)
   }
   return manifest
 }
