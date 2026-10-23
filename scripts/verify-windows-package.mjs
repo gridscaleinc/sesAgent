@@ -443,11 +443,12 @@ try {
     .filter((entry) => entry.startsWith('/out/main/') && entry.endsWith('.js'))
     .map((entry) => asarFile(entry.slice(1)).toString('utf8'))
     .join('\n')
+  // The product's Desktop OAuth client secret is built in on purpose, as on macOS: Google's token endpoint requires it
+  // for Desktop clients and treats it as not confidential for installed apps. Sending mail and drafts stay forbidden.
   for (const forbiddenGmailCapability of [
     '/gmail/v1/users/me/drafts',
     '/gmail/v1/users/me/messages/send',
-    '/gmail/v1/users/me/drafts/send',
-    'client_secret'
+    '/gmail/v1/users/me/drafts/send'
   ]) {
     if (packagedMainSource.includes(forbiddenGmailCapability)) {
       throw new Error(`Packaged Windows application contains forbidden Gmail capability ${forbiddenGmailCapability}.`)
