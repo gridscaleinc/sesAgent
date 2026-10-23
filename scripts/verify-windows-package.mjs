@@ -16,6 +16,15 @@ if (process.platform !== 'win32' || process.arch !== 'x64') {
 
 const args = process.argv.slice(2)
 const requireExpertReport = args.includes('--require-expert-report')
+// The packaged app must initialize the schema this source tree migrates to, as the macOS check reads it.
+const expectedSchemaVersion = Number(
+  (await readFile(resolve(import.meta.dirname, '..', 'packages', 'persistence', 'src', 'schema', 'migrations.ts'), 'utf8')).match(
+    /export const currentSchemaVersion = (\d+)/u
+  )?.[1]
+)
+if (!Number.isInteger(expectedSchemaVersion) || expectedSchemaVersion <= 0) {
+  throw new Error('Unable to read currentSchemaVersion for Windows package verification.')
+}
 const positional = args.filter((value) => value !== '--require-expert-report')
 const appPath = resolve(positional[0] ?? 'release/windows-dev/win-unpacked')
 const executablePath = join(appPath, 'SES Agent Desktop.exe')
@@ -365,7 +374,7 @@ function launchSmoke(expectRecovery, expectOcrEnabled = false) {
       }
       if (
         !expectRecovery &&
-        (!/schemaVersion:\s*36\b/u.test(output) ||
+        (!new RegExp(`schemaVersion:\\s*${expectedSchemaVersion}\\b`, 'u').test(output) ||
           !output.includes("keyProtection: 'windows-dpapi'") ||
           !output.includes(
             expectOcrEnabled ? "status: 'windows-ocr-and-pii-rules-active'" : "status: 'windows-ocr-bundled-isolation-pending'"
