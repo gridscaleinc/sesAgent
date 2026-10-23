@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { extractFile, listPackage } from '@electron/asar'
 import { createCanvas } from '@napi-rs/canvas'
@@ -21,6 +21,8 @@ const appPath = resolve(positional[0] ?? 'release/windows-dev/win-unpacked')
 const executablePath = join(appPath, 'SES Agent Desktop.exe')
 const resourcesPath = join(appPath, 'resources')
 const asarPath = join(resourcesPath, 'app.asar')
+// asar lists and finds archive paths with the platform separator; the names checked here are always '/'-separated.
+const asarFile = (name) => extractFile(asarPath, name.split('/').join(sep))
 const unpackedPath = join(resourcesPath, 'app.asar.unpacked')
 const embeddingModelPath = join(resourcesPath, 'models', 'Xenova', 'multilingual-e5-small')
 const rerankerModelPath = join(resourcesPath, 'models', 'hotchpotch', 'japanese-reranker-tiny-v2')
@@ -291,7 +293,7 @@ async function verifyCloudEnforcementManifest(privacyExpert) {
       runtimeBundlePaths.has(file.path)
     )
       throw new Error('Packaged Windows Cloud enforcement manifest contains an unsafe runtime bundle path.')
-    const bytes = extractFile(asarPath, file.path)
+    const bytes = asarFile(file.path)
     if (hash(bytes) !== file.sha256) throw new Error(`Packaged Windows runtime bundle is stale: ${file.path}`)
     runtimeBundleSetHash.update(file.path).update('\0').update(bytes).update('\0')
     runtimeBundlePaths.add(file.path)
@@ -436,10 +438,10 @@ function launchPackagedWorkerSmoke(expectOcrEnabled, ocrFixturePath) {
 try {
   await assertPeX64(executablePath, 'Electron application executable')
   const packagedPaths = await walk(appPath)
-  const asarEntries = await listPackage(asarPath)
+  const asarEntries = (await listPackage(asarPath)).map((entry) => entry.replaceAll('\\', '/'))
   const packagedMainSource = asarEntries
     .filter((entry) => entry.startsWith('/out/main/') && entry.endsWith('.js'))
-    .map((entry) => extractFile(asarPath, entry.slice(1)).toString('utf8'))
+    .map((entry) => asarFile(entry.slice(1)).toString('utf8'))
     .join('\n')
   for (const forbiddenGmailCapability of [
     '/gmail/v1/users/me/drafts',
