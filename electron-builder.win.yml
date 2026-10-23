@@ -20,6 +20,8 @@ files:
   - "!node_modules/@tesseract.js-data/**/*"
   - "!node_modules/onnxruntime-node/bin/napi-v3/linux/**/*"
   - "!node_modules/onnxruntime-node/bin/napi-v3/darwin/**/*"
+  # The package targets x64 only; the ARM64 runtime would ship unused (and fail the package's x64 check).
+  - "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**/*"
 
 asar: true
 asarUnpack:
